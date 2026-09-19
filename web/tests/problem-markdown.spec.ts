@@ -14,6 +14,10 @@ test('copy controls are available for code fences but not input or math', () => 
 test('copy buttons copy only code text and report clipboard failures', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.goto('/blog/markdown-guide')
+  await page.locator('#programs summary').click()
+  for (const language of ['Python', 'C++', 'C', 'Rust', 'C#', 'Java', 'Nim', 'Go', 'Haskell', 'JavaScript', 'TypeScript', 'Ruby']) {
+    await expect(page.locator('#programs td').getByText(language, { exact: true })).toBeVisible()
+  }
   await expect(page.locator('#input-format .code-copy')).toHaveCount(0)
   for (const block of await page.locator('.markdown-body .copyable-code').all()) {
     const source = await block.locator('pre > code').textContent()
@@ -122,12 +126,20 @@ test('Markdown supports flexible structure and dedicated input / math fences', (
   expect(html).not.toContain('$A_1')
 })
 
-test('code fences highlight C++, C, Python, and Rust', () => {
+test('code fences highlight every supported submission language', () => {
   for (const [language, source] of [
     ['cpp', '#include <iostream>\nint main() { return 0; }'],
     ['c', '#include <stdio.h>\nint main(void) { return 0; }'],
     ['python', 'def answer():\n    return 42'],
     ['rust', 'fn main() { let answer = 42; }'],
+    ['csharp', 'using System;\nConsole.WriteLine(42);'],
+    ['java', 'class Main { public static void main(String[] args) {} }'],
+    ['nim', 'let answer = 42\necho answer'],
+    ['go', 'package main\nfunc main() {}'],
+    ['haskell', 'main :: IO ()\nmain = print 42'],
+    ['javascript', 'const answer = 42;\nconsole.log(answer);'],
+    ['typescript', 'const answer: number = 42;\nconsole.log(answer);'],
+    ['ruby', 'def answer\n  42\nend'],
   ]) {
     const html = renderProblemMarkdown(`\`\`\`${language}\n${source}\n\`\`\``)
     const lineNumbers = source.split('\n').map((_, line) => line + 1).join('\n')
@@ -138,6 +150,24 @@ test('code fences highlight C++, C, Python, and Rust', () => {
   }
   expect(renderProblemMarkdown('```text\nint main() {}\n```')).not.toContain('class="hljs ')
   expect(renderProblemMarkdown('```text\na\nb\n```')).not.toContain('code-line-numbers')
+})
+
+test('code fence aliases use the canonical language and unknown languages stay plain', () => {
+  for (const [canonical, aliases] of [
+    ['python', ['py']], ['cpp', ['c++']], ['rust', ['rs']],
+    ['csharp', ['cs', 'c#']], ['go', ['golang']], ['haskell', ['hs']],
+    ['javascript', ['js']], ['typescript', ['ts']], ['ruby', ['rb']],
+  ] as const) {
+    for (const alias of aliases) {
+      expect(renderProblemMarkdown('```' + alias.toUpperCase() + '\n42\n```'))
+        .toBe(renderProblemMarkdown('```' + canonical + '\n42\n```'))
+    }
+  }
+  for (const language of ['text', '', 'unknown']) {
+    const html = renderProblemMarkdown('```' + language + '\n<script>alert(1)</script>\n```')
+    expect(html).not.toContain('highlighted-code')
+    expect(html).toContain('&lt;script&gt;')
+  }
 })
 
 test('HTML and malicious protocols cannot become executable content', () => {

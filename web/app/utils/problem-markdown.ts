@@ -6,17 +6,39 @@ import c from 'highlight.js/lib/languages/c'
 import cpp from 'highlight.js/lib/languages/cpp'
 import python from 'highlight.js/lib/languages/python'
 import rust from 'highlight.js/lib/languages/rust'
+import csharp from 'highlight.js/lib/languages/csharp'
+import java from 'highlight.js/lib/languages/java'
+import nim from 'highlight.js/lib/languages/nim'
+import go from 'highlight.js/lib/languages/go'
+import haskell from 'highlight.js/lib/languages/haskell'
+import javascript from 'highlight.js/lib/languages/javascript'
+import typescript from 'highlight.js/lib/languages/typescript'
+import ruby from 'highlight.js/lib/languages/ruby'
 import { renderMathText } from './math-text'
 
 hljs.registerLanguage('c', c)
 hljs.registerLanguage('cpp', cpp)
 hljs.registerLanguage('python', python)
 hljs.registerLanguage('rust', rust)
+hljs.registerLanguage('csharp', csharp)
+hljs.registerLanguage('java', java)
+hljs.registerLanguage('nim', nim)
+hljs.registerLanguage('go', go)
+hljs.registerLanguage('haskell', haskell)
+hljs.registerLanguage('javascript', javascript)
+hljs.registerLanguage('typescript', typescript)
+hljs.registerLanguage('ruby', ruby)
 
 const codeLanguages = new Map([
   ['c', 'c'], ['cpp', 'cpp'], ['c++', 'cpp'],
   ['python', 'python'], ['py', 'python'],
   ['rust', 'rust'], ['rs', 'rust'],
+  ['csharp', 'csharp'], ['cs', 'csharp'], ['c#', 'csharp'],
+  ['java', 'java'], ['nim', 'nim'], ['go', 'go'], ['golang', 'go'],
+  ['haskell', 'haskell'], ['hs', 'haskell'],
+  ['javascript', 'javascript'], ['js', 'javascript'],
+  ['typescript', 'typescript'], ['ts', 'typescript'],
+  ['ruby', 'ruby'], ['rb', 'ruby'],
 ])
 
 const markdown = new MarkdownIt({ html: false, linkify: false, typographer: false })
