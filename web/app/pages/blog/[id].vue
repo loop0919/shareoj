@@ -14,7 +14,7 @@ useSharePreview({ title: () => post.value!.title, path: () => `/blog/${post.valu
     <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink to="/blog">記事</NuxtLink><span aria-hidden="true">/</span><span>{{ post.title }}</span></nav><TweetButton :title="post.title" :url="canonical" /></div>
     <h1>{{ post.title }}</h1>
     <p class="muted"><UserLink :handle="post.author" /> <span v-if="post.isOperator">・運営</span> · <time :datetime="post.publishedAt">{{ new Date(post.publishedAt).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' }) }}</time></p>
-    <ProblemMarkdown :source="post.markdown" />
+    <ProblemMarkdown copyable :source="post.markdown" />
   </article>
 </template>
 <style scoped>

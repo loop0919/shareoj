@@ -203,3 +203,30 @@ test('export keeps the exact body and safely quotes title metadata', () => {
   expect(draftErrors({ ...draft, memoryLimitMb: '513' }).memoryLimitMb).not.toBe('')
   expect(() => exportProblemMarkdown({ ...draft, memoryLimitMb: '-1' })).toThrow()
 })
+
+
+test('document copy preserves the original Markdown across all public document views', async ({ page, context, request }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  const problem = '11111111-1111-4111-8111-111111111111'
+  const contest = '88888888-8888-4888-8888-888888888888'
+  const post = '77777777-7777-4777-8777-777777777777'
+  for (const [path, api, field] of [
+    [`/problems/${problem}`, `/api/problems/${problem}`, 'markdown'],
+    [`/problems/${problem}?view=editorial`, `/api/problems/${problem}`, 'editorial'],
+    [`/contests/${contest}`, `/api/contests/${contest}`, 'description'],
+    [`/contests/${contest}/problems/${problem}`, `/api/contests/${contest}/problems/${problem}`, 'markdown'],
+    [`/contests/${contest}/problems/${problem}?view=editorial`, `/api/contests/${contest}/problems/${problem}`, 'editorial'],
+    [`/blog/${post}`, `/api/posts/${post}`, 'markdown'],
+  ]) {
+    const source = (await (await request.get(api!)).json())[field!]
+    await page.goto(path!)
+    await page.getByRole('button', { name: 'Markdownをコピー', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(source)
+    await expect(page.getByRole('status').filter({ hasText: 'コピーしました。' })).toBeVisible()
+  }
+  await page.evaluate(() => {
+    Object.defineProperty(navigator.clipboard, 'writeText', { value: () => Promise.reject(new Error('denied')) })
+  })
+  await page.getByRole('button', { name: 'Markdownをコピー', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'コピーできませんでした。' })).toBeVisible()
+})

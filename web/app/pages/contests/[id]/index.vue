@@ -82,7 +82,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <p class="contest-scoring muted">誤答ペナルティ {{ contest.penaltyMinutes }} 分 · 部分点なし</p>
     </header>
     <section v-if="activeView === 'overview'" id="overview" class="contest-section contest-description" aria-labelledby="overview-title">
-      <h2 id="overview-title">概要</h2><ProblemMarkdown v-if="contest.description" :source="contest.description" /><p v-else class="muted">コンテストの説明はまだありません。</p>
+      <h2 id="overview-title">概要</h2><ProblemMarkdown copyable v-if="contest.description" :source="contest.description" /><p v-else class="muted">コンテストの説明はまだありません。</p>
       <p><NuxtLink to="/blog/contest-rules">ルール</NuxtLink></p>
     </section>
     <section v-if="activeView === 'problems'" id="problems" class="contest-section" aria-labelledby="problems-title">

@@ -38,11 +38,11 @@ useSharePreview({ title: () => problem.value!.title, path: () => `/problems/${pr
     <ProblemSubmissionList v-if="submissionView" :key="String(route.query.view)" :problem-id="problem.id" :mine="route.query.view === 'my-submissions'" />
     <article v-else class="problem-body" aria-label="問題詳細">
       <template v-if="showingEditorial">
-        <ProblemMarkdown v-if="problem.editorial" :source="problem.editorial" />
+        <ProblemMarkdown copyable v-if="problem.editorial" :source="problem.editorial" />
         <p v-else class="muted">解説はまだありません。</p>
       </template>
       <template v-else>
-        <ProblemMarkdown :source="problem.markdown" />
+        <ProblemMarkdown copyable :source="problem.markdown" />
         <p v-if="problem.interactive" class="muted">インタラクティブ問題：標準入出力でジャッジと対話します。応答を待つ前に出力をflushしてください。</p>
         <p v-if="problem.specialJudge" class="muted">スペシャルジャッジ問題：提出の出力を検証コードで判定します。</p>
         <SubmissionForm :problem-id="problem.id" />
