@@ -34,7 +34,7 @@ useSharePreview({ title: () => problem.value!.title, path: () => `/problems/${pr
         <div class="problem-meta muted">
           <p>作成者 <UserLink :handle="problem.author" /></p><p v-if="problem.testers?.length">テスター <template v-for="(tester, index) in problem.testers" :key="tester"><span v-if="index">、</span><UserLink :handle="tester" /></template></p>
           <p>難易度（作成者設定） <DifficultyBadge :level="problem.difficulty" /></p>
-          <p v-if="!problem.isPrivate">難易度（みんなの投票） <strong>{{ votes.average === null ? '未投票' : `Lv.${votes.average.toFixed(1)}` }}</strong> <span>（{{ votes.count }}票）</span></p>
+          <p v-if="!problem.isPrivate">難易度（投票） <strong>{{ votes.average === null ? '未投票' : `Lv.${votes.average.toFixed(1)}` }}</strong> <span>（{{ votes.count }}票）</span></p>
         </div>
         <div v-if="!problem.isPrivate" class="problem-actions">
           <ProblemFavorite :problem-id="problem.id" :count="problem.favoriteCount" />

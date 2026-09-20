@@ -2,7 +2,9 @@
 const props = defineProps<{ problemId: string, average: number | null, count: number }>()
 const emit = defineEmits<{ updated: [average: number | null, count: number] }>()
 const dialog = ref<HTMLDialogElement>()
+const selectionKey = ref(0)
 function open() {
+  selectionKey.value++
   selected.value = voted.value
   message.value = ''
   dialog.value?.showModal()
@@ -61,22 +63,19 @@ onBeforeUnmount(() => { requestVersion++ })
 </script>
 <template>
   <div class="difficulty-vote">
-    <button type="button" class="editor-button" aria-haspopup="dialog" @click="open">難易度評価</button>
+    <button type="button" class="editor-button vote-button" aria-haspopup="dialog" @click="open"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V14M10 20V9M16 20V4M22 20H2" /></svg>難易度評価</button>
     <span class="sr-only" role="status">{{ message }}</span>
     <Teleport to="body">
       <dialog ref="dialog" class="difficulty-dialog" aria-labelledby="difficulty-vote-title" @cancel="loading && $event.preventDefault()">
         <header>
           <h2 id="difficulty-vote-title">難易度評価</h2>
-          <button type="button" class="editor-button close-button" aria-label="閉じる" :disabled="loading" @click="dialog?.close()">×</button>
+          <button type="button" class="editor-button close-button" aria-label="閉じる" :disabled="loading" @click="dialog?.close()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
         </header>
         <p class="muted">難易度を1〜10段階で評価できます。投票はあとから変更・取り消しできます。</p>
-        <p>みんなの投票 <strong>{{ average === null ? '未投票' : `Lv.${average.toFixed(1)}` }}</strong> <span class="muted">（{{ count }}票）</span></p>
+        <p>難易度（投票） <strong>{{ average === null ? '未投票' : `Lv.${average.toFixed(1)}` }}</strong> <span class="muted">（{{ count }}票）</span></p>
         <template v-if="user">
           <label for="difficulty-vote-level">あなたの評価</label>
-          <select id="difficulty-vote-level" v-model="selected" :disabled="loading || !ready">
-            <option :value="null" disabled>選択してください</option>
-            <option v-for="level in 10" :key="level" :value="level">Lv.{{ level }}</option>
-          </select>
+          <DifficultySelect :key="selectionKey" id="difficulty-vote-level" v-model="selected" label="あなたの評価" :disabled="loading || !ready" />
           <p v-if="loading" role="status">読み込み中…</p>
           <p v-if="error" role="alert">{{ error }} <button v-if="!ready" class="editor-button" :disabled="loading" @click="load">再試行</button></p>
           <footer>
@@ -100,10 +99,14 @@ onBeforeUnmount(() => { requestVersion++ })
 header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 h2 { margin: 0; font-size: 1.25rem; }
 p { margin: 0 0 20px; font-size: .875rem; line-height: 1.8; }
-.close-button { width: 36px; height: 36px; padding: 0; font-size: 1.5rem; }
+.vote-button, .close-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.vote-button svg { width: 16px; height: 16px; }
+.close-button { flex-shrink: 0; width: 36px; height: 36px; padding: 8px; }
+.close-button svg { width: 20px; height: 20px; }
+svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 label { display: block; margin-bottom: 8px; font-size: .875rem; font-weight: 600; }
-select { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-paper); color: var(--color-ink); font: inherit; }
-select:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+:deep(.difficulty-select > button) { min-height: 44px; padding: 10px 12px; }
+:deep(.difficulty-options) { position: static; margin-top: 4px; max-height: min(22rem, 35dvh); }
 footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--color-line); }
 .withdraw { margin-right: auto; }
 </style>
