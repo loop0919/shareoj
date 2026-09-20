@@ -99,6 +99,9 @@ func (p PrivateProblems) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /my/contests/{id}/submissions", p.handle)
 	mux.HandleFunc("GET /my/contests/{id}/submissions/{submission}", p.handle)
 	mux.HandleFunc("GET /my/solved-problems", p.handle)
+	mux.HandleFunc("GET /my/difficulty-votes/{id}", p.handle)
+	mux.HandleFunc("PUT /my/difficulty-votes/{id}", p.handle)
+	mux.HandleFunc("DELETE /my/difficulty-votes/{id}", p.handle)
 	mux.HandleFunc("GET /my/favorites/{id}", p.handle)
 	mux.HandleFunc("PUT /my/favorites/{id}", p.handle)
 	mux.HandleFunc("POST /my/submissions", p.handle)
@@ -186,6 +189,10 @@ func (p PrivateProblems) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/my/solved-problems" {
 		p.solvedProblems(w, r.WithContext(ctx), owner)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/my/difficulty-votes/") {
+		p.difficultyVote(w, r.WithContext(ctx), owner)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/my/favorites/") {

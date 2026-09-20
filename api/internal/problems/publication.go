@@ -10,20 +10,22 @@ import (
 )
 
 type PublicProblem struct {
-	Testers       []string  `json:"testers,omitempty"`
-	Difficulty    *int      `json:"difficulty"`
-	SolverCount   int64     `json:"solverCount"`
-	FavoriteCount int64     `json:"favoriteCount"`
-	Interactive   bool      `json:"interactive,omitempty"`
-	SpecialJudge  bool      `json:"specialJudge,omitempty"`
-	ID            string    `json:"id"`
-	Title         string    `json:"title"`
-	Markdown      string    `json:"markdown,omitempty"`
-	Editorial     string    `json:"editorial,omitempty"`
-	TimeLimitMS   string    `json:"timeLimitMs,omitempty"`
-	MemoryLimitMB string    `json:"memoryLimitMb,omitempty"`
-	Author        string    `json:"author"`
-	PublishedAt   time.Time `json:"publishedAt"`
+	DifficultyAverage   *float64  `json:"difficultyAverage"`
+	DifficultyVoteCount int64     `json:"difficultyVoteCount"`
+	Testers             []string  `json:"testers,omitempty"`
+	Difficulty          *int      `json:"difficulty"`
+	SolverCount         int64     `json:"solverCount"`
+	FavoriteCount       int64     `json:"favoriteCount"`
+	Interactive         bool      `json:"interactive,omitempty"`
+	SpecialJudge        bool      `json:"specialJudge,omitempty"`
+	ID                  string    `json:"id"`
+	Title               string    `json:"title"`
+	Markdown            string    `json:"markdown,omitempty"`
+	Editorial           string    `json:"editorial,omitempty"`
+	TimeLimitMS         string    `json:"timeLimitMs,omitempty"`
+	MemoryLimitMB       string    `json:"memoryLimitMb,omitempty"`
+	Author              string    `json:"author"`
+	PublishedAt         time.Time `json:"publishedAt"`
 }
 type Publications interface {
 	Publish(context.Context, string, string, int64, bool) (Problem, error)
@@ -79,7 +81,7 @@ const publicSolverCount = `(SELECT count(DISTINCT s.owner_id) FROM submissions s
 func (s *Store) PublicGet(ctx context.Context, id string) (PublicProblem, error) {
 	var p PublicProblem
 	var data []byte
-	err := s.pool.QueryRow(ctx, `SELECT d.id,d.published_draft,u.handle,d.published_at,(SELECT count(*) FROM problem_favorites f WHERE f.problem_id=d.id),`+publicSolverCount+` FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id WHERE d.id=$1 AND d.published_draft IS NOT NULL`, id).Scan(&p.ID, &data, &p.Author, &p.PublishedAt, &p.FavoriteCount, &p.SolverCount)
+	err := s.pool.QueryRow(ctx, `SELECT d.id,d.published_draft,u.handle,d.published_at,(SELECT count(*) FROM problem_favorites f WHERE f.problem_id=d.id),`+publicSolverCount+`,(SELECT avg(difficulty)::float8 FROM problem_difficulty_votes WHERE problem_id=d.id),(SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id) FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id WHERE d.id=$1 AND d.published_draft IS NOT NULL`, id).Scan(&p.ID, &data, &p.Author, &p.PublishedAt, &p.FavoriteCount, &p.SolverCount, &p.DifficultyAverage, &p.DifficultyVoteCount)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return p, ErrNotFound
@@ -107,7 +109,7 @@ func (s *Store) PublicList(ctx context.Context, cursor *Cursor) ([]PublicProblem
 }
 
 func (s *Store) PublicListByHandle(ctx context.Context, cursor *Cursor, handle string) ([]PublicProblem, error) {
-	query := `SELECT d.id,d.published_draft->>'title',(d.published_draft->>'difficulty')::integer,d.published_draft->>'timeLimitMs',d.published_draft->>'memoryLimitMb',u.handle,d.published_at,(SELECT count(*) FROM problem_favorites f WHERE f.problem_id=d.id),` + publicSolverCount + ` FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id WHERE d.published_draft IS NOT NULL AND ($1='' OR u.handle=$1)`
+	query := `SELECT d.id,d.published_draft->>'title',(d.published_draft->>'difficulty')::integer,d.published_draft->>'timeLimitMs',d.published_draft->>'memoryLimitMb',u.handle,d.published_at,(SELECT count(*) FROM problem_favorites f WHERE f.problem_id=d.id),` + publicSolverCount + `,(SELECT avg(difficulty)::float8 FROM problem_difficulty_votes WHERE problem_id=d.id),(SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id) FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id WHERE d.published_draft IS NOT NULL AND ($1='' OR u.handle=$1)`
 	args := []any{handle}
 	if cursor != nil {
 		query += ` AND (d.published_at,d.id)<($2,$3::uuid)`
@@ -119,7 +121,7 @@ func (s *Store) PublicListByHandle(ctx context.Context, cursor *Cursor, handle s
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (PublicProblem, error) {
 		var p PublicProblem
-		err := row.Scan(&p.ID, &p.Title, &p.Difficulty, &p.TimeLimitMS, &p.MemoryLimitMB, &p.Author, &p.PublishedAt, &p.FavoriteCount, &p.SolverCount)
+		err := row.Scan(&p.ID, &p.Title, &p.Difficulty, &p.TimeLimitMS, &p.MemoryLimitMB, &p.Author, &p.PublishedAt, &p.FavoriteCount, &p.SolverCount, &p.DifficultyAverage, &p.DifficultyVoteCount)
 		return p, err
 	})
 }

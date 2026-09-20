@@ -250,6 +250,40 @@ func TestProfilesPostgres(t *testing.T) {
 				VALUES(gen_random_uuid(),'alice',$1,1,'test','cpp17','','{"privateDraft":false}','DONE','{"verdict":"AC"}')`, id); err != nil {
 				t.Fatal(err)
 			}
+			vote := "/my/difficulty-votes/" + id
+			for _, method := range []string{"GET", "PUT", "DELETE"} {
+				check(method, vote, "", `{"difficulty":5}`, 401)
+			}
+			for _, invalid := range []string{`{}`, `{"difficulty":null}`, `{"difficulty":0}`, `{"difficulty":11}`, `{"difficulty":1.5}`, `{"difficulty":"5"}`} {
+				check("PUT", vote, "bob", invalid, 400)
+			}
+			assertVote := func(method, owner, body string, difficulty any, average any, count int64) {
+				t.Helper()
+				var got problems.DifficultyVote
+				if err := json.Unmarshal([]byte(check(method, vote, owner, body, 200)), &got); err != nil {
+					t.Fatal(err)
+				}
+				want, _ := json.Marshal(map[string]any{"difficulty": difficulty, "difficultyAverage": average, "difficultyVoteCount": count})
+				actual, _ := json.Marshal(map[string]any{"difficulty": got.Difficulty, "difficultyAverage": got.Average, "difficultyVoteCount": got.Count})
+				if string(actual) != string(want) {
+					t.Fatalf("vote got %s want %s", actual, want)
+				}
+			}
+			assertVote("GET", "bob", "", nil, nil, 0)
+			for range 2 {
+				assertVote("PUT", "bob", `{"difficulty":1}`, 1, 1, 1)
+			}
+			assertVote("PUT", "alice", `{"difficulty":10}`, 10, 5.5, 2)
+			assertVote("GET", "bob", "", 1, 5.5, 2)
+			assertVote("PUT", "bob", `{"difficulty":4}`, 4, 7, 2)
+			if result := check("GET", public, "", "", 200); !strings.Contains(result, `"difficultyAverage":7`) || !strings.Contains(result, `"difficultyVoteCount":2`) || !strings.Contains(result, `"difficulty":4`) {
+				t.Fatal(result)
+			}
+			for range 2 {
+				assertVote("DELETE", "alice", "", nil, 4, 1)
+			}
+			assertVote("DELETE", "bob", "", nil, nil, 0)
+			assertVote("PUT", "bob", `{"difficulty":6}`, 6, 6, 1)
 			favorite := "/my/favorites/" + id
 			check("GET", favorite, "", "", 401)
 			check("PUT", favorite, "", `{"favorited":true}`, 401)
@@ -309,6 +343,9 @@ func TestProfilesPostgres(t *testing.T) {
 		}
 		check("PUT", private+"/publication", "alice", `{"version":4,"publish":false}`, 200)
 		if kind == "problems" {
+			for _, method := range []string{"GET", "PUT", "DELETE"} {
+				check(method, "/my/difficulty-votes/"+id, "bob", `{"difficulty":5}`, 404)
+			}
 			check("GET", "/my/favorites/"+id, "bob", "", 404)
 			if result := check("GET", "/my/solved-problems", "bob", "", 200); strings.TrimSpace(result) != `{"items":[]}` {
 				t.Fatal(result)
@@ -330,6 +367,9 @@ func TestProfilesPostgres(t *testing.T) {
 			var count int
 			if err := store.Pool().QueryRow(ctx, `SELECT count(*) FROM problem_favorites WHERE problem_id=$1`, id).Scan(&count); err != nil || count != 0 {
 				t.Fatalf("favorite cleanup: %d %v", count, err)
+			}
+			if err := store.Pool().QueryRow(ctx, `SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=$1`, id).Scan(&count); err != nil || count != 0 {
+				t.Fatalf("vote cleanup: %d %v", count, err)
 			}
 		}
 		check("GET", public, "", "", 404)
@@ -363,7 +403,7 @@ func TestProfilesPostgres(t *testing.T) {
 	if _, err = store.Save(ctx, "alice", id, 0, problems.Draft{Title: "before upgrade"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = store.Pool().Exec(ctx, `DROP FUNCTION content_image_access(uuid,text,text,boolean); DROP TABLE content_images; DROP TABLE notifications; DROP FUNCTION notify_problem_activity() CASCADE; DROP FUNCTION notify_first_accept() CASCADE; DROP FUNCTION can_manage_problem(uuid,text); DROP TABLE problem_tester_invitations; DROP TABLE problem_favorites; DROP TABLE test_files; DROP TABLE submissions; DROP TABLE contest_problems; DROP TABLE contests; DROP TABLE problem_testers; DROP TABLE blog_posts; DROP TABLE user_profiles; ALTER TABLE problem_drafts DROP COLUMN published_draft, DROP COLUMN published_version, DROP COLUMN published_at; DELETE FROM schema_migrations WHERE version>=2`); err != nil {
+	if _, err = store.Pool().Exec(ctx, `DROP FUNCTION content_image_access(uuid,text,text,boolean); DROP TABLE content_images; DROP TABLE notifications; DROP FUNCTION notify_problem_activity() CASCADE; DROP FUNCTION notify_first_accept() CASCADE; DROP FUNCTION can_manage_problem(uuid,text); DROP TABLE problem_tester_invitations; DROP TABLE problem_difficulty_votes; DROP TABLE problem_favorites; DROP TABLE test_files; DROP TABLE submissions; DROP TABLE contest_problems; DROP TABLE contests; DROP TABLE problem_testers; DROP TABLE blog_posts; DROP TABLE user_profiles; ALTER TABLE problem_drafts DROP COLUMN published_draft, DROP COLUMN published_version, DROP COLUMN published_at; DELETE FROM schema_migrations WHERE version>=2`); err != nil {
 		t.Fatal(err)
 	}
 	if err = store.Migrate(ctx); err != nil {

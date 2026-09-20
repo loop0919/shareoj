@@ -349,3 +349,11 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 公開操作は本文とケースを一緒に固定し、提出は公開版のケースだけを使う。
 公開問題APIと提出結果APIはテストケース本体を返さない。
 ローカルジャッジの起動に必要な設定は`JUDGE_CPP_IMAGE`であり、`JUDGE_TEST_DIR`は使用しない。
+
+### 難易度投票
+
+公開問題では、プロフィール登録済みのユーザーが1〜10の難易度を1人1票で投票できます。
+`GET /my/difficulty-votes/{id}`で自分の票と集計を取得し、`PUT`に`{"difficulty": 7}`を送ると投票・変更、`DELETE`で取り消します。
+レスポンスは`difficulty`（自分の票、未投票はnull）、`difficultyAverage`（平均、0票はnull）、`difficultyVoteCount`です。
+公開問題APIも平均と票数を返します。作成者設定の`difficulty`は変更しません。
+配布時はAPIを切り替える前に通常のDBマイグレーションを実行し、`018_difficulty_votes.sql`を適用してください。

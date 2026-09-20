@@ -33,6 +33,7 @@ useSharePreview({ title: () => problem.value!.title, path: () => `/problems/${pr
         </div>
         <ProblemFavorite v-if="!problem.isPrivate" :problem-id="problem.id" :count="problem.favoriteCount" />
       </div>
+      <ProblemDifficultyVote v-if="!problem.isPrivate" :problem-id="problem.id" :average="problem.difficultyAverage" :count="problem.difficultyVoteCount" />
       <dl class="limits"><div><dt>実行時間制限</dt><dd>{{ problem.timeLimitMs / 1000 }} 秒</dd></div><div><dt>メモリ制限</dt><dd>{{ problem.memoryLimitMb }} MiB</dd></div></dl>
     </header>
     <ProblemSubmissionList v-if="submissionView" :key="String(route.query.view)" :problem-id="problem.id" :mine="route.query.view === 'my-submissions'" />
