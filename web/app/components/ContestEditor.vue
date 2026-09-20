@@ -65,7 +65,7 @@ function move(index: number, delta: number) {
   const item = selected.value.splice(index, 1)[0]
   if (item) selected.value.splice(index + delta, 0, item)
 }
-async function save(publish = false) {
+async function save() {
   if (busy.value || !ready.value || locked.value) return
   message.value = ''
   const invalid = form.value?.querySelector<HTMLInputElement | HTMLTextAreaElement>('input:invalid, textarea:invalid')
@@ -86,7 +86,7 @@ async function save(publish = false) {
   }
   busy.value = true; message.value = ''
   try {
-    await $fetch(`/api/my/contests/${id.value}`, { method: 'PUT', body: { publish, title: title.value, description: description.value, startsAt: start.toISOString(), endsAt: end.toISOString(), penaltyMinutes: penaltyMinutes.value, version: version.value, problems: selected.value.map(({ id, points }) => ({ id, points })) } })
+    await $fetch(`/api/my/contests/${id.value}`, { method: 'PUT', body: { title: title.value, description: description.value, startsAt: start.toISOString(), endsAt: end.toISOString(), penaltyMinutes: penaltyMinutes.value, version: version.value, problems: selected.value.map(({ id, points }) => ({ id, points })) } })
     await navigateTo(`/contests/${id.value}`)
   } catch (error) {
     const status = (error as { statusCode?: number }).statusCode
@@ -105,10 +105,9 @@ async function save(publish = false) {
         <button type="button" class="editor-button" :aria-pressed="mode === 'preview'" aria-label="プレビュー" title="プレビュー" @click="mode = 'preview'"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg></button>
       </div>
       <div class="author-actions">
-        <button type="submit" form="contest-form" class="editor-button primary save-button" :disabled="!ready || locked || busy" :aria-busy="busy" :aria-label="busy ? '保存中' : contestId ? '変更を保存' : 'コンテストを作成'" title="保存（Ctrl+S / ⌘S）" aria-keyshortcuts="Control+s Meta+s">
-          <span :class="{ 'save-label-hidden': busy }">{{ contestId ? '保存' : '作成' }}</span><span v-if="busy" class="save-spinner" aria-hidden="true" />
+        <button type="submit" form="contest-form" class="editor-button primary save-button" :disabled="!ready || locked || busy" :aria-busy="busy" :aria-label="busy ? '保存中' : '保存'" title="保存（Ctrl+S / ⌘S）" aria-keyshortcuts="Control+s Meta+s">
+          <span :class="{ 'save-label-hidden': busy }">保存</span><span v-if="busy" class="save-spinner" aria-hidden="true" />
         </button>
-        <button v-if="contestId && unpublished" type="button" class="editor-button primary" :disabled="!ready || locked || busy" @click="save(true)">投稿</button>
       </div>
     </header>
     <div class="author-body" :data-sidebar-expanded="sidebarExpanded">
@@ -123,7 +122,7 @@ async function save(publish = false) {
         </nav>
       </aside>
       <form id="contest-form" ref="form" class="editor-main" novalidate @submit.prevent="save()">
-        <div class="editor-notices"><p v-if="unpublished" class="muted">保存したコンテストは未公開です。準備ができたら「投稿」で公開できます。</p><p v-if="message" class="editor-error" role="alert">{{ message }}</p><noscript><p class="editor-error">編集と保存には JavaScript を有効にしてください。</p></noscript></div>
+        <div class="editor-notices"><p v-if="unpublished" class="muted">保存したコンテストは未公開です。<NuxtLink to="/contests?post=1">コンテスト一覧の「コンテスト投稿」</NuxtLink>から公開できます。</p><p v-if="message" class="editor-error" role="alert">{{ message }}</p><noscript><p class="editor-error">編集と保存には JavaScript を有効にしてください。</p></noscript></div>
         <div v-show="section === 'description'" class="author-edit-content" data-section="description">
           <div class="author-fields"><div class="title-field"><div class="field-heading"><label for="contest-title">コンテストタイトル</label></div><input id="contest-title" v-model="title" required maxlength="120" placeholder="コンテストのタイトル" :disabled="!ready || locked || busy"></div></div>
     <div ref="workspace" class="author-workspace" :class="{ 'is-resizing': resizing }" :data-mode="mode" :style="{ '--editor-left': `${splitPercent}fr`, '--editor-right': `${100 - splitPercent}fr` }">

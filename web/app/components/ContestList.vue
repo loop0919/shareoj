@@ -3,12 +3,16 @@ import { contestDate, contestStatus, type ContestList } from '~~/shared/types/co
 const props = defineProps<{ mine?: boolean }>()
 const endpoint = props.mine ? '/api/my/contests' : '/api/contests'
 const offset = ref(0)
+const postDialog = ref<{ open: () => Promise<void> }>()
+const route = useRoute()
+onMounted(() => { if (!props.mine && route.query.post === '1') void postDialog.value?.open() })
 const { data, error, status } = await useFetch<ContestList>(endpoint, { query: { offset }, server: !props.mine })
 </script>
 <template>
   <section :class="mine ? 'draft-library' : 'catalogue'">
+    <ContestPostDialog v-if="!mine" ref="postDialog" />
     <header v-if="mine" class="draft-library-heading"><h2>作成したコンテスト</h2><NuxtLink class="editor-button primary" to="/my/contests/new">新規コンテスト</NuxtLink></header>
-    <header v-else class="catalogue-heading"><h1>コンテスト</h1><NuxtLink class="editor-button primary" to="/my/contests/new">新規コンテスト</NuxtLink></header>
+    <header v-else class="catalogue-heading"><h1>コンテスト</h1><button type="button" class="editor-button primary" @click="postDialog?.open()">コンテスト投稿</button></header>
     <p v-if="error" role="alert">コンテストを取得できませんでした。ページを再読み込みしてください。</p>
     <p v-else-if="!data" role="status">読み込み中…</p>
     <template v-else>

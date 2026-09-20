@@ -20,7 +20,7 @@ function localDate(value: number) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 }
 
-test('create, reorder and edit an unpublished contest; guests cannot inspect its problems', async ({ page, browser }, testInfo) => {
+test('save a private contest, then select and publish it from the contest catalogue', async ({ page, browser }, testInfo) => {
   // This covers creation, editing and multiple viewport checks against the real DB.
   test.slow()
   await login(page)
@@ -37,7 +37,7 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   await page.getByLabel('説明（Markdown）').fill('## 開催案内\nどなたでも参加できます。')
   await expect(page.locator('.contest-preview')).toContainText('開催案内')
   // Saving from another section reveals the missing field instead of focusing a hidden input.
-  await page.getByRole('button', { name: 'コンテストを作成', exact: true }).click()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('button', { name: 'コンテスト設定', exact: true })).toHaveAttribute('aria-current', 'page')
   await expect(page.getByLabel('開始日時')).toBeFocused()
   await expect(page.getByLabel('誤答ペナルティ（分）')).toHaveValue('5')
@@ -62,7 +62,7 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.getByRole('button', { name: 'サイドバーを折りたたむ', exact: true }).click()
   }
-  await page.getByRole('button', { name: 'コンテストを作成', exact: true }).click()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page).toHaveURL(/\/contests\/[a-f0-9-]{36}$/)
   const id = page.url().split('/').pop()!
   const saved = await (await page.request.get(`/api/my/contests/${id}`)).json()
@@ -72,7 +72,7 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   const anonymous = await browser.newContext({ baseURL: origin })
   expect((await anonymous.request.get(`/api/contests/${id}`)).status()).toBe(404)
   expect((await (await anonymous.request.get('/api/contests')).json()).items.some((c: { id: string }) => c.id === id)).toBe(false)
-  await expect(page.getByText('このコンテストは未公開です。編集画面の「投稿」で公開できます。')).toBeVisible()
+  await expect(page.getByText('このコンテストは未公開です。コンテスト一覧の「コンテスト投稿」から公開できます。')).toBeVisible()
 
   await expect(page.getByRole('heading', { name: '開催案内', exact: true })).toBeVisible()
   const contestMenu = page.getByRole('navigation', { name: 'コンテストメニュー' })
@@ -124,7 +124,7 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   await page.getByRole('link', { name: 'コンテストを編集', exact: true }).click()
   await page.getByRole('button', { name: 'コンテスト設定', exact: true }).click()
   await page.getByLabel('誤答ペナルティ（分）').fill('0')
-  await page.getByRole('button', { name: '変更を保存' }).click()
+  await page.getByRole('button', { name: '保存' }).click()
   await expect(page.getByText('誤答ペナルティ 0 分 · 部分点なし')).toBeVisible()
   await page.goto('/my/contests')
   await expect(page).toHaveURL('/my?tab=contests')
@@ -137,15 +137,40 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
     if (width === 375) await page.screenshot({ path: testInfo.outputPath('my-contests-mobile.png'), fullPage: true })
   }
   expect((await anonymous.request.get(`/api/contests/${id}`)).status()).toBe(404)
-  await page.goto(`/my/contests/${id}`)
-  await page.getByRole('button', { name: '投稿', exact: true }).click()
+  const spareProblem = await seed(page, '未投稿の問題')
+  const spare = randomUUID()
+  expect((await page.request.put(`/api/my/contests/${spare}`, { headers: { origin }, data: {
+    title: '選ばなかったコンテスト', description: '', startsAt: saved.startsAt, endsAt: saved.endsAt,
+    version: 0, problems: [{ id: spareProblem, points: 100 }],
+  } })).status()).toBe(200)
+  await page.goto('/contests')
+  await page.getByRole('button', { name: 'コンテスト投稿', exact: true }).click()
+  const postDialog = page.getByRole('dialog', { name: 'コンテストを投稿', exact: true })
+  await expect(postDialog.getByRole('button', { name: '投稿', exact: true })).toBeDisabled()
+  await postDialog.getByLabel('投稿するコンテスト', { exact: true }).selectOption(id)
+  await expect(postDialog.getByRole('link', { name: '選択したコンテストを編集' })).toHaveAttribute('href', `/my/contests/${id}`)
+  for (const width of [320, 375, 768]) {
+    await page.setViewportSize({ width, height: 900 })
+    expect(await postDialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+  }
+  await postDialog.getByRole('button', { name: 'キャンセル', exact: true }).click()
+  expect((await anonymous.request.get(`/api/contests/${id}`)).status()).toBe(404)
+  await page.getByRole('button', { name: 'コンテスト投稿', exact: true }).click()
+  await postDialog.getByLabel('投稿するコンテスト', { exact: true }).selectOption(id)
+  await postDialog.getByRole('button', { name: '投稿', exact: true }).click()
   await expect(page).toHaveURL(`/contests/${id}`)
   expect((await anonymous.request.get(`/api/contests/${id}`)).status()).toBe(200)
+  expect((await anonymous.request.get(`/api/contests/${spare}`)).status()).toBe(404)
   await anonymous.close()
   await page.goto('/contests')
-  await expect(page.locator('main').getByRole('link', { name: '新規コンテスト', exact: true })).toHaveAttribute('href', '/my/contests/new')
+  await page.getByRole('button', { name: 'コンテスト投稿', exact: true }).click()
+  await expect(postDialog.locator(`option[value="${id}"]`)).toHaveCount(0)
+  await expect(postDialog.locator(`option[value="${spare}"]`)).toHaveCount(1)
+  await postDialog.getByRole('button', { name: '閉じる', exact: true }).click()
   const guest = await browser.newContext({ baseURL: origin })
   const reader = await guest.newPage()
+  await reader.goto('/contests?post=1')
+  await expect(reader.getByRole('dialog').getByRole('link', { name: 'ログインして投稿する' })).toHaveAttribute('href', '/login?next=/contests?post=1')
   await reader.goto(`/contests/${id}`)
   await expect(reader.getByRole('heading', { name: 'ブラウザ作成コンテスト' })).toBeVisible()
   await reader.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '問題', exact: true }).click()

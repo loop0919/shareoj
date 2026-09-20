@@ -81,7 +81,7 @@ useSharePreview({ enabled: () => !!contest.value && contest.value.status !== 'dr
       <p class="schedule-timezone muted">日時は日本時間で表示しています。</p>
       <p class="contest-scoring muted">誤答ペナルティ {{ contest.penaltyMinutes }} 分 · 部分点なし</p>
     </header>
-    <p v-if="contest.status === 'draft'" class="notice">このコンテストは未公開です。編集画面の「投稿」で公開できます。</p>
+    <p v-if="contest.status === 'draft'" class="notice">このコンテストは未公開です。<NuxtLink to="/contests?post=1">コンテスト一覧の「コンテスト投稿」</NuxtLink>から公開できます。</p>
     <section v-if="activeView === 'overview'" id="overview" class="contest-section contest-description" aria-labelledby="overview-title">
       <h2 id="overview-title">概要</h2><ProblemMarkdown v-if="contest.description" :source="contest.description" /><p v-else class="muted">コンテストの説明はまだありません。</p>
       <p><NuxtLink to="/blog/contest-rules">ルール</NuxtLink></p>
