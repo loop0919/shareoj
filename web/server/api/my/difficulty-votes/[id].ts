@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { privateAPI } from '../../../utils/private-api'
 import { limitedJSON, privateHeaders, requireSameOrigin } from '../../../utils/private-request'
 const difficulty = z.number().int().min(1).max(10)
-const resultSchema = z.object({ difficulty: difficulty.nullable(), difficultyAverage: z.number().min(1).max(10).nullable(), difficultyVoteCount: z.number().int().nonnegative() })
+const resultSchema = z.object({ difficultyDistribution: z.array(z.number().int().nonnegative()).length(10), difficulty: difficulty.nullable(), difficultyAverage: z.number().min(1).max(10).nullable(), difficultyVoteCount: z.number().int().nonnegative() })
 export default defineEventHandler(async event => {
   privateHeaders(event)
   const id = getRouterParam(event, 'id') ?? ''

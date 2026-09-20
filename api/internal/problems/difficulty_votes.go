@@ -8,9 +8,10 @@ import (
 )
 
 type DifficultyVote struct {
-	Difficulty *int     `json:"difficulty"`
-	Average    *float64 `json:"difficultyAverage"`
-	Count      int64    `json:"difficultyVoteCount"`
+	Distribution []int64  `json:"difficultyDistribution"`
+	Difficulty   *int     `json:"difficulty"`
+	Average      *float64 `json:"difficultyAverage"`
+	Count        int64    `json:"difficultyVoteCount"`
 }
 
 // A nil value reads the vote; zero removes it. Lock the problem so voting
@@ -40,7 +41,7 @@ func (s *Store) DifficultyVote(ctx context.Context, owner, id string, value *int
 			return result, err
 		}
 	}
-	err = tx.QueryRow(ctx, `SELECT (SELECT difficulty FROM problem_difficulty_votes WHERE problem_id=$1 AND owner_id=$2),avg(difficulty)::float8,count(*) FROM problem_difficulty_votes WHERE problem_id=$1`, id, owner).Scan(&result.Difficulty, &result.Average, &result.Count)
+	err = tx.QueryRow(ctx, `SELECT (SELECT difficulty FROM problem_difficulty_votes WHERE problem_id=$1 AND owner_id=$2),avg(difficulty)::float8,count(*),ARRAY(SELECT (SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=$1 AND difficulty=level) FROM generate_series(1,10) level ORDER BY level) FROM problem_difficulty_votes WHERE problem_id=$1`, id, owner).Scan(&result.Difficulty, &result.Average, &result.Count, &result.Distribution)
 	if err != nil {
 		return result, err
 	}

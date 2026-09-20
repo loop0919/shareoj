@@ -1,9 +1,11 @@
 <script setup lang="ts">
-const props = defineProps<{ problemId: string, average: number | null, count: number }>()
+const props = defineProps<{ problemId: string, average: number | null, count: number, distribution: number[] }>()
 const emit = defineEmits<{ updated: [average: number | null, count: number] }>()
 const dialog = ref<HTMLDialogElement>()
 const selectionKey = ref(0)
+const distributionDetails = ref<HTMLDetailsElement>()
 function open() {
+  if (distributionDetails.value) distributionDetails.value.open = false
   selectionKey.value++
   selected.value = voted.value
   message.value = ''
@@ -12,6 +14,8 @@ function open() {
 const { user } = useAccount()
 const average = ref(props.average)
 const count = ref(props.count)
+const distribution = ref(props.distribution)
+const largestCount = computed(() => Math.max(1, ...distribution.value))
 const selected = ref<number | null>(null)
 const voted = ref<number | null>(null)
 const loading = ref(false)
@@ -25,6 +29,7 @@ async function load() {
   error.value = ''; message.value = ''
   selected.value = null; voted.value = null
   average.value = props.average; count.value = props.count
+  distribution.value = props.distribution
   if (!user.value) { loading.value = false; return }
   loading.value = true
   try {
@@ -32,6 +37,7 @@ async function load() {
     if (version !== requestVersion) return
     selected.value = voted.value = result.difficulty
     average.value = result.difficultyAverage; count.value = result.difficultyVoteCount
+    distribution.value = result.difficultyDistribution
     emit('updated', average.value, count.value)
     ready.value = true
   } catch { if (version === requestVersion) error.value = '難易度の投票を取得できませんでした。' }
@@ -48,6 +54,7 @@ async function save(remove = false) {
     if (version !== requestVersion) return
     selected.value = voted.value = result.difficulty
     average.value = result.difficultyAverage; count.value = result.difficultyVoteCount
+    distribution.value = result.difficultyDistribution
     emit('updated', average.value, count.value)
     dialog.value?.close()
     message.value = remove ? '投票を取り消しました。' : '投票を保存しました。'
@@ -73,6 +80,19 @@ onBeforeUnmount(() => { requestVersion++ })
         </header>
         <p class="muted">難易度を1〜10段階で評価できます。投票はあとから変更・取り消しできます。</p>
         <p>難易度（投票） <strong>{{ average === null ? '未投票' : `Lv.${average.toFixed(1)}` }}</strong> <span class="muted">（{{ count }}票）</span></p>
+        <details ref="distributionDetails" class="vote-distribution">
+          <summary>投票の分布</summary>
+          <section aria-label="難易度の投票分布">
+          <p v-if="count === 0" class="muted">まだ投票はありません。</p>
+          <ol>
+            <li v-for="(votes, index) in distribution" :key="index">
+              <DifficultyBadge :level="index + 1" />
+              <span class="distribution-track" aria-hidden="true"><span :style="{ width: `${votes / largestCount * 100}%` }" /></span>
+              <span class="distribution-count">{{ votes }}票</span>
+            </li>
+          </ol>
+          </section>
+        </details>
         <template v-if="user">
           <label for="difficulty-vote-level">あなたの評価</label>
           <DifficultySelect :key="selectionKey" id="difficulty-vote-level" v-model="selected" label="あなたの評価" :disabled="loading || !ready" />
@@ -107,6 +127,16 @@ svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.8; strok
 label { display: block; margin-bottom: 8px; font-size: .875rem; font-weight: 600; }
 :deep(.difficulty-select > button) { min-height: 44px; padding: 10px 12px; }
 :deep(.difficulty-options) { position: static; margin-top: 4px; max-height: min(22rem, 35dvh); }
+.vote-distribution { margin-bottom: 24px; }
+.vote-distribution summary { width: fit-content; cursor: pointer; font-size: .875rem; font-weight: 600; }
+.vote-distribution summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 4px; }
+.vote-distribution[open] summary { margin-bottom: 12px; }
+.vote-distribution p { margin-bottom: 8px; }
+.vote-distribution ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.vote-distribution li { display: grid; grid-template-columns: 64px minmax(0, 1fr) max-content; align-items: center; gap: 12px; font-size: .8125rem; }
+.distribution-track { height: 8px; border-radius: 2px; background: var(--color-surface); overflow: hidden; }
+.distribution-track > span { display: block; height: 100%; background: var(--color-accent); border-radius: inherit; }
+.distribution-count { min-width: 3ch; text-align: right; font-variant-numeric: tabular-nums; }
 footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--color-line); }
 .withdraw { margin-right: auto; }
 </style>

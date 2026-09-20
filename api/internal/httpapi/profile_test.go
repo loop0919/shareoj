@@ -257,33 +257,37 @@ func TestProfilesPostgres(t *testing.T) {
 			for _, invalid := range []string{`{}`, `{"difficulty":null}`, `{"difficulty":0}`, `{"difficulty":11}`, `{"difficulty":1.5}`, `{"difficulty":"5"}`} {
 				check("PUT", vote, "bob", invalid, 400)
 			}
-			assertVote := func(method, owner, body string, difficulty any, average any, count int64) {
+			assertVote := func(method, owner, body string, difficulty any, average any, count int64, levels ...int) {
 				t.Helper()
 				var got problems.DifficultyVote
 				if err := json.Unmarshal([]byte(check(method, vote, owner, body, 200)), &got); err != nil {
 					t.Fatal(err)
 				}
-				want, _ := json.Marshal(map[string]any{"difficulty": difficulty, "difficultyAverage": average, "difficultyVoteCount": count})
-				actual, _ := json.Marshal(map[string]any{"difficulty": got.Difficulty, "difficultyAverage": got.Average, "difficultyVoteCount": got.Count})
+				distribution := make([]int64, 10)
+				for _, level := range levels {
+					distribution[level-1]++
+				}
+				want, _ := json.Marshal(map[string]any{"difficultyDistribution": distribution, "difficulty": difficulty, "difficultyAverage": average, "difficultyVoteCount": count})
+				actual, _ := json.Marshal(map[string]any{"difficultyDistribution": got.Distribution, "difficulty": got.Difficulty, "difficultyAverage": got.Average, "difficultyVoteCount": got.Count})
 				if string(actual) != string(want) {
 					t.Fatalf("vote got %s want %s", actual, want)
 				}
 			}
 			assertVote("GET", "bob", "", nil, nil, 0)
 			for range 2 {
-				assertVote("PUT", "bob", `{"difficulty":1}`, 1, 1, 1)
+				assertVote("PUT", "bob", `{"difficulty":1}`, 1, 1, 1, 1)
 			}
-			assertVote("PUT", "alice", `{"difficulty":10}`, 10, 5.5, 2)
-			assertVote("GET", "bob", "", 1, 5.5, 2)
-			assertVote("PUT", "bob", `{"difficulty":4}`, 4, 7, 2)
-			if result := check("GET", public, "", "", 200); !strings.Contains(result, `"difficultyAverage":7`) || !strings.Contains(result, `"difficultyVoteCount":2`) || !strings.Contains(result, `"difficulty":4`) {
+			assertVote("PUT", "alice", `{"difficulty":10}`, 10, 5.5, 2, 1, 10)
+			assertVote("GET", "bob", "", 1, 5.5, 2, 1, 10)
+			assertVote("PUT", "bob", `{"difficulty":4}`, 4, 7, 2, 4, 10)
+			if result := check("GET", public, "", "", 200); !strings.Contains(result, `"difficultyDistribution":[0,0,0,1,0,0,0,0,0,1]`) || !strings.Contains(result, `"difficultyAverage":7`) || !strings.Contains(result, `"difficultyVoteCount":2`) || !strings.Contains(result, `"difficulty":4`) {
 				t.Fatal(result)
 			}
 			for range 2 {
-				assertVote("DELETE", "alice", "", nil, 4, 1)
+				assertVote("DELETE", "alice", "", nil, 4, 1, 4)
 			}
 			assertVote("DELETE", "bob", "", nil, nil, 0)
-			assertVote("PUT", "bob", `{"difficulty":6}`, 6, 6, 1)
+			assertVote("PUT", "bob", `{"difficulty":6}`, 6, 6, 1, 6)
 			favorite := "/my/favorites/" + id
 			check("GET", favorite, "", "", 401)
 			check("PUT", favorite, "", `{"favorited":true}`, 401)

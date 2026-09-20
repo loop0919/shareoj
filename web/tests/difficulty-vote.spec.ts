@@ -10,7 +10,7 @@ test('difficulty voting supports reload, changes, failed saves, and withdrawal',
       if (fail) return route.fulfill({ status: 503, json: {} })
       difficulty = method === 'DELETE' ? null : route.request().postDataJSON().difficulty
     }
-    return route.fulfill({ json: { difficulty, difficultyAverage: difficulty, difficultyVoteCount: difficulty === null ? 0 : 1 } })
+    return route.fulfill({ json: { difficulty, difficultyAverage: difficulty, difficultyVoteCount: difficulty === null ? 0 : 1, difficultyDistribution: Array.from({ length: 10 }, (_, i) => i + 1 === difficulty ? 1 : 0) } })
   })
   await page.goto('/problems/11111111-1111-4111-8111-111111111111')
   const panel = page.getByRole('dialog', { name: '難易度評価', exact: true })
@@ -27,12 +27,15 @@ test('difficulty voting supports reload, changes, failed saves, and withdrawal',
   await page.reload()
   await open()
   await expect(select).toContainText('Lv.3')
+  await panel.getByText('投票の分布', { exact: true }).click()
+  await expect(panel.getByRole('region', { name: '難易度の投票分布' }).getByRole('listitem').nth(2)).toContainText('1票')
   await select.click()
   await page.getByRole('option', { name: 'Lv.10', exact: true }).click()
   fail = true
   await panel.getByRole('button', { name: '投票を変更', exact: true }).click()
   await expect(panel.getByRole('alert')).toContainText('投票を保存できませんでした')
   await expect(panel).toContainText('Lv.3.0')
+  await expect(panel.getByRole('region', { name: '難易度の投票分布' }).getByRole('listitem').nth(2)).toContainText('1票')
   fail = false
   await panel.getByRole('button', { name: '投票を変更', exact: true }).click()
   await expect(panel).not.toBeVisible()
@@ -44,13 +47,16 @@ test('difficulty voting supports reload, changes, failed saves, and withdrawal',
   await expect(page.locator('.problem-meta')).toContainText('（0票）')
   await open()
   await expect(panel.getByRole('button', { name: '投票する', exact: true })).toBeDisabled()
+  await panel.getByText('投票の分布', { exact: true }).click()
+  await expect(panel.getByRole('region', { name: '難易度の投票分布' }).getByRole('listitem')).toHaveCount(10)
+  await expect(panel.getByRole('region', { name: '難易度の投票分布' })).toContainText('まだ投票はありません。')
 })
 
 test('vote loading can be retried and signed-out users see a login link', async ({ page }) => {
   let fail = true
   await page.route('**/api/my/difficulty-votes/*', route => route.fulfill(fail
     ? { status: 503, json: {} }
-    : { json: { difficulty: 5, difficultyAverage: 5, difficultyVoteCount: 1 } }))
+    : { json: { difficulty: 5, difficultyAverage: 5, difficultyVoteCount: 1, difficultyDistribution: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0] } }))
   await page.goto('/problems/11111111-1111-4111-8111-111111111111')
   const panel = page.getByRole('dialog', { name: '難易度評価', exact: true })
   const open = () => page.getByRole('button', { name: '難易度評価', exact: true }).click()
@@ -101,5 +107,39 @@ for (const width of [320, 375, 414, 768]) {
     await expect(dialog.getByLabel('あなたの評価')).not.toContainText('Lv.8')
     await dialog.getByRole('button', { name: '閉じる', exact: true }).click()
     await expect(dialog).not.toBeVisible()
+  })
+}
+
+for (const width of [320, 375, 414, 768]) {
+  test(`vote distribution expands on demand at ${width}px`, async ({ page }, testInfo) => {
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await page.setViewportSize({ width, height: 900 })
+    await page.route('**/api/my/difficulty-votes/*', route => route.fulfill({ json: {
+      difficulty: 4, difficultyAverage: 5, difficultyVoteCount: 6,
+      difficultyDistribution: [0, 0, 0, 3, 0, 3, 0, 0, 0, 0],
+    } }))
+    await page.goto('/problems/11111111-1111-4111-8111-111111111111')
+    const trigger = page.getByRole('button', { name: '難易度評価', exact: true })
+    await trigger.click()
+    const dialog = page.getByRole('dialog', { name: '難易度評価', exact: true })
+    await expect(dialog.getByRole('combobox')).toBeEnabled()
+    const distribution = dialog.getByRole('region', { name: '難易度の投票分布' })
+    await expect(distribution).not.toBeVisible()
+    const summary = dialog.getByText('投票の分布', { exact: true })
+    await summary.focus()
+    await page.keyboard.press('Enter')
+    await expect(distribution).toBeVisible()
+    await expect(distribution.getByRole('listitem')).toHaveCount(10)
+    await expect(distribution.getByRole('listitem').nth(3)).toContainText('3票')
+    await expect(distribution.getByRole('listitem').nth(5)).toContainText('3票')
+    await expect(distribution.getByRole('listitem').nth(0)).toContainText('0票')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: testInfo.outputPath(`distribution-${width}.png`) })
+    await summary.click()
+    await expect(distribution).not.toBeVisible()
+    await summary.click()
+    await page.keyboard.press('Escape')
+    await trigger.click()
+    await expect(distribution).not.toBeVisible()
   })
 }

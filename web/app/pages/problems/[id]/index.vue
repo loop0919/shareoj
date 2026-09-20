@@ -38,7 +38,7 @@ useSharePreview({ title: () => problem.value!.title, path: () => `/problems/${pr
         </div>
         <div v-if="!problem.isPrivate" class="problem-actions">
           <ProblemFavorite :problem-id="problem.id" :count="problem.favoriteCount" />
-          <ProblemDifficultyVote :problem-id="problem.id" :average="votes.average" :count="votes.count" @updated="updateVote" />
+          <ProblemDifficultyVote :problem-id="problem.id" :average="votes.average" :count="votes.count" :distribution="problem.difficultyDistribution" @updated="updateVote" />
         </div>
       </div>
       <dl class="limits"><div><dt>実行時間制限</dt><dd>{{ problem.timeLimitMs / 1000 }} 秒</dd></div><div><dt>メモリ制限</dt><dd>{{ problem.memoryLimitMb }} MiB</dd></div></dl>
