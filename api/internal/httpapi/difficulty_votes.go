@@ -23,7 +23,8 @@ func (p problemHandler) difficultyVote(w http.ResponseWriter, r *http.Request, o
 	var in struct {
 		Difficulty *int `json:"difficulty"`
 	}
-	if r.Method == http.MethodPut {
+	switch r.Method {
+	case http.MethodPut:
 		if !contentJSON(w, r, &in) {
 			return
 		}
@@ -31,7 +32,7 @@ func (p problemHandler) difficultyVote(w http.ResponseWriter, r *http.Request, o
 			authError(w, 400, "invalid_difficulty")
 			return
 		}
-	} else if r.Method == http.MethodDelete {
+	case http.MethodDelete:
 		in.Difficulty = new(int)
 	}
 	result, err := store.DifficultyVote(r.Context(), owner, id, in.Difficulty)

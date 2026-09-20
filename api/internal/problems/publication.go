@@ -39,7 +39,7 @@ func (s *Store) Publish(ctx context.Context, owner, id string, version int64, pu
 	if err != nil {
 		return Problem{}, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	var locked string
 	if err = tx.QueryRow(ctx, `SELECT id FROM problem_drafts WHERE id=$1 AND can_manage_problem(id,$2) FOR UPDATE`, id, owner).Scan(&locked); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

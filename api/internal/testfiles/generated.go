@@ -60,7 +60,7 @@ func ReadFile(ctx context.Context, client *s3.Client, bucket string, file *probl
 	if err != nil {
 		return "", err
 	}
-	defer result.Body.Close()
+	defer func() { _ = result.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(result.Body, MaxSize+1))
 	sum := sha256.Sum256(data)
 	if err != nil || int64(len(data)) != file.Size || hex.EncodeToString(sum[:]) != file.SHA256 || !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {

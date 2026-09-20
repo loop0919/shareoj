@@ -31,12 +31,20 @@ func TestNotificationsPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		if err := conn.Close(ctx); err != nil {
+			t.Error(err)
+		}
+	}()
 	schema := fmt.Sprintf("test_notifications_%d", time.Now().UnixNano())
 	if _, err = conn.Exec(ctx, `CREATE SCHEMA `+schema); err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Exec(ctx, `DROP SCHEMA `+schema+` CASCADE`)
+	defer func() {
+		if _, err := conn.Exec(ctx, `DROP SCHEMA `+schema+` CASCADE`); err != nil {
+			t.Error(err)
+		}
+	}()
 	u, _ := url.Parse(dsn)
 	q := u.Query()
 	q.Set("search_path", schema)

@@ -19,7 +19,7 @@ func (s *Store) FinishAttempt(ctx context.Context, id, attempt string, result Re
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	var owner, problem string
 	var raw []byte
 	err = tx.QueryRow(ctx, `SELECT owner_id,problem_id::text,job FROM submissions

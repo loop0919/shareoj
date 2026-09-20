@@ -31,12 +31,20 @@ func TestContestsPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close(ctx)
+	defer func() {
+		if err := conn.Close(ctx); err != nil {
+			t.Error(err)
+		}
+	}()
 	schema := fmt.Sprintf("test_contests_%d", time.Now().UnixNano())
 	if _, err = conn.Exec(ctx, `CREATE SCHEMA `+schema); err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Exec(ctx, `DROP SCHEMA `+schema+` CASCADE`)
+	defer func() {
+		if _, err := conn.Exec(ctx, `DROP SCHEMA `+schema+` CASCADE`); err != nil {
+			t.Error(err)
+		}
+	}()
 	u, _ := url.Parse(dsn)
 	q := u.Query()
 	q.Set("search_path", schema)
@@ -163,7 +171,9 @@ func TestContestsPostgres(t *testing.T) {
 	request("GET", "/my/contests/"+cid+"/problems/"+a, "tester", nil, 200)
 	request("GET", "/my/contests/"+cid+"/problems/"+b, "tester", nil, 404)
 	var testerView contests.Contest
-	json.Unmarshal([]byte(request("GET", "/my/contests/"+cid, "tester", nil, 200)), &testerView)
+	if err := json.Unmarshal([]byte(request("GET", "/my/contests/"+cid, "tester", nil, 200)), &testerView); err != nil {
+		t.Fatal(err)
+	}
 	if testerView.Official || !testerView.CanViewSubmissions || len(testerView.Problems) != 1 {
 		t.Fatal(testerView)
 	}
@@ -279,7 +289,9 @@ func TestContestsPostgres(t *testing.T) {
 	rank := func() []contests.Standing {
 		t.Helper()
 		var rows []contests.Standing
-		json.Unmarshal([]byte(request("GET", "/contests/"+cid+"/standings", "", nil, 200)), &rows)
+		if err := json.Unmarshal([]byte(request("GET", "/contests/"+cid+"/standings", "", nil, 200)), &rows); err != nil {
+			t.Fatal(err)
+		}
 		return rows
 	}
 	rows := rank()
@@ -319,7 +331,9 @@ func TestContestsPostgres(t *testing.T) {
 			want = 200
 		}
 		var view contests.Contest
-		json.Unmarshal([]byte(request("GET", "/my/contests/"+cid, "tester", nil, 200)), &view)
+		if err := json.Unmarshal([]byte(request("GET", "/my/contests/"+cid, "tester", nil, 200)), &view); err != nil {
+			t.Fatal(err)
+		}
 		if view.CanViewSubmissions != allowed {
 			t.Fatalf("tester permission: %+v", view)
 		}
@@ -364,7 +378,9 @@ func TestContestsPostgres(t *testing.T) {
 		t.Fatal("auto publication", detail)
 	}
 	var public problems.PublicProblem
-	json.Unmarshal([]byte(detail), &public)
+	if err := json.Unmarshal([]byte(detail), &public); err != nil {
+		t.Fatal(err)
+	}
 	if !public.PublishedAt.Equal(end) {
 		t.Fatal(public.PublishedAt, end)
 	}
@@ -397,7 +413,9 @@ func TestContestsPostgres(t *testing.T) {
 	request("GET", "/contests/"+cid+"/submissions/"+easy.ID, "", nil, 404)
 	request("GET", "/contests/"+cid+"/submissions/"+pre.ID, "", nil, 404)
 	var endedView contests.Contest
-	json.Unmarshal([]byte(request("GET", "/contests/"+cid, "", nil, 200)), &endedView)
+	if err := json.Unmarshal([]byte(request("GET", "/contests/"+cid, "", nil, 200)), &endedView); err != nil {
+		t.Fatal(err)
+	}
 	if !endedView.CanViewSubmissions {
 		t.Fatal("ended contest must allow public submission viewing")
 	}
@@ -416,7 +434,9 @@ func TestContestsPostgres(t *testing.T) {
 	}
 	for _, path := range []string{"/contests/" + cid + "/submissions", "/contests/" + cid + "/problems/" + a + "/submissions", "/problems/" + a + "/submissions", "/my/problems/" + a + "/submissions?mine=1", "/my/submissions"} {
 		var response submissions.ContestSubmissionList
-		json.Unmarshal([]byte(request("GET", path, "bob", nil, 200)), &response)
+		if err := json.Unmarshal([]byte(request("GET", path, "bob", nil, 200)), &response); err != nil {
+			t.Fatal(err)
+		}
 		found := false
 		for _, item := range response.Items {
 			if item.ID != accepted.ID {
@@ -435,7 +455,9 @@ func TestContestsPostgres(t *testing.T) {
 		}
 	}
 	var measured submissions.Submission
-	json.Unmarshal([]byte(request("GET", "/problems/"+a+"/submissions/"+accepted.ID, "", nil, 200)), &measured)
+	if err := json.Unmarshal([]byte(request("GET", "/problems/"+a+"/submissions/"+accepted.ID, "", nil, 200)), &measured); err != nil {
+		t.Fatal(err)
+	}
 	if measured.Result.CPUTimeMS == nil || *measured.Result.CPUTimeMS != 12.25 || measured.Result.MemoryBytes == nil || *measured.Result.MemoryBytes != 2500000 {
 		t.Fatal("missing detail usage summary")
 	}
@@ -452,7 +474,9 @@ func TestContestsPostgres(t *testing.T) {
 	// Ordinary practice works after automatic publication, without contest context.
 	normal := request("POST", "/my/submissions", "bob", map[string]any{"problemId": a, "runtime": "cpp17", "source": "practice"}, 202)
 	var practiceNormal submissions.Submission
-	json.Unmarshal([]byte(normal), &practiceNormal)
+	if err := json.Unmarshal([]byte(normal), &practiceNormal); err != nil {
+		t.Fatal(err)
+	}
 	list = request("GET", "/problems/"+a+"/submissions", "", nil, 200)
 	if !strings.Contains(list, practiceNormal.ID) {
 		t.Fatal("missing practice", list)
@@ -484,8 +508,12 @@ func TestContestsPostgres(t *testing.T) {
 	exec(`INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job)
       SELECT gen_random_uuid(),'bob',$1,1,'practice','cpp17-local','code','{}'::jsonb FROM generate_series(1,51)`, a)
 	var firstPage, nextPage submissions.ContestSubmissionList
-	json.Unmarshal([]byte(request("GET", "/my/problems/"+a+"/submissions?mine=1", "bob", nil, 200)), &firstPage)
-	json.Unmarshal([]byte(request("GET", "/my/problems/"+a+"/submissions?mine=1&offset=50", "bob", nil, 200)), &nextPage)
+	if err := json.Unmarshal([]byte(request("GET", "/my/problems/"+a+"/submissions?mine=1", "bob", nil, 200)), &firstPage); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(request("GET", "/my/problems/"+a+"/submissions?mine=1&offset=50", "bob", nil, 200)), &nextPage); err != nil {
+		t.Fatal(err)
+	}
 	if len(firstPage.Items) != 50 || !firstPage.HasMore || len(nextPage.Items) == 0 || nextPage.HasMore {
 		t.Fatal("pagination", firstPage, nextPage)
 	}

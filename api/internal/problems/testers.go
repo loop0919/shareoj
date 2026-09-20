@@ -35,7 +35,7 @@ func (s *Store) TesterInvitation(ctx context.Context, actor, token string, accep
 	if err != nil {
 		return TesterInvitation{}, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	var invitation TesterInvitation
 	err = tx.QueryRow(ctx, `SELECT p.id,p.draft->>'title',u.handle,can_manage_problem(p.id,$2)
  FROM problem_tester_invitations i JOIN problem_drafts p ON p.id=i.problem_id

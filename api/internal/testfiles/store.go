@@ -137,7 +137,7 @@ func (s *Store) Complete(ctx context.Context, owner, problemID, id string) (prob
 	if err != nil {
 		return problems.TestFile{}, ErrInvalid
 	}
-	defer result.Body.Close()
+	defer func() { _ = result.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(result.Body, MaxSize+1))
 	if err != nil || int64(len(data)) != size || !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 || result.VersionId == nil || (uploadVersion != nil && *result.VersionId != *uploadVersion) {
 		return problems.TestFile{}, ErrInvalid

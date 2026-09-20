@@ -177,12 +177,20 @@ func checkOutboxAndResultIdempotency(t *testing.T, runtime string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer admin.Close(ctx)
+	defer func() {
+		if err := admin.Close(ctx); err != nil {
+			t.Error(err)
+		}
+	}()
 	schema := fmt.Sprintf("test_bridge_%d", time.Now().UnixNano())
 	if _, err = admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
 		t.Fatal(err)
 	}
-	defer admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE")
+	defer func() {
+		if _, err := admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE"); err != nil {
+			t.Error(err)
+		}
+	}()
 	u, _ := url.Parse(dsn)
 	q := u.Query()
 	q.Set("search_path", schema)
@@ -235,13 +243,17 @@ func checkOutboxAndResultIdempotency(t *testing.T, runtime string) {
 		}
 		sent = append(sent, request.MessageBody)
 		w.Header().Set("Content-Type", "application/x-amz-json-1.0")
-		fmt.Fprint(w, `{"MessageId":"test"}`)
+		if _, err := fmt.Fprint(w, `{"MessageId":"test"}`); err != nil {
+			t.Error(err)
+		}
 	}))
 	defer server.Close()
 	cfg := aws.Config{Region: "ap-northeast-1", Credentials: credentials.NewStaticCredentialsProvider("test", "test", "")}
-	b := bridge{db: db, bucket: "test-bucket", queueURL: server.URL + "/queue", runtime: digest,
+	b := bridge{
+		db: db, bucket: "test-bucket", queueURL: server.URL + "/queue", runtime: digest,
 		objects: s3.NewFromConfig(cfg, func(o *s3.Options) { o.BaseEndpoint = aws.String(server.URL); o.UsePathStyle = true }),
-		queue:   sqs.NewFromConfig(cfg, func(o *sqs.Options) { o.BaseEndpoint = aws.String(server.URL) })}
+		queue:   sqs.NewFromConfig(cfg, func(o *sqs.Options) { o.BaseEndpoint = aws.String(server.URL) }),
+	}
 	checkDeployment := func(pending, undispatched float64) {
 		t.Helper()
 		before := len(sent)

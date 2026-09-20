@@ -74,7 +74,7 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
 	if err != nil {
 		return Contest{}, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	c, err := scan(tx.QueryRow(ctx, `SELECT `+fields+` FROM contests c JOIN user_profiles u ON u.owner_id=c.owner_id WHERE c.id=$1`, id))
 	if err != nil {
 		return c, err
@@ -115,7 +115,7 @@ func (s *Store) Save(ctx context.Context, owner, id string, in Input, policy Jud
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	defer func() {
 		var pg *pgconn.PgError
 		if errors.As(err, &pg) && (pg.Code == "23505" || pg.Code == "23503") {
@@ -209,7 +209,7 @@ func (s *Store) Release(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	rows, err := tx.Query(ctx, `SELECT id FROM contests WHERE NOT released AND ends_at<=statement_timestamp() ORDER BY id FOR UPDATE`)
 	if err != nil {
 		return err

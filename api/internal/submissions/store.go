@@ -150,7 +150,7 @@ func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) 
 	if err != nil {
 		return Submission{}, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	query := tx.QueryRow
 	if contestID != "" {
 		var locked string
@@ -309,7 +309,7 @@ func (s *Store) CreateGeneration(ctx context.Context, in GenerationInput) (Submi
 	if err != nil {
 		return Submission{}, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 	// Lock the draft until insertion so a concurrent edit cannot change its version.
 	var version int64
 	if err = tx.QueryRow(ctx, `SELECT version FROM problem_drafts WHERE id=$1 AND can_manage_problem(id,$2) FOR SHARE`, problemID, owner).Scan(&version); err != nil {

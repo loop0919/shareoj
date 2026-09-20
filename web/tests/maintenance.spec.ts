@@ -31,13 +31,33 @@ test('maintenance disables judging on an open page and preserves the source thro
 })
 
 test('a maintenance rejection refreshes the banner without discarding input', async ({ page }) => {
+  let maintenance = false
+  let catalogRequests = 0
+  let submissions = 0
+  await page.route('**/api/runtimes', route => {
+    catalogRequests++
+    return route.fulfill({ json: { items: maintenance ? [] : items, maintenance } })
+  })
+  await page.route('**/api/my/submissions', route => {
+    submissions++
+    // The server enters maintenance while accepting this request, not before the click.
+    maintenance = true
+    return route.fulfill({ status: 503, json: { data: { code: 'judge_maintenance' } } })
+  })
   await page.goto(problem)
   const source = page.getByLabel('ソースコード', { exact: true })
   await source.fill('int main(){}')
-  await page.route('**/api/runtimes', route => route.fulfill({ json: { items: [], maintenance: true } }))
-  await page.route('**/api/my/submissions', route => route.fulfill({ status: 503, json: { data: { code: 'judge_maintenance' } } }))
-  await page.getByRole('button', { name: '提出する', exact: true }).click()
+  const submit = page.getByRole('button', { name: '提出する', exact: true })
+  await expect(submit).toBeEnabled()
+  // A hydration, visibility or polling refresh must not turn this into the disabled-button test.
+  const beforeRefresh = catalogRequests
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await expect.poll(() => catalogRequests).toBeGreaterThan(beforeRefresh)
+  await expect(submit).toBeEnabled()
+  await submit.click()
   await expect(page.locator('.judge-banner')).toHaveText(message)
+  expect(submissions).toBe(1)
+  await expect(submit).toBeDisabled()
   await expect(source).toHaveText('int main(){}')
 })
 
