@@ -5,13 +5,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
-	"judge/api/internal/posts"
 	"judge/api/internal/problems"
+	"judge/api/internal/submissions"
 )
 
 func contentJSON(w http.ResponseWriter, r *http.Request, target any) bool {
@@ -45,7 +43,7 @@ func nextContentCursor(id string, date time.Time) string {
 	return base64.RawURLEncoding.EncodeToString(data)
 }
 
-func (p PrivateProblems) publicContent(w http.ResponseWriter, r *http.Request) {
+func (p problemHandler) publicProblems(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	id := r.PathValue("id")
@@ -60,48 +58,7 @@ func (p PrivateProblems) publicContent(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	if strings.HasPrefix(r.URL.Path, "/posts") {
-		if p.Posts == nil {
-			authError(w, 503, "database_unavailable")
-			return
-		}
-		if id != "" {
-			post, err := p.Posts.PublicGet(ctx, id)
-			if err != nil {
-				problemError(w, err)
-				return
-			}
-			post.Operator = p.Operators[post.Owner]
-			writeAuthJSON(w, 200, post)
-			return
-		}
-		cursor, ok := contentCursor(w, r)
-		if !ok {
-			return
-		}
-		var list []posts.Post
-		var err error
-		if author == "" {
-			list, err = p.Posts.PublicList(ctx, cursor)
-		} else {
-			list, err = p.Posts.PublicListByHandle(ctx, cursor, author)
-		}
-		if err != nil {
-			problemError(w, err)
-			return
-		}
-		next := ""
-		if len(list) > 50 {
-			list = list[:50]
-			last := list[49]
-			next = nextContentCursor(last.ID, *last.PublishedAt)
-		}
-		for i := range list {
-			list[i].Operator = p.Operators[list[i].Owner]
-		}
-		writeAuthJSON(w, 200, map[string]any{"items": list, "nextCursor": next})
-		return
-	}
+
 	store, ok := p.Store.(problems.Publications)
 	if !ok {
 		authError(w, 503, "database_unavailable")
@@ -164,7 +121,7 @@ func publicationRequest(w http.ResponseWriter, r *http.Request) (publicationInpu
 	return in, true
 }
 
-func (p PrivateProblems) publishProblem(w http.ResponseWriter, r *http.Request, owner string) {
+func (p problemHandler) publishProblem(w http.ResponseWriter, r *http.Request, owner string) {
 	id := r.PathValue("id")
 	if !problemID.MatchString(id) {
 		authError(w, 404, "problem_not_found")
@@ -184,119 +141,15 @@ func (p PrivateProblems) publishProblem(w http.ResponseWriter, r *http.Request, 
 		problemError(w, err)
 		return
 	}
-	if *in.Publish && (strings.TrimSpace(current.Draft.Title) == "" || strings.TrimSpace(current.Draft.Markdown) == "" || !validDraft(current.Draft)) {
+	if *in.Publish && !problems.Publishable(current.Draft, submissions.RuntimeIDs(), p.Judging.RuntimeIDs()) {
 		authError(w, 400, "incomplete_problem")
 		return
 	}
-	for _, code := range []*problems.Generator{current.Draft.Checker, current.Draft.Interactor} {
-		if !*in.Publish || code == nil {
-			continue
-		}
-		available := false
-		for _, runtime := range p.availableRuntimes() {
-			available = available || runtime.ID == code.Runtime
-		}
-		if !available || strings.TrimSpace(code.Source) == "" {
-			authError(w, 400, "incomplete_problem")
-			return
-		}
-	}
+
 	result, err := store.Publish(r.Context(), owner, id, in.Version, *in.Publish)
 	if err != nil {
 		problemError(w, err)
 		return
 	}
 	writeAuthJSON(w, 200, result)
-}
-
-func (p PrivateProblems) privatePost(w http.ResponseWriter, r *http.Request, owner string) {
-	if p.Posts == nil {
-		authError(w, 503, "database_unavailable")
-		return
-	}
-	id := r.PathValue("id")
-	if id == "" {
-		cursor, ok := contentCursor(w, r)
-		if !ok {
-			return
-		}
-		list, err := p.Posts.List(r.Context(), owner, cursor)
-		if err != nil {
-			problemError(w, err)
-			return
-		}
-		next := ""
-		if len(list) > 50 {
-			list = list[:50]
-			last := list[49]
-			next = nextContentCursor(last.ID, last.UpdatedAt)
-		}
-		writeAuthJSON(w, 200, map[string]any{"items": list, "nextCursor": next})
-		return
-	}
-	if !problemID.MatchString(id) {
-		authError(w, 404, "post_not_found")
-		return
-	}
-	if strings.HasSuffix(r.URL.Path, "/publication") {
-		in, ok := publicationRequest(w, r)
-		if !ok {
-			return
-		}
-		current, err := p.Posts.Get(r.Context(), owner, id)
-		if err != nil {
-			problemError(w, err)
-			return
-		}
-		if *in.Publish && (strings.TrimSpace(current.Title) == "" || strings.TrimSpace(current.Markdown) == "") {
-			authError(w, 400, "incomplete_post")
-			return
-		}
-		result, err := p.Posts.Publish(r.Context(), owner, id, in.Version, *in.Publish)
-		if err != nil {
-			problemError(w, err)
-			return
-		}
-		writeAuthJSON(w, 200, result)
-		return
-	}
-	switch r.Method {
-	case http.MethodGet:
-		result, err := p.Posts.Get(r.Context(), owner, id)
-		if err != nil {
-			problemError(w, err)
-			return
-		}
-		writeAuthJSON(w, 200, result)
-	case http.MethodPut:
-		var in struct {
-			Version  int64  `json:"version"`
-			Title    string `json:"title"`
-			Markdown string `json:"markdown"`
-		}
-		if !contentJSON(w, r, &in) {
-			return
-		}
-		if in.Version < 0 || in.Version > 9007199254740990 || utf8.RuneCountInString(in.Title) > 120 || utf8.RuneCountInString(in.Markdown) > 100000 || strings.ContainsRune(in.Title+in.Markdown, '\x00') {
-			authError(w, 400, "invalid_post")
-			return
-		}
-		result, err := p.Posts.Save(r.Context(), owner, id, in.Title, in.Markdown, in.Version)
-		if err != nil {
-			problemError(w, err)
-			return
-		}
-		writeAuthJSON(w, 200, result)
-	case http.MethodDelete:
-		version, err := strconv.ParseInt(r.URL.Query().Get("version"), 10, 64)
-		if err != nil || version <= 0 {
-			authError(w, 400, "invalid_version")
-			return
-		}
-		if err = p.Posts.Delete(r.Context(), owner, id, version); err != nil {
-			problemError(w, err)
-			return
-		}
-		w.WriteHeader(204)
-	}
 }

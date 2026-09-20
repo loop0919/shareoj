@@ -3,7 +3,6 @@ package httpapi
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"image"
@@ -14,7 +13,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"judge/api/internal/problems"
+
+	"judge/api/internal/images"
 )
 
 const maxContentImage = 512 << 10
@@ -45,35 +45,25 @@ func cleanContentImage(data []byte) ([]byte, string, error) {
 	return out.Bytes(), "image/" + format, nil
 }
 
-type contentImageInfo struct {
-	ID   string `json:"id"`
-	Size int    `json:"size"`
-	Used bool   `json:"used"`
-}
-
-func (p PrivateProblems) publicImage(w http.ResponseWriter, r *http.Request) {
+func (p imageHandler) publicImage(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	p.contentImage(w, r.WithContext(ctx), "")
 }
 
-func (p PrivateProblems) contentImage(w http.ResponseWriter, r *http.Request, owner string) {
+func (p imageHandler) contentImage(w http.ResponseWriter, r *http.Request, owner string) {
 	w.Header().Set("Cache-Control", "no-store")
-	store, ok := p.Store.(*problems.Store)
-	if !ok {
+	if p.Store == nil {
 		authError(w, 503, "database_unavailable")
 		return
 	}
-	pool, ctx, id := store.Pool(), r.Context(), r.PathValue("id")
+	ctx, id := r.Context(), r.PathValue("id")
 	if id != "" && !problemID.MatchString(id) {
 		authError(w, 404, "image_not_found")
 		return
 	}
 	if r.Method == http.MethodGet && id != "" {
-		var data []byte
-		var media string
-		err := pool.QueryRow(ctx, `SELECT data,media_type FROM content_images
- WHERE id=$1 AND (owner_id=$2 OR content_image_access(id,owner_id,$2,false))`, id, owner).Scan(&data, &media)
+		data, media, err := p.Store.Get(ctx, id, owner)
 		if errors.Is(err, pgx.ErrNoRows) {
 			authError(w, 404, "image_not_found")
 		} else if err != nil {
@@ -95,12 +85,7 @@ func (p PrivateProblems) contentImage(w http.ResponseWriter, r *http.Request, ow
 			authError(w, 400, "invalid_request")
 			return
 		}
-		rows, err := pool.Query(ctx, `SELECT id,size,content_image_access(id,owner_id,'',true) FROM content_images WHERE owner_id=$1 ORDER BY created_at DESC,id DESC LIMIT 51 OFFSET $2`, owner, offset)
-		if err != nil {
-			authError(w, 503, "database_unavailable")
-			return
-		}
-		items, err := pgx.CollectRows(rows, pgx.RowToStructByPos[contentImageInfo])
+		items, used, err := p.Store.List(ctx, owner, offset)
 		if err != nil {
 			authError(w, 503, "database_unavailable")
 			return
@@ -109,50 +94,25 @@ func (p PrivateProblems) contentImage(w http.ResponseWriter, r *http.Request, ow
 		if more {
 			items = items[:50]
 		}
-		if items == nil {
-			items = []contentImageInfo{}
-		}
-		var used int64
-		if err = pool.QueryRow(ctx, `SELECT COALESCE(sum(size),0) FROM content_images WHERE owner_id=$1`, owner).Scan(&used); err != nil {
-			authError(w, 503, "database_unavailable")
-			return
-		}
+
 		writeAuthJSON(w, 200, map[string]any{"items": items, "usedBytes": used, "hasMore": more})
 		return
 	}
 	if r.Method == http.MethodDelete {
-		// Prevent a content save racing the reference check and deletion.
-		tx, err := pool.Begin(ctx)
-		if err != nil {
-			authError(w, 503, "database_unavailable")
-			return
-		}
-		defer tx.Rollback(ctx)
-		if _, err = tx.Exec(ctx, `LOCK TABLE problem_drafts,blog_posts,contests,contest_problems IN SHARE MODE`); err != nil {
-			authError(w, 503, "database_unavailable")
-			return
-		}
-		var used bool
-		err = tx.QueryRow(ctx, `SELECT content_image_access(id,owner_id,'',true) FROM content_images WHERE id=$1 AND owner_id=$2 FOR UPDATE`, id, owner).Scan(&used)
+		err := p.Store.Delete(ctx, owner, id)
 		if errors.Is(err, pgx.ErrNoRows) {
 			authError(w, 404, "image_not_found")
 			return
 		}
-		if err != nil {
-			authError(w, 503, "database_unavailable")
-			return
-		}
-		if used {
+		if errors.Is(err, images.ErrInUse) {
 			authError(w, 409, "image_in_use")
 			return
 		}
-		if _, err = tx.Exec(ctx, `DELETE FROM content_images WHERE id=$1 AND owner_id=$2`, id, owner); err == nil {
-			err = tx.Commit(ctx)
-		}
 		if err != nil {
 			authError(w, 503, "database_unavailable")
 			return
 		}
+
 		w.WriteHeader(204)
 		return
 	}
@@ -172,36 +132,14 @@ func (p PrivateProblems) contentImage(w http.ResponseWriter, r *http.Request, ow
 		authError(w, 400, "invalid_image")
 		return
 	}
-	digest := sha256.Sum256(data)
-	tx, err := pool.Begin(ctx)
+	id, created, err := p.Store.Save(ctx, owner, newSubmissionID(), media, data)
 	if err != nil {
 		authError(w, 503, "database_unavailable")
 		return
 	}
-	defer tx.Rollback(ctx)
-	// Serialize deduplication for one uploader without a service-wide lock.
-	var lockedOwner string
-	if err = tx.QueryRow(ctx, `SELECT owner_id FROM user_profiles WHERE owner_id=$1 FOR UPDATE`, owner).Scan(&lockedOwner); err != nil {
-		authError(w, 503, "database_unavailable")
-		return
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
 	}
-	err = tx.QueryRow(ctx, `SELECT id FROM content_images WHERE owner_id=$1 AND digest=$2`, owner, digest[:]).Scan(&id)
-	if err == nil {
-		writeAuthJSON(w, 200, map[string]any{"id": id, "url": "/api/images/" + id, "size": len(data)})
-		return
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		authError(w, 503, "database_unavailable")
-		return
-	}
-	id = newSubmissionID()
-	_, err = tx.Exec(ctx, `INSERT INTO content_images(id,owner_id,digest,media_type,data,size) VALUES($1,$2,$3,$4,$5,$6)`, id, owner, digest[:], media, data, len(data))
-	if err == nil {
-		err = tx.Commit(ctx)
-	}
-	if err != nil {
-		authError(w, 503, "database_unavailable")
-		return
-	}
-	writeAuthJSON(w, 201, map[string]any{"id": id, "url": "/api/images/" + id, "size": len(data)})
+	writeAuthJSON(w, status, map[string]any{"id": id, "url": "/api/images/" + id, "size": len(data)})
 }

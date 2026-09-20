@@ -18,6 +18,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"judge/api/internal/contests"
+	"judge/api/internal/images"
+	"judge/api/internal/notifications"
 	"judge/api/internal/posts"
 	"judge/api/internal/problems"
 	"judge/api/internal/profiles"
@@ -79,7 +82,7 @@ func TestProfilesPostgres(t *testing.T) {
 	}
 	profileStore := profiles.New(store.Pool())
 	f := newSigningFixture(t)
-	handler := newHandler(AuthConfig{}, PrivateProblems{Store: store, Profiles: profileStore, Posts: posts.New(store.Pool()), Operators: map[string]bool{"alice": true}, Verifier: newCognitoVerifier(f.server.URL, "client")})
+	handler := newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Profiles: profileStore, Posts: posts.New(store.Pool()), Operators: map[string]bool{"alice": true}, Verifier: newCognitoVerifier(f.server.URL, "client")})
 	request := func(method, path, owner, body string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
 		r.Header.Set("Content-Type", "application/json")
@@ -456,10 +459,15 @@ func TestAccountValidation(t *testing.T) {
 		t.Fatal("empty accounts rejected")
 	}
 	for _, value := range []profiles.Accounts{
-		{X: "https://x.com/alice"}, {X: strings.Repeat("a", 16)},
-		{AtCoder: "../admin"}, {AtCoder: strings.Repeat("a", 17)},
-		{Codeforces: "foo;bar"}, {Codeforces: "ab"}, {Codeforces: strings.Repeat("a", 25)},
-		{Yukicoder: "alice"}, {Yukicoder: "1/2"},
+		{X: "https://x.com/alice"},
+		{X: strings.Repeat("a", 16)},
+		{AtCoder: "../admin"},
+		{AtCoder: strings.Repeat("a", 17)},
+		{Codeforces: "foo;bar"},
+		{Codeforces: "ab"},
+		{Codeforces: strings.Repeat("a", 25)},
+		{Yukicoder: "alice"},
+		{Yukicoder: "1/2"},
 	} {
 		if cleanAccounts(&value) {
 			t.Fatalf("accepted %+v", value)

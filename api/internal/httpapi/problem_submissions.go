@@ -2,9 +2,10 @@ package httpapi
 
 import (
 	"errors"
-	"github.com/jackc/pgx/v5"
 	"net/http"
 	"strconv"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func submissionMine(w http.ResponseWriter, r *http.Request, owner string) (bool, bool) {
@@ -20,11 +21,11 @@ func submissionMine(w http.ResponseWriter, r *http.Request, owner string) (bool,
 	return raw == "1", true
 }
 
-func (p PrivateProblems) publicProblemSubmissions(w http.ResponseWriter, r *http.Request) {
+func (p submissionHandler) publicProblemSubmissions(w http.ResponseWriter, r *http.Request) {
 	p.problemSubmissions(w, r, "")
 }
 
-func (p PrivateProblems) problemSubmissions(w http.ResponseWriter, r *http.Request, owner string) {
+func (p submissionHandler) problemSubmissions(w http.ResponseWriter, r *http.Request, owner string) {
 	w.Header().Set("Cache-Control", "no-store")
 	if p.Submissions == nil {
 		authError(w, 503, "judging_unavailable")

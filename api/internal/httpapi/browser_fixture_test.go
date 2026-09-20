@@ -17,6 +17,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/jackc/pgx/v5"
+
+	"judge/api/internal/contests"
+	"judge/api/internal/images"
+	"judge/api/internal/notifications"
 	"judge/api/internal/posts"
 	"judge/api/internal/problems"
 	"judge/api/internal/profiles"
@@ -103,7 +107,7 @@ func TestBrowserFixture(t *testing.T) {
 		}
 	}
 	f := newSigningFixture(t)
-	handler := newHandler(AuthConfig{Client: &browserCognito{t: t, signer: f, users: make(map[string]*browserUser)}, ClientID: "client"}, PrivateProblems{Store: store, Profiles: profileStore, Posts: posts.New(store.Pool()), Submissions: &submissions.Store{Pool: store.Pool()}, JudgeImage: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Operators: map[string]bool{"alice@example.test": true}, Verifier: newCognitoVerifier(f.server.URL, "client")})
+	handler := newHandler(AuthConfig{Client: &browserCognito{t: t, signer: f, users: make(map[string]*browserUser)}, ClientID: "client"}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Profiles: profileStore, Posts: posts.New(store.Pool()), Submissions: &submissions.Store{Pool: store.Pool()}, JudgeImage: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Operators: map[string]bool{"alice@example.test": true}, Verifier: newCognitoVerifier(f.server.URL, "client")})
 	address := os.Getenv("OPENOJ_BROWSER_API_ADDR")
 	if address == "" {
 		address = "127.0.0.1:18082"

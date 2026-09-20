@@ -9,7 +9,7 @@ import (
 
 var testerToken = regexp.MustCompile(`^[A-Z2-7]{32}$`)
 
-func (p PrivateProblems) testerInvitation(w http.ResponseWriter, r *http.Request, actor string) {
+func (p problemHandler) testerInvitation(w http.ResponseWriter, r *http.Request, actor string) {
 	store, ok := p.Store.(*problems.Store)
 	if !ok {
 		authError(w, 503, "database_unavailable")

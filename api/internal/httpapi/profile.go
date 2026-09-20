@@ -52,7 +52,7 @@ func cleanAvatar(value string) (string, error) {
 	return result, nil
 }
 
-func (p PrivateProblems) profile(w http.ResponseWriter, r *http.Request, owner string) {
+func (p profileHandler) profile(w http.ResponseWriter, r *http.Request, owner string) {
 	if p.Profiles == nil {
 		authError(w, 503, "database_unavailable")
 		return
@@ -125,7 +125,7 @@ func (p PrivateProblems) profile(w http.ResponseWriter, r *http.Request, owner s
 	}
 }
 
-func (p PrivateProblems) publicProfile(w http.ResponseWriter, r *http.Request) {
+func (p profileHandler) publicProfile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	handle := r.PathValue("handle")
 	if !userHandle.MatchString(handle) {

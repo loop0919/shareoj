@@ -22,6 +22,10 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/jackc/pgx/v5"
+
+	"judge/api/internal/contests"
+	"judge/api/internal/images"
+	"judge/api/internal/notifications"
 	"judge/api/internal/problems"
 	"judge/api/internal/testfiles"
 )
@@ -34,10 +38,12 @@ func (f *fakeTestFiles) Begin(_ context.Context, owner, problem, file string, si
 	f.owner, f.problem, f.file = owner, problem, file
 	return testfiles.Upload{ID: file, URL: "https://upload.example/file", Headers: map[string]string{"x-amz-checksum-sha256": digest}}, nil
 }
+
 func (f *fakeTestFiles) Complete(_ context.Context, owner, problem, file string) (problems.TestFile, error) {
 	f.owner, f.problem, f.file = owner, problem, file
 	return problems.TestFile{ID: file, Size: 3, SHA256: strings.Repeat("a", 64)}, nil
 }
+
 func (f *fakeTestFiles) Download(_ context.Context, owner, problem, file string) (testfiles.Download, error) {
 	f.owner, f.problem, f.file = owner, problem, file
 	return testfiles.Download{URL: "https://download.example/file", Size: 3, SHA256: strings.Repeat("a", 64)}, nil
@@ -111,7 +117,7 @@ func TestCognitoAccessTokenVerification(t *testing.T) {
 func TestPrivateTestFileRoutes(t *testing.T) {
 	f := newSigningFixture(t)
 	files := &fakeTestFiles{}
-	handler := newHandler(AuthConfig{}, PrivateProblems{Files: files, Verifier: newCognitoVerifier(f.server.URL, "client")})
+	handler := newHandler(AuthConfig{}, handlerDependencies{Files: files, Verifier: newCognitoVerifier(f.server.URL, "client")})
 	const problem = "11111111-1111-4111-8111-111111111111"
 	request := func(method, path, body string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(method, path, strings.NewReader(body))
@@ -174,7 +180,7 @@ func TestPrivateProblemsPostgres(t *testing.T) {
 		t.Fatalf("repeat migration: %v", err)
 	}
 	f := newSigningFixture(t)
-	handler := newHandler(AuthConfig{}, PrivateProblems{Store: store, Verifier: newCognitoVerifier(f.server.URL, "client")})
+	handler := newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Verifier: newCognitoVerifier(f.server.URL, "client")})
 	alice, bob := f.token(t, "alice", nil), f.token(t, "bob", nil)
 	const id = "11111111-1111-4111-8111-111111111111"
 	draft := problems.Draft{Title: "保存する問題", Markdown: "本文 $A+B$", TimeLimitMS: "2000", MemoryLimitMB: "512"}

@@ -2,16 +2,10 @@
 package httpapi
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
-	"strings"
-	"time"
-
-	"judge/api/internal/contests"
-	"judge/api/internal/problems"
 )
 
 // NewHandlerは、APIのルートHTTPハンドラーを返す。
@@ -20,51 +14,21 @@ func NewHandler(auth ...AuthConfig) http.Handler {
 	if len(auth) > 0 {
 		config = auth[0]
 	}
-	return newHandler(config, PrivateProblems{})
+	return newHandler(config, handlerDependencies{})
 }
 
-func newHandler(config AuthConfig, private PrivateProblems) http.Handler {
-	if store, ok := private.Store.(*problems.Store); ok && private.Contests == nil {
-		private.Contests = &contests.Store{Pool: store.Pool()}
-	}
+func newHandler(config AuthConfig, private handlerDependencies) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /users/{handle}", private.publicProfile)
-	mux.HandleFunc("GET /contests", private.publicContest)
-	mux.HandleFunc("GET /contests/{id}", private.publicContest)
-	mux.HandleFunc("GET /contests/{id}/problems/{problem}", private.publicContest)
-	mux.HandleFunc("GET /contests/{id}/problems/{problem}/submissions", private.publicContest)
-	mux.HandleFunc("GET /contests/{id}/standings", private.publicContest)
-	mux.HandleFunc("GET /contests/{id}/submissions", private.publicContest)
-	mux.HandleFunc("GET /contests/{id}/submissions/{submission}", private.publicContest)
-	mux.HandleFunc("GET /images/{id}", private.publicImage)
 	mux.HandleFunc("GET /health", health)
-	mux.HandleFunc("GET /runtimes", private.runtimes)
-	mux.HandleFunc("GET /problems", private.publicContent)
-	mux.HandleFunc("GET /problems/{id}", private.publicContent)
-	mux.HandleFunc("GET /problems/{id}/submissions", private.publicProblemSubmissions)
-	mux.HandleFunc("GET /problems/{id}/submissions/{submission}", private.publicProblemSubmissions)
-	mux.HandleFunc("GET /posts", private.publicContent)
-	mux.HandleFunc("GET /posts/{id}", private.publicContent)
 	mux.HandleFunc("POST /auth/login", config.login)
 	mux.HandleFunc("POST /auth/refresh", config.refresh)
 	mux.HandleFunc("POST /auth/challenge", config.challenge)
 	mux.HandleFunc("POST /auth/signup", config.registration)
 	mux.HandleFunc("POST /auth/confirm-signup", config.registration)
 	mux.HandleFunc("POST /auth/resend-confirmation", config.registration)
-	private.register(mux)
+	registerRoutes(mux, private)
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if private.Contests != nil && (strings.HasPrefix(r.URL.Path, "/contests") || strings.HasPrefix(r.URL.Path, "/problems") || strings.HasPrefix(r.URL.Path, "/my/")) {
-			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-			defer cancel()
-			if err := private.Contests.Release(ctx); err != nil {
-				w.Header().Set("Cache-Control", "no-store")
-				authError(w, 503, "database_unavailable")
-				return
-			}
-		}
-		mux.ServeHTTP(w, r)
-	})
+	return mux
 }
 
 func health(w http.ResponseWriter, _ *http.Request) {

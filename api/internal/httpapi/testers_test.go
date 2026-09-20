@@ -12,6 +12,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"judge/api/internal/contests"
+	"judge/api/internal/images"
+	"judge/api/internal/notifications"
 	"judge/api/internal/problems"
 	"judge/api/internal/profiles"
 	"judge/api/internal/submissions"
@@ -62,7 +66,7 @@ func TestTesterInvitationsPostgres(t *testing.T) {
 	}
 	f := newSigningFixture(t)
 	queue := &submissions.Store{Pool: store.Pool()}
-	h := newHandler(AuthConfig{}, PrivateProblems{Store: store, Profiles: profiles.New(store.Pool()), Submissions: queue, JudgeImage: "sha256:" + strings.Repeat("a", 64), Verifier: newCognitoVerifier(f.server.URL, "client")})
+	h := newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Profiles: profiles.New(store.Pool()), Submissions: queue, JudgeImage: "sha256:" + strings.Repeat("a", 64), Verifier: newCognitoVerifier(f.server.URL, "client")})
 	request := func(method, path, owner string, body any, want int) string {
 		t.Helper()
 		raw := ""
@@ -154,7 +158,7 @@ func TestTesterInvitationsPostgres(t *testing.T) {
 	if strings.Contains(mine, `"author":"alice"`) {
 		t.Fatal("mine includes author's submission")
 	}
-	if _, err = queue.CreateGeneration(ctx, "bob", newSubmissionID(), a, "int main() {}", "cpp17-local", submissions.Job{Generate: true}); err != nil {
+	if _, err = queue.CreateGeneration(ctx, submissions.GenerationInput{RunInput: submissions.RunInput{Owner: "bob", ID: newSubmissionID(), ProblemID: a, Source: "int main() {}", Runtime: "cpp17-local"}, ProblemVersion: 2, Job: submissions.Job{Generate: true}}); err != nil {
 		t.Fatal("tester generation: ", err)
 	}
 	request("PUT", path+"/publication", "bob", map[string]any{"version": 2, "publish": true}, 200)

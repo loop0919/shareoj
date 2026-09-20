@@ -12,6 +12,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"judge/api/internal/contests"
+	"judge/api/internal/images"
+	"judge/api/internal/notifications"
 	"judge/api/internal/problems"
 	"judge/api/internal/profiles"
 	"judge/api/internal/submissions"
@@ -62,7 +66,7 @@ func TestNotificationsPostgres(t *testing.T) {
 	}
 	f := newSigningFixture(t)
 	queue := &submissions.Store{Pool: store.Pool()}
-	h := newHandler(AuthConfig{}, PrivateProblems{Store: store, Profiles: profiles.New(store.Pool()), Submissions: queue, JudgeImage: "sha256:" + strings.Repeat("a", 64), Verifier: newCognitoVerifier(f.server.URL, "client")})
+	h := newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Profiles: profiles.New(store.Pool()), Submissions: queue, JudgeImage: "sha256:" + strings.Repeat("a", 64), Verifier: newCognitoVerifier(f.server.URL, "client")})
 	request := func(method, path, owner string, body any, want int) string {
 		t.Helper()
 		raw := ""

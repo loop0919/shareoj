@@ -5,7 +5,7 @@ import (
 	"net/http"
 )
 
-func (p PrivateProblems) solvedProblems(w http.ResponseWriter, r *http.Request, owner string) {
+func (p problemHandler) solvedProblems(w http.ResponseWriter, r *http.Request, owner string) {
 	store, ok := p.Store.(interface {
 		SolvedProblems(context.Context, string) ([]string, error)
 	})

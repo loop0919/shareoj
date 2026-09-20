@@ -10,10 +10,14 @@ import (
 )
 
 func TestRetiredCPP17IsHiddenAndRejected(t *testing.T) {
-	p := PrivateProblems{JudgeImage: "sha256:" + strings.Repeat("a", 64), JudgeRuntime: "cpp17-isolate",
-		JudgeEnabledRuntimes: "c23-gcc,c23-clang,python314,pypy311,codon020,rust2024,cpp23-gcc,cpp23-clang",
-		Submissions:          &submissions.Store{}}
-	catalog := p.availableRuntimes()
+	p := submissionHandler{Service: submissions.Service{
+		Config: submissions.Config{
+			JudgeImage: "sha256:" + strings.Repeat("a", 64), JudgeRuntime: "cpp17-isolate",
+			JudgeEnabledRuntimes: "c23-gcc,c23-clang,python314,pypy311,codon020,rust2024,cpp23-gcc,cpp23-clang",
+		},
+		Submissions: &submissions.Store{},
+	}}
+	catalog := p.AvailableRuntimes()
 	if len(catalog) != 8 {
 		t.Fatalf("unexpected catalog: %+v", catalog)
 	}
@@ -34,11 +38,11 @@ func TestRetiredCPP17IsHiddenAndRejected(t *testing.T) {
 }
 
 func TestRuntimeCatalogFollowsAdmissionConfiguration(t *testing.T) {
-	p := PrivateProblems{JudgeImage: "sha256:" + strings.Repeat("a", 64), JudgeRuntime: "cpp17-isolate"}
+	p := submissionHandler{Service: submissions.Service{Config: submissions.Config{JudgeImage: "sha256:" + strings.Repeat("a", 64), JudgeRuntime: "cpp17-isolate"}}}
 	for _, enabled := range []string{"", "cpp17,c23-gcc", "none"} {
 		p.JudgeEnabledRuntimes = enabled
 		r := httptest.NewRecorder()
-		newHandler(AuthConfig{}, p).ServeHTTP(r, httptest.NewRequest("GET", "/runtimes", nil))
+		p.runtimes(r, httptest.NewRequest("GET", "/runtimes", nil))
 		if r.Code != 200 || r.Header().Get("Cache-Control") != "no-store" {
 			t.Fatal(r)
 		}
@@ -57,13 +61,13 @@ func TestRuntimeCatalogFollowsAdmissionConfiguration(t *testing.T) {
 		}
 	}
 	p.JudgeImage = ""
-	if len(p.availableRuntimes()) != 0 {
+	if len(p.AvailableRuntimes()) != 0 {
 		t.Fatal("disabled judge advertised runtimes")
 	}
 }
 
 func TestMaintenanceRejectsAllJudgeRequestsBeforeCreatingJobs(t *testing.T) {
-	p := PrivateProblems{JudgeEnabledRuntimes: "none", Submissions: &submissions.Store{}}
+	p := submissionHandler{Service: submissions.Service{Config: submissions.Config{JudgeEnabledRuntimes: "none"}, Submissions: &submissions.Store{}}}
 	// admission --pause also clears the digest. Maintenance must take priority.
 	for _, body := range []string{
 		`{"source":"normal"}`, `{"contestId":"contest"}`, `{"easyTest":true}`,

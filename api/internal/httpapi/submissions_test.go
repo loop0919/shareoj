@@ -14,6 +14,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"judge/api/internal/contests"
+	"judge/api/internal/images"
+	"judge/api/internal/notifications"
 	"judge/api/internal/problems"
 	"judge/api/internal/profiles"
 	"judge/api/internal/submissions"
@@ -150,7 +154,7 @@ func TestSubmissionsPostgres(t *testing.T) {
 		}
 		image = strings.TrimSpace(string(data))
 	}
-	h := newHandler(AuthConfig{}, PrivateProblems{Store: store, Profiles: profiles.New(store.Pool()), Submissions: queue, JudgeImage: image, Verifier: newCognitoVerifier(f.server.URL, "client")})
+	h := newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Profiles: profiles.New(store.Pool()), Submissions: queue, JudgeImage: image, Verifier: newCognitoVerifier(f.server.URL, "client")})
 	request := func(method, path, owner, body string, want int) string {
 		t.Helper()
 		// These fixture scenarios represent independent judging sessions.
@@ -206,24 +210,24 @@ func TestSubmissionsPostgres(t *testing.T) {
 		if accepted != 2 || limited != 6 {
 			t.Fatalf("accepted=%d limited=%d", accepted, limited)
 		}
-		if _, err := queue.Create(ctx, "bob", newSubmissionID(), id, "source", image); err != nil {
+		if _, err := queue.CreateRun(ctx, submissions.RunInput{Owner: "bob", ID: newSubmissionID(), ProblemID: id, Source: "source", Image: image, Runtime: "cpp17-local"}); err != nil {
 			t.Fatal(err)
 		}
 		// Only one slot expires: accept one more, then reject generation too.
 		if _, err := store.Pool().Exec(ctx, `UPDATE submissions SET created_at=clock_timestamp()-interval '91 seconds' WHERE id=(SELECT id FROM submissions WHERE owner_id='alice' ORDER BY created_at LIMIT 1)`); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := queue.Create(ctx, "alice", newSubmissionID(), id, "source", image); err != nil {
+		if _, err := queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: newSubmissionID(), ProblemID: id, Source: "source", Image: image, Runtime: "cpp17-local"}); err != nil {
 			t.Fatal(err)
 		}
-		_, err := queue.CreateGeneration(ctx, "alice", newSubmissionID(), id, "source", "cpp17-local", submissions.Job{Generate: true})
+		_, err := queue.CreateGeneration(ctx, submissions.GenerationInput{RunInput: submissions.RunInput{Owner: "alice", ID: newSubmissionID(), ProblemID: id, Source: "source", Runtime: "cpp17-local"}, ProblemVersion: 1, Job: submissions.Job{Generate: true}})
 		var limitedErr *submissions.RateLimitError
 		if !errors.As(err, &limitedErr) {
 			t.Fatalf("generation bypassed shared limit: %v", err)
 		}
 		// A full normal quota leaves all three sample slots available.
 		for i := 0; i < 4; i++ {
-			_, err := queue.CreateTestRun(ctx, "alice", newSubmissionID(), id, "source", image, "cpp17-local", true)
+			_, err := queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: newSubmissionID(), ProblemID: id, Source: "source", Image: image, Runtime: "cpp17-local", EasyTest: true})
 			if i < 3 && err != nil {
 				t.Fatal(err)
 			}
@@ -235,10 +239,10 @@ func TestSubmissionsPostgres(t *testing.T) {
 		if _, err := store.Pool().Exec(ctx, `UPDATE submissions SET created_at=clock_timestamp()-interval '61 seconds' WHERE owner_id='alice'`); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := queue.CreateTestRun(ctx, "alice", newSubmissionID(), id, "source", image, "cpp17-local", true); err != nil {
+		if _, err := queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: newSubmissionID(), ProblemID: id, Source: "source", Image: image, Runtime: "cpp17-local", EasyTest: true}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := queue.Create(ctx, "alice", newSubmissionID(), id, "source", image); !errors.As(err, &limitedErr) || limitedErr.RetryAfter < 1 || limitedErr.RetryAfter > 30 {
+		if _, err := queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: newSubmissionID(), ProblemID: id, Source: "source", Image: image, Runtime: "cpp17-local"}); !errors.As(err, &limitedErr) || limitedErr.RetryAfter < 1 || limitedErr.RetryAfter > 30 {
 			t.Fatalf("normal quota expired too early: %v", err)
 		}
 		if _, err := store.Pool().Exec(ctx, `DELETE FROM submissions`); err != nil {
@@ -299,7 +303,7 @@ func TestSubmissionsPostgres(t *testing.T) {
 	// The same UI language selects a pinned cloud runtime, never the local worker.
 	localHandler := h
 	dispatches := 0
-	h = newHandler(AuthConfig{}, PrivateProblems{Store: store, Profiles: profiles.New(store.Pool()), Submissions: queue, JudgeImage: image, JudgeRuntime: "cpp17-isolate", Verifier: newCognitoVerifier(f.server.URL, "client"), DispatchJudge: func(ctx context.Context) error {
+	h = newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Profiles: profiles.New(store.Pool()), Submissions: queue, JudgeImage: image, JudgeRuntime: "cpp17-isolate", Verifier: newCognitoVerifier(f.server.URL, "client"), DispatchJudge: func(ctx context.Context) error {
 		dispatches++
 		var count int
 		if err := store.Pool().QueryRow(ctx, `SELECT count(*) FROM submissions WHERE runtime='cpp17-isolate' AND status='QUEUED'`).Scan(&count); err != nil || count != 1 {
@@ -319,7 +323,7 @@ func TestSubmissionsPostgres(t *testing.T) {
 	if dispatches != 1 {
 		t.Fatalf("dispatches=%d; accepted submission must wake once, rejected ones never", dispatches)
 	}
-	h = newHandler(AuthConfig{}, PrivateProblems{Store: store, Profiles: profiles.New(store.Pool()), Submissions: queue, JudgeImage: image, JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: "cpp17,c23-gcc", Verifier: newCognitoVerifier(f.server.URL, "client")})
+	h = newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Profiles: profiles.New(store.Pool()), Submissions: queue, JudgeImage: image, JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: "cpp17,c23-gcc", Verifier: newCognitoVerifier(f.server.URL, "client")})
 	if err := json.Unmarshal([]byte(request("POST", "/my/submissions", "alice", strings.Replace(body, "cpp17-local", "c23-gcc", 1), 202)), &cloud); err != nil || cloud.Runtime != "c23-gcc-isolate" {
 		t.Fatalf("C runtime not pinned: %+v %v", cloud, err)
 	}
@@ -577,7 +581,7 @@ func TestSubmissionsPostgres(t *testing.T) {
 	}
 	request("POST", "/my/submissions", "alice", checkerBody, 409) // Python is not published locally.
 	request("PUT", "/my/problems/"+checkerID+"/publication", "alice", fmt.Sprintf(`{"version":%d,"publish":true}`, cp.Version), 400)
-	h = newHandler(AuthConfig{}, PrivateProblems{Store: store, Submissions: queue, JudgeImage: image, JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: "cpp17,python314", Verifier: newCognitoVerifier(f.server.URL, "client")})
+	h = newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Submissions: queue, JudgeImage: image, JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: "cpp17,python314", Verifier: newCognitoVerifier(f.server.URL, "client")})
 	checkerBody = strings.Replace(checkerBody, "cpp17-local", "cpp17", 1)
 	request("POST", "/my/submissions", "alice", checkerBody, 202)
 	cp, err = store.Publish(ctx, "alice", checkerID, cp.Version, true)
@@ -676,11 +680,11 @@ func TestSubmissionsPostgres(t *testing.T) {
 			t.Fatal("sample dialogue unavailable to submitter")
 		}
 	}
-	if _, err = queue.CreateRuntime(ctx, "alice", "99999999-9999-4999-8999-999999999999", interactiveID, "source", image, "cpp17-local", "python314"); !errors.Is(err, submissions.ErrNotReady) {
+	if _, err = queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: "99999999-9999-4999-8999-999999999999", ProblemID: interactiveID, Source: "source", Image: image, Runtime: "cpp17-local", CheckerRuntimes: []string{"python314"}}); !errors.Is(err, submissions.ErrNotReady) {
 		t.Fatal("local worker accepted interactive job", err)
 	}
 	t.Run("testlib protocol is pinned with judge source", func(t *testing.T) {
-		h = newHandler(AuthConfig{}, PrivateProblems{Store: store, Submissions: queue, JudgeImage: image, JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: "cpp23-gcc", Verifier: newCognitoVerifier(f.server.URL, "client")})
+		h = newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Submissions: queue, JudgeImage: image, JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: "cpp23-gcc", Verifier: newCognitoVerifier(f.server.URL, "client")})
 		for index, field := range []string{"checker", "interactor"} {
 			pid := fmt.Sprintf("aaaaaaaa-aaaa-4aaa-8aaa-%012d", index)
 			code := &problems.Generator{Runtime: "cpp23-gcc", Source: "testlib-original", Protocol: "testlib"}
@@ -714,6 +718,40 @@ func TestSubmissionsPostgres(t *testing.T) {
 			}
 		}
 	})
+	t.Run("generation rejects a draft edited after job construction", func(t *testing.T) {
+		const owner = "generation-version"
+		if _, err := store.Pool().Exec(ctx, `INSERT INTO user_profiles(owner_id,handle) VALUES($1,'generation_version')`, owner); err != nil {
+			t.Fatal(err)
+		}
+		pid := newSubmissionID()
+		draft := problems.Draft{Title: "Versioned generation", TimeLimitMS: "1000", MemoryLimitMB: "512", TestCases: []problems.TestCase{{Input: "old"}}}
+		before, err := store.Save(ctx, owner, pid, 0, draft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		draft.TestCases[0].Input = "new"
+		after, err := store.Save(ctx, owner, pid, before.Version, draft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		in := submissions.GenerationInput{
+			RunInput:       submissions.RunInput{Owner: owner, ID: newSubmissionID(), ProblemID: pid, Source: "source", Runtime: "cpp17-local"},
+			ProblemVersion: before.Version,
+			Job:            submissions.Job{Generate: true, Cases: before.Draft.TestCases},
+		}
+		if _, err = queue.CreateGeneration(ctx, in); !errors.Is(err, problems.ErrConflict) {
+			t.Fatalf("stale job accepted: %v", err)
+		}
+		var count int
+		if err = store.Pool().QueryRow(ctx, `SELECT count(*) FROM submissions WHERE id=$1`, in.ID).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("stale job persisted: %d %v", count, err)
+		}
+		in.ProblemVersion, in.Job.Cases = after.Version, after.Draft.TestCases
+		got, err := queue.CreateGeneration(ctx, in)
+		if err != nil || got.ProblemVersion != after.Version {
+			t.Fatalf("current job rejected: %+v %v", got, err)
+		}
+	})
 }
 
 func TestCheckerDraftValidation(t *testing.T) {
@@ -721,9 +759,13 @@ func TestCheckerDraftValidation(t *testing.T) {
 		runtime, source string
 		valid           bool
 	}{
-		{"cpp17", "", true}, {"python314", "assert True", true}, {"java24", "class Main {}", true},
-		{"sh", "exit 0", false}, {"cpp17-isolate", "int main(){}", false},
-		{"cpp17", "\x00", false}, {"cpp17", strings.Repeat("あ", 22000), false},
+		{"cpp17", "", true},
+		{"python314", "assert True", true},
+		{"java24", "class Main {}", true},
+		{"sh", "exit 0", false},
+		{"cpp17-isolate", "int main(){}", false},
+		{"cpp17", "\x00", false},
+		{"cpp17", strings.Repeat("あ", 22000), false},
 	} {
 		draft := problems.Draft{TimeLimitMS: "1000", MemoryLimitMB: "512", Checker: &problems.Generator{Runtime: tc.runtime, Source: tc.source}}
 		for _, interactive := range []bool{false, true} {
@@ -749,9 +791,12 @@ func TestJudgeProtocolsAreExplicitAndBoundToSupportedRuntimes(t *testing.T) {
 		runtime, protocol string
 		valid             bool
 	}{
-		{"cpp23-gcc", "testlib", true}, {"cpp23-clang", "testlib", true},
-		{"cpp17", "", true}, {"python314", "legacy", true},
-		{"python314", "testlib", false}, {"cpp23-gcc", "guess", false},
+		{"cpp23-gcc", "testlib", true},
+		{"cpp23-clang", "testlib", true},
+		{"cpp17", "", true},
+		{"python314", "legacy", true},
+		{"python314", "testlib", false},
+		{"cpp23-gcc", "guess", false},
 	} {
 		code := &problems.Generator{Runtime: tc.runtime, Protocol: tc.protocol, Source: "code"}
 		for _, interactive := range []bool{false, true} {

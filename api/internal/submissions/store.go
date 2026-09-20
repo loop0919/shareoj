@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"judge/api/internal/problems"
-
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"judge/api/internal/problems"
 )
 
 var ErrNotReady = errors.New("problem is not ready for judging")
@@ -130,25 +130,19 @@ func scan(row pgx.Row) (Submission, error) {
 	return s, err
 }
 
-// Create pins the published version, or the owner's unpublished draft, at insertion.
-func (s *Store) Create(ctx context.Context, owner, id, problemID, source, image string) (Submission, error) {
-	return s.CreateRuntime(ctx, owner, id, problemID, source, image, "cpp17-local")
+// RunInput identifies a submission and the immutable runtime configuration.
+type RunInput struct {
+	Owner, ID, ProblemID, Source, Image, Runtime string
+	EasyTest                                     bool
+	ContestID                                    string
+	CheckerRuntimes                              []string
 }
 
-func (s *Store) CreateRuntime(ctx context.Context, owner, id, problemID, source, image, runtime string, checkerRuntimes ...string) (Submission, error) {
-	return s.CreateTestRun(ctx, owner, id, problemID, source, image, runtime, false, checkerRuntimes...)
-}
+// CreateRun pins the selected problem version and cases in the insertion statement.
+func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) {
+	owner, id, problemID, source, image, runtime := in.Owner, in.ID, in.ProblemID, in.Source, in.Image, in.Runtime
+	easyTest, contestID, checkerRuntimes := in.EasyTest, in.ContestID, in.CheckerRuntimes
 
-// CreateTestRun selects sample cases inside the same statement that pins the problem version.
-func (s *Store) CreateTestRun(ctx context.Context, owner, id, problemID, source, image, runtime string, easyTest bool, checkerRuntimes ...string) (Submission, error) {
-	return s.createTestRun(ctx, owner, id, problemID, source, image, runtime, easyTest, "", checkerRuntimes...)
-}
-
-func (s *Store) CreateContestRun(ctx context.Context, owner, id, problemID, source, image, runtime string, easyTest bool, contestID string, checkerRuntimes ...string) (Submission, error) {
-	return s.createTestRun(ctx, owner, id, problemID, source, image, runtime, easyTest, contestID, checkerRuntimes...)
-}
-
-func (s *Store) createTestRun(ctx context.Context, owner, id, problemID, source, image, runtime string, easyTest bool, contestID string, checkerRuntimes ...string) (Submission, error) {
 	if len(checkerRuntimes) == 0 {
 		checkerRuntimes = []string{"cpp17"}
 	}
@@ -298,8 +292,15 @@ func (s *Store) ResolveTestFiles(ctx context.Context, job *Job) error {
 	return nil
 }
 
-// CreateGeneration accepts only cases constructed by the owner-authorized HTTP handler.
-func (s *Store) CreateGeneration(ctx context.Context, owner, id, problemID, source, runtime string, job Job) (Submission, error) {
+type GenerationInput struct {
+	RunInput
+	ProblemVersion int64
+	Job            Job
+}
+
+// CreateGeneration pins the version used by Service to construct the authorized cases.
+func (s *Store) CreateGeneration(ctx context.Context, in GenerationInput) (Submission, error) {
+	owner, id, problemID, source, runtime, job := in.Owner, in.ID, in.ProblemID, in.Source, in.Runtime, in.Job
 	raw, err := json.Marshal(job)
 	if err != nil {
 		return Submission{}, err
@@ -309,6 +310,17 @@ func (s *Store) CreateGeneration(ctx context.Context, owner, id, problemID, sour
 		return Submission{}, err
 	}
 	defer tx.Rollback(ctx)
+	// Lock the draft until insertion so a concurrent edit cannot change its version.
+	var version int64
+	if err = tx.QueryRow(ctx, `SELECT version FROM problem_drafts WHERE id=$1 AND can_manage_problem(id,$2) FOR SHARE`, problemID, owner).Scan(&version); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			err = problems.ErrNotFound
+		}
+		return Submission{}, err
+	}
+	if version != in.ProblemVersion {
+		return Submission{}, problems.ErrConflict
+	}
 	result, err := scan(tx.QueryRow(ctx, `INSERT INTO submissions
  (id,owner_id,problem_id,problem_version,problem_title,runtime,source,job)
  SELECT $1,$2,id,version,draft->>'title',$5,$4,$6 FROM problem_drafts

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	"judge/api/internal/problems"
 )
 
@@ -109,7 +110,7 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
 	return c, tx.Commit(ctx)
 }
 
-func (s *Store) Save(ctx context.Context, owner, id string, in Input, validate func(problems.Draft) bool) (err error) {
+func (s *Store) Save(ctx context.Context, owner, id string, in Input, policy JudgePolicy) (err error) {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -181,7 +182,7 @@ func (s *Store) Save(ctx context.Context, owner, id string, in Input, validate f
 	for i, p := range in.Problems {
 		snap := snapshots[p.ID]
 		var d problems.Draft
-		if json.Unmarshal(snap.data, &d) != nil || !validate(d) {
+		if json.Unmarshal(snap.data, &d) != nil || !policy.validProblem(d) {
 			return ErrConflict
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO contest_problems(contest_id,problem_id,position,points,draft,problem_version) VALUES($1,$2,$3,$4,$5,$6)`, id, p.ID, i, p.Points, snap.data, snap.version)

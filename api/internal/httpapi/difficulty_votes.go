@@ -7,7 +7,7 @@ import (
 	"judge/api/internal/problems"
 )
 
-func (p PrivateProblems) difficultyVote(w http.ResponseWriter, r *http.Request, owner string) {
+func (p problemHandler) difficultyVote(w http.ResponseWriter, r *http.Request, owner string) {
 	id := r.PathValue("id")
 	if !problemID.MatchString(id) {
 		authError(w, 404, "problem_not_found")
