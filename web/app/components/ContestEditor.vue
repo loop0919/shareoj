@@ -11,7 +11,6 @@ const startsAt = ref('')
 const endsAt = ref('')
 const penaltyMinutes = ref(5)
 const version = ref(0)
-const unpublished = ref(true)
 const available = ref<AccountSummary[]>([])
 const selected = ref<ContestProblem[]>([])
 const id = ref(props.contestId ?? '')
@@ -44,7 +43,6 @@ async function load() {
       const c = await $fetch<Contest>(`/api/my/contests/${props.contestId}`)
       if (!c.canEdit) { locked.value = true; message.value = '開始後、または作成者以外は編集できません。'; return }
       title.value = c.title; description.value = c.description; startsAt.value = localDate(c.startsAt); endsAt.value = localDate(c.endsAt)
-      unpublished.value = c.status === 'draft'
       penaltyMinutes.value = c.penaltyMinutes; version.value = c.version; selected.value = c.problems
     } else id.value = crypto.randomUUID()
     let cursor = ''
@@ -105,8 +103,8 @@ async function save() {
         <button type="button" class="editor-button" :aria-pressed="mode === 'preview'" aria-label="プレビュー" title="プレビュー" @click="mode = 'preview'"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg></button>
       </div>
       <div class="author-actions">
-        <button type="submit" form="contest-form" class="editor-button primary save-button" :disabled="!ready || locked || busy" :aria-busy="busy" :aria-label="busy ? '保存中' : '保存'" title="保存（Ctrl+S / ⌘S）" aria-keyshortcuts="Control+s Meta+s">
-          <span :class="{ 'save-label-hidden': busy }">保存</span><span v-if="busy" class="save-spinner" aria-hidden="true" />
+        <button type="submit" form="contest-form" class="editor-button primary save-button" :disabled="!ready || locked || busy" :aria-busy="busy" :aria-label="busy ? '保存中' : contestId ? '変更を保存' : 'コンテストを作成'" title="保存（Ctrl+S / ⌘S）" aria-keyshortcuts="Control+s Meta+s">
+          <span :class="{ 'save-label-hidden': busy }">{{ contestId ? '保存' : '作成' }}</span><span v-if="busy" class="save-spinner" aria-hidden="true" />
         </button>
       </div>
     </header>
@@ -121,8 +119,8 @@ async function save() {
           <button type="button" class="editor-button editor-sidebar-item" :aria-current="section === 'settings' ? 'page' : undefined" aria-label="コンテスト設定" title="コンテスト設定" @click="section = 'settings'"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg><span class="editor-sidebar-label">コンテスト設定</span></button>
         </nav>
       </aside>
-      <form id="contest-form" ref="form" class="editor-main" novalidate @submit.prevent="save()">
-        <div class="editor-notices"><p v-if="unpublished" class="muted">保存したコンテストは未公開です。<NuxtLink to="/contests?post=1">コンテスト一覧の「コンテスト投稿」</NuxtLink>から公開できます。</p><p v-if="message" class="editor-error" role="alert">{{ message }}</p><noscript><p class="editor-error">編集と保存には JavaScript を有効にしてください。</p></noscript></div>
+      <form id="contest-form" ref="form" class="editor-main" novalidate @submit.prevent="save">
+        <div class="editor-notices"><p v-if="message" class="editor-error" role="alert">{{ message }}</p><noscript><p class="editor-error">編集と保存には JavaScript を有効にしてください。</p></noscript></div>
         <div v-show="section === 'description'" class="author-edit-content" data-section="description">
           <div class="author-fields"><div class="title-field"><div class="field-heading"><label for="contest-title">コンテストタイトル</label></div><input id="contest-title" v-model="title" required maxlength="120" placeholder="コンテストのタイトル" :disabled="!ready || locked || busy"></div></div>
     <div ref="workspace" class="author-workspace" :class="{ 'is-resizing': resizing }" :data-mode="mode" :style="{ '--editor-left': `${splitPercent}fr`, '--editor-right': `${100 - splitPercent}fr` }">
@@ -175,7 +173,7 @@ async function save() {
               </section>
               <section class="settings-section"><h3>誤答ペナルティ</h3><p class="muted">正解した問題の、初回正解前の誤答だけに加算します。コンパイルエラーは対象外です。</p><label for="contest-penalty">誤答ペナルティ（分）</label><input id="contest-penalty" v-model.number="penaltyMinutes" type="number" required min="0" max="1440" step="1"><p class="muted penalty-note">0分でペナルティなしにできます。</p></section>
             </fieldset>
-            <p class="muted">開始後は問題セット・配点・開催期間・ペナルティを変更できません。投稿済みのコンテストでは、問題と解説が終了後に自動公開されます。</p>
+            <p class="muted">開始後は問題セット・配点・開催期間・ペナルティを変更できません。問題と解説は終了後に自動公開されます。</p>
           </div>
         </section>
       </form>

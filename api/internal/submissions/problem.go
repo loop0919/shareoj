@@ -14,7 +14,7 @@ const problemSubmissionVisible = `problem_id=$1 AND ($2='' OR contest_id=NULLIF(
  AND (($4 AND owner_id=$3) OR (NOT $4 AND (
   (contest_id IS NULL AND EXISTS(SELECT 1 FROM problem_drafts p WHERE p.id=problem_id
    AND (can_manage_problem(p.id,$3) OR (p.published_draft IS NOT NULL AND NOT COALESCE((submissions.job->>'privateDraft')::boolean,true)))))
-  OR EXISTS(SELECT 1 FROM contests c WHERE c.id=contest_id AND (c.published OR c.owner_id=$3)
+  OR EXISTS(SELECT 1 FROM contests c WHERE c.id=contest_id
    AND (` + contestStaff + ` OR (statement_timestamp()>=c.ends_at AND submissions.created_at>=c.starts_at)))
  )))`
 
@@ -26,7 +26,7 @@ func (s *Store) problemSubmissionsAccess(ctx context.Context, problemID, contest
 	} else {
 		err = s.Pool.QueryRow(ctx, `SELECT `+contestStaff+` OR statement_timestamp()>=c.ends_at OR
    ($4 AND (statement_timestamp()>=c.starts_at OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3)))
-   FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=$1 AND c.id=$2 AND (c.published OR c.owner_id=$3)`, problemID, contestID, viewer, mine).Scan(&allowed)
+   FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=$1 AND c.id=$2`, problemID, contestID, viewer, mine).Scan(&allowed)
 	}
 	if err != nil {
 		return err

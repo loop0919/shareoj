@@ -28,7 +28,7 @@ const contestStaff = `(c.owner_id=$3 OR EXISTS (
  WHERE cp.contest_id=c.id AND t.owner_id=$3))`
 
 const contestPublic = `contest_id=$1 AND NOT COALESCE((job->>'easyTest')::boolean,false)
- AND EXISTS(SELECT 1 FROM contests c WHERE c.id=$1 AND (c.published OR c.owner_id=$3) AND (` + contestStaff + ` OR (statement_timestamp()>=c.ends_at AND submissions.created_at>=c.starts_at)))`
+ AND EXISTS(SELECT 1 FROM contests c WHERE c.id=$1 AND (` + contestStaff + ` OR (statement_timestamp()>=c.ends_at AND submissions.created_at>=c.starts_at)))`
 
 func (s *Store) ContestGet(ctx context.Context, contestID, id, viewer string) (Submission, error) {
 	item, err := scan(s.Pool.QueryRow(ctx, `SELECT `+columns+` FROM submissions WHERE `+contestPublic+` AND id=$2`, contestID, id, viewer))
@@ -44,7 +44,7 @@ func (s *Store) ContestList(ctx context.Context, contestID, viewer string, offse
 	var allowed bool
 	err := s.Pool.QueryRow(ctx, `SELECT statement_timestamp()>=c.ends_at OR c.owner_id=$2 OR EXISTS (
  SELECT 1 FROM contest_problems cp JOIN problem_testers t ON t.problem_id=cp.problem_id
- WHERE cp.contest_id=c.id AND t.owner_id=$2) FROM contests c WHERE c.id=$1 AND (c.published OR c.owner_id=$2)`, contestID, viewer).Scan(&allowed)
+ WHERE cp.contest_id=c.id AND t.owner_id=$2) FROM contests c WHERE c.id=$1`, contestID, viewer).Scan(&allowed)
 	if err != nil {
 		return ContestSubmissionList{}, err
 	}

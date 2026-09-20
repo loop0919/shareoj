@@ -56,9 +56,9 @@ func TestContestsPostgres(t *testing.T) {
 	t.Run("start time order with creation time tie break", func(t *testing.T) {
 		const older = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 		const newer = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-		exec(`INSERT INTO contests(id,owner_id,title,description,starts_at,ends_at,created_at,published)
- VALUES ($1,'alice','Older','',now()+interval '3 hours',now()+interval '4 hours',now()-interval '1 day',true),
- ($2,'alice','Newer','',now()+interval '1 hour',now()+interval '2 hours',now(),true)`, older, newer)
+		exec(`INSERT INTO contests(id,owner_id,title,description,starts_at,ends_at,created_at)
+ VALUES ($1,'alice','Older','',now()+interval '3 hours',now()+interval '4 hours',now()-interval '1 day'),
+ ($2,'alice','Newer','',now()+interval '1 hour',now()+interval '2 hours',now())`, older, newer)
 		defer exec(`DELETE FROM contests WHERE id IN ($1,$2)`, older, newer)
 		catalogue := &contests.Store{Pool: store.Pool()}
 		checkOrder := func(first, second string) {
@@ -128,36 +128,6 @@ func TestContestsPostgres(t *testing.T) {
 	request("PUT", "/my/contests/"+cid, "", in, 401)
 	request("PUT", "/my/contests/"+cid, "bob", in, 409)
 	request("PUT", "/my/contests/"+cid, "alice", in, 200)
-
-	// New contests stay private, even after their scheduled end. Owners can reschedule and publish.
-	if body := request("GET", "/my/contests/"+cid, "alice", nil, 200); !strings.Contains(body, `"status":"draft"`) || !strings.Contains(body, `"canEdit":true`) {
-		t.Fatal(body)
-	}
-	if body := request("GET", "/contests", "", nil, 200); strings.Contains(body, cid) {
-		t.Fatal("draft listed", body)
-	}
-	if body := request("GET", "/my/contests", "alice", nil, 200); !strings.Contains(body, cid) {
-		t.Fatal("owner draft missing", body)
-	}
-	exec(`UPDATE contests SET starts_at=now()-interval '2 hours',ends_at=now()-interval '1 hour' WHERE id=$1`, cid)
-	for _, path := range []string{"", "/standings", "/problems/" + a, "/submissions", "/problems/" + a + "/submissions"} {
-		request("GET", "/contests/"+cid+path, "", nil, 404)
-		request("GET", "/my/contests/"+cid+path, "bob", nil, 404)
-	}
-	request("GET", "/problems/"+a, "", nil, 404)
-	request("POST", "/my/submissions", "bob", map[string]any{"problemId": a, "contestId": cid, "runtime": "cpp17", "source": "code"}, 409)
-	request("GET", "/my/contests/"+cid+"/standings", "alice", nil, 200)
-	in.Version = 1
-	in.Publish = true
-	request("PUT", "/my/contests/"+cid, "bob", in, 404)
-	stale := in
-	stale.Version = 2
-	request("PUT", "/my/contests/"+cid, "alice", stale, 409)
-	request("PUT", "/my/contests/"+cid, "alice", in, 200)
-	request("PUT", "/my/contests/"+cid, "alice", in, 409)
-	in.Version = 0
-	in.Publish = false
-
 	request("PUT", "/my/contests/"+other, "alice", in, 409)
 	bad := in
 	bad.Problems = []contests.Problem{{ID: a, Points: 100}, {ID: a, Points: 200}}
@@ -180,7 +150,7 @@ func TestContestsPostgres(t *testing.T) {
 	request("PUT", "/my/problems/"+a+"/publication", "alice", map[string]any{"version": 1, "publish": true}, 409)
 	request("DELETE", "/my/problems/"+a+"?version=1", "alice", nil, 409)
 	// The owner can resave and reorder before the start. Stale writes are rejected.
-	in.Version = 2
+	in.Version = 1
 	in.Problems = []contests.Problem{{ID: b, Points: 200}, {ID: a, Points: 100}}
 	request("PUT", "/my/contests/"+cid, "alice", in, 200)
 	request("PUT", "/my/contests/"+cid, "alice", in, 409)
@@ -226,7 +196,7 @@ func TestContestsPostgres(t *testing.T) {
 	exec(`UPDATE contests SET starts_at=$2,ends_at=$3 WHERE id=$1`, cid, start, end)
 	// Preserve the actual pre-start relation after moving the test clock.
 	exec(`UPDATE submissions SET created_at=$2 WHERE id=$1`, pre.ID, start.Add(-time.Minute))
-	in.Version = 3
+	in.Version = 2
 	request("PUT", "/my/contests/"+cid, "alice", in, 409)
 	detail = request("GET", "/contests/"+cid+"/problems/"+a, "", nil, 200)
 	if !strings.Contains(detail, "secret statement") || strings.Contains(detail, "secret editorial") || strings.Contains(detail, "private input") {

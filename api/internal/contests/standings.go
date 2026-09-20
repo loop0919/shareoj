@@ -87,13 +87,10 @@ func Rank(attempts []Attempt, start time.Time, penaltyMinutes int) []Standing {
 	return result
 }
 
-func (s *Store) Standings(ctx context.Context, id, viewer string) ([]Standing, error) {
-	c, err := s.Get(ctx, id, viewer)
+func (s *Store) Standings(ctx context.Context, id string) ([]Standing, error) {
+	c, err := s.Get(ctx, id, "")
 	if err != nil {
 		return nil, err
-	}
-	if c.Status == "draft" {
-		return []Standing{}, nil
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT u.handle,s.problem_id,COALESCE(s.result->>'verdict',''),cp.points,s.created_at
  FROM submissions s JOIN contests c ON c.id=s.contest_id JOIN contest_problems cp ON cp.contest_id=c.id AND cp.problem_id=s.problem_id

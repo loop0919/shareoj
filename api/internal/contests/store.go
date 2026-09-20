@@ -38,7 +38,6 @@ type Contest struct {
 	Problems           []Problem `json:"problems"`
 }
 type Input struct {
-	Publish        bool      `json:"publish"`
 	Title          string    `json:"title"`
 	Description    string    `json:"description"`
 	StartsAt       time.Time `json:"startsAt"`
@@ -50,7 +49,7 @@ type Input struct {
 type Store struct{ Pool *pgxpool.Pool }
 
 const fields = `c.id,c.owner_id,u.handle,c.title,c.description,c.starts_at,c.ends_at,c.penalty_minutes,c.version,
- CASE WHEN NOT c.published THEN 'draft' WHEN statement_timestamp()<c.starts_at THEN 'scheduled' WHEN statement_timestamp()<c.ends_at THEN 'running' ELSE 'ended' END`
+ CASE WHEN statement_timestamp()<c.starts_at THEN 'scheduled' WHEN statement_timestamp()<c.ends_at THEN 'running' ELSE 'ended' END`
 
 func scan(row pgx.Row) (Contest, error) {
 	var c Contest
@@ -61,7 +60,7 @@ func scan(row pgx.Row) (Contest, error) {
 
 func (s *Store) List(ctx context.Context, owner string, offset int) ([]Contest, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT `+fields+` FROM contests c JOIN user_profiles u ON u.owner_id=c.owner_id
- WHERE (($1='' AND c.published) OR c.owner_id=$1) ORDER BY c.starts_at DESC,c.created_at DESC,c.id DESC LIMIT 51 OFFSET $2`, owner, offset)
+ WHERE ($1='' OR c.owner_id=$1) ORDER BY c.starts_at DESC,c.created_at DESC,c.id DESC LIMIT 51 OFFSET $2`, owner, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -75,11 +74,11 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
 		return Contest{}, err
 	}
 	defer tx.Rollback(ctx)
-	c, err := scan(tx.QueryRow(ctx, `SELECT `+fields+` FROM contests c JOIN user_profiles u ON u.owner_id=c.owner_id WHERE c.id=$1 AND (c.published OR c.owner_id=$2)`, id, viewer))
+	c, err := scan(tx.QueryRow(ctx, `SELECT `+fields+` FROM contests c JOIN user_profiles u ON u.owner_id=c.owner_id WHERE c.id=$1`, id))
 	if err != nil {
 		return c, err
 	}
-	c.CanEdit = viewer == c.Owner && (c.Status == "draft" || c.Status == "scheduled")
+	c.CanEdit = viewer == c.Owner && c.Status == "scheduled"
 	err = tx.QueryRow(ctx, `SELECT $2<>'' AND $2<>c.owner_id AND NOT EXISTS (
  SELECT 1 FROM contest_problems cp JOIN problem_testers t ON t.problem_id=cp.problem_id WHERE cp.contest_id=c.id AND t.owner_id=$2)
  FROM contests c WHERE c.id=$1`, id, viewer).Scan(&c.Official)
@@ -95,7 +94,7 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
   AND NOT COALESCE((s.job->>'validate')::boolean,false)
   AND s.created_at>=$4)
  FROM contest_problems cp
- WHERE cp.contest_id=$1 AND ($2 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3)) ORDER BY cp.position`, id, (c.Status == "running" || c.Status == "ended") || viewer == c.Owner, viewer, c.StartsAt)
+ WHERE cp.contest_id=$1 AND ($2 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3)) ORDER BY cp.position`, id, c.Status != "scheduled" || viewer == c.Owner, viewer, c.StartsAt)
 	if err != nil {
 		return c, err
 	}
@@ -123,8 +122,8 @@ func (s *Store) Save(ctx context.Context, owner, id string, in Input, validate f
 		}
 	}()
 	if in.Version == 0 {
-		_, err = tx.Exec(ctx, `INSERT INTO contests(id,owner_id,title,description,starts_at,ends_at,penalty_minutes,published)
- SELECT $1,$2,$3,$4,$5,$6,$7,$8 WHERE $5>clock_timestamp()`, id, owner, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes, in.Publish)
+		_, err = tx.Exec(ctx, `INSERT INTO contests(id,owner_id,title,description,starts_at,ends_at,penalty_minutes)
+ SELECT $1,$2,$3,$4,$5,$6,$7 WHERE $5>clock_timestamp()`, id, owner, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes)
 	} else {
 		// Serialize schedule edits and release against the contest row.
 		var current int64
@@ -135,8 +134,8 @@ func (s *Store) Save(ctx context.Context, owner, id string, in Input, validate f
 		if current != in.Version {
 			return ErrConflict
 		}
-		tag, e := tx.Exec(ctx, `UPDATE contests SET title=$3,description=$4,starts_at=$5,ends_at=$6,penalty_minutes=$7,published=published OR $8,version=version+1
-  WHERE id=$1 AND owner_id=$2 AND (NOT published OR starts_at>clock_timestamp()) AND $5>clock_timestamp()`, id, owner, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes, in.Publish)
+		tag, e := tx.Exec(ctx, `UPDATE contests SET title=$3,description=$4,starts_at=$5,ends_at=$6,penalty_minutes=$7,version=version+1
+  WHERE id=$1 AND owner_id=$2 AND starts_at>clock_timestamp() AND $5>clock_timestamp()`, id, owner, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes)
 		err = e
 		if err == nil && tag.RowsAffected() != 1 {
 			return ErrConflict
@@ -210,7 +209,7 @@ func (s *Store) Release(ctx context.Context) error {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT id FROM contests WHERE published AND NOT released AND ends_at<=statement_timestamp() ORDER BY id FOR UPDATE`)
+	rows, err := tx.Query(ctx, `SELECT id FROM contests WHERE NOT released AND ends_at<=statement_timestamp() ORDER BY id FOR UPDATE`)
 	if err != nil {
 		return err
 	}
@@ -239,7 +238,7 @@ func (s *Store) Problem(ctx context.Context, id, pid, viewer string) (problems.P
 	err := s.Pool.QueryRow(ctx, `SELECT cp.problem_id,cp.draft,u.handle,c.ends_at,
  (statement_timestamp()>=c.ends_at OR c.owner_id=$3 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3))
  FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id JOIN user_profiles u ON u.owner_id=c.owner_id
- WHERE c.id=$1 AND cp.problem_id=$2 AND (c.published OR c.owner_id=$3) AND (statement_timestamp()>=c.starts_at OR c.owner_id=$3 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3))`, id, pid, viewer).Scan(&p.ID, &raw, &p.Author, &p.PublishedAt, &editorial)
+ WHERE c.id=$1 AND cp.problem_id=$2 AND (statement_timestamp()>=c.starts_at OR c.owner_id=$3 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3))`, id, pid, viewer).Scan(&p.ID, &raw, &p.Author, &p.PublishedAt, &editorial)
 	if err != nil {
 		return p, err
 	}
