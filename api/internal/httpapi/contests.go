@@ -89,7 +89,7 @@ func (p PrivateProblems) contest(w http.ResponseWriter, r *http.Request, owner s
 		}
 		result, err = p.Contests.Problem(r.Context(), id, pid, owner)
 	case strings.HasSuffix(r.URL.Path, "/standings"):
-		result, err = p.Contests.Standings(r.Context(), id)
+		result, err = p.Contests.Standings(r.Context(), id, owner)
 	case strings.Contains(r.URL.Path, "/submissions"):
 		if p.Submissions == nil {
 			authError(w, 503, "judging_unavailable")

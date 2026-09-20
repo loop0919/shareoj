@@ -63,11 +63,11 @@ const problemStats = computed(() => contest.value!.problems.map(problem => {
   return { id: problem.id, submitted, accepted, handles, time: accepted ? duration(firstAt - new Date(contest.value!.startsAt).getTime()) : '' }
 }))
 function duration(ms: number) { const seconds = Math.floor(ms / 1000); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` }
-useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => contest.value!.title, path: () => `/contests/${contest.value!.id}`, description: () => contest.value!.description.slice(0, 160) })
+useSharePreview({ enabled: () => !!contest.value && contest.value.status !== 'draft', type: 'website', title: () => contest.value!.title, path: () => `/contests/${contest.value!.id}`, description: () => contest.value!.description.slice(0, 160) })
 </script>
 <template>
   <div v-if="contest" class="problem-page contest-page">
-    <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink to="/contests">コンテスト</NuxtLink><span aria-hidden="true">/</span><span>{{ contest.title }}</span></nav><TweetButton :title="contest.title" :url="`/contests/${contest.id}`" /></div>
+    <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink to="/contests">コンテスト</NuxtLink><span aria-hidden="true">/</span><span>{{ contest.title }}</span></nav><TweetButton v-if="contest.status !== 'draft'" :title="contest.title" :url="`/contests/${contest.id}`" /></div>
     <nav class="problem-menu" aria-label="コンテストメニュー">
       <NuxtLink v-for="(label, view) in views" :key="view" :to="{ path: `/contests/${contest.id}`, query: view === 'overview' ? {} : { view } }" :aria-current="activeView === view ? 'page' : undefined">{{ label }}</NuxtLink>
     </nav>
@@ -81,6 +81,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <p class="schedule-timezone muted">日時は日本時間で表示しています。</p>
       <p class="contest-scoring muted">誤答ペナルティ {{ contest.penaltyMinutes }} 分 · 部分点なし</p>
     </header>
+    <p v-if="contest.status === 'draft'" class="notice">このコンテストは未公開です。編集画面の「投稿」で公開できます。</p>
     <section v-if="activeView === 'overview'" id="overview" class="contest-section contest-description" aria-labelledby="overview-title">
       <h2 id="overview-title">概要</h2><ProblemMarkdown v-if="contest.description" :source="contest.description" /><p v-else class="muted">コンテストの説明はまだありません。</p>
       <p><NuxtLink to="/blog/contest-rules">ルール</NuxtLink></p>

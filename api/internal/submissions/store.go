@@ -181,7 +181,7 @@ func (s *Store) createTestRun(ctx context.Context, owner, id, problemID, source,
     FROM problem_drafts WHERE $9='' AND id=$3 AND (published_draft IS NOT NULL OR can_manage_problem(id,$2))
     UNION ALL
     SELECT cp.problem_id,cp.draft,cp.problem_version FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id CROSS JOIN moment
-    WHERE $9<>'' AND c.id=NULLIF($9,'')::uuid AND cp.problem_id=$3 AND
+    WHERE $9<>'' AND c.id=NULLIF($9,'')::uuid AND cp.problem_id=$3 AND (c.published OR c.owner_id=$2) AND
     (moment.now>=c.starts_at OR c.owner_id=$2 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$2))
   ) problem CROSS JOIN moment
   CROSS JOIN LATERAL (

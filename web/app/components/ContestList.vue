@@ -15,7 +15,7 @@ const { data, error, status } = await useFetch<ContestList>(endpoint, { query: {
       <p v-if="!data.items.length" class="muted">コンテストはまだありません。</p>
       <div v-else class="content-table-scroll" role="region" aria-label="コンテスト一覧" tabindex="0" :aria-busy="status === 'pending'">
         <table class="content-table"><thead><tr><th scope="col">コンテスト</th><th scope="col">状態</th><th scope="col">開始（日本時間）</th><th scope="col">終了（日本時間）</th><th scope="col">作成者</th><th v-if="mine" scope="col">操作</th></tr></thead>
-          <tbody><tr v-for="c in data.items" :key="c.id"><th scope="row"><NuxtLink :to="`/contests/${c.id}`">{{ c.title }}</NuxtLink></th><td>{{ contestStatus[c.status] }}</td><td>{{ contestDate(c.startsAt) }}</td><td>{{ contestDate(c.endsAt) }}</td><td><UserLink :handle="c.author" /></td><td v-if="mine"><NuxtLink v-if="c.status === 'scheduled'" class="editor-button" :to="`/my/contests/${c.id}`">編集</NuxtLink><span v-else class="muted">—</span></td></tr></tbody>
+          <tbody><tr v-for="c in data.items" :key="c.id"><th scope="row"><NuxtLink :to="`/contests/${c.id}`">{{ c.title }}</NuxtLink></th><td>{{ contestStatus[c.status] }}</td><td>{{ contestDate(c.startsAt) }}</td><td>{{ contestDate(c.endsAt) }}</td><td><UserLink :handle="c.author" /></td><td v-if="mine"><NuxtLink v-if="c.status === 'draft' || c.status === 'scheduled'" class="editor-button" :to="`/my/contests/${c.id}`">編集</NuxtLink><span v-else class="muted">—</span></td></tr></tbody>
         </table>
       </div>
       <ContentPagination :index="offset / 50" :has-next="data.hasMore" :loading="status === 'pending'" @move="direction => offset += direction * 50" />

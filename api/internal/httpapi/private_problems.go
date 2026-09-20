@@ -93,6 +93,7 @@ func (p PrivateProblems) register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /my/tester-invitations/{token}", p.handle)
 	mux.HandleFunc("GET /my/contests", p.handle)
 	mux.HandleFunc("GET /my/contests/{id}", p.handle)
+	mux.HandleFunc("GET /my/contests/{id}/standings", p.handle)
 	mux.HandleFunc("PUT /my/contests/{id}", p.handle)
 	mux.HandleFunc("GET /my/contests/{id}/problems/{problem}", p.handle)
 	mux.HandleFunc("GET /my/contests/{id}/problems/{problem}/submissions", p.handle)

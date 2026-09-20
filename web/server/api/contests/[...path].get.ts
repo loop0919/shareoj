@@ -10,7 +10,7 @@ export default defineEventHandler(async event => {
   const query = getQuery(event)
   if (query.mine === '1' && !hasSession(event)) throw createError({ statusCode: 401 })
   const search = new URLSearchParams({ offset: typeof query.offset === 'string' ? query.offset : '0', mine: typeof query.mine === 'string' ? query.mine : '0' })
-  if (hasSession(event) && (!path.includes('/') || path.includes('/problems/') || path.includes('/submissions'))) {
+  if (hasSession(event)) {
     try { return await privateAPI(event, `/my/contests/${path}?${search}`) }
     catch (error) { if (![401, 403].includes((error as { statusCode?: number }).statusCode ?? 0)) throw error }
   }
