@@ -62,7 +62,7 @@ useSharePreview({ title: () => problem.value!.title, path: () => `/problems/${pr
 <style scoped>
 .problem-summary { align-items: flex-start; flex-wrap: nowrap; }
 .problem-meta { flex: 1; padding-top: 8px; }
-.problem-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; max-width: 100%; margin-left: auto; }
+.problem-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; max-width: 100%; margin-left: auto; }
 .problem-actions :deep(.favorite-control) { margin: 0; max-width: 100%; overflow-wrap: anywhere; }
-@media (max-width: 600px) { .problem-summary { flex-wrap: wrap; } .problem-meta { flex-basis: 100%; } .problem-actions { flex-direction: row; flex-wrap: wrap; align-items: center; } }
+@media (max-width: 600px) { .problem-summary { flex-wrap: wrap; } .problem-meta { flex-basis: 100%; } }
 </style>
