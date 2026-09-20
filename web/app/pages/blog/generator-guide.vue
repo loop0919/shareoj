@@ -19,7 +19,7 @@ useSharePreview({ title, path: '/blog/generator-guide', description })
       <p class="lead">テストケースをコードで作れます。ケース番号から入力を生成し、その入力を解答プログラムに渡して期待出力を揃えましょう。</p>
     </header>
     <nav class="blog-toc" aria-label="記事の目次"><a href="#input">入力を作る</a><a href="#output">期待出力を作る</a><a href="#validation">入力を検証する</a><a href="#steps">画面での手順</a><a href="#limits">上限と失敗時の動作</a><a href="#check">生成後の確認</a></nav>
-    <ProblemMarkdown copyable :source="content" />
+    <ProblemMarkdown :source="content" />
     <NuxtLink class="return-link" to="/problems/new">問題作成画面へ →</NuxtLink>
   </article>
 </template>

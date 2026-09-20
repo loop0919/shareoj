@@ -19,7 +19,7 @@ useSharePreview({ title, path: '/blog/language-guide', description })
       <p class="lead">提出するコードに合わせて、言語と実行環境を選んでください。</p>
     </header>
     <nav class="blog-toc" aria-label="記事の目次"><a href="#submission">提出の基本</a><a href="#languages">言語とバージョン</a><a href="#libraries">追加ライブラリ</a><a href="#testlib">testlib形式の判定</a><a href="#limits">実行制限</a></nav>
-    <ProblemMarkdown copyable :source="content" />
+    <ProblemMarkdown :source="content" />
     <NuxtLink class="return-link" to="/blog">記事一覧へ →</NuxtLink>
   </article>
 </template>
