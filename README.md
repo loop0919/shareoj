@@ -1,8 +1,28 @@
 # ShareOJ
 
-ShareOJ（Share Online Judge）は、オンラインジャッジサービス。
+[![Website](https://img.shields.io/badge/Website-share--oj.net-0f766e?style=flat-square)](https://www.share-oj.net/)
+[![CI](https://github.com/loop0919/shareoj/actions/workflows/ci.yml/badge.svg)](https://github.com/loop0919/shareoj/actions/workflows/ci.yml)
+[![Issues](https://img.shields.io/github/issues/loop0919/shareoj?style=flat-square&color=2563eb)](https://github.com/loop0919/shareoj/issues)
 
-Go API、Nuxtフロントエンド、AWS上のジャッジ基盤を開発するリポジトリ。
+**考える楽しさを、次の一問へ。**
+
+ShareOJ（Share Online Judge）は、プログラミング問題を解き、作り、共有できるオンラインジャッジです。
+コードを提出して自動採点を受けるだけでなく、自作の問題や、解き方から学んだことを公開できます。
+
+**[ShareOJを使う](https://www.share-oj.net/)** · [問題を見る](https://www.share-oj.net/problems) · [記事を読む](https://www.share-oj.net/blog) · [コンテストを見る](https://www.share-oj.net/contests)
+
+## ShareOJでできること
+
+- **問題を解く**：公開されているプログラミング問題に挑戦し、コードを提出して採点結果を確認できます。
+- **問題を作る**：問題文とテストケースを用意して、自作の問題を公開できます。
+- **記事で共有する**：問題の解き方や学んだことを記事にして、ほかの人と共有できます。
+- **コンテストを楽しむ**：コンテストに参加するほか、自分で開催することもできます。
+
+## はじめるには
+
+[公開問題](https://www.share-oj.net/problems)から、気になる一問を探してみてください。
+アカウントは[新規登録](https://www.share-oj.net/signup)から作成できます。
+作問から始めたい方は、[問題作成](https://www.share-oj.net/problems/new)へどうぞ。
 
 ## バグ報告・機能提案
 
@@ -10,6 +30,11 @@ Go API、Nuxtフロントエンド、AWS上のジャッジ基盤を開発する�
 現在、外部からのPull Requestは受け付けていません。
 
 ## 開発環境
+
+このリポジトリでは、ShareOJのGo API、Nuxtフロントエンド、AWS上のジャッジ基盤を開発しています。
+
+<details>
+<summary>ローカル環境の起動と開発手順</summary>
 
 Nix と make をインストール済みなら、リポジトリのルートで次のコマンドを実行する。
 
@@ -120,3 +145,5 @@ set +a
 
 AWSアカウント全体の請求アラートは、別フォルダ`~/aws-setting`で管理する。
 このリポジトリのCI/CDではデプロイしない。
+
+</details>
