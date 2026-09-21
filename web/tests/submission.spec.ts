@@ -366,3 +366,26 @@ for (const view of ['all', 'mine', 'history']) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   })
 }
+
+for (const scope of ['problem', 'contest']) {
+  test(`${scope} without samples disables sample validation and explains why`, async ({ page }) => {
+    const base = scope === 'contest' ? '/contests/88888888-8888-4888-8888-888888888888' : ''
+    await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'alice' } } }))
+    await page.route(`**/api${base}/problems/${problemId}`, async route => {
+      const response = await route.fetch()
+      await route.fulfill({ json: { ...await response.json(), hasSamples: false } })
+    })
+    await page.goto(scope === 'contest' ? `${base}?view=problems` : '/problems')
+    await page.locator(`a[href="${base}/problems/${problemId}"]`).first().click()
+    await page.getByLabel('ソースコード', { exact: true }).fill('int main(){}')
+    const sample = page.getByRole('button', { name: 'サンプル検証', exact: true })
+    await expect(sample).toBeDisabled()
+    await expect(page.getByRole('button', { name: '提出する', exact: true })).toBeEnabled()
+    await sample.hover()
+    await expect(page.getByRole('tooltip')).toHaveText('この問題は利用可能なサンプルがありません')
+    await expect(page.getByRole('tooltip')).toBeVisible()
+    await page.getByLabel('ソースコード', { exact: true }).hover()
+    await page.getByRole('button', { name: 'サンプル検証の説明', exact: true }).focus()
+    await expect(page.getByRole('tooltip')).toBeVisible()
+  })
+}

@@ -254,6 +254,7 @@ func (s *Store) Problem(ctx context.Context, id, pid, viewer string) (problems.P
 	p.MemoryLimitMB = d.MemoryLimitMB
 	p.SpecialJudge = d.Checker != nil
 	p.Interactive = d.Interactor != nil
+	p.HasSamples = d.HasSamples()
 	if editorial {
 		p.Editorial = d.Editorial
 	}

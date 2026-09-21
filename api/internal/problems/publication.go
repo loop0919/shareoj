@@ -17,6 +17,7 @@ type PublicProblem struct {
 	Difficulty             *int      `json:"difficulty"`
 	SolverCount            int64     `json:"solverCount"`
 	FavoriteCount          int64     `json:"favoriteCount"`
+	HasSamples             bool      `json:"hasSamples"`
 	Interactive            bool      `json:"interactive,omitempty"`
 	SpecialJudge           bool      `json:"specialJudge,omitempty"`
 	ID                     string    `json:"id"`
@@ -101,6 +102,7 @@ func (s *Store) PublicGet(ctx context.Context, id string) (PublicProblem, error)
 	p.MemoryLimitMB = d.MemoryLimitMB
 	p.SpecialJudge = d.Checker != nil
 	p.Interactive = d.Interactor != nil
+	p.HasSamples = d.HasSamples()
 	p.Testers, err = s.Testers(ctx, id)
 	return p, err
 }
@@ -136,4 +138,14 @@ func (s *Store) SolvedProblems(ctx context.Context, owner string) ([]string, err
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
+// HasSamples reports whether sample validation has any cases to run.
+func (d Draft) HasSamples() bool {
+	for _, c := range d.TestCases {
+		if c.IsSample {
+			return true
+		}
+	}
+	return false
 }

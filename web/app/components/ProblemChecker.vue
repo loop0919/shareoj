@@ -3,7 +3,11 @@ import type { ProblemDraft } from '~~/shared/types/problem-draft'
 
 const checker = defineModel<ProblemDraft['checker']>({ required: true })
 const interactor = defineModel<ProblemDraft['interactor']>('interactor', { required: true })
-defineProps<{ disabled: boolean, problemId: string, published: boolean, save: () => Promise<boolean> }>()
+const props = defineProps<{ disabled: boolean, problemId: string, published: boolean, publishedVersion: number, hasSamples: boolean, save: () => Promise<boolean> }>()
+const { data: publishedProblem } = await useAsyncData(
+  () => `checker-samples-${props.problemId}-${props.publishedVersion}`,
+  () => props.published && props.problemId ? $fetch(`/api/problems/${props.problemId}`) : Promise.resolve(null),
+)
 const { data: catalog, error: catalogError } = useJudgeCatalog()
 const available = computed(() => catalogError.value || catalog.value?.maintenance ? [] : catalog.value?.items ?? [])
 let previousCode: ProblemDraft['checker'] = null
@@ -63,7 +67,7 @@ const error = computed(() => code.value && (!code.value.source.trim() || new Tex
     </template>
     <p v-if="published">提出は公開中の設定で採点します。編集内容を採点へ反映するには、問題管理から公開内容を更新してください。</p>
     <p v-else>テストケースを登録して解答を提出すると、保存した下書きで採点できます。正解例と不正解例の両方を試してください。</p>
-    <SubmissionForm v-if="problemId" class="checker-submission" :problem-id="problemId" :before-submit="save" :disabled="disabled || !!error" />
+    <SubmissionForm v-if="problemId" class="checker-submission" :has-samples="published ? !!publishedProblem?.hasSamples : hasSamples" :problem-id="problemId" :before-submit="save" :disabled="disabled || !!error" />
   </section>
 </template>
 

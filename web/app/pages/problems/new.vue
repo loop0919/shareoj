@@ -180,7 +180,7 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
       </section>
     </div>
     </div>
-    <ProblemChecker v-if="ready" v-show="section === 'checker'" v-model="draft.checker" v-model:interactor="draft.interactor" :disabled="publishing" :problem-id="cloudId" :save="saveDraft" :published="!!publishedVersion" />
+    <ProblemChecker v-if="ready" v-show="section === 'checker'" v-model="draft.checker" v-model:interactor="draft.interactor" :disabled="publishing" :problem-id="cloudId" :save="saveDraft" :published="!!publishedVersion" :published-version="publishedVersion" :has-samples="draft.testCases.some(test => test.isSample)" />
     <TestCaseEditor v-if="section === 'tests'" v-model="draft.testCases" v-model:markdown="draft.markdown" :disabled="!ready || publishing || generating" :problem-id="cloudId" />
     <TestCaseGenerator v-if="ready" v-show="section === 'generators'" v-model="draft.testCases" v-model:config="draft.generators" v-model:busy="generating" :save="saveDraft" :disabled="publishing" :problem-id="cloudId" @show-cases="section = 'tests'" />
     <section v-if="managing" class="problem-management" aria-labelledby="management-title">

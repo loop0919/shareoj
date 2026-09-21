@@ -53,7 +53,7 @@ useSharePreview({ title: () => problem.value!.title, path: () => `/problems/${pr
         <ProblemMarkdown :source="problem.markdown" />
         <p v-if="problem.interactive" class="muted">インタラクティブ問題：標準入出力でジャッジと対話します。応答を待つ前に出力をflushしてください。</p>
         <p v-if="problem.specialJudge" class="muted">スペシャルジャッジ問題：提出の出力を検証コードで判定します。</p>
-        <SubmissionForm :problem-id="problem.id" />
+        <SubmissionForm :has-samples="problem.hasSamples" :problem-id="problem.id" />
       </template>
     </article>
   </div>

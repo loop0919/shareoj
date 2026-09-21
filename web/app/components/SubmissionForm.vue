@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Submission } from '../../shared/types/submission'
 
-const props = defineProps<{ problemId: string, contestId?: string, beforeSubmit?: () => Promise<boolean>, disabled?: boolean }>()
+const props = defineProps<{ problemId: string, hasSamples: boolean, contestId?: string, beforeSubmit?: () => Promise<boolean>, disabled?: boolean }>()
 const { user } = useAccount()
 const sampleHelpId = useId()
 const source = ref('')
@@ -30,7 +30,7 @@ let disposed = false
 onBeforeUnmount(() => { disposed = true })
 watch([source, runtime, () => props.problemId], () => { easyResult.value = null })
 async function submit(easyTest = false) {
-  if (props.disabled || sending.value || !available.value.some(item => item.id === runtime.value)) return
+  if ((easyTest && !props.hasSamples) || props.disabled || sending.value || !available.value.some(item => item.id === runtime.value)) return
   if (!source.value.trim() || new TextEncoder().encode(source.value).length > 65536) {
     message.value = 'ソースコードを1〜65,536バイトで入力してください。'
     return
@@ -95,11 +95,11 @@ async function submit(easyTest = false) {
       <SourceCodeEditor v-model="source" :runtime="runtime" :disabled="sending" />
       <p v-if="message" class="notice notice-error" role="alert">{{ message }}</p>
       <div class="submission-actions">
-        <div class="sample-action">
-          <button class="editor-button" type="button" :disabled="disabled || sending || !source.trim() || !runtime || !available.length" @click="submit(true)">{{ sending && runningEasyTest ? 'サンプル検証中…' : 'サンプル検証' }}</button>
+        <div class="sample-action" :class="{ 'no-samples': !hasSamples }">
+          <button class="editor-button" type="button" :aria-describedby="sampleHelpId" :disabled="!hasSamples || disabled || sending || !source.trim() || !runtime || !available.length" @click="submit(true)">{{ sending && runningEasyTest ? 'サンプル検証中…' : 'サンプル検証' }}</button>
           <span class="sample-help">
             <button class="sample-help-button" type="button" aria-label="サンプル検証の説明" :aria-describedby="sampleHelpId">?</button>
-            <span :id="sampleHelpId" class="sample-tooltip" role="tooltip">サンプルケースを検証する機能です。</span>
+            <span :id="sampleHelpId" class="sample-tooltip" role="tooltip">{{ hasSamples ? 'サンプルケースを検証する機能です。' : 'この問題は利用可能なサンプルがありません' }}</span>
           </span>
         </div>
         <button class="editor-button primary" type="submit" :disabled="disabled || sending || !source.trim() || !runtime || !available.length" :aria-busy="sending">{{ sending && !runningEasyTest ? '提出中…' : '提出する' }}</button>
@@ -124,7 +124,7 @@ async function submit(easyTest = false) {
 .sample-help-button { display: inline-flex; align-items: center; justify-content: center; flex: none; appearance: none; width: 20px; height: 20px; padding: 0; border: 1px solid var(--color-muted); border-radius: 50%; background: transparent; color: var(--color-muted); font: inherit; font-size: 12px; line-height: 1; cursor: help; }
 .sample-help-button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
 .sample-tooltip { display: none; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); width: max-content; max-width: 240px; padding: 6px 8px; border-radius: 4px; background: var(--color-ink); color: var(--color-paper); font-size: .75rem; z-index: 1; }
-.sample-help:hover .sample-tooltip, .sample-help:focus-within .sample-tooltip { display: block; }
+.sample-action.no-samples:hover .sample-tooltip, .sample-help:hover .sample-tooltip, .sample-help:focus-within .sample-tooltip { display: block; }
 .easy-result { margin-top: 24px; }
 .easy-result pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .submission-form { margin-top: 40px; }

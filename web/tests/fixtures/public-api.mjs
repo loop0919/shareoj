@@ -1,7 +1,7 @@
 import { createServer } from 'node:http'
 const problem = {
   id: '11111111-1111-4111-8111-111111111111', title: 'A + B', author: 'alice', testers: ['bob', 'carol'], publishedAt: '2026-09-10T00:00:00Z',
-  timeLimitMs: 2000, memoryLimitMb: 256,
+  timeLimitMs: 2000, memoryLimitMb: 256, hasSamples: true,
   markdown: '2 つの整数 $A$ と $B$ の和を求めてください。\n\n## 制約\n\n$1 \\le A,B \\le 10^9$\n\n## 入出力例\n\n```\n3 5\n```\n\n```\n8\n```\n\n最大の答えは 2000000000 です。',
   editorial: '## 解説\n\n$A+B$ を計算します。',
 }
