@@ -69,7 +69,7 @@ def execute(request, compile_phase=False, *, artifact=None, checker_files=None):
     else:
         memory = request.get('memoryLimitMb')
         ms = request.get('timeLimitMs')
-        if memory != 512 or type(ms) is not int or not 100 <= ms <= 5000 or ms % 100:
+        if type(memory) is not int or not 64 <= memory <= 512 or type(ms) is not int or not 100 <= ms <= 5000 or ms % 100:
             raise ValueError('invalid limits')
         cpu, wall = ms / 1000, 3 * ms / 1000 + 1
     init = invoke(['--init'])

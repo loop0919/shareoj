@@ -328,6 +328,33 @@ func TestSubmissionsPostgres(t *testing.T) {
 		t.Fatalf("C runtime not pinned: %+v %v", cloud, err)
 	}
 	request("POST", "/my/submissions", "alice", strings.Replace(body, "cpp17-local", "java24", 1), 400)
+	// Published memory limits must survive both normal and sample cloud submissions.
+	if _, err := store.Pool().Exec(ctx, `UPDATE problem_drafts SET published_draft=jsonb_set(published_draft,'{testCases,0,isSample}','true') WHERE id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
+	for _, memory := range []int{63, 513, 64, 315, 512} {
+		if _, err := store.Pool().Exec(ctx, `UPDATE problem_drafts SET published_draft=jsonb_set(published_draft,'{memoryLimitMb}',to_jsonb($2::text)) WHERE id=$1`, id, fmt.Sprint(memory)); err != nil {
+			t.Fatal(err)
+		}
+		for _, sample := range []bool{false, true} {
+			input := fmt.Sprintf(`{"problemId":%q,"runtime":"c23-gcc","source":"int main(){}","easyTest":%t}`, id, sample)
+			if memory < 64 || memory > 512 {
+				request("POST", "/my/submissions", "alice", input, 409)
+				continue
+			}
+			var accepted submissions.Submission
+			if err := json.Unmarshal([]byte(request("POST", "/my/submissions", "alice", input, 202)), &accepted); err != nil {
+				t.Fatal(err)
+			}
+			var pinnedMemory int
+			if err := store.Pool().QueryRow(ctx, `SELECT (job->>'memoryLimitMb')::int FROM submissions WHERE id=$1`, accepted.ID).Scan(&pinnedMemory); err != nil || pinnedMemory != memory {
+				t.Fatalf("memory limit was not pinned: got %d, want %d: %v", pinnedMemory, memory, err)
+			}
+		}
+	}
+	if _, err := store.Pool().Exec(ctx, `UPDATE problem_drafts SET published_draft=jsonb_set(published_draft,'{testCases,0,isSample}','false') WHERE id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
 	h = localHandler
 	// Draft changes must not affect published tests or accepted submissions.
 	changed := published.Draft

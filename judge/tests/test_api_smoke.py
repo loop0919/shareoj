@@ -19,6 +19,8 @@ class APISmokeTests(unittest.TestCase):
         submissions, deleted = {}, []
 
         def request(base, method, path, data=None, token=''):
+            if method == 'PUT' and path.startswith('/my/problems/'):
+                self.assertEqual(data['draft']['memoryLimitMb'], '315')
             if path == '/runtimes':
                 return dict(maintenance=False, items=[dict(id='python314')])
             if path == '/auth/login':

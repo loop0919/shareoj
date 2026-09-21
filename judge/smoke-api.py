@@ -157,7 +157,7 @@ def main():
             request(args.api_url, 'PUT', '/my/profile', dict(handle='smoke_' + uuid.uuid4().hex[:10], avatar='', version=0), token)
             user['problem'] = str(uuid.uuid4())
             save(cleanup_path, dict(pool=pool, api=args.api_url, users=users))
-            draft = dict(title='ジャッジ配布検証', markdown='非公開の一時テスト', timeLimitMs='1000', memoryLimitMb='512',
+            draft = dict(title='ジャッジ配布検証', markdown='非公開の一時テスト', timeLimitMs='1000', memoryLimitMb='315',
                          testCases=[dict(name='case' + str(n), input=str(n), output='0', isSample=True) for n in range(1, 5)])
             request(args.api_url, 'PUT', '/my/problems/' + user['problem'], dict(version=0, draft=draft), token)
         for batch in range(2):

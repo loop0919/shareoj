@@ -12,6 +12,42 @@ from runtimes import RUNTIMES
 
 
 class RunnerTests(unittest.TestCase):
+    def test_memory_limits_reach_isolate_and_reject_invalid_jobs(self):
+        import tempfile
+        from subprocess import CompletedProcess
+        job = dict(runtime='cpp17-isolate', runtimeDigest='sha256:test', source='int main(){}',
+                   timeLimitMs=1000, cases=[dict(input='', output='')])
+        for memory in (None, True, '315', 315.5, 512.0, 63, 513):
+            with self.subTest(invalid=memory), patch.object(sandbox, 'invoke') as invoke:
+                job['memoryLimitMb'] = memory
+                with self.assertRaisesRegex(ValueError, 'memory limit'):
+                    host.validate_job(job, 'sha256:test')
+                with self.assertRaisesRegex(ValueError, 'invalid limits'):
+                    sandbox.execute(job)
+                invoke.assert_not_called()
+        for memory in (64, 315, 512):
+            with self.subTest(memory=memory), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                (root / 'box').mkdir()
+                artifact, meta = root / 'main', root / 'meta'
+                artifact.write_bytes(b'program')
+                limits = []
+                def invoke(args, **kwargs):
+                    if '--run' in args:
+                        limits.append(next(arg for arg in args if arg.startswith('--cg-mem=')))
+                        meta.write_text('time:0.1\ntime-wall:0.2\ncg-mem:1024')
+                        (root / 'box/stdout').write_bytes(b'')
+                        (root / 'box/stderr').write_bytes(b'')
+                    return CompletedProcess(args, 0, stdout=str(root).encode())
+                job['memoryLimitMb'] = memory
+                with patch.object(sandbox, 'invoke', invoke), patch.object(sandbox, 'META', meta), \
+                        patch.object(sandbox, 'ARTIFACT', artifact), \
+                        patch.object(sandbox, 'collect_artifact', return_value=b'compiled'):
+                    host.validate_job(job, 'sha256:test')
+                    sandbox.execute(job, compile_phase=True)
+                    sandbox.execute(job)
+                self.assertEqual(limits, ['--cg-mem=1048576', f'--cg-mem={memory * 1024}'])
+
     def test_two_tles_skip_remaining_cases_only_for_normal_submissions(self):
         import tempfile
         for mode in (None, 'easyTest', 'validate', 'generate', 'interactive'):
@@ -171,7 +207,7 @@ class RunnerTests(unittest.TestCase):
                         cpuTimeMs=0, wallTimeMs=1, memoryBytes=1024,
                         output=base64.b64encode(b'3\n').decode())
         job = dict(runtime='cpp17-isolate', runtimeDigest='sha256:test', source='int main(){}',
-                   memoryLimitMb=512, timeLimitMs=1000,
+                   memoryLimitMb=315, timeLimitMs=1000,
                    cases=[dict(name='a', input='1', output='secret'), dict(name='b', input='2', output='3')])
         import tempfile
         with tempfile.TemporaryDirectory() as tmp, patch.object(sandbox, 'execute', execute), \
@@ -181,6 +217,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(result['verdict'], 'WA')
         self.assertEqual(result['passed'], 1)
         self.assertEqual([compile_phase for _, compile_phase in calls], [True, False, False])
+        self.assertEqual([request['memoryLimitMb'] for request, phase in calls if not phase], [315, 315])
         self.assertNotIn('secret', str(calls))
         self.assertEqual(result['cases'][0]['cpuTimeMs'], 0)
         self.assertTrue(all('sampleDetails' not in case for case in result['cases']))

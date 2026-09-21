@@ -68,7 +68,7 @@ def validate_job(job, runtime):
     source = job.get('source')
     if not isinstance(source, str) or not 0 < len(source.encode()) <= 65536 or '\0' in source:
         raise ValueError('source')
-    if job.get('memoryLimitMb') != 512:
+    if type(job.get('memoryLimitMb')) is not int or not 64 <= job['memoryLimitMb'] <= 512:
         raise ValueError('memory limit')
     ms = job.get('timeLimitMs')
     if type(ms) is not int or not 100 <= ms <= 5000 or ms % 100:

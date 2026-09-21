@@ -38,7 +38,8 @@ class SmokeReportTests(unittest.TestCase):
         self.assertNotIn('passedRuntimes', output)
 
     def test_failed_language_is_excluded_without_skipping_next_language(self):
-        baseline = iter(['AC', 'WA', 'CE', 'TLE', 'TLE', 'MLE', 'MLE', 'AC', 'OLE', 'AC', 'AC', 'AC', 'AC'])
+        baseline = iter(['AC', 'WA', 'CE', 'TLE', 'TLE', 'MLE', 'MLE', 'AC', 'OLE', 'AC', 'AC', 'AC', 'AC',
+                         'AC', 'MLE', 'AC', 'MLE', 'AC', 'MLE'])
         def judge(job, _, save_output=None):
             first = next(baseline, None)
             if first:
@@ -58,7 +59,8 @@ class SmokeReportTests(unittest.TestCase):
         report = json.loads(output.splitlines()[-1])
         self.assertEqual(report['passedRuntimes'], ['c23-gcc-isolate'])
         self.assertEqual(report['failedRuntimes'], ['cpp17-isolate'])
-        baseline = iter(['AC', 'WA', 'CE', 'TLE', 'TLE', 'MLE', 'MLE', 'AC', 'OLE', 'AC', 'AC', 'AC', 'AC'])
+        baseline = iter(['AC', 'WA', 'CE', 'TLE', 'TLE', 'MLE', 'MLE', 'AC', 'OLE', 'AC', 'AC', 'AC', 'AC',
+                         'AC', 'MLE', 'AC', 'MLE', 'AC', 'MLE'])
         output, error = self.run_smoke(judge, AssertionError('interactor exceeded 256 MiB'))
         self.assertIsInstance(error, SystemExit)
         report = json.loads(output.splitlines()[-1])

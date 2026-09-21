@@ -4,13 +4,41 @@ import tempfile
 from pathlib import Path
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from test_runner import host
 import interactive
 
 
 class InteractiveTests(unittest.TestCase):
+    def test_submission_memory_limit_is_separate_from_interactor_limit(self):
+        from test_checker import job
+        for memory in (64, 315, 512):
+            with self.subTest(memory=memory), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                for i in range(2):
+                    (root / str(i) / 'box').mkdir(parents=True)
+                request = job()
+                request['memoryLimitMb'] = memory
+                request['interactor'] = request.pop('checker')
+                commands = []
+                def invoke(args, *, box_id=0, **kwargs):
+                    return subprocess.CompletedProcess(args, 0, stdout=str(root / str(box_id)).encode())
+                def popen(command, **kwargs):
+                    commands.append(command)
+                    meta = Path(next(arg.removeprefix('--meta=') for arg in command if arg.startswith('--meta=')))
+                    meta.write_text('time:0.1\ntime-wall:0.2\ncg-mem:1024')
+                    return Mock(returncode=0, poll=Mock(return_value=0))
+                with patch.object(interactive.sandbox, 'invoke', invoke), \
+                        patch.object(interactive.sandbox, 'META', root / 'meta'), \
+                        patch.object(interactive.sandbox, 'prepare_program', return_value=['/box/main']), \
+                        patch.object(interactive.subprocess, 'Popen', popen), \
+                        patch.object(interactive, 'relay', return_value='AC'):
+                    result = interactive.execute(request, request['cases'][0], root / 'checker', lambda _: None)
+                self.assertEqual(result['verdict'], 'AC')
+                self.assertIn(f'--cg-mem={memory * 1024}', commands[0])
+                self.assertIn('--cg-mem=262144', commands[1])
+
     def run_pair(self, source, interactor, wall=3, statuses=None, protocol='legacy'):
         processes = [subprocess.Popen([sys.executable, '-c', code], stdin=subprocess.PIPE,
                                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)

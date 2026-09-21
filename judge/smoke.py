@@ -31,6 +31,17 @@ with slot():
         result = judge(job, runtime)
         assert result['verdict'] == expected, (expected, result)
         print(expected, 'OK', flush=True)
+    # A finite allocation must fail below its size and succeed above it. An
+    # unbounded allocator alone would also pass with the old fixed 512 MiB cap.
+    allocate = '#include <cstdlib>\n#include <cstdio>\nint main(){volatile char* p=(char*)malloc(MEMORY<<20);if(!p)return 2;for(int i=0;i<(MEMORY<<20);i+=4096)p[i]=1;puts("3");}'
+    for memory in (64, 315, 512):
+        for size, expected in ((memory // 2, 'AC'), (memory + 16, 'MLE')):
+            source = allocate.replace('MEMORY', str(size))
+            job = dict(runtime='cpp17-isolate', runtimeDigest=runtime, source=source,
+                       timeLimitMs=1000, memoryLimitMb=memory, cases=[dict(input='', output='3')])
+            result = judge(job, runtime)
+            assert result['verdict'] == expected, (memory, expected, result)
+            print('memory', memory, expected, 'OK', flush=True)
     fixtures = json.loads(Path('/opt/judge/language-smoke.json').read_text())
     requested = os.environ.get('JUDGE_SMOKE_RUNTIMES', ','.join(RUNTIMES)).split(',')
     if not requested or any(name not in RUNTIMES for name in requested):

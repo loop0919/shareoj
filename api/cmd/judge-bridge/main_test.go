@@ -163,11 +163,13 @@ func TestKnockoutResultValidation(t *testing.T) {
 
 func TestOutboxAndResultIdempotency(t *testing.T) {
 	for _, runtime := range []string{"cpp17-isolate", "rust2024-isolate"} {
-		t.Run(runtime, func(t *testing.T) { checkOutboxAndResultIdempotency(t, runtime) })
+		for _, memory := range []int{64, 315, 512} {
+			t.Run(fmt.Sprintf("%s/%dMiB", runtime, memory), func(t *testing.T) { checkOutboxAndResultIdempotency(t, runtime, memory) })
+		}
 	}
 }
 
-func checkOutboxAndResultIdempotency(t *testing.T, runtime string) {
+func checkOutboxAndResultIdempotency(t *testing.T, runtime string, memory int) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("TEST_DATABASE_URL required")
@@ -216,7 +218,7 @@ func checkOutboxAndResultIdempotency(t *testing.T, runtime string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	job := submissions.Job{Checker: &problems.Generator{Runtime: "python314", Source: "checker-secret"}, Image: digest, TimeLimitMS: 1000, MemoryLimitMB: 512, Cases: []submissions.Case{{Input: "input-secret", Output: "", OutputFile: &problems.TestFile{ID: fileID, Size: 12, SHA256: fileDigest}}}}
+	job := submissions.Job{Checker: &problems.Generator{Runtime: "python314", Source: "checker-secret"}, Image: digest, TimeLimitMS: 1000, MemoryLimitMB: memory, Cases: []submissions.Case{{Input: "input-secret", Output: "", OutputFile: &problems.TestFile{ID: fileID, Size: 12, SHA256: fileDigest}}}}
 	if runtime == "rust2024-isolate" {
 		job.Interactor, job.Checker = job.Checker, nil
 	}
@@ -308,6 +310,12 @@ func checkOutboxAndResultIdempotency(t *testing.T, runtime string) {
 	}
 	if !bytes.Contains(jobs[0], []byte(`"runtime":"`+runtime+`"`)) {
 		t.Fatal("submitted runtime was not preserved in dispatch")
+	}
+	var dispatched struct {
+		MemoryLimitMB int `json:"memoryLimitMb"`
+	}
+	if err := json.Unmarshal(jobs[0], &dispatched); err != nil || dispatched.MemoryLimitMB != memory {
+		t.Fatalf("memory limit was not preserved in dispatch: %+v %v", dispatched, err)
 	}
 	field := "checker"
 	if job.Interactor != nil {

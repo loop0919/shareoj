@@ -185,7 +185,7 @@ func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) 
   ) tests
   WHERE jsonb_array_length(selected_cases) > 0 AND jsonb_array_length(COALESCE(selected_draft->'testCases','[]'::jsonb)) > 0
   AND jsonb_array_length(COALESCE(selected_draft->'testCases','[]'::jsonb)) <= 100
-  AND ($6 = 'cpp17-local' OR (selected_draft->>'memoryLimitMb')::int = 512)
+  AND (selected_draft->>'memoryLimitMb')::int BETWEEN 64 AND 512
   AND (COALESCE(selected_draft->'checker','null'::jsonb) = 'null'::jsonb OR
     (selected_draft->'checker'->>'runtime'=ANY($7::text[]) AND
      length(btrim(selected_draft->'checker'->>'source', E' \t\r\n'))>0 AND

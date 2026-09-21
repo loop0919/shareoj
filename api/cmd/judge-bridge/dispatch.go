@@ -85,7 +85,7 @@ func (b bridge) dispatchOne(ctx context.Context, tx pgx.Tx) (err error) {
 	if err = (&submissions.Store{Pool: b.db}).ResolveTestFiles(ctx, &job); err != nil {
 		return err
 	}
-	if job.Image != b.runtime || job.MemoryLimitMB != 512 {
+	if job.Image != b.runtime || job.MemoryLimitMB < 64 || job.MemoryLimitMB > 512 {
 		observe("failure", "platform", "runtime_mismatch", id, attempt)
 		_, err = tx.Exec(ctx, `UPDATE submissions SET status='DONE',finished_at=clock_timestamp(),result='{"verdict":"JE","passed":0,"total":0}' WHERE id=$1`, id)
 		return err

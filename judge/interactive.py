@@ -109,7 +109,7 @@ def execute(job, case, artifact, diagnostic):
             if i == 1 and RUNTIMES[name]['artifact'] == 'java':
                 command = ['-Xmx128m' if arg == '-Xmx256m' else arg for arg in command]
             args = sandbox.run_args(name, job['timeLimitMs'] / 1000 if i == 0 else 5,
-                                    wall, 512 if i == 0 else 256, meta=meta, interactive=True)
+                                    wall, job['memoryLimitMb'] if i == 0 else 256, meta=meta, interactive=True)
             commands.append([sandbox.ISOLATE, '--cg', f'--box-id={i}', *args, '--', *command])
         for command in commands:
             processes.append(subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,

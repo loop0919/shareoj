@@ -36,15 +36,19 @@ def run(runtime, requested, fixtures, judge):
     js = 'import {readSync,writeSync} from "node:fs"; const b=new Uint8Array(1); for(let n=10;n<12;n++){writeSync(1,n+"\\n");let s="";while(readSync(0,b,0,1,null)&&b[0]!==10)s+=String.fromCharCode(b[0]);if(Number(s)!==2*n)throw new Error("answer");}'
     deno = 'const b=new Uint8Array(1);for(let n=10;n<12;n++){Deno.stdout.writeSync(new TextEncoder().encode(n+"\\n"));let s="";while(Deno.stdin.readSync(b)&&b[0]!==10)s+=String.fromCharCode(b[0]);if(Number(s)!==2*n)throw new Error("answer");}'
     solution = '#include <cstdio>\nint main(){int n;while(scanf("%d",&n)==1){printf("%d\\n",2*n);fflush(stdout);}}'
-    def check(name, source, code, want, *, submitted='cpp17-isolate', cases=None):
+    def check(name, source, code, want, *, submitted='cpp17-isolate', cases=None, memory=512):
         job = dict(runtime=submitted, runtimeDigest=runtime, source=source,
                    interactor=dict(runtime=name.removesuffix('-isolate'), source=code),
-                   timeLimitMs=1000, memoryLimitMb=512,
+                   timeLimitMs=1000, memoryLimitMb=memory,
                    cases=cases or [dict(input='10', output='private expected')] * 2)
         result = judge(job, runtime)
         assert result['verdict'] == want, (name, want, result)
         print(name, 'interactive', want, 'OK', flush=True)
         return result
+    allocate = solution.replace('int n;', 'volatile char* p=new char[MEMORY<<20];for(int i=0;i<(MEMORY<<20);i+=4096)p[i]=1;int n;')
+    for memory in (64, 315, 512):
+        check('cpp17-isolate', solution, c, 'AC', memory=memory)
+        check('cpp17-isolate', allocate.replace('MEMORY', str(memory + 16)), c, 'MLE', memory=memory)
     for name in requested:
         if name.startswith(('cpp', 'c23')):
             code = c
