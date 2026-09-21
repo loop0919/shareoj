@@ -174,5 +174,37 @@ func TestExactLimitUploadCompletionAndDownload(t *testing.T) {
 	if _, err = store.Download(ctx, "other", problemID, testerFile); err != ErrNotFound {
 		t.Fatal("outsider downloaded shared file", err)
 	}
+	// Public access follows only sample references in the published snapshot.
+	for _, snapshot := range []string{
+		`{"testCases":[{"isSample":true,"inputFile":{"id":"` + fileID + `"}}]}`,
+		`{"testCases":[{"isSample":true,"outputFile":{"id":"` + fileID + `"}}]}`,
+	} {
+		if _, err = db.Pool().Exec(ctx, `UPDATE problem_drafts SET published_draft=$2::jsonb WHERE id=$1`, problemID, snapshot); err != nil {
+			t.Fatal(err)
+		}
+		got, err := store.PublicSampleDownload(ctx, problemID, fileID)
+		if err != nil || got != download || aws.ToString(presign.get.VersionId) != objects.version {
+			t.Fatalf("public file: %+v %v", got, err)
+		}
+		if _, err = store.PublicSampleDownload(ctx, problemID, testerFile); err != ErrNotFound {
+			t.Fatal("unreferenced file exposed", err)
+		}
+		if _, err = store.PublicSampleDownload(ctx, testerFile, fileID); err != ErrNotFound {
+			t.Fatal("cross-problem file exposed", err)
+		}
+	}
+	for _, snapshot := range []string{
+		`null`, `{}`, `{"testCases":[]}`,
+		`{"testCases":[{"isSample":false,"inputFile":{"id":"` + fileID + `"}}]}`,
+		`{"testCases":[{"inputFile":{"id":"` + fileID + `"}}]}`,
+	} {
+		if _, err = db.Pool().Exec(ctx, `UPDATE problem_drafts SET draft=jsonb_build_object('testCases',jsonb_build_array(jsonb_build_object('isSample',true,'inputFile',jsonb_build_object('id',$3::text)))),published_draft=NULLIF($2::jsonb,'null'::jsonb) WHERE id=$1`, problemID, snapshot, fileID); err != nil {
+			t.Fatal(err)
+		}
+		presign.get = nil
+		if _, err = store.PublicSampleDownload(ctx, problemID, fileID); err != ErrNotFound || presign.get != nil {
+			t.Fatal("private file signed", err)
+		}
+	}
 
 }

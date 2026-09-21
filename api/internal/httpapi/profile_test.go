@@ -146,6 +146,7 @@ func TestProfilesPostgres(t *testing.T) {
 		t.Fatal(w.Body.String())
 	}
 	testContentImages(t, request, store)
+	testPublicSamples(t, store)
 	for _, kind := range []string{"problems", "posts"} {
 		id := "22222222-2222-4222-8222-222222222222"
 		private := "/my/" + kind + "/" + id

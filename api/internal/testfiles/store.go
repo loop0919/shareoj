@@ -162,9 +162,22 @@ func (s *Store) Complete(ctx context.Context, owner, problemID, id string) (prob
 }
 
 func (s *Store) Download(ctx context.Context, owner, problemID, id string) (Download, error) {
+	return s.download(ctx, s.pool.QueryRow(ctx, `SELECT object_key,version_id,sha256,size FROM test_files WHERE id=$1 AND (owner_id=$2 OR can_manage_problem(problem_id,$2)) AND problem_id=$3 AND ready`, id, owner, problemID))
+}
+
+// PublicSampleDownload only signs files referenced by a currently published sample.
+func (s *Store) PublicSampleDownload(ctx context.Context, problemID, id string) (Download, error) {
+	return s.download(ctx, s.pool.QueryRow(ctx, `SELECT f.object_key,f.version_id,f.sha256,f.size FROM test_files f
+ JOIN problem_drafts d ON d.id=f.problem_id
+ WHERE f.id=$1 AND f.problem_id=$2 AND f.ready AND EXISTS (
+ SELECT 1 FROM jsonb_array_elements(d.published_draft->'testCases') c
+ WHERE c->'isSample'='true'::jsonb AND (c->'inputFile'->>'id'=f.id::text OR c->'outputFile'->>'id'=f.id::text))`, id, problemID))
+}
+
+func (s *Store) download(ctx context.Context, row pgx.Row) (Download, error) {
 	var key, version, digest string
 	var size int64
-	err := s.pool.QueryRow(ctx, `SELECT object_key,version_id,sha256,size FROM test_files WHERE id=$1 AND (owner_id=$2 OR can_manage_problem(problem_id,$2)) AND problem_id=$3 AND ready`, id, owner, problemID).Scan(&key, &version, &digest, &size)
+	err := row.Scan(&key, &version, &digest, &size)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Download{}, ErrNotFound
 	}

@@ -67,6 +67,38 @@ curl -i http://localhost:8080/problems
 
 Nuxtからの取得とSSRの確認方法は[フロントエンドの手順](../web/README.md)を参照する。
 
+### Public sample cases
+
+`GET /problems/{id}/samples` returns the cases marked as samples in the published
+snapshot, in their saved order. No authentication is required. The website exposes
+the same response at `GET /api/problems/{id}/samples`:
+
+```sh
+curl --fail "https://www.share-oj.net/api/problems/$PROBLEM_ID/samples"
+```
+
+```json
+{"items":[{"name":"sample_1","input":"3 5\n","output":"8\n"}]}
+```
+
+Input and output retain whitespace and trailing newlines. An empty sample set is
+`{"items":[]}`. Missing or unpublished problems return `404`, even for their author.
+Unpublished edits and cases not marked as samples are never returned. Markdown-only
+examples are not extracted; authors must register them as sample cases.
+Contest problems become available here after they are released as public problems.
+
+For externally stored input or output, `inputFile` or `outputFile` replaces the
+corresponding text as the source of file contents:
+
+```json
+{"items":[{"name":"large","input":"","output":"ok\n","inputFile":{"url":"https://...","size":100000,"sha256":"<64 lowercase hex characters>"}}]}
+```
+
+Download that URL as bytes and verify its size and SHA-256. URLs expire after ten
+minutes; fetch the sample list again to renew them. Already issued URLs remain valid
+until expiration if a problem is unpublished. API responses use `Cache-Control: no-store`.
+Storage failures return `503` from Go (`502` through the website), without partial results.
+
 ## ログインAPI
 
 独自のログイン画面からCognito User Poolを使って認証する。
@@ -347,7 +379,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 保存するファイル参照は、APIがサイズ、SHA-256、UTF-8、NUL不在を検証したものに限る。
 更新番号による競合検出と所有者の検証は問題本文と共通である。
 公開操作は本文とケースを一緒に固定し、提出は公開版のケースだけを使う。
-公開問題APIと提出結果APIはテストケース本体を返さない。
+公開問題詳細APIと提出結果APIはテストケース本体を返さない。サンプル専用APIは公開版のサンプルケースだけを返す。
 ローカルジャッジの起動に必要な設定は`JUDGE_CPP_IMAGE`であり、`JUDGE_TEST_DIR`は使用しない。
 
 ### 難易度投票

@@ -48,6 +48,11 @@ createServer(async (req, res) => {
   else if (path === '/runtimes') res.end(JSON.stringify({ items: [{ id: 'cpp17', label: 'C++17 (GCC)' }, { id: 'python314', label: 'Python 3.14' }] }))
   else if (path === '/problems') res.end(JSON.stringify({ items: !new URL(req.url, 'http://localhost').searchParams.get('author') || new URL(req.url, 'http://localhost').searchParams.get('author') === 'alice' ? [problem] : [], nextCursor: '' }))
   else if (path === `/problems/${problem.id}`) res.end(JSON.stringify(problem))
+  else if (path === `/problems/${problem.id}/samples`) res.end(JSON.stringify({ items: [
+    { name: 'sample_1', input: ' 3 5\n\n', output: '8\n' },
+    { name: 'empty', input: '', output: '' },
+    { name: 'large', input: '', output: 'ok\n', inputFile: { url: 'https://download.example/input', size: 100000, sha256: 'a'.repeat(64) } },
+  ] }))
   else if (path === `/problems/${problem.id}/submissions`) res.end(JSON.stringify({ items: [submission], hasMore: false }))
   else if (path === `/problems/${problem.id}/submissions/${submission.id}`) res.end(JSON.stringify(submission))
   else if (path === `/contests/88888888-8888-4888-8888-888888888888/submissions/${submission.id}`) res.end(JSON.stringify({ ...submission, contestId: '88888888-8888-4888-8888-888888888888' }))

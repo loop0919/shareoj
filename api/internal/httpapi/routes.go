@@ -117,6 +117,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	public("GET /runtimes", submissions.runtimes, false)
 	public("GET /problems", problems.publicProblems, true)
 	public("GET /problems/{id}", problems.publicProblems, true)
+	public("GET /problems/{id}/samples", problems.publicSamples, true)
 	public("GET /problems/{id}/submissions", submissions.publicProblemSubmissions, true)
 	public("GET /problems/{id}/submissions/{submission}", submissions.publicProblemSubmissions, true)
 	public("GET /posts", posts.publicPosts, false)

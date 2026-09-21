@@ -17,6 +17,9 @@ func TestPublicProblemErrors(t *testing.T) {
 	}{
 		{http.MethodGet, "/problems/11111111-1111-4111-8111-111111111111", http.StatusServiceUnavailable},
 		{http.MethodGet, "/problems/missing", http.StatusNotFound},
+		{http.MethodGet, "/problems/11111111-1111-4111-8111-111111111111/samples", http.StatusServiceUnavailable},
+		{http.MethodGet, "/problems/missing/samples", http.StatusNotFound},
+		{http.MethodPost, "/problems/11111111-1111-4111-8111-111111111111/samples", http.StatusMethodNotAllowed},
 		{http.MethodGet, "/problems/A-PLUS-B", http.StatusNotFound},
 		{http.MethodPost, "/problems/a-plus-b", http.StatusMethodNotAllowed},
 	} {
