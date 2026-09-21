@@ -142,7 +142,7 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
         <span>問題設定 <span aria-hidden="true">{{ problemSettingsExpanded ? '▴' : '▾' }}</span></span><span>{{ draft.timeLimitMs }} ms / {{ draft.memoryLimitMb }} MiB</span>
       </button>
       <div id="problem-settings" class="problem-settings" :data-expanded="problemSettingsExpanded">
-        <div class="field"><label for="problem-difficulty">難易度（作成者設定）</label><DifficultySelect id="problem-difficulty" v-model="draft.difficulty" label="難易度（作成者設定）" :disabled="!ready || publishing" /></div>
+        <div class="field"><div class="field-heading difficulty-heading"><label for="problem-difficulty">難易度（作成者設定）</label><NuxtLink class="source-guide-link" to="/blog/difficulty-guide" target="_blank" rel="noopener noreferrer" aria-label="難易度の目安" title="難易度の目安"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 2-2.5 3.5M12 16h.01" /></svg></NuxtLink></div><DifficultySelect id="problem-difficulty" v-model="draft.difficulty" label="難易度（作成者設定）" :disabled="!ready || publishing" /></div>
         <div>
           <div class="field-heading"><span class="limit-field-label" id="time-limit-label">実行時間制限 <span>ms</span></span></div>
           <LimitStepper id="time-limit" v-model="draft.timeLimitMs" :options="timeLimitOptions" :default-value="2000" :step="100" label="実行時間制限" labelledby="time-limit-label" :disabled="!ready || publishing" />
@@ -203,6 +203,8 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
 #tester-link { display: block; box-sizing: border-box; width: 100%; margin-block: 8px; padding: 8px; font: inherit; }
 .problem-settings { --problem-setting-height: 43px; display: contents; }
 .problem-settings :deep(.difficulty-select > button), .problem-settings :deep(.limit-stepper) { min-height: var(--problem-setting-height); }
+.difficulty-heading { align-items: center; flex-wrap: nowrap; gap: 2px; }
+.difficulty-heading .source-guide-link { width: 18px; height: 18px; flex-shrink: 0; }
 .problem-settings-toggle { display: none; }
 @media (pointer: coarse) {
   .problem-settings { --problem-setting-height: 67px; }

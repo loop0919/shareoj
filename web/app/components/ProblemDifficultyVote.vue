@@ -79,7 +79,6 @@ onBeforeUnmount(() => { requestVersion++ })
           <button type="button" class="editor-button close-button" aria-label="閉じる" :disabled="loading" @click="dialog?.close()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
         </header>
         <p class="muted">難易度を1〜10段階で評価できます。投票はあとから変更・取り消しできます。</p>
-        <p><NuxtLink to="/blog/difficulty-guide" target="_blank" rel="noopener noreferrer">難易度の目安を見る ↗</NuxtLink></p>
         <p>難易度（投票） <strong>{{ average === null ? '未投票' : `Lv.${average.toFixed(1)}` }}</strong> <span class="muted">（{{ count }}票）</span></p>
         <details ref="distributionDetails" class="vote-distribution">
           <summary>投票の分布</summary>
@@ -94,6 +93,7 @@ onBeforeUnmount(() => { requestVersion++ })
           </ol>
           </section>
         </details>
+        <p><NuxtLink to="/blog/difficulty-guide" target="_blank" rel="noopener noreferrer">難易度の目安を見る ↗</NuxtLink></p>
         <template v-if="user">
           <label for="difficulty-vote-level">あなたの評価</label>
           <DifficultySelect :key="selectionKey" id="difficulty-vote-level" v-model="selected" label="あなたの評価" :disabled="loading || !ready" />
