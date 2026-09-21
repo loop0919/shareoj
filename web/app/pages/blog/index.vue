@@ -29,6 +29,7 @@ useSharePreview({ type: 'website', title: '記事', path: '/blog', description }
     </div>
     <p v-if="message" role="alert">{{ message }}</p>
     <ContentPagination :index="index" :has-next="!!current.nextCursor" :loading="loading" @move="move" />
+    <p><NuxtLink to="/blog/difficulty-guide">難易度の目安</NuxtLink></p>
     <p><NuxtLink to="/blog/contest-rules">コンテストのルール</NuxtLink></p>
     <p><NuxtLink to="/blog/language-guide">使える言語と実行環境の仕様</NuxtLink></p>
     <p><NuxtLink to="/blog/generator-guide">入出力生成と入力検証の使い方</NuxtLink></p>
