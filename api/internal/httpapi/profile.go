@@ -150,7 +150,7 @@ func (p profileHandler) publicProfile(w http.ResponseWriter, r *http.Request) {
 		authError(w, 503, "database_unavailable")
 		return
 	}
-	writeAuthJSON(w, 200, map[string]any{"handle": profile.Handle, "avatar": profile.Avatar, "createdAt": profile.CreatedAt, "accounts": profile.Accounts})
+	writeAuthJSON(w, 200, publicProfileResponse{Handle: profile.Handle, Avatar: profile.Avatar, CreatedAt: profile.CreatedAt, Accounts: profile.Accounts})
 }
 
 var accountPatterns = []*regexp.Regexp{

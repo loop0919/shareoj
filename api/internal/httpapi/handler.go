@@ -35,7 +35,7 @@ func health(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	_ = json.NewEncoder(w).Encode(healthResponse{Status: "ok"})
 }
 
 // readJSONBody accepts exactly one JSON value, rejects unknown fields, and bounds reads.

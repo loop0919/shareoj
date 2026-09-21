@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -12,6 +13,19 @@ import (
 	"judge/api/internal/httpapi"
 	"judge/api/internal/lambdaapi"
 )
+
+func TestAdapterServesDocumentation(t *testing.T) {
+	adapter := lambdaapi.New(httpapi.NewHandler())
+	for path, content := range map[string]string{"/docs": "SwaggerUIBundle", "/openapi.json": `"openapi":"3.1.0"`} {
+		response, err := adapter.ProxyWithContext(context.Background(), events.APIGatewayV2HTTPRequest{
+			RawPath:        path,
+			RequestContext: events.APIGatewayV2HTTPRequestContext{HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{Method: "GET"}},
+		})
+		if err != nil || response.StatusCode != 200 || !strings.Contains(response.Body, content) || response.IsBase64Encoded {
+			t.Fatalf("%s: %+v %v", path, response, err)
+		}
+	}
+}
 
 func TestAdapterServesHealthEndpoint(t *testing.T) {
 	t.Parallel()

@@ -101,7 +101,7 @@ func (p problemHandler) publicProblems(w http.ResponseWriter, r *http.Request) {
 		last := list[49]
 		next = nextContentCursor(last.ID, last.PublishedAt)
 	}
-	writeAuthJSON(w, 200, map[string]any{"items": list, "nextCursor": next})
+	writeAuthJSON(w, 200, cursorResponse[problems.PublicProblem]{Items: list, NextCursor: next})
 }
 
 type publicationInput struct {

@@ -65,5 +65,5 @@ func (p problemHandler) publicSamples(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, item)
 	}
-	writeAuthJSON(w, 200, map[string]any{"items": items})
+	writeAuthJSON(w, 200, itemsResponse[publicSample]{Items: items})
 }

@@ -87,7 +87,7 @@ func submissionError(w http.ResponseWriter, err error) {
 
 func (p submissionHandler) runtimes(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	writeAuthJSON(w, 200, map[string]any{"items": p.AvailableRuntimes(), "maintenance": p.Maintenance()})
+	writeAuthJSON(w, 200, runtimesResponse{Items: p.AvailableRuntimes(), Maintenance: p.Maintenance()})
 }
 
 func newSubmissionID() string {

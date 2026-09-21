@@ -51,10 +51,10 @@ type SampleDetails struct {
 }
 
 type CaseResult struct {
-	CheckerLog    *TextPreview       `json:"checkerLog,omitempty"`
-	SampleDetails *SampleDetails     `json:"sampleDetails,omitempty"`
-	OutputFile    *problems.TestFile `json:"outputFile,omitempty"`
-	Output        *string            `json:"output,omitempty"`
+	CheckerLog    *TextPreview       `json:"checkerLog,omitempty" hidden:"true"`
+	SampleDetails *SampleDetails     `json:"sampleDetails,omitempty" hidden:"true"`
+	OutputFile    *problems.TestFile `json:"outputFile,omitempty" hidden:"true"`
+	Output        *string            `json:"output,omitempty" hidden:"true"`
 	Name          string             `json:"name"`
 	Verdict       string             `json:"verdict"`
 	CPUTimeMS     *float64           `json:"cpuTimeMs,omitempty"`
@@ -65,13 +65,13 @@ type CaseResult struct {
 type Result struct {
 	CPUTimeMS   *float64     `json:"cpuTimeMs,omitempty"`
 	MemoryBytes *int64       `json:"memoryBytes,omitempty"`
-	Interactive bool         `json:"interactive,omitempty"`
-	CheckerLog  string       `json:"checkerLog,omitempty"`
+	Interactive bool         `json:"interactive,omitempty" hidden:"true"`
+	CheckerLog  string       `json:"checkerLog,omitempty" hidden:"true"`
 	Cases       []CaseResult `json:"cases,omitempty"`
 	Verdict     string       `json:"verdict"`
 	Passed      int          `json:"passed"`
 	Total       int          `json:"total"`
-	CompileLog  string       `json:"compileLog,omitempty"`
+	CompileLog  string       `json:"compileLog,omitempty" hidden:"true"`
 }
 
 // Summaries use the maximum measured value across cases, not the sum.

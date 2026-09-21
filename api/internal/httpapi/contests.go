@@ -43,7 +43,7 @@ func (p contestHandler) contest(w http.ResponseWriter, r *http.Request, owner st
 		if more {
 			list = list[:50]
 		}
-		result = map[string]any{"items": list, "hasMore": more}
+		result = offsetResponse[contests.Contest]{Items: list, HasMore: more}
 	case r.Method == http.MethodPut:
 		var in contests.Input
 		if !contentJSON(w, r, &in) {

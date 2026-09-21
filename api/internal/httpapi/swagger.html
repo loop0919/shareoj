@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShareOJ API documentation</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.33.0/swagger-ui.css" integrity="sha384-Ov4/wv3j2bmct8cDc5X4ngJZohVPzEmc6uDPH8WeljUxO5vtoykvMEfbu9Vh6RaW" crossorigin="anonymous">
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <p id="fallback">ドキュメントを読み込み中です。表示されない場合は <a href="/openapi.json">OpenAPI JSON</a> を参照してください。</p>
+  <script src="https://unpkg.com/swagger-ui-dist@5.33.0/swagger-ui-bundle.js" integrity="sha384-YDALVcy8kj8yltLBVi1vBiBAUqdxvus673gM8XKwiy6aDUJFXivF/KCufekjYbVf" crossorigin="anonymous"></script>
+  <script>
+    SwaggerUIBundle({
+      url: '/openapi.json',
+      dom_id: '#swagger-ui',
+      deepLinking: true,
+      filter: true,
+      supportedSubmitMethods: ['get'],
+      validatorUrl: null,
+      persistAuthorization: false,
+      onComplete: () => { document.getElementById('fallback').hidden = true },
+    })
+  </script>
+</body>
+</html>

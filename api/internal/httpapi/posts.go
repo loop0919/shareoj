@@ -65,7 +65,7 @@ func (p postHandler) publicPosts(w http.ResponseWriter, r *http.Request) {
 	for i := range list {
 		list[i].Operator = p.Operators[list[i].Owner]
 	}
-	writeAuthJSON(w, 200, map[string]any{"items": list, "nextCursor": next})
+	writeAuthJSON(w, 200, cursorResponse[posts.Post]{Items: list, NextCursor: next})
 }
 
 func (p postHandler) privatePost(w http.ResponseWriter, r *http.Request, owner string) {

@@ -205,7 +205,7 @@ func writeCognitoError(w http.ResponseWriter, err error) {
 }
 
 func authError(w http.ResponseWriter, status int, code string) {
-	writeAuthJSON(w, status, map[string]string{"error": code})
+	writeAuthJSON(w, status, errorResponse{Error: code})
 }
 
 func writeAuthJSON(w http.ResponseWriter, status int, value any) {

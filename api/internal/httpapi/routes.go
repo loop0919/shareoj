@@ -56,6 +56,7 @@ type (
 		Judging     submissions.Config
 	}
 )
+
 type (
 	imageHandler        struct{ Store *images.Store }
 	notificationHandler struct{ Store *notifications.Store }
@@ -78,6 +79,8 @@ func releaseBefore(store *contests.Store, next actorHandler) actorHandler {
 }
 
 func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
+	docs := newPublicDocumentation()
+	documentPublicRoute(docs, "GET /health", publicOperation{Summary: "稼働状態", Response: healthResponse{}})
 	judging := submissions.Config{JudgeImage: d.JudgeImage, JudgeRuntime: d.JudgeRuntime, JudgeEnabledRuntimes: d.JudgeEnabledRuntimes}
 	problems := problemHandler{Store: d.Store, Files: d.Files, Judging: judging}
 	posts := postHandler{Posts: d.Posts, Operators: d.Operators}
@@ -87,7 +90,8 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	images := imageHandler{Store: d.Images}
 	notifications := notificationHandler{Store: d.Notifications}
 	auth := authentication{Verifier: d.Verifier, Profiles: d.Profiles}
-	public := func(pattern string, handler http.HandlerFunc, release bool) {
+	public := func(pattern string, handler http.HandlerFunc, release bool, doc publicOperation) {
+		documentPublicRoute(docs, pattern, doc)
 		if !release {
 			mux.HandleFunc(pattern, handler)
 			return
@@ -105,23 +109,24 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 		}
 		mux.HandleFunc(pattern, auth.require(handler, true, 10*time.Second))
 	}
-	public("GET /users/{handle}", profiles.publicProfile, false)
-	public("GET /contests", contests.publicContest, true)
-	public("GET /contests/{id}", contests.publicContest, true)
-	public("GET /contests/{id}/problems/{problem}", contests.publicContest, true)
-	public("GET /contests/{id}/problems/{problem}/submissions", contests.publicContest, true)
-	public("GET /contests/{id}/standings", contests.publicContest, true)
-	public("GET /contests/{id}/submissions", contests.publicContest, true)
-	public("GET /contests/{id}/submissions/{submission}", contests.publicContest, true)
-	public("GET /images/{id}", images.publicImage, false)
-	public("GET /runtimes", submissions.runtimes, false)
-	public("GET /problems", problems.publicProblems, true)
-	public("GET /problems/{id}", problems.publicProblems, true)
-	public("GET /problems/{id}/samples", problems.publicSamples, true)
-	public("GET /problems/{id}/submissions", submissions.publicProblemSubmissions, true)
-	public("GET /problems/{id}/submissions/{submission}", submissions.publicProblemSubmissions, true)
-	public("GET /posts", posts.publicPosts, false)
-	public("GET /posts/{id}", posts.publicPosts, false)
+	public("GET /users/{handle}", profiles.publicProfile, false, publicOperation{Summary: "公開プロフィール", Response: publicProfileResponse{}})
+	public("GET /contests", contests.publicContest, true, publicOperation{Summary: "コンテスト一覧", Description: "開始日時の降順。各要素のproblemsは空配列です。問題一覧は詳細APIで取得します。", Response: publicContestPage{}, Parameters: offsetParameters()})
+	public("GET /contests/{id}", contests.publicContest, true, publicOperation{Summary: "コンテスト詳細", Description: "開始前は問題一覧を公開しません。", Response: publicContestResponse{}})
+	public("GET /contests/{id}/problems/{problem}", contests.publicContest, true, publicOperation{Summary: "コンテストの問題", Description: "開始後に取得可能です。解説は終了後に公開されます。publishedAtはコンテスト終了日時です。", Response: publicProblemResponse{}})
+	public("GET /contests/{id}/problems/{problem}/submissions", contests.publicContest, true, publicOperation{Summary: "コンテストの問題別提出一覧", Description: "コンテスト終了後に取得可能です。ソースコードとケース別結果は含みません。mine=1は認証が必要なため公開APIでは利用できません。", Response: publicSubmissionPage{}, Parameters: offsetParameters()})
+	public("GET /contests/{id}/standings", contests.publicContest, true, publicOperation{Summary: "コンテスト順位表", Response: publicStandingsResponse{}})
+	public("GET /contests/{id}/submissions", contests.publicContest, true, publicOperation{Summary: "コンテスト提出一覧", Description: "コンテスト終了後に取得可能です。提出日時の降順。ソースコードとケース別結果は含みません。", Response: publicSubmissionPage{}, Parameters: offsetParameters()})
+	public("GET /contests/{id}/submissions/{submission}", contests.publicContest, true, publicOperation{Summary: "コンテスト提出詳細", Description: "コンテスト終了後に取得可能です。非公開テストの入出力やチェッカー診断は返しません。", Response: publicSubmissionResponse{}})
+	public("GET /images/{id}", images.publicImage, false, publicOperation{Summary: "公開画像", Description: "公開コンテンツから参照される画像をPNGまたはJPEGで返します。", Image: true})
+	public("GET /runtimes", submissions.runtimes, false, publicOperation{Summary: "利用可能な言語", Response: runtimesResponse{}})
+	public("GET /problems", problems.publicProblems, true, publicOperation{Summary: "公開問題一覧", Description: "公開日時の降順。本文・解説は詳細APIで取得します。", Response: publicProblemPage{}, Parameters: catalogueParameters()})
+	public("GET /problems/{id}", problems.publicProblems, true, publicOperation{Summary: "公開問題詳細", Description: "公開版の問題文・解説・制限値。timeLimitMsとmemoryLimitMbは数値の文字列です。下書きは返しません。", Response: publicProblemResponse{}})
+	public("GET /problems/{id}/samples", problems.publicSamples, true, publicOperation{Summary: "公開サンプルケース", Description: "公開版でサンプルに指定したケースを保存順に返します。空ならitemsは空配列です。空白・改行を保持します。Markdownだけに書かれた例は抽出しません。inputFile/outputFileがある場合はurlから本文を取得してください。URLは10分間有効で、非公開化しても発行済みURLは期限まで利用できます。", Response: itemsResponse[publicSample]{}})
+	public("GET /problems/{id}/submissions", submissions.publicProblemSubmissions, true, publicOperation{Summary: "公開問題の提出一覧", Description: "提出日時の降順。下書き・サンプル実行・開催中コンテストの提出は非公開です。ソースコードとケース別結果は含みません。mine=1は公開APIでは利用できません。", Response: publicSubmissionPage{}, Parameters: offsetParameters()})
+	public("GET /problems/{id}/submissions/{submission}", submissions.publicProblemSubmissions, true, publicOperation{Summary: "公開提出詳細", Description: "ソースコードと公開採点結果。非公開テストの入出力やチェッカー診断は返しません。", Response: publicSubmissionResponse{}})
+	public("GET /posts", posts.publicPosts, false, publicOperation{Summary: "公開記事一覧", Description: "公開日時の降順。本文は詳細APIで取得します。", Response: publicPostPage{}, Parameters: catalogueParameters()})
+	public("GET /posts/{id}", posts.publicPosts, false, publicOperation{Summary: "公開記事詳細", Response: publicPostResponse{}})
+	registerDocumentation(mux, docs)
 	private("GET /my/images", images.contentImage, false)
 	private("POST /my/images", images.contentImage, false)
 	private("GET /my/images/{id}", images.contentImage, false)

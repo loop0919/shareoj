@@ -2,6 +2,34 @@
 
 Goで実装するAPIと非同期Lambdaのためのモジュールである。
 
+## Interactive API documentation
+
+Swagger UI is served at `/docs` (also `/docs/`), with OpenAPI 3.1 JSON at
+`/openapi.json`. After deployment, these are available at
+<https://api.share-oj.net/docs> and <https://api.share-oj.net/openapi.json>.
+Locally, use <http://localhost:8080/docs>.
+
+The public read APIs are documented; account, authentication, and write APIs are
+outside this document's scope. **Try it out** sends GET requests to the same API
+origin, so the same page works locally and in production.
+
+The specification is generated at startup from public route registrations in
+`internal/httpapi/routes.go` and their actual Go response types, using Huma.
+There is no handwritten OpenAPI JSON/YAML or separate generation command.
+When adding a public route, supply its summary, response type, and query parameters
+in `publicOperation`. JSON field names, types, nested models, and optional fields
+are derived automatically. Descriptions and publication rules remain explicit
+route metadata; generation does not infer business rules from handler code.
+Use the same typed response envelope in the handler and route metadata.
+The `hidden` schema tags on submission diagnostics reflect fields stripped from
+public responses; they do not change JSON serialization or access control.
+
+Swagger UI 5.33.0 assets are loaded from UNPKG with pinned versions and integrity
+hashes. The spec and page are served by the Go binary, including Lambda builds.
+The UI needs CDN access; `/openapi.json` remains available without it. External
+Swagger validation is disabled. Run `go test ./...` to check generated schemas,
+HTTP routes, and API Gateway response handling.
+
 ## 開発環境
 
 APIとinfraは、リポジトリのルートにあるNix開発シェルを共用する。
