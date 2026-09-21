@@ -29,6 +29,10 @@ ShareOJ（Share Online Judge）は、プログラミング問題を解き、作�
 バグ報告・機能提案は[Issue](https://github.com/loop0919/shareoj/issues)へお願いします。
 現在、外部からのPull Requestは受け付けていません。
 
+## ライセンス
+
+[All rights reserved](LICENSE.md)
+
 ## 開発環境
 
 このリポジトリでは、ShareOJのGo API、Nuxtフロントエンド、AWS上のジャッジ基盤を開発しています。
