@@ -14,7 +14,7 @@ for (const allowed of [true, false]) {
     }
     const item = {
       id: sid, contestId: id, problemId: pid, problemTitle: 'A + B', author: 'participant',
-      problemVersion: 1, runtime: 'cpp17', source: 'int main() { return 42; }',
+      problemVersion: 1, runtime: 'cpp17', sourceBytes: 24, source: 'int main() { return 42; }',
       createdAt: '2026-09-15T12:10:00Z', status: 'DONE', result: { verdict: 'WA', passed: 0, total: 1, cpuTimeMs: 42, memoryBytes: 2500000, cases: [] },
     }
     await page.route(`**/api/contests/${id}**`, route => {
@@ -31,6 +31,7 @@ for (const allowed of [true, false]) {
     if (allowed) {
       await expect(page.getByRole('cell', { name: 'participant', exact: true })).toBeVisible()
       await expect(page.getByRole('cell', { name: '42 ms・ 2.50 MB', exact: true })).toBeVisible()
+      await expect(page.getByRole('cell', { name: '24 bytes', exact: true })).toBeVisible()
       await page.getByRole('link', { name: 'A + B', exact: true }).click()
       await expect(page.getByRole('textbox', { name: 'ソースコード', exact: true })).toHaveText(item.source)
       await page.getByRole('navigation', { name: '提出メニュー' }).getByRole('link', { name: '問題', exact: true }).click()
@@ -44,6 +45,7 @@ for (const allowed of [true, false]) {
     if (allowed) {
       await expect(page.getByRole('cell', { name: 'participant', exact: true })).toBeVisible()
       await expect(page.getByRole('cell', { name: '42 ms・ 2.50 MB', exact: true })).toBeVisible()
+      await expect(page.getByRole('cell', { name: '24 bytes', exact: true })).toBeVisible()
       await page.getByRole('link', { name: '詳細', exact: true }).click()
       await expect(page.getByRole('textbox', { name: 'ソースコード', exact: true })).toHaveText(item.source)
     } else {

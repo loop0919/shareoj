@@ -12,6 +12,7 @@ export type Submission = {
   problemVersion: number
   problemTitle: string
   runtime: string
+  sourceBytes?: number
   source?: string
   status: 'QUEUED' | 'RUNNING' | 'DONE'
   progress?: { phase: 'PREPARING' | 'JUDGING', completed: number, total: number, verdict?: 'WA' | 'TLE' | 'MLE' | 'OLE' | 'RE' } | null

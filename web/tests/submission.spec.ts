@@ -345,19 +345,23 @@ test('submission frequency limit preserves the wait time and styles both actions
 })
 
 for (const view of ['all', 'mine', 'history']) {
-  test(`${view} submission list shows measured resource usage`, async ({ page }) => {
+  test(`${view} submission list shows code size and measured resource usage`, async ({ page }) => {
     await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'alice' } } }))
     await page.route('**/api/my/profile', route => route.fulfill({ json: { profile: { handle: 'alice', avatar: '', version: 1, createdAt: '2026-09-01T00:00:00Z' } } }))
     const base = { id: submissionId, problemId, problemTitle: 'A + B', problemVersion: 1, author: 'alice', runtime: 'python314', createdAt: '2026-09-01T00:00:00Z', status: 'DONE' }
     const items = [
-      { ...base, result: { verdict: 'AC', passed: 2, total: 2, cpuTimeMs: 1234.1, memoryBytes: 12345678 } },
-      { ...base, id: 'zero', result: { verdict: 'AC', passed: 1, total: 1, cpuTimeMs: 0, memoryBytes: 0 } },
+      { ...base, sourceBytes: 1234, result: { verdict: 'AC', passed: 2, total: 2, cpuTimeMs: 1234.1, memoryBytes: 12345678 } },
+      { ...base, id: 'zero', sourceBytes: 0, result: { verdict: 'AC', passed: 1, total: 1, cpuTimeMs: 0, memoryBytes: 0 } },
       { ...base, id: 'missing', result: { verdict: 'CE', passed: 0, total: 1 } },
-      { ...base, id: 'pending', status: 'RUNNING', result: null },
+      { ...base, id: 'pending', sourceBytes: 42, status: 'RUNNING', result: null },
     ]
     const endpoint = view === 'history' ? '**/api/my/submissions' : `**/api/problems/${problemId}/submissions?*`
     await page.route(endpoint, route => route.fulfill({ json: { items, hasMore: false } }))
     await page.goto(view === 'history' ? '/my/submissions' : `/problems/${problemId}?view=${view === 'mine' ? 'my-submissions' : 'submissions'}`)
+    await expect(page.getByRole('columnheader', { name: 'コード長', exact: true })).toBeVisible()
+    for (const size of ['1,234 bytes', '0 bytes', '42 bytes', '—']) {
+      await expect(page.getByRole('cell', { name: size, exact: true })).toBeVisible()
+    }
     await expect(page.getByRole('columnheader', { name: '実行時間・メモリ', exact: true })).toBeVisible()
     await expect(page.getByRole('cell', { name: '1235 ms・ 12.35 MB', exact: true })).toBeVisible()
     await expect(page.getByRole('cell', { name: '0 ms・ 0.00 MB', exact: true })).toBeVisible()

@@ -285,7 +285,7 @@ func TestSubmissionsPostgres(t *testing.T) {
 	if _, err := store.Pool().Exec(ctx, `DELETE FROM submissions WHERE id=$1`, easy.ID); err != nil {
 		t.Fatal(err)
 	}
-	body := `{"problemId":"` + id + `","runtime":"cpp17-local","source":"#include <cstdio>\nint main(){puts(\"3\");}"}`
+	body := `{"problemId":"` + id + `","runtime":"cpp17-local","source":"// 日本語😀\n#include <cstdio>\nint main(){puts(\"3\");}"}`
 	request("POST", "/my/submissions", "", body, 401)
 	request("POST", "/my/submissions", "alice", strings.Replace(body, "cpp17-local", "python", 1), 400)
 	request("POST", "/my/submissions", "alice", strings.TrimSuffix(body, "}")+`,"owner_id":"bob"}`, 400)
@@ -299,6 +299,18 @@ func TestSubmissionsPostgres(t *testing.T) {
 	}
 	if got := request("GET", "/my/submissions", "alice", "", 200); strings.Contains(got, "int main") {
 		t.Fatal("list leaked source")
+	}
+	for _, path := range []string{"/my/submissions", "/problems/" + id + "/submissions"} {
+		var list struct {
+			Items []submissions.Submission `json:"items"`
+		}
+		raw := request("GET", path, "alice", "", 200)
+		if err := json.Unmarshal([]byte(raw), &list); err != nil || len(list.Items) != 1 {
+			t.Fatalf("submission list: %s %v", raw, err)
+		}
+		if list.Items[0].SourceBytes != len(item.Source) || list.Items[0].Source != "" || !strings.Contains(raw, `"sourceBytes":`) {
+			t.Fatalf("list must expose UTF-8 byte size without source: %s", raw)
+		}
 	}
 	// The same UI language selects a pinned cloud runtime, never the local worker.
 	localHandler := h

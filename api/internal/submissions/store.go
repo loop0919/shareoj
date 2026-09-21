@@ -104,6 +104,7 @@ type Submission struct {
 	ProblemTitle   string    `json:"problemTitle"`
 	Runtime        string    `json:"runtime"`
 	Source         string    `json:"source,omitempty"`
+	SourceBytes    int       `json:"sourceBytes"`
 	Status         string    `json:"status"`
 	Result         *Result   `json:"result"`
 	Progress       *Progress `json:"progress"`
@@ -118,6 +119,7 @@ func scan(row pgx.Row) (Submission, error) {
 	var s Submission
 	var result, progress []byte
 	err := row.Scan(&s.ID, &s.ProblemID, &s.ProblemVersion, &s.ProblemTitle, &s.Runtime, &s.Source, &s.Status, &result, &s.CreatedAt, &progress, &s.EasyTest, &s.ContestID, &s.Author)
+	s.SourceBytes = len(s.Source)
 	if err == nil && result != nil {
 		err = json.Unmarshal(result, &s.Result)
 		if err == nil && s.Result != nil {
