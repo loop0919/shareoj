@@ -6,6 +6,10 @@ useResponseHeader('Cache-Control').value = 'no-store'
 useResponseHeader('Vary').value = 'Cookie'
 const { data: problem, error } = await useFetch(() => `/api/problems/${encodeURIComponent(String(route.params.id))}`)
 if (error.value || !problem.value) throw createError({ statusCode: error.value?.statusCode === 404 ? 404 : 502, statusMessage: error.value?.statusCode === 404 ? 'Problem not found' : 'Problem service unavailable', fatal: true })
+const { user, profile } = useAccount()
+const canEdit = computed(() => problem.value?.isPrivate || (!!user.value && !!profile.value && (
+  profile.value.handle === problem.value?.author || problem.value?.testers.includes(profile.value.handle)
+)))
 const votes = ref({ average: problem.value.difficultyAverage, count: problem.value.difficultyVoteCount })
 function updateVote(average: number | null, count: number) {
   votes.value = { average, count }
@@ -26,6 +30,7 @@ useSharePreview({ title: () => problem.value!.title, path: () => `/problems/${pr
       <NuxtLink :to="{ path: `/problems/${problem.id}`, query: { view: 'editorial' } }" :aria-current="showingEditorial ? 'page' : undefined">解説</NuxtLink>
       <NuxtLink :to="{ path: `/problems/${problem.id}`, query: { view: 'my-submissions' } }" :aria-current="route.query.view === 'my-submissions' ? 'page' : undefined">自分の提出</NuxtLink>
       <NuxtLink :to="{ path: `/problems/${problem.id}`, query: { view: 'submissions' } }" :aria-current="route.query.view === 'submissions' ? 'page' : undefined">すべての提出</NuxtLink>
+      <NuxtLink v-if="canEdit" :to="{ path: '/problems/new', query: { problem: problem.id } }">作問画面へ</NuxtLink>
     </nav>
     <header class="problem-header">
       <h1>{{ problem.title }}</h1>

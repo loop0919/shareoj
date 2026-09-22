@@ -274,7 +274,7 @@ export function useProblemDraft() {
   }
 
   return {
-    user, draft, ready, cloudId, saving, publishing, publishedVersion, contestId, manualSaveOnly,
+    user, draft, ready, cloudId, cloudVersion, saving, publishing, publishedVersion, contestId, manualSaveOnly,
     publicationError, saveLocation, saveState, status, storageError, leaveDialog, leaveError,
     manageDialog, generating, deleteError, errors, saveDraft, publishProblem, finishLeave,
     openDeleteConfirmation, closeDeleteConfirmation, removeProblem,

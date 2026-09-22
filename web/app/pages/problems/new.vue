@@ -4,7 +4,7 @@ import { accountError } from '~/utils/account-problems'
 definePageMeta({ editorLayout: true })
 useSeoMeta({ title: '問題を作成 | ShareOJ', robots: 'noindex, nofollow' })
 const {
-  user, draft, ready, cloudId, saving, publishing, publishedVersion, contestId, manualSaveOnly,
+  user, draft, ready, cloudId, cloudVersion, saving, publishing, publishedVersion, contestId, manualSaveOnly,
   publicationError, saveLocation, saveState, status, storageError, leaveDialog, leaveError,
   manageDialog, generating, deleteError, errors, saveDraft, publishProblem, finishLeave,
   openDeleteConfirmation, closeDeleteConfirmation, removeProblem,
@@ -103,6 +103,7 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
       </div>
       <div class="author-actions">
         <div class="editor-save-actions">
+        <NuxtLink v-if="ready && cloudVersion > 0" class="editor-button" :to="`/problems/${cloudId}`">問題を見る</NuxtLink>
         <button type="button" class="editor-button primary save-button" :disabled="!ready || saving || publishing" :aria-busy="saving" :aria-label="saving ? '保存中' : '保存'" title="保存（Ctrl+S / ⌘S）" aria-keyshortcuts="Control+s Meta+s" @click="saveDraft(true)">
           <span :class="{ 'save-label-hidden': saving }">保存</span>
           <span v-if="saving" class="save-spinner" aria-hidden="true" />
