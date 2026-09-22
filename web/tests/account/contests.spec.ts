@@ -304,8 +304,11 @@ test('register before a contest and appear immediately in standings without subm
   await expect(bob.getByText('参加者はまだいません。')).toBeVisible()
   expect(new URL(await bob.getByRole('link', { name: 'ログインして参加する', exact: true }).getAttribute('href') ?? '', origin).searchParams.get('next')).toBe(`/contests/${id}?view=standings`)
   expect((await bob.request.post(`/api/my/contests/${id}/participation`, { headers: { origin } })).status()).toBe(401)
-  await login(bob, 'bob')
-  await bob.goto(`/contests/${id}?view=standings`)
+  await bob.getByRole('link', { name: 'ログインして参加する', exact: true }).click()
+  await bob.getByLabel('メールアドレス').fill('bob@example.test')
+  await bob.getByLabel('パスワード', { exact: true }).fill('test-password')
+  await bob.getByRole('button', { name: 'ログイン', exact: true }).click()
+  await expect(bob).toHaveURL(`/contests/${id}?view=standings`)
   expect((await bob.request.post(`/api/my/contests/${id}/participation`, { headers: { origin: 'https://attacker.example' } })).status()).toBe(403)
   // A failed registration must leave the action available and the standings unchanged.
   await bob.route(`**/api/my/contests/${id}/participation`, route => route.fulfill({ status: 503, contentType: 'application/json', body: '{}' }))
