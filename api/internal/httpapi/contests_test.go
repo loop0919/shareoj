@@ -100,7 +100,7 @@ func TestContestsPostgres(t *testing.T) {
 	const b = "22222222-2222-4222-8222-222222222222"
 	const cid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 	const other = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
-	draft := problems.Draft{Title: "Secret A", Markdown: "secret statement", Editorial: "secret editorial", TimeLimitMS: "1000", MemoryLimitMB: "512", TestCases: []problems.TestCase{{Input: "1", Output: "2", IsSample: true}, {Input: "private input", Output: "private output"}}}
+	draft := problems.Draft{Title: "Secret A", Markdown: "secret statement", Editorial: "secret editorial", TimeLimitMS: "1000", MemoryLimitMB: "256", TestCases: []problems.TestCase{{Input: "1", Output: "2", IsSample: true}, {Input: "private input", Output: "private output"}}}
 	for _, id := range []string{a, b} {
 		if _, err = store.Save(ctx, "alice", id, 0, draft); err != nil {
 			t.Fatal(err)
@@ -108,7 +108,7 @@ func TestContestsPostgres(t *testing.T) {
 	}
 	f := newSigningFixture(t)
 	queue := &submissions.Store{Pool: store.Pool()}
-	h := newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Profiles: profiles.New(store.Pool()), Submissions: queue, JudgeImage: "sha256:" + strings.Repeat("a", 64), Verifier: newCognitoVerifier(f.server.URL, "client")})
+	h := newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Profiles: profiles.New(store.Pool()), Submissions: queue, JudgeImage: "sha256:" + strings.Repeat("a", 64), JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: "cpp17", Verifier: newCognitoVerifier(f.server.URL, "client")})
 	request := func(method, path, owner string, body any, want int) string {
 		t.Helper()
 		raw := ""
@@ -226,6 +226,10 @@ func TestContestsPostgres(t *testing.T) {
 	var job []byte
 	if err = store.Pool().QueryRow(ctx, `SELECT job FROM submissions WHERE id=$1`, accepted.ID).Scan(&job); err != nil || !strings.Contains(string(job), "changed output") {
 		t.Fatalf("snapshot %s %v", job, err)
+	}
+	var savedJob submissions.Job
+	if err := json.Unmarshal(job, &savedJob); err != nil || savedJob.MemoryLimitMB != 256 {
+		t.Fatalf("contest submission memory limit: %s (%v)", job, err)
 	}
 	if accepted.ProblemVersion != 3 {
 		t.Fatal("new submission version", accepted.ProblemVersion)

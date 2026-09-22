@@ -57,7 +57,7 @@ func (p contestHandler) contest(w http.ResponseWriter, r *http.Request, owner st
 			authError(w, 400, "invalid_contest")
 			return
 		}
-		err = p.Contests.Save(r.Context(), owner, id, in, contests.JudgePolicy{KnownRuntimes: submissions.RuntimeIDs(), EnabledRuntimes: p.Judging.RuntimeIDs(), Isolate: p.Judging.JudgeRuntime == "cpp17-isolate"})
+		err = p.Contests.Save(r.Context(), owner, id, in, contests.JudgePolicy{KnownRuntimes: submissions.RuntimeIDs(), EnabledRuntimes: p.Judging.RuntimeIDs()})
 		if err == nil {
 			result, err = p.Contests.Get(r.Context(), id, owner)
 		}

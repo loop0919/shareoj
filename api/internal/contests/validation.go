@@ -10,11 +10,10 @@ import (
 // JudgePolicy is captured from the current admission configuration.
 type JudgePolicy struct {
 	KnownRuntimes, EnabledRuntimes []string
-	Isolate                        bool
 }
 
 func (p JudgePolicy) validProblem(d problems.Draft) bool {
-	return problems.Publishable(d, p.KnownRuntimes, p.EnabledRuntimes) && len(d.TestCases) > 0 && (!p.Isolate || d.MemoryLimitMB == "512")
+	return problems.Publishable(d, p.KnownRuntimes, p.EnabledRuntimes) && len(d.TestCases) > 0
 }
 
 func ValidInput(in Input) bool {
