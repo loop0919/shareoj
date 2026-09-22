@@ -37,6 +37,7 @@ type Contest struct {
 	Status             string    `json:"status"`
 	CanEdit            bool      `json:"canEdit"`
 	CanViewSubmissions bool      `json:"canViewSubmissions"`
+	Participating      bool      `json:"participating"`
 	Official           bool      `json:"official"`
 	Problems           []Problem `json:"problems"`
 }
@@ -83,8 +84,9 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
 	}
 	c.CanEdit = viewer == c.Owner && c.Status == "scheduled"
 	err = tx.QueryRow(ctx, `SELECT $2<>'' AND $2<>c.owner_id AND NOT EXISTS (
- SELECT 1 FROM contest_problems cp JOIN problem_testers t ON t.problem_id=cp.problem_id WHERE cp.contest_id=c.id AND t.owner_id=$2)
- FROM contests c WHERE c.id=$1`, id, viewer).Scan(&c.Official)
+ SELECT 1 FROM contest_problems cp JOIN problem_testers t ON t.problem_id=cp.problem_id WHERE cp.contest_id=c.id AND t.owner_id=$2),
+ EXISTS(SELECT 1 FROM contest_participants p WHERE p.contest_id=c.id AND p.owner_id=$2)
+ FROM contests c WHERE c.id=$1`, id, viewer).Scan(&c.Official, &c.Participating)
 	if err != nil {
 		return c, err
 	}

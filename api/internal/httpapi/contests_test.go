@@ -180,6 +180,35 @@ func TestContestsPostgres(t *testing.T) {
 	if testerView.Problems[0].TimeLimitMS != "1000" || testerView.Problems[0].MemoryLimitMB != "256" {
 		t.Fatal("missing contest problem limits", testerView.Problems)
 	}
+	// Registration is authenticated, idempotent and immediately visible before the start.
+	joinPath := "/my/contests/" + cid + "/participation"
+	request("POST", joinPath, "", nil, 401)
+	request("POST", "/my/contests/"+other+"/participation", "bob", nil, 404)
+	request("POST", joinPath, "alice", nil, 409)
+	request("POST", joinPath, "tester", nil, 409)
+	for i := 0; i < 2; i++ {
+		var joined contests.Contest
+		if err := json.Unmarshal([]byte(request("POST", joinPath, "bob", nil, 200)), &joined); err != nil {
+			t.Fatal(err)
+		}
+		if !joined.Participating || !joined.Official || joined.Status != "scheduled" {
+			t.Fatal(joined)
+		}
+	}
+	var registered []contests.Standing
+	if err := json.Unmarshal([]byte(request("GET", "/contests/"+cid+"/standings", "", nil, 200)), &registered); err != nil {
+		t.Fatal(err)
+	}
+	if len(registered) != 1 || registered[0].Handle != "bob" || registered[0].Points != 0 || registered[0].TimeMS != 0 || len(registered[0].Problems) != 0 {
+		t.Fatalf("zero submission participant: %+v", registered)
+	}
+	// Becoming a tester excludes a previously registered contestant too.
+	exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'bob')`, a)
+	if body := request("GET", "/contests/"+cid+"/standings", "", nil, 200); strings.TrimSpace(body) != "[]" {
+		t.Fatal(body)
+	}
+	request("POST", joinPath, "bob", nil, 409)
+	exec(`DELETE FROM problem_testers WHERE problem_id=$1 AND owner_id='bob'`, a)
 	submit := func(owner, pid string, easy bool) submissions.Submission {
 		t.Helper()
 		var s submissions.Submission
@@ -282,6 +311,10 @@ func TestContestsPostgres(t *testing.T) {
 	set(creator, 15, "AC")
 	tester := submit("tester", b, false)
 	set(tester, 15, "AC")
+	if body := request("POST", "/my/submissions", "carol", map[string]any{"problemId": a, "contestId": cid, "runtime": "cpp17", "source": "code"}, 409); !strings.Contains(body, "contest_participation_required") {
+		t.Fatal(body)
+	}
+	request("POST", joinPath, "carol", nil, 200)
 	tied := submit("carol", a, false)
 	set(tied, 40, "AC")
 	checkSolved := func(owner string, wantA, wantB bool) {
@@ -317,6 +350,18 @@ func TestContestsPostgres(t *testing.T) {
 	rows := rank()
 	if len(rows) != 2 || rows[0].Points != 100 || rows[0].TimeMS != 40*60000 || rows[0].Rank != 1 || rows[1].Rank != 1 {
 		t.Fatalf("rank: %+v", rows)
+	}
+	// Simulate upgrading a database with pre-registration submissions and a used migration 19.
+	exec(`DROP TABLE contest_participants`)
+	exec(`DELETE FROM schema_migrations WHERE version=20`)
+	if err := store.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if migrated := rank(); len(migrated) != 2 || migrated[0].Points != 100 || migrated[1].Points != 100 {
+		t.Fatalf("migrated standings: %+v", migrated)
+	}
+	if err := store.Migrate(ctx); err != nil {
+		t.Fatal(err)
 	}
 	request("GET", "/contests/"+cid+"/submissions", "", nil, 404)
 	request("GET", "/contests/"+cid+"/submissions/"+accepted.ID, "", nil, 404)
@@ -393,6 +438,14 @@ func TestContestsPostgres(t *testing.T) {
 	boundary := submit("bob", b, false)
 	exec(`UPDATE submissions SET created_at=$2 WHERE id=$1`, boundary.ID, end)
 	exec(`UPDATE contests SET ends_at=$2 WHERE id=$1`, cid, end)
+	exec(`INSERT INTO user_profiles(owner_id,handle) VALUES('late','late')`)
+	request("POST", joinPath, "late", nil, 409)
+	request("POST", joinPath, "bob", nil, 200)
+	latePractice := submit("late", a, false)
+	if latePractice.ID == "" {
+		t.Fatal("unregistered practice rejected")
+	}
+
 	detail = request("GET", "/problems/"+a, "", nil, 200)
 	if !strings.Contains(detail, "secret editorial") || !strings.Contains(detail, "changed statement") {
 		t.Fatal("auto publication", detail)

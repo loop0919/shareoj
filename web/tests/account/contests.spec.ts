@@ -197,6 +197,9 @@ test('scheduled problems open for submission, then publish with editorial and so
   await bob.goto(`/contests/${id}/problems/${pid}`)
   await expect(bob.getByRole('heading', { name: 'コンテスト本文', exact: true })).toBeVisible()
   await expect(bob.getByRole('navigation', { name: '問題メニュー' }).getByRole('link')).toHaveText(['問題', '自分の提出', 'すべての提出'])
+  await expect(bob.getByLabel('ソースコード', { exact: true })).toHaveCount(0)
+  await bob.getByRole('button', { name: '参加する', exact: true }).click()
+  await expect(bob.getByText('参加済み', { exact: true })).toBeVisible()
   await bob.getByLabel('ソースコード', { exact: true }).fill('int main(){}')
   const guideOpened = bob.waitForEvent('popup')
   await bob.getByRole('link', { name: '使える言語と実行環境の仕様' }).click()
@@ -281,4 +284,50 @@ test('scheduled problems open for submission, then publish with editorial and so
   }
   await guest.close()
   await participant.close()
+})
+
+test('register before a contest and appear immediately in standings without submissions', async ({ page, browser }, testInfo) => {
+  await login(page)
+  const pid = await seed(page, '参加登録用の問題')
+  const id = randomUUID()
+  expect((await page.request.put(`/api/my/contests/${id}`, { headers: { origin }, data: {
+    title: '事前参加コンテスト', description: '', version: 0,
+    startsAt: new Date(Date.now() + 3600000).toISOString(), endsAt: new Date(Date.now() + 7200000).toISOString(),
+    problems: [{ id: pid, points: 100 }],
+  } })).status()).toBe(200)
+  await page.goto(`/contests/${id}`)
+  await expect(page.getByRole('button', { name: '参加する', exact: true })).toHaveCount(0)
+  await expect(page.getByText('作成者・テスターは公式参加の対象外です。')).toBeVisible()
+  const context = await browser.newContext({ baseURL: origin })
+  const bob = await context.newPage()
+  await bob.goto(`/contests/${id}?view=standings`)
+  await expect(bob.getByText('参加者はまだいません。')).toBeVisible()
+  expect(new URL(await bob.getByRole('link', { name: 'ログインして参加する', exact: true }).getAttribute('href') ?? '', origin).searchParams.get('next')).toBe(`/contests/${id}?view=standings`)
+  expect((await bob.request.post(`/api/my/contests/${id}/participation`, { headers: { origin } })).status()).toBe(401)
+  await login(bob, 'bob')
+  await bob.goto(`/contests/${id}?view=standings`)
+  expect((await bob.request.post(`/api/my/contests/${id}/participation`, { headers: { origin: 'https://attacker.example' } })).status()).toBe(403)
+  // A failed registration must leave the action available and the standings unchanged.
+  await bob.route(`**/api/my/contests/${id}/participation`, route => route.fulfill({ status: 503, contentType: 'application/json', body: '{}' }))
+  await bob.getByRole('button', { name: '参加する', exact: true }).click()
+  await expect(bob.getByRole('alert')).toContainText('参加登録できませんでした。')
+  await expect(bob.getByText('参加者はまだいません。')).toBeVisible()
+  await bob.unroute(`**/api/my/contests/${id}/participation`)
+  await bob.getByRole('button', { name: '参加する', exact: true }).click()
+  await expect(bob.getByText('参加済み', { exact: true })).toBeVisible()
+  const row = bob.locator('.standings-table tbody tr')
+  await expect(row).toHaveCount(1)
+  await expect(row.locator('th')).toHaveText('bob')
+  await expect(row.locator('.standing-total')).toHaveText('0')
+  expect((await bob.request.post(`/api/my/contests/${id}/participation`, { headers: { origin } })).status()).toBe(200)
+  await bob.reload()
+  await expect(bob.getByText('参加済み', { exact: true })).toBeVisible()
+  await expect(row).toHaveCount(1)
+  await expect(bob.locator('.contest-problems')).toHaveCount(0)
+  for (const width of [1280, 375]) {
+    await bob.setViewportSize({ width, height: 900 })
+    expect(await bob.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await bob.screenshot({ path: testInfo.outputPath(`contest-participation-${width}.png`), fullPage: true })
+  }
+  await context.close()
 })

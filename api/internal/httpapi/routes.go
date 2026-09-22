@@ -139,6 +139,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	private("GET /my/contests", contests.contest, true)
 	private("GET /my/contests/{id}", contests.contest, true)
 	private("PUT /my/contests/{id}", contests.contest, true)
+	private("POST /my/contests/{id}/participation", contests.contest, true)
 	private("GET /my/contests/{id}/problems/{problem}", contests.contest, true)
 	private("GET /my/contests/{id}/problems/{problem}/submissions", contests.contest, true)
 	private("GET /my/contests/{id}/submissions", contests.contest, true)

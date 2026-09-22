@@ -29,7 +29,7 @@ export async function privateAPI<T>(event: H3Event, path: string, options: { met
       if (retryAfter) setResponseHeader(event, 'Retry-After', retryAfter)
       throw createError({ statusCode: 429, statusMessage: 'Request failed', data: { code: upstreamCode, retryAfter } })
     }
-    const code = ['invalid_image', 'image_in_use', 'handle_taken', 'profile_conflict', 'profile_required', 'invalid_avatar', 'invalid_profile', 'tests_not_ready', 'judging_unavailable', 'invalid_submission', 'contest_conflict', 'contest_problem_locked', 'invalid_contest'].includes(upstreamCode ?? '') ? upstreamCode : undefined
+    const code = ['invalid_image', 'image_in_use', 'handle_taken', 'profile_conflict', 'profile_required', 'invalid_avatar', 'invalid_profile', 'tests_not_ready', 'judging_unavailable', 'invalid_submission', 'contest_participation_required', 'contest_participation_unavailable', 'contest_conflict', 'contest_problem_locked', 'invalid_contest'].includes(upstreamCode ?? '') ? upstreamCode : undefined
     throw createError({ statusCode: status && [400, 401, 403, 404, 409, 413, 415, 429, 503].includes(status) ? status : 502, statusMessage: 'Request failed', data: code ? { code } : undefined })
   }
 }

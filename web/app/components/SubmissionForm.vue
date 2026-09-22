@@ -68,6 +68,7 @@ async function submit(easyTest = false) {
       ? `提出頻度制限に到達しました。${failure.data.data.retryAfter}秒後に再度試してください。`
       : '提出頻度制限に到達しました。しばらく待ってから再度試してください。'
     else if (code === 'profile_required') message.value = 'プロフィールを登録してから提出してください。'
+    else if (code === 'contest_participation_required') message.value = 'コンテストの「参加する」を押してから提出してください。'
     else if (code === 'tests_not_ready') message.value = easyTest ? '「サンプルケースにする」をチェックしたケースがあることと、検証コード・言語の設定を確認してください。' : 'テストケース、検証コード、利用できる言語の設定を確認してください。'
     else if (code === 'judging_unavailable') message.value = 'ジャッジが設定されていません。'
     else message.value = easyTest ? 'サンプル検証の結果を確認できませんでした。再実行するか、結果の詳細を確認してください。' : '提出を確認できませんでした。再送する前に提出履歴を確認してください。'

@@ -4,7 +4,7 @@ definePageMeta({ key: route => route.path })
 useResponseHeader('Cache-Control').value = 'no-store'
 useResponseHeader('Vary').value = 'Cookie'
 const route = useRoute()
-const { profile } = useAccount()
+const { profile, user } = useAccount()
 const id = encodeURIComponent(String(route.params.id))
 const pid = encodeURIComponent(String(route.params.problem))
 const { data: contest, refresh: refreshContest } = await useFetch<Contest>(`/api/contests/${id}`)
@@ -14,6 +14,7 @@ const showingEditorial = computed(() => route.query.view === 'editorial')
 const submissionView = computed(() => route.query.view === 'my-submissions' || route.query.view === 'submissions')
 const problemPath = `/contests/${id}/problems/${pid}`
 useSeoMeta({ title: () => `${problem.value?.title} | ${contest.value?.title} | ShareOJ` })
+watch(() => user.value?.id, () => { void refreshContest() })
 usePolling(() => Promise.all([refresh(), refreshContest()]), 15000)
 useSharePreview({ title: () => problem.value!.title, path: problemPath, description: () => problem.value!.markdown.slice(0, 160), enabled: () => !!problem.value && !!contest.value && contest.value.status !== 'scheduled' })
 </script>
@@ -28,7 +29,7 @@ useSharePreview({ title: () => problem.value!.title, path: problemPath, descript
     </template>
     <article v-else class="problem-body">
       <template v-if="showingEditorial"><ProblemMarkdown v-if="problem.editorial" :source="problem.editorial" /><p v-else class="muted">解説は終了後に公開されます。終了後も表示されない場合は未登録です。</p></template>
-      <template v-else><ProblemMarkdown :source="problem.markdown" /><p v-if="problem.interactive" class="muted">インタラクティブ問題：応答を待つ前に出力をflushしてください。</p><p v-if="problem.specialJudge" class="muted">スペシャルジャッジ問題です。</p><SubmissionForm :has-samples="problem.hasSamples" :problem-id="problem.id" :contest-id="contest.id" /></template>
+      <template v-else><ProblemMarkdown :source="problem.markdown" /><p v-if="problem.interactive" class="muted">インタラクティブ問題：応答を待つ前に出力をflushしてください。</p><p v-if="problem.specialJudge" class="muted">スペシャルジャッジ問題です。</p><ContestParticipation :contest="contest" @joined="value => contest = value" /><SubmissionForm v-if="contest.status === 'ended' || (user && (!contest.official || contest.participating))" :has-samples="problem.hasSamples" :problem-id="problem.id" :contest-id="contest.id" /></template>
     </article>
   </div>
 </template>

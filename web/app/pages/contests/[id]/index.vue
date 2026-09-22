@@ -81,6 +81,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <p class="schedule-timezone muted">日時は日本時間で表示しています。</p>
       <p class="contest-scoring muted">誤答ペナルティ {{ contest.penaltyMinutes }} 分 · 部分点なし</p>
     </header>
+    <ContestParticipation :contest="contest" @joined="value => { contest = value; refreshStandings() }" />
     <section v-if="activeView === 'overview'" id="overview" class="contest-section contest-description" aria-labelledby="overview-title">
       <h2 id="overview-title">概要</h2><ProblemMarkdown v-if="contest.description" :source="contest.description" /><p v-else class="muted">コンテストの説明はまだありません。</p>
       <p><NuxtLink to="/blog/contest-rules">ルール</NuxtLink></p>
@@ -96,7 +97,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <header class="contest-section-heading"><h2 id="standings-title">公式順位表</h2><button class="editor-button" :disabled="updating" :aria-busy="updating" @click="update">{{ updating ? '更新中…' : '今すぐ更新' }}</button></header>
       <p v-if="user && !contest.official" class="notice">作成者・テスターとしての提出は公式順位の対象外です。</p>
       <p v-if="standingsError" class="notice notice-error" role="alert">順位表を取得できませんでした。</p>
-      <p v-else-if="!standings?.length" class="contest-empty muted">公式順位の対象となる提出はまだありません。</p>
+      <p v-else-if="!standings?.length" class="contest-empty muted">参加者はまだいません。</p>
       <div v-else class="content-table-scroll" role="region" aria-label="順位表のスクロール領域" tabindex="0" :aria-busy="updating">
         <table class="content-table standings-table">
           <thead><tr><th scope="col">順位</th><th scope="col">ユーザー</th><th scope="col">得点</th><th scope="col">時間</th><th v-for="(p, i) in contest.problems" :key="p.id" scope="col"><NuxtLink :to="`/contests/${contest.id}/problems/${p.id}`">{{ problemLabel(i) }}</NuxtLink></th></tr></thead>

@@ -14,6 +14,8 @@ import (
 	"judge/api/internal/problems"
 )
 
+var ErrParticipationRequired = errors.New("contest participation required")
+
 var ErrNotReady = errors.New("problem is not ready for judging")
 
 type Case = problems.TestCase
@@ -162,6 +164,17 @@ func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) 
 		}
 		if err != nil {
 			return Submission{}, err
+		}
+		var eligible bool
+		err = tx.QueryRow(ctx, `SELECT clock_timestamp()>=c.ends_at OR c.owner_id=$2
+   OR EXISTS(SELECT 1 FROM contest_problems cp JOIN problem_testers t ON t.problem_id=cp.problem_id WHERE cp.contest_id=c.id AND t.owner_id=$2)
+   OR EXISTS(SELECT 1 FROM contest_participants p WHERE p.contest_id=c.id AND p.owner_id=$2)
+   FROM contests c WHERE c.id=$1`, contestID, owner).Scan(&eligible)
+		if err != nil {
+			return Submission{}, err
+		}
+		if !eligible {
+			return Submission{}, ErrParticipationRequired
 		}
 	}
 	result, err := scan(query(ctx, `WITH moment AS MATERIALIZED (SELECT clock_timestamp() AS now)

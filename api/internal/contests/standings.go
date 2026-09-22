@@ -28,8 +28,11 @@ type Attempt struct {
 }
 
 // Attempts must be ordered by acceptance time, never judge completion time.
-func Rank(attempts []Attempt, start time.Time, penaltyMinutes int) []Standing {
+func Rank(participants []string, attempts []Attempt, start time.Time, penaltyMinutes int) []Standing {
 	users := map[string]*Standing{}
+	for _, handle := range participants {
+		users[handle] = &Standing{Handle: handle, Problems: map[string]*Score{}}
+	}
 	last := map[string]time.Time{}
 	for _, a := range attempts {
 		u := users[a.Handle]
@@ -92,9 +95,21 @@ func (s *Store) Standings(ctx context.Context, id string) ([]Standing, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT u.handle,s.problem_id,COALESCE(s.result->>'verdict',''),cp.points,s.created_at
+	rows, err := s.Pool.Query(ctx, `SELECT u.handle FROM contest_participants p
+ JOIN contests c ON c.id=p.contest_id JOIN user_profiles u ON u.owner_id=p.owner_id
+ WHERE c.id=$1 AND p.owner_id<>c.owner_id
+ AND NOT EXISTS(SELECT 1 FROM contest_problems cp JOIN problem_testers t ON t.problem_id=cp.problem_id WHERE cp.contest_id=c.id AND t.owner_id=p.owner_id)`, id)
+	if err != nil {
+		return nil, err
+	}
+	participants, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	rows, err = s.Pool.Query(ctx, `SELECT u.handle,s.problem_id,COALESCE(s.result->>'verdict',''),cp.points,s.created_at
  FROM submissions s JOIN contests c ON c.id=s.contest_id JOIN contest_problems cp ON cp.contest_id=c.id AND cp.problem_id=s.problem_id
  JOIN user_profiles u ON u.owner_id=s.owner_id
+ JOIN contest_participants p ON p.contest_id=c.id AND p.owner_id=s.owner_id
  WHERE c.id=$1 AND s.created_at>=c.starts_at AND s.created_at<c.ends_at AND s.owner_id<>c.owner_id
  AND NOT COALESCE((s.job->>'easyTest')::boolean,false)
  AND NOT EXISTS(SELECT 1 FROM contest_problems other JOIN problem_testers t ON t.problem_id=other.problem_id WHERE other.contest_id=c.id AND t.owner_id=s.owner_id)
@@ -110,5 +125,5 @@ func (s *Store) Standings(ctx context.Context, id string) ([]Standing, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Rank(attempts, c.StartsAt, c.PenaltyMinutes), nil
+	return Rank(participants, attempts, c.StartsAt, c.PenaltyMinutes), nil
 }

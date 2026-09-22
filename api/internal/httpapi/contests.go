@@ -44,6 +44,11 @@ func (p contestHandler) contest(w http.ResponseWriter, r *http.Request, owner st
 			list = list[:50]
 		}
 		result = offsetResponse[contests.Contest]{Items: list, HasMore: more}
+	case r.Method == http.MethodPost:
+		err = p.Contests.Join(r.Context(), id, owner)
+		if err == nil {
+			result, err = p.Contests.Get(r.Context(), id, owner)
+		}
 	case r.Method == http.MethodPut:
 		var in contests.Input
 		if !contentJSON(w, r, &in) {
@@ -112,6 +117,8 @@ func (p contestHandler) contest(w http.ResponseWriter, r *http.Request, owner st
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
 			authError(w, 404, "contest_not_found")
+		case errors.Is(err, contests.ErrParticipationUnavailable):
+			authError(w, 409, "contest_participation_unavailable")
 		case errors.Is(err, contests.ErrConflict):
 			authError(w, 409, "contest_conflict")
 		default:

@@ -6,7 +6,7 @@ const startsAt = '2026-09-15T12:00:00Z'
 const contest: Contest = {
   id, title: '順位表テスト', author: 'setter', description: '', startsAt,
   endsAt: '2026-09-15T14:00:00Z', penaltyMinutes: 5, version: 1,
-  status: 'running', canEdit: false, official: true, canViewSubmissions: false,
+  status: 'running', participating: false, canEdit: false, official: true, canViewSubmissions: false,
   problems: ['a', 'b', 'c', 'd'].map(id => ({ id, title: id, points: 100 })),
 }
 const rows: Standing[] = [
@@ -76,7 +76,7 @@ test('standings retain empty and error states', async ({ page }) => {
   let failed = false
   await page.route(`**/api/contests/${id}/standings`, route => route.fulfill(failed ? { status: 502, json: {} } : { json: [] }))
   await page.goto(`/contests/${id}?view=standings`, { waitUntil: 'networkidle' })
-  await expect(page.getByText('公式順位の対象となる提出はまだありません。')).toBeVisible()
+  await expect(page.getByText('参加者はまだいません。')).toBeVisible()
   failed = true
   await page.getByRole('button', { name: '今すぐ更新' }).click()
   await expect(page.getByRole('alert')).toHaveText('順位表を取得できませんでした。')

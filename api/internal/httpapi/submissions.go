@@ -78,6 +78,8 @@ func submissionError(w http.ResponseWriter, err error) {
 		authError(w, 503, "judging_unavailable")
 	case errors.Is(err, submissions.ErrInvalid):
 		authError(w, 400, "invalid_submission")
+	case errors.Is(err, submissions.ErrParticipationRequired):
+		authError(w, 409, "contest_participation_required")
 	case errors.Is(err, submissions.ErrNotReady):
 		authError(w, 409, "tests_not_ready")
 	default:
