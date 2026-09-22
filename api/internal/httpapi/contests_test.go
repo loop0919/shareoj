@@ -177,6 +177,9 @@ func TestContestsPostgres(t *testing.T) {
 	if testerView.Official || !testerView.CanViewSubmissions || len(testerView.Problems) != 1 {
 		t.Fatal(testerView)
 	}
+	if testerView.Problems[0].TimeLimitMS != "1000" || testerView.Problems[0].MemoryLimitMB != "256" {
+		t.Fatal("missing contest problem limits", testerView.Problems)
+	}
 	submit := func(owner, pid string, easy bool) submissions.Submission {
 		t.Helper()
 		var s submissions.Submission
@@ -198,6 +201,19 @@ func TestContestsPostgres(t *testing.T) {
 	detail = request("GET", "/my/contests/"+cid, "alice", nil, 200)
 	if !strings.Contains(detail, "Updated before start") {
 		t.Fatal("title did not follow source", detail)
+	}
+	var updatedContest contests.Contest
+	if err := json.Unmarshal([]byte(detail), &updatedContest); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range updatedContest.Problems {
+		wantTime := "1000"
+		if p.ID == a {
+			wantTime = "2000"
+		}
+		if p.TimeLimitMS != wantTime || p.MemoryLimitMB != "256" {
+			t.Fatal("contest problem limits did not follow source", p)
+		}
 	}
 	pre := submit("tester", a, false)
 	preSetter := submit("alice", b, false)

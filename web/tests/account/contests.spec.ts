@@ -11,7 +11,7 @@ async function login(page: Page, name = 'alice') {
 }
 async function seed(page: Page, title: string) {
   const id = randomUUID()
-  const response = await page.request.put(`/api/my/problems/${id}`, { headers: { origin }, data: { version: 0, draft: { title, markdown: '## コンテスト本文\n整数を出力してください。', editorial: '## コンテスト解説\n答えは2です。', timeLimitMs: '1000', memoryLimitMb: '512', testCases: [{ input: '1', output: '2', isSample: true }] } } })
+  const response = await page.request.put(`/api/my/problems/${id}`, { headers: { origin }, data: { version: 0, draft: { title, markdown: '## コンテスト本文\n整数を出力してください。', editorial: '## コンテスト解説\n答えは2です。', timeLimitMs: '1500', memoryLimitMb: '256', testCases: [{ input: '1', output: '2', isSample: true }] } } })
   expect(response.status()).toBe(200)
   return id
 }
@@ -74,6 +74,10 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
     await page.setViewportSize({ width, height: 900 })
     for (const name of ['概要', '問題', '順位表', '提出一覧']) {
       await contestMenu.getByRole('link', { name, exact: true }).click()
+      if (name === '問題') {
+        await expect(page.locator('.contest-problems thead th')).toHaveText(['#', '問題', 'TL / ML', '配点'])
+        await expect(page.locator('.contest-problems .problem-limits')).toHaveText(['1.5 秒・256 MiB', '1.5 秒・256 MiB'])
+      }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
       await page.screenshot({ path: testInfo.outputPath(`contest-${name}-${width}.png`), fullPage: true })
     }

@@ -89,7 +89,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <h2 id="problems-title">問題</h2>
       <p v-if="contest.status === 'scheduled'" class="notice">問題は開始時刻に公開されます。事前に閲覧できるのは作成者と、その問題のテスターです。</p>
       <div v-if="contest.problems.length" class="content-table-scroll" role="region" aria-label="コンテストの問題" tabindex="0">
-        <table class="content-table contest-problems"><thead><tr><th scope="col">#</th><th scope="col">問題</th><th scope="col">配点</th></tr></thead><tbody><tr v-for="(p, index) in contest.problems" :key="p.id" :class="{ solved: p.solved }"><td>{{ problemLabel(index) }}</td><th scope="row"><NuxtLink :to="`/contests/${contest.id}/problems/${p.id}`" :aria-label="p.solved ? `${p.title}（AC 済み）` : undefined">{{ p.title }}</NuxtLink></th><td>{{ p.points }} 点</td></tr></tbody></table>
+        <table class="content-table contest-problems"><thead><tr><th scope="col">#</th><th scope="col">問題</th><th scope="col"><abbr title="実行時間制限 / メモリ制限">TL / ML</abbr></th><th scope="col">配点</th></tr></thead><tbody><tr v-for="(p, index) in contest.problems" :key="p.id" :class="{ solved: p.solved }"><td>{{ problemLabel(index) }}</td><th scope="row"><NuxtLink :to="`/contests/${contest.id}/problems/${p.id}`" :aria-label="p.solved ? `${p.title}（AC 済み）` : undefined">{{ p.title }}</NuxtLink></th><td class="problem-limits">{{ p.timeLimitMs == null ? '—' : `${Number(p.timeLimitMs) / 1000} 秒` }}・{{ p.memoryLimitMb == null ? '—' : `${p.memoryLimitMb} MiB` }}</td><td>{{ p.points }} 点</td></tr></tbody></table>
       </div>
     </section>
     <section v-if="activeView === 'standings'" id="standings" class="contest-section" aria-labelledby="standings-title">
@@ -158,6 +158,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 .contest-section-heading button { min-height: 40px; padding: 8px 12px; }
 .contest-section-heading button:disabled { opacity: .55; cursor: wait; }
 .contest-problems tr.solved { background: var(--color-accent-soft); }
+.contest-problems .problem-limits { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .contest-problems td:first-child { width: 3rem; color: var(--color-muted); }
 .contest-problems thead th:last-child, .contest-problems td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
 .contest-empty { margin: 0; padding-block: 24px; border-top: 1px solid var(--color-line); }

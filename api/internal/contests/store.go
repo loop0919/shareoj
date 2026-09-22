@@ -17,10 +17,12 @@ import (
 var ErrConflict = errors.New("contest is locked or problems are unavailable")
 
 type Problem struct {
-	Solved bool   `json:"solved,omitempty"`
-	ID     string `json:"id"`
-	Points int    `json:"points"`
-	Title  string `json:"title,omitempty"`
+	Solved        bool   `json:"solved,omitempty"`
+	ID            string `json:"id"`
+	Points        int    `json:"points"`
+	Title         string `json:"title,omitempty"`
+	TimeLimitMS   string `json:"timeLimitMs,omitempty"`
+	MemoryLimitMB string `json:"memoryLimitMb,omitempty"`
 }
 type Contest struct {
 	ID                 string    `json:"id"`
@@ -87,7 +89,7 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
 		return c, err
 	}
 	c.CanViewSubmissions = c.Status == "ended" || (viewer != "" && !c.Official)
-	rows, err := tx.Query(ctx, `SELECT cp.problem_id,cp.points,cp.draft->>'title',
+	rows, err := tx.Query(ctx, `SELECT cp.problem_id,cp.points,cp.draft->>'title',cp.draft->>'timeLimitMs',cp.draft->>'memoryLimitMb',
  EXISTS(SELECT 1 FROM submissions s WHERE s.contest_id=cp.contest_id AND s.problem_id=cp.problem_id
   AND s.owner_id=$3 AND s.status='DONE' AND s.result->>'verdict'='AC'
   AND NOT COALESCE((s.job->>'easyTest')::boolean,false)
@@ -101,7 +103,7 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
 	}
 	c.Problems, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (Problem, error) {
 		var p Problem
-		e := row.Scan(&p.ID, &p.Points, &p.Title, &p.Solved)
+		e := row.Scan(&p.ID, &p.Points, &p.Title, &p.TimeLimitMS, &p.MemoryLimitMB, &p.Solved)
 		return p, e
 	})
 	if err != nil {
