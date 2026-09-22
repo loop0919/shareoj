@@ -2,7 +2,7 @@
 import { submissionUsage } from '~/utils/submission-usage'
 import { contestDate, contestStatus, type Contest, type Standing } from '~~/shared/types/contest'
 import type { Submission } from '~~/shared/types/submission'
-definePageMeta({ key: route => String(route.params.id) })
+definePageMeta({ key: route => route.path })
 useResponseHeader('Cache-Control').value = 'no-store'
 useResponseHeader('Vary').value = 'Cookie'
 const route = useRoute()
