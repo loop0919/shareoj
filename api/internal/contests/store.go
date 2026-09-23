@@ -28,6 +28,8 @@ type Contest struct {
 	ID                 string    `json:"id"`
 	Owner              string    `json:"-"`
 	Author             string    `json:"author"`
+	ProblemAuthors     []string  `json:"problemAuthors"`
+	Testers            []string  `json:"testers"`
 	Title              string    `json:"title"`
 	Description        string    `json:"description"`
 	StartsAt           time.Time `json:"startsAt"`
@@ -59,6 +61,8 @@ func scan(row pgx.Row) (Contest, error) {
 	var c Contest
 	err := row.Scan(&c.ID, &c.Owner, &c.Author, &c.Title, &c.Description, &c.StartsAt, &c.EndsAt, &c.PenaltyMinutes, &c.Version, &c.Status)
 	c.Problems = []Problem{}
+	c.ProblemAuthors = []string{}
+	c.Testers = []string{}
 	return c, err
 }
 
@@ -85,8 +89,14 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
 	c.CanEdit = viewer == c.Owner && c.Status == "scheduled"
 	err = tx.QueryRow(ctx, `SELECT $2<>'' AND $2<>c.owner_id AND NOT EXISTS (
  SELECT 1 FROM contest_problems cp JOIN problem_testers t ON t.problem_id=cp.problem_id WHERE cp.contest_id=c.id AND t.owner_id=$2),
- EXISTS(SELECT 1 FROM contest_participants p WHERE p.contest_id=c.id AND p.owner_id=$2)
- FROM contests c WHERE c.id=$1`, id, viewer).Scan(&c.Official, &c.Participating)
+ EXISTS(SELECT 1 FROM contest_participants p WHERE p.contest_id=c.id AND p.owner_id=$2),
+ COALESCE((SELECT array_agg(DISTINCT u.handle ORDER BY u.handle)
+  FROM contest_problems cp JOIN problem_drafts d ON d.id=cp.problem_id JOIN user_profiles u ON u.owner_id=d.owner_id
+  WHERE cp.contest_id=c.id), ARRAY[]::text[]),
+ COALESCE((SELECT array_agg(DISTINCT u.handle ORDER BY u.handle)
+  FROM contest_problems cp JOIN problem_testers t ON t.problem_id=cp.problem_id JOIN user_profiles u ON u.owner_id=t.owner_id
+  WHERE cp.contest_id=c.id), ARRAY[]::text[])
+ FROM contests c WHERE c.id=$1`, id, viewer).Scan(&c.Official, &c.Participating, &c.ProblemAuthors, &c.Testers)
 	if err != nil {
 		return c, err
 	}

@@ -76,7 +76,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
         <h1>{{ contest.title }}</h1>
         <NuxtLink v-if="contest.canEdit" class="editor-button contest-edit" :to="`/my/contests/${contest.id}`"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4 5 5M4 20l4-1L20 7a2 2 0 0 0-4-4L4 15Z" /></svg>コンテストを編集</NuxtLink>
       </div>
-      <div class="problem-summary"><div class="problem-meta muted"><span class="contest-status" :data-status="contest.status">{{ contestStatus[contest.status] }}</span><p>作成者 <UserLink :handle="contest.author" /></p></div></div>
+      <div class="problem-summary"><div class="problem-meta muted"><span class="contest-status" :data-status="contest.status">{{ contestStatus[contest.status] }}</span><p>作成者 <UserLink :handle="contest.author" /></p><p v-if="contest.problemAuthors.length">作問者 <template v-for="(author, index) in contest.problemAuthors" :key="author"><span v-if="index">、</span><UserLink :handle="author" /></template></p><p v-if="contest.testers.length">テスター <template v-for="(tester, index) in contest.testers" :key="tester"><span v-if="index">、</span><UserLink :handle="tester" /></template></p></div></div>
       <dl class="limits contest-schedule"><div><dt>開始日時</dt><dd><time :datetime="contest.startsAt">{{ contestDate(contest.startsAt) }}</time></dd></div><div><dt>終了日時</dt><dd><time :datetime="contest.endsAt">{{ contestDate(contest.endsAt) }}</time></dd></div></dl>
       <p class="schedule-timezone muted">日時は日本時間で表示しています。</p>
       <p class="contest-scoring muted">誤答ペナルティ {{ contest.penaltyMinutes }} 分 · 部分点なし</p>

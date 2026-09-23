@@ -1,7 +1,7 @@
 import type { PublicProblem } from './problem'
 export type ContestProblem = { id: string, points: number, title?: string, timeLimitMs?: string, memoryLimitMb?: string, solved?: boolean }
 export type Contest = {
-  id: string, author: string, title: string, description: string,
+  id: string, author: string, problemAuthors: string[], testers: string[], title: string, description: string,
   startsAt: string, endsAt: string, penaltyMinutes: number, version: number,
   status: 'scheduled' | 'running' | 'ended', canEdit: boolean, participating: boolean, official: boolean, canViewSubmissions: boolean,
   problems: ContestProblem[],

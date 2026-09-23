@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -152,6 +153,24 @@ func TestContestsPostgres(t *testing.T) {
 	if strings.Contains(detail, "Secret") || !strings.Contains(detail, `"problems":[]`) {
 		t.Fatal("prestart leak", detail)
 	}
+	var credits contests.Contest
+	if err := json.Unmarshal([]byte(detail), &credits); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(credits.ProblemAuthors, []string{"alice"}) || len(credits.Testers) != 0 {
+		t.Fatal("initial contest credits", credits)
+	}
+	// Credits cover all registered problems, including those hidden before the start.
+	exec(`UPDATE problem_drafts SET owner_id='bob' WHERE id=$1`, b)
+	exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'tester'),($2,'tester'),($2,'carol')`, a, b)
+	if err := json.Unmarshal([]byte(request("GET", "/contests/"+cid, "", nil, 200)), &credits); err != nil {
+		t.Fatal(err)
+	}
+	if len(credits.Problems) != 0 || !slices.Equal(credits.ProblemAuthors, []string{"alice", "bob"}) || !slices.Equal(credits.Testers, []string{"carol", "tester"}) {
+		t.Fatal("contest credits must be unique and include hidden problems", credits)
+	}
+	exec(`DELETE FROM problem_testers WHERE problem_id IN ($1,$2)`, a, b)
+	exec(`UPDATE problem_drafts SET owner_id='alice' WHERE id=$1`, b)
 	request("GET", "/contests/"+cid+"/problems/"+a, "", nil, 404)
 	request("GET", "/problems/"+a, "", nil, 404)
 	if detail = request("GET", "/my/contests/"+cid+"/problems/"+a, "alice", nil, 200); !strings.Contains(detail, "secret editorial") || strings.Contains(detail, "private input") {
