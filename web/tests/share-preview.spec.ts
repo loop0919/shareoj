@@ -46,6 +46,12 @@ test('private and pre-start images stay unavailable even with a session', async 
   }
 })
 
+test('share card wraps English titles between words', () => {
+  const svg = shareImageSvg('ShareOJ Programming Contest vol.1', 'CONTEST')
+  const lines = [...svg.matchAll(/<text x="72" y="\d+" font-size="60">([^<]*)<\/text>/g)].map(match => match[1])
+  expect(lines).toEqual(['ShareOJ Programming', 'Contest vol.1'])
+})
+
 test('titles are escaped, bounded and rendered as text', () => {
   const svg = shareImageSvg('日本語 & <image href="https://example.com"/>', 'ARTICLE')
   expect(svg).toContain('&amp;')
