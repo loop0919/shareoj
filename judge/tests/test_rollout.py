@@ -130,6 +130,73 @@ class RolloutTests(unittest.TestCase):
             self.assertEqual(len(plans), 2)
             self.assertTrue(all('-refresh-only' in args for args in plans))
 
+    def test_release_cleanup_keeps_only_published_worker_version(self):
+        release = 'a' * 64
+        active_key = f'releases/{release}/worker.tar.gz'
+        old_key = f'releases/{"b" * 64}/worker.tar.gz'
+        digest = 'sha256:' + 'c' * 64
+        config = dict(region='test', account='123', api='api', bridge='bridge', bucket='bucket')
+        state = dict(status='passed', step='complete', releaseSHA256=release, runtimeDigest=digest)
+        versions = [
+            dict(Key=active_key, VersionId='active', IsLatest=True, Size=10, LastModified='2026-09-21'),
+            dict(Key=active_key, VersionId='duplicate', IsLatest=False, Size=10, LastModified='2026-09-20'),
+            dict(Key=old_key, VersionId='old', IsLatest=True, Size=20, LastModified='2026-09-19'),
+            dict(Key='releases/bridge.zip', VersionId='bridge', IsLatest=True, Size=30, LastModified='2026-09-18'),
+        ]
+        deleted = []
+        def aws(region, service, operation, *args):
+            if service == 'sts':
+                return dict(Account='123')
+            if service == 'lambda':
+                name = args[-1]
+                variable = 'JUDGE_CPP_IMAGE' if name == 'api' else 'JUDGE_RUNTIME_DIGEST'
+                return dict(Environment=dict(Variables={variable: digest}))
+            if operation == 'head-object':
+                return dict(VersionId='active')
+            if operation == 'list-object-versions':
+                return dict(Versions=versions)
+            if operation == 'delete-objects':
+                deleted.extend(json.loads(args[-1])['Objects'])
+                return {}
+            raise AssertionError(operation)
+        with patch.object(rollout, 'aws', side_effect=aws):
+            self.assertEqual(rollout.prune_worker_releases(config, state), (2, 30))
+        self.assertEqual(deleted, [dict(Key=active_key, VersionId='duplicate'), dict(Key=old_key, VersionId='old')])
+
+    def test_release_cleanup_refuses_newer_upload(self):
+        release = 'a' * 64
+        key = f'releases/{release}/worker.tar.gz'
+        config = dict(region='test', account='123', api='api', bridge='bridge', bucket='bucket')
+        digest = 'sha256:' + 'c' * 64
+        state = dict(status='passed', step='complete', releaseSHA256=release, runtimeDigest=digest)
+        def aws(region, service, operation, *args):
+            if service == 'sts':
+                return dict(Account='123')
+            if service == 'lambda':
+                variable = 'JUDGE_CPP_IMAGE' if args[-1] == 'api' else 'JUDGE_RUNTIME_DIGEST'
+                return dict(Environment=dict(Variables={variable: digest}))
+            if operation == 'head-object':
+                return dict(VersionId='active')
+            if operation == 'list-object-versions':
+                return dict(Versions=[
+                    dict(Key=key, VersionId='active', IsLatest=True, LastModified='2026-09-21'),
+                    dict(Key=f'releases/{"b" * 64}/worker.tar.gz', VersionId='newer',
+                         IsLatest=True, LastModified='2026-09-22')])
+            raise AssertionError('deletion must not be attempted')
+        with patch.object(rollout, 'aws', side_effect=aws), self.assertRaises(ValueError):
+            rollout.prune_worker_releases(config, state)
+
+    def test_release_cleanup_error_keeps_successful_rollout(self):
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            state = dict(status='passed', step='complete')
+            with patch.object(rollout, 'prune_worker_releases', side_effect=RuntimeError('temporary AWS error')):
+                rollout.cleanup_after_success({}, directory, state)
+            saved = json.loads((directory / 'state.json').read_text())
+            self.assertEqual(saved['status'], 'passed')
+            self.assertEqual(saved['releasePruneError'], 'temporary AWS error')
+            self.assertNotIn('releasePruned', saved)
+
     def test_settings_sync_checks_github_and_keeps_previous_local_values(self):
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)

@@ -97,6 +97,55 @@ def checkpoint(directory, state, step, **values):
     print(step, flush=True)
 
 
+def prune_worker_releases(config, state):
+    """Keep only the worker archive version from the published rollout."""
+    if state.get('status') != 'passed' or state.get('step') != 'complete':
+        raise ValueError('release cleanup requires a completed rollout')
+    region, bucket = config['region'], config['bucket']
+    if aws(region, 'sts', 'get-caller-identity')['Account'] != config['account']:
+        raise ValueError('wrong AWS account')
+    digest = state['runtimeDigest']
+    api = aws(region, 'lambda', 'get-function-configuration', '--function-name', config['api'])
+    bridge = aws(region, 'lambda', 'get-function-configuration', '--function-name', config['bridge'])
+    if api['Environment']['Variables'].get('JUDGE_CPP_IMAGE') != digest or \
+            bridge['Environment']['Variables'].get('JUDGE_RUNTIME_DIGEST') != digest:
+        raise ValueError('published runtime digest changed; release cleanup skipped')
+    key = 'releases/' + state['releaseSHA256'] + '/worker.tar.gz'
+    head = aws(region, 's3api', 'head-object', '--bucket', bucket, '--key', key)
+    versions = aws(region, 's3api', 'list-object-versions', '--bucket', bucket, '--prefix', 'releases/').get('Versions', [])
+    workers = [v for v in versions if re.fullmatch(r'releases/[0-9a-f]{64}/worker\.tar\.gz', v['Key'])]
+    active = [v for v in workers if v['Key'] == key and v['IsLatest'] and v['VersionId'] == head['VersionId']]
+    if len(active) != 1 or any(v['Key'] != key and v['LastModified'] >= active[0]['LastModified'] for v in workers):
+        raise ValueError('worker release changed or a newer upload exists; release cleanup skipped')
+    stale = [v for v in workers if v is not active[0]]
+    if any(not v.get('VersionId') or v['VersionId'] == 'null' for v in stale):
+        raise ValueError('unversioned worker release found; release cleanup skipped')
+    for offset in range(0, len(stale), 1000):
+        objects = [dict(Key=v['Key'], VersionId=v['VersionId']) for v in stale[offset:offset + 1000]]
+        result = aws(region, 's3api', 'delete-objects', '--bucket', bucket, '--delete', json.dumps(dict(Objects=objects)))
+        if result.get('Errors'):
+            raise RuntimeError('S3 rejected one or more worker release deletions')
+    return len(stale), sum(v['Size'] for v in stale)
+
+
+def cleanup_after_success(config, directory, state, strict=False):
+    if state.get('releasePruned'):
+        return
+    try:
+        count, size = prune_worker_releases(config, state)
+    except Exception as error:
+        state['releasePruneError'] = str(error)
+        save(directory / 'state.json', state)
+        if strict:
+            raise
+        print('release cleanup pending: ' + str(error), file=sys.stderr, flush=True)
+    else:
+        state['releasePruned'] = True
+        state.pop('releasePruneError', None)
+        save(directory / 'state.json', state)
+        print(f'release cleanup: {count} old versions, {size} bytes', flush=True)
+
+
 def preflight(config):
     region = config['region']
     if not isinstance(config['runtimes'], list) or not config['runtimes'] or \
@@ -309,7 +358,7 @@ def finish(config, directory, state, report_path):
 def main():
     global LOG_DIRECTORY
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['prepare', 'finish', 'run'])
+    parser.add_argument('action', choices=['prepare', 'finish', 'run', 'prune'])
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--run-dir', type=Path, required=True)
     parser.add_argument('--report', type=Path)
@@ -337,6 +386,9 @@ def main():
         save(config_path, config)
         state_path = directory / 'state.json'
         state = json.loads(state_path.read_text()) if state_path.exists() else {}
+        if args.action == 'prune':
+            cleanup_after_success(config, directory, state, strict=True)
+            return
         try:
             for key in ('release', 'bridge_package'):
                 with Path(config[key]).open('rb') as file:
@@ -345,6 +397,7 @@ def main():
                     raise ValueError('release files changed; do not resume with different artifacts')
                 state[key + 'SHA256'] = digest
             if state.get('status') == 'passed':
+                cleanup_after_success(config, directory, state)
                 print('already complete for these artifact hashes')
                 return
             save(state_path, state)
@@ -381,6 +434,8 @@ def main():
                 if not args.report:
                     raise ValueError('--report is required for finish')
                 finish(config, directory, state, args.report)
+            if state.get('status') == 'passed':
+                cleanup_after_success(config, directory, state)
         except BaseException as error:
             state.update(status='failed', error=str(error))
             if state.get('maintenance'):
