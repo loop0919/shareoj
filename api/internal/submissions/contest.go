@@ -27,8 +27,13 @@ const contestStaff = `(c.owner_id=$3 OR EXISTS (
  SELECT 1 FROM contest_problems cp JOIN problem_testers t ON t.problem_id=cp.problem_id
  WHERE cp.contest_id=c.id AND t.owner_id=$3))`
 
-const contestPublic = `contest_id=$1 AND NOT COALESCE((job->>'easyTest')::boolean,false)
- AND EXISTS(SELECT 1 FROM contests c WHERE c.id=$1 AND (` + contestStaff + ` OR (statement_timestamp()>=c.ends_at AND submissions.created_at>=c.starts_at)))`
+const contestPublic = `NOT COALESCE((job->>'easyTest')::boolean,false)
+ AND NOT COALESCE((job->>'generate')::boolean,false)
+ AND NOT COALESCE((job->>'validate')::boolean,false)
+ AND EXISTS(SELECT 1 FROM contests c WHERE c.id=$1 AND (
+  (contest_id=c.id AND (` + contestStaff + ` OR (statement_timestamp()>=c.ends_at AND submissions.created_at>=c.starts_at)))
+  OR (contest_id IS NULL AND ` + contestStaff + ` AND EXISTS(
+   SELECT 1 FROM contest_problems cp WHERE cp.contest_id=c.id AND cp.problem_id=submissions.problem_id))))`
 
 func (s *Store) ContestGet(ctx context.Context, contestID, id, viewer string) (Submission, error) {
 	item, err := scan(s.Pool.QueryRow(ctx, `SELECT `+columns+` FROM submissions WHERE `+contestPublic+` AND id=$2`, contestID, id, viewer))

@@ -265,6 +265,32 @@ func TestContestsPostgres(t *testing.T) {
 	}
 	pre := submit("tester", a, false)
 	preSetter := submit("alice", b, false)
+	// Draft submissions by the setter and tester are visible in both problem contexts.
+	draftRuns := map[string]submissions.Submission{}
+	for _, owner := range []string{"tester", "alice"} {
+		var item submissions.Submission
+		raw := request("POST", "/my/submissions", owner, map[string]any{"problemId": a, "runtime": "cpp17", "source": "draft of " + owner}, 202)
+		if err := json.Unmarshal([]byte(raw), &item); err != nil {
+			t.Fatal(err)
+		}
+		draftRuns[owner] = item
+		exec(`UPDATE submissions SET created_at=now()-interval '2 hours' WHERE id=$1`, item.ID)
+	}
+	for _, owner := range []string{"tester", "alice"} {
+		for _, path := range []string{
+			"/my/problems/" + a + "/submissions",
+			"/my/contests/" + cid + "/problems/" + a + "/submissions",
+			"/my/contests/" + cid + "/submissions",
+		} {
+			list := request("GET", path, owner, nil, 200)
+			for _, item := range draftRuns {
+				if !strings.Contains(list, item.ID) {
+					t.Fatal("missing draft submission", path, item.ID, list)
+				}
+			}
+		}
+		request("GET", "/my/contests/"+cid+"/submissions/"+draftRuns[owner].ID, owner, nil, 200)
+	}
 	request("GET", "/my/contests/"+cid+"/submissions", "tester", nil, 200)
 	request("GET", "/my/contests/"+cid+"/submissions/"+preSetter.ID, "tester", nil, 200)
 	request("GET", "/my/contests/"+cid+"/submissions", "bob", nil, 404)
@@ -512,16 +538,19 @@ func TestContestsPostgres(t *testing.T) {
 		t.Fatal("ended contest must allow public submission viewing")
 	}
 	list := request("GET", "/contests/"+cid+"/submissions", "", nil, 200)
-	if strings.Contains(list, "code of") || !strings.Contains(list, accepted.ID) {
-		t.Fatal(list)
+	if strings.Contains(list, "code of") || !strings.Contains(list, accepted.ID) ||
+		strings.Contains(list, draftRuns["tester"].ID) || strings.Contains(list, draftRuns["alice"].ID) {
+		t.Fatal("public contest submissions exposed drafts", list)
 	}
+	request("GET", "/contests/"+cid+"/submissions/"+draftRuns["tester"].ID, "", nil, 404)
 	list = request("GET", "/contests/"+cid+"/problems/"+a+"/submissions", "", nil, 200)
 	if !strings.Contains(list, accepted.ID) || !strings.Contains(list, tied.ID) || strings.Contains(list, unsolved.ID) || strings.Contains(list, pre.ID) {
 		t.Fatal("ended problem filter", list)
 	}
 	request("GET", "/contests/"+cid+"/problems/"+a+"/submissions?offset=-1", "", nil, 400)
 	list = request("GET", "/problems/"+a+"/submissions", "", nil, 200)
-	if !strings.Contains(list, accepted.ID) || strings.Contains(list, pre.ID) || strings.Contains(list, "code of") {
+	if !strings.Contains(list, accepted.ID) || strings.Contains(list, pre.ID) || strings.Contains(list, "code of") ||
+		strings.Contains(list, draftRuns["tester"].ID) || strings.Contains(list, draftRuns["alice"].ID) {
 		t.Fatal("normal problem list", list)
 	}
 	for _, path := range []string{"/contests/" + cid + "/submissions", "/contests/" + cid + "/problems/" + a + "/submissions", "/problems/" + a + "/submissions", "/my/problems/" + a + "/submissions?mine=1", "/my/submissions"} {
@@ -578,8 +607,12 @@ func TestContestsPostgres(t *testing.T) {
 		t.Fatal("normal mine filter", list)
 	}
 	list = request("GET", "/my/contests/"+cid+"/problems/"+a+"/submissions?mine=1", "bob", nil, 200)
+	if !strings.Contains(list, practiceNormal.ID) {
+		t.Fatal("staff practice missing from contest problem", list)
+	}
+	list = request("GET", "/contests/"+cid+"/problems/"+a+"/submissions", "", nil, 200)
 	if strings.Contains(list, practiceNormal.ID) {
-		t.Fatal("practice outside contest", list)
+		t.Fatal("staff practice exposed publicly", list)
 	}
 	request("GET", "/problems/"+a+"/submissions/"+practiceNormal.ID, "", nil, 200)
 	// Simulate upgrading an old submission without its privacy marker.
