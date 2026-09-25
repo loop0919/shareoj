@@ -28,7 +28,7 @@ async function withdraw(id: string) {
   try {
     const problem = accountProblemSchema.parse(await $fetch(`/api/my/problems/${id}`))
     await $fetch(`/api/my/problems/${id}/featured`, { method: 'PUT', body: { version: problem.version, preference: '' } })
-    await loadApplications()
+    await Promise.all([loadApplications(), refresh()])
   } catch (error) { message.value = accountError(error) }
   finally { busy.value = false }
 }
@@ -39,11 +39,11 @@ usePolling(() => refresh(), 60000)
 
 <template>
   <div class="catalogue featured-page">
-    <ProblemPostDialog ref="dialog" featured @posted="loadApplications" />
+    <ProblemPostDialog ref="dialog" featured @posted="() => { loadApplications(); refresh() }" />
     <header class="catalogue-heading"><h1>定期便</h1><button class="editor-button primary" @click="dialog?.open()">新作を応募</button></header>
     <p>毎週月曜・木曜23時（日本時間）に、Easy（Lv.1〜4）とHard（Lv.5〜10）を一問ずつ出題します。</p>
     <p class="muted">新作の解説と他者の提出は翌22時に公開します。復刻は解説公開済みです。</p>
-    <p v-if="data">次回：<time :datetime="data.nextAt">{{ contestDate(data.nextAt) }}</time>（日本時間）</p>
+    <FeaturedDelivery v-if="data" :page="data" />
     <p v-if="error" role="alert">定期便を取得できませんでした。<button class="editor-button" @click="refresh()">再試行</button></p>
     <section v-if="user" class="applications" aria-labelledby="applications-title">
       <h2 id="applications-title">応募中の問題</h2>

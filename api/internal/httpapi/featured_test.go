@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -226,8 +227,12 @@ func TestFeaturedReleaseAndEmbargoPostgres(t *testing.T) {
 	}
 	// A difficulty edit or vote never moves the already recorded slot.
 	f.exec(`UPDATE problem_drafts SET published_draft=jsonb_set(published_draft,'{difficulty}','9') WHERE id=$1`, a.ID)
-	if got := f.request("GET", "/featured", "", nil, 200); got != page {
-		t.Fatal("slot changed after difficulty edit", got)
+	var edited problems.FeaturedPage
+	if err := json.Unmarshal([]byte(f.request("GET", "/featured", "", nil, 200)), &edited); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(edited.Items, list.Items) {
+		t.Fatal("slot changed after difficulty edit", edited.Items)
 	}
 	f.exec(`UPDATE featured_slots SET reveal_at=statement_timestamp() WHERE problem_id=$1`, a.ID)
 	if !strings.Contains(f.request("GET", "/problems/"+a.ID, "", nil, 200), "SECRET EDITORIAL") {
@@ -287,5 +292,101 @@ func TestFeaturedFallbackAndFairnessPostgres(t *testing.T) {
 	var nonmissing int
 	if err := f.store.Pool().QueryRow(context.Background(), `SELECT count(*) FROM featured_slots WHERE kind<>'missing'`).Scan(&nonmissing); err != nil || nonmissing != 0 {
 		t.Fatal("late recovery consumed inventory", nonmissing, err)
+	}
+}
+
+func (f featuredTest) page(path string) problems.FeaturedPage {
+	f.t.Helper()
+	var result problems.FeaturedPage
+	if err := json.Unmarshal([]byte(f.request("GET", path, "", nil, 200)), &result); err != nil {
+		f.t.Fatal(err)
+	}
+	return result
+}
+
+func TestFeaturedPreviewPrivacyAndReleasePostgres(t *testing.T) {
+	f := newFeaturedTest(t)
+	a, b := f.draft("alice", 4), f.draft("bob", 9)
+	f.exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'tester')`, a.ID)
+	f.apply(a, "later", 204)
+	f.apply(b, "soon", 204)
+	first := f.page("/featured")
+	if first.Current != nil || first.Waiting.Easy != 1 || first.Waiting.Hard != 1 || len(first.NextSlots) != 2 || first.NextSlots[0].Writer != "alice" || !reflect.DeepEqual(first.NextSlots[0].Testers, []string{"tester"}) || *first.NextSlots[1].Difficulty != 9 {
+		t.Fatal(first)
+	}
+	for _, viewer := range []string{"", "alice", "tester"} {
+		raw := f.request("GET", "/featured", viewer, nil, 200)
+		for _, secret := range []string{a.ID, b.ID, "Featured problem", "Statement", "SECRET", "problemId", "title"} {
+			if strings.Contains(raw, secret) {
+				t.Fatalf("preview leaked %q: %s", secret, raw)
+			}
+		}
+	}
+	c := f.draft("bob", 2)
+	f.apply(c, "soon", 204)
+	// New applications do not reshuffle a valid reserved new problem.
+	next := f.page("/featured")
+	if !reflect.DeepEqual(first.NextSlots, next.NextSlots) || next.Waiting.Easy != 2 {
+		t.Fatal(next)
+	}
+	at := f.due()
+	f.exec(`UPDATE featured_previews SET scheduled_at=$1`, at)
+	current := f.page("/featured")
+	if current.Current == nil || current.Current.Slots[0].ProblemID != a.ID || current.Current.Slots[1].ProblemID != b.ID || current.Waiting.Easy != 1 || current.Waiting.Hard != 0 || current.Current.Slots[0].Title != "Featured problem" {
+		t.Fatal(current)
+	}
+	older := f.page("/featured?offset=20")
+	if len(older.Items) != 0 || !reflect.DeepEqual(current.Current, older.Current) || !reflect.DeepEqual(current.NextSlots, older.NextSlots) {
+		t.Fatal(older)
+	}
+	// Immediately before the 23-hour boundary the published edition is still primary.
+	f.exec(`UPDATE featured_slots SET scheduled_at=clock_timestamp()-interval '23 hours'+interval '10 seconds'`)
+	if f.page("/featured").Current == nil {
+		t.Fatal("current edition ended early")
+	}
+	f.exec(`UPDATE featured_slots SET scheduled_at=clock_timestamp()-interval '23 hours'`)
+	if f.page("/featured").Current != nil {
+		t.Fatal("current edition remained after the reveal boundary")
+	}
+}
+
+func TestFeaturedPreviewRevalidationPostgres(t *testing.T) {
+	f := newFeaturedTest(t)
+	a, b, c := f.draft("alice", 4), f.draft("bob", 2), f.draft("alice", 8)
+	f.apply(a, "soon", 204)
+	f.apply(b, "later", 204)
+	f.apply(c, "soon", 204)
+	if f.page("/featured").NextSlots[0].Writer != "alice" {
+		t.Fatal("wrong initial selection")
+	}
+	f.apply(a, "", 204)
+	next := f.page("/featured")
+	if next.NextSlots[0].Writer != "bob" || next.Waiting.Easy != 1 {
+		t.Fatal("withdrawal retained preview", next)
+	}
+	f.exec(`UPDATE problem_drafts SET draft=draft-'editorial' WHERE id=$1`, b.ID)
+	f.exec(`UPDATE problem_drafts SET draft=jsonb_set(draft,'{difficulty}','3') WHERE id=$1`, c.ID)
+	next = f.page("/featured")
+	if next.NextSlots[0].Writer != "alice" || next.NextSlots[1].Kind != "missing" || next.Waiting.Easy != 1 || next.Waiting.Hard != 0 {
+		t.Fatal("draft edits not reflected", next)
+	}
+	f.request("PUT", "/my/problems/"+c.ID+"/publication", "alice", map[string]any{"version": 1, "publish": true}, 200)
+	next = f.page("/featured")
+	if next.NextSlots[0].Kind != "revival" || next.Waiting.Easy != 0 {
+		t.Fatal("public problem counted as waiting", next)
+	}
+	for range 4 {
+		if got := f.page("/featured"); !reflect.DeepEqual(got.NextSlots, next.NextSlots) {
+			t.Fatal("unstable revival", got)
+		}
+	}
+	// A new application replaces a revival, and deletion removes the reservation.
+	f.apply(a, "soon", 204)
+	if f.page("/featured").NextSlots[0].Kind != "new" {
+		t.Fatal("revival displaced new work")
+	}
+	f.exec(`DELETE FROM problem_drafts WHERE id=$1`, a.ID)
+	if f.page("/featured").NextSlots[0].Kind != "revival" {
+		t.Fatal("deleted draft retained preview")
 	}
 }

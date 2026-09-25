@@ -26,7 +26,7 @@ func (p problemHandler) featured(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	page, err := store.FeaturedList(r.Context(), offset)
+	page, err := store.FeaturedList(r.Context(), offset, submissions.RuntimeIDs(), p.Judging.RuntimeIDs())
 	if err != nil {
 		problemError(w, err)
 		return

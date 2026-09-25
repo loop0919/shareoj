@@ -1,4 +1,7 @@
 <script setup lang="ts">
+useResponseHeader('Cache-Control').value = 'no-store'
+const { data: featured, error: featuredError, refresh: refreshFeatured } = await useFetch('/api/featured')
+usePolling(() => refreshFeatured(), 60000)
 const config = useRuntimeConfig()
 const canonical = new URL('/', config.public.siteUrl).href
 const title = 'ShareOJ — プログラミング問題を解く・作る・共有する'
@@ -54,20 +57,13 @@ useSharePreview({ type: 'website', title: 'Share Online Judge', path: '/', descr
         </svg>
       </figure>
     </section>
-    <section class="regular-delivery" aria-labelledby="delivery-title">
-      <div class="delivery-intro">
-        <p class="delivery-kicker">毎週 月・木 23:00</p>
-        <h2 id="delivery-title">ShareOJ定期便</h2>
-        <p>Easy と Hard を、一問ずつ。新作を中心に、解くきっかけを届けます。</p>
-      </div>
-      <div class="delivery-slots" aria-label="出題枠">
-        <div class="delivery-slot"><span class="slot-index">01</span><strong>Easy</strong><span>Lv.1〜4</span></div>
-        <div class="delivery-slot"><span class="slot-index">02</span><strong>Hard</strong><span>Lv.5〜10</span></div>
-      </div>
-      <div class="delivery-foot">
-        <p><span class="delivery-status">新作募集中</span>新作の解説は翌22時に公開します。</p>
-        <NuxtLink to="/featured">定期便を見る<span aria-hidden="true">→</span></NuxtLink>
-      </div>
+    <FeaturedDelivery v-if="featured" :page="featured" home />
+    <section v-else class="delivery-fallback" aria-label="ShareOJ定期便">
+      <h2>ShareOJ定期便</h2>
+      <p>毎週 月・木23時に、Easy と Hard を一問ずつ。</p>
+      <p v-if="featuredError" role="alert">定期便を取得できませんでした。<button class="editor-button" @click="refreshFeatured()">再試行</button></p>
+      <p v-else role="status">次の定期便を確認しています…</p>
+      <NuxtLink to="/featured">定期便・新作の応募 →</NuxtLink>
     </section>
   </div>
 </template>
@@ -77,7 +73,7 @@ useSharePreview({ type: 'website', title: 'Share Online Judge', path: '/', descr
  * component: home hero · genre: modern-minimal · theme: existing ShareOJ tokens
  * Sequential path reveal with reduced-motion support; navigation states: default, hover, focus-visible, active. */
 .home { padding-bottom: 64px; }
-.hero { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; gap: 24px; min-height: 600px; padding-block: 72px 80px; }
+.hero { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; gap: 24px; min-height: 480px; padding-block: 48px 56px; }
 .hero-copy { position: relative; z-index: 1; }
 .hero-kicker { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; font-family: var(--font-code); font-size: .75rem; letter-spacing: .12em; color: var(--color-muted); }
 .hero-kicker span { width: 8px; height: 8px; background: var(--color-accent); border-radius: 50%; }
@@ -90,8 +86,8 @@ useSharePreview({ type: 'website', title: 'Share Online Judge', path: '/', descr
 .hero-primary:hover { background: var(--color-ink); }
 .hero-secondary { color: var(--color-ink); }
 .hero-secondary:hover { text-decoration: underline; text-underline-offset: 6px; }
-.hero-actions a:active, .delivery-foot a:active { transform: translateY(1px); }
-.hero-actions a:focus-visible, .delivery-foot a:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 5px; }
+.hero-actions a:active { transform: translateY(1px); }
+.hero-actions a:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 5px; }
 .hero-figure { margin: 0; min-width: 0; }
 .path-art { display: block; width: 100%; height: auto; overflow: visible; }
 .grid-dot { fill: var(--color-line); }
@@ -105,21 +101,7 @@ useSharePreview({ type: 'website', title: 'Share Online Judge', path: '/', descr
 .route-node, .end-node { fill: var(--color-accent); }
 .end-halo { fill: var(--color-accent-soft); }
 .check { fill: none; stroke: var(--color-paper); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-/* Hallmark · pre-emit critique: P4 H4 E4 S5 R5 V4 · existing ShareOJ tokens */
-.regular-delivery { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px 40px; padding-block: 36px 28px; border-top: 1px solid var(--color-line); }
-.delivery-kicker { margin: 0 0 8px; color: var(--color-accent); font-family: var(--font-code); font-size: .75rem; letter-spacing: .08em; }
-.delivery-intro h2 { margin: 0 0 8px; font-size: clamp(1.375rem, 2.4vw, 1.75rem); }
-.delivery-intro > p:last-child { max-width: 30rem; margin: 0; color: var(--color-muted); font-size: .875rem; line-height: 1.8; }
-.delivery-slots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.delivery-slot { display: grid; gap: 2px; min-width: 0; padding: 16px 18px; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-surface); }
-.slot-index { color: var(--color-muted); font-family: var(--font-code); font-size: .6875rem; }
-.delivery-slot strong { font-size: 1.125rem; font-weight: 650; }
-.delivery-slot > span:last-child { color: var(--color-muted); font-size: .75rem; }
-.delivery-foot { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; padding-top: 18px; border-top: 1px solid var(--color-line); }
-.delivery-foot p { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; color: var(--color-muted); font-size: .8125rem; }
-.delivery-status { padding: 1px 8px; border: 1px solid var(--color-line); border-radius: 3px; color: var(--color-ink); white-space: nowrap; }
-.delivery-foot a { display: inline-flex; align-items: center; gap: 12px; min-height: 44px; margin-left: auto; font-size: .8125rem; text-decoration: none; white-space: nowrap; }
-.delivery-foot a:hover { text-decoration: underline; }
+.delivery-fallback { padding-block: 32px; border-top: 2px solid var(--color-accent); }
 /* After the reveal, use the live theme colors instead of retaining animated fill/stroke values. */
 @media (prefers-reduced-motion: no-preference) {
   .answer-path { stroke-dasharray: 1; animation: trace-path .8s cubic-bezier(.76, 0, .24, 1) .3s both; }
@@ -146,14 +128,9 @@ useSharePreview({ type: 'website', title: 'Share Online Judge', path: '/', descr
 @media (max-width: 800px) {
   .hero { grid-template-columns: minmax(0, 1fr); gap: 24px; padding-block: 48px; min-height: 0; }
   .hero h1 { font-size: clamp(2rem, 6.5vw, 3.25rem); }
-  .hero-figure { width: min(100%, 400px); margin-left: auto; }
-  .regular-delivery { grid-template-columns: minmax(0, 1fr); gap: 20px; }
-  .delivery-foot { grid-column: 1; }
+  .hero-figure { width: min(70%, 280px); margin-left: auto; }
 }
 @media (max-width: 400px) {
-  .delivery-slots { gap: 8px; }
-  .delivery-slot { padding: 12px; }
-  .delivery-foot a { margin-left: 0; }
   .hero h1 { font-size: 1.875rem; }
   .hero-actions { gap: 12px 20px; }
   .hero-actions a { gap: 12px; }

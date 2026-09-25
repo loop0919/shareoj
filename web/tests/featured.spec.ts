@@ -76,3 +76,87 @@ test('featured history has a recoverable error state', async ({ page }) => {
   await expect(page.getByRole('alert').filter({ hasText: '定期便を取得できませんでした' })).toBeVisible()
   await expect(page.getByRole('button', { name: '再試行', exact: true }).first()).toBeVisible()
 })
+
+
+test('home and featured share upcoming credits and waiting counts without preview titles', async ({ page }, testInfo) => {
+  await page.goto('/')
+  const delivery = page.getByRole('region', { name: 'ShareOJ定期便' })
+  await expect(delivery).toContainText('次回予告')
+  await expect(delivery.locator('.delivery-problem')).toHaveCount(2)
+  await expect(delivery.locator('.delivery-waiting')).toContainText('Easy 3問')
+  await expect(delivery.locator('.delivery-waiting')).toContainText('Hard 2問')
+  await expect(delivery.locator('.delivery-problem').first()).toContainText('writeralice')
+  await expect(delivery.locator('.delivery-problem').first()).toContainText('testerbob')
+  await expect(delivery.locator('a[href^="/problems/"]')).toHaveCount(0)
+  await expect(delivery).not.toContainText('定期便の新作')
+  for (const width of [320, 375, 414, 768, 1280]) {
+    await page.setViewportSize({ width, height: 1000 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+    await page.screenshot({ path: testInfo.outputPath(`home-preview-${width}.png`), fullPage: true })
+  }
+  await delivery.getByRole('link', { name: '定期便・新作の応募' }).focus()
+  await expect(delivery.getByRole('link', { name: '定期便・新作の応募' })).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(page).toHaveURL(/\/featured$/)
+  await expect(delivery).toContainText('次回予告')
+  await expect(delivery.locator('.delivery-waiting')).toContainText('Easy 3問')
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' })
+  await page.screenshot({ path: testInfo.outputPath('featured-preview-dark.png'), fullPage: true })
+})
+
+test('published edition shows both titles and credits, then switches back to preview', async ({ page }, testInfo) => {
+  await page.clock.install()
+  await page.goto('/problems')
+  const payload = await (await page.request.get('/api/featured')).json()
+  payload.current = payload.items[0]
+  await page.route('**/api/featured**', route => route.fulfill({ json: payload }))
+  await page.locator('header').getByRole('link', { name: /ShareOJ/ }).click()
+  const delivery = page.getByRole('region', { name: 'ShareOJ定期便' })
+  await expect(delivery).toContainText('公開中の問題')
+  await expect(delivery.getByRole('link', { name: 'A + B' })).toBeVisible()
+  await expect(delivery.getByRole('link', { name: '定期便の新作' })).toHaveAttribute('href', `/problems/${hidden}`)
+  await expect(delivery).toContainText('Ultimate')
+  await expect(delivery).toContainText('解説・他者の提出')
+  for (const width of [375, 1280]) {
+    await page.setViewportSize({ width, height: 1000 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+    await page.screenshot({ path: testInfo.outputPath(`home-current-${width}.png`), fullPage: true })
+  }
+  await delivery.getByRole('link', { name: '定期便・新作の応募' }).click()
+  await expect(delivery).toContainText('公開中の問題')
+  await page.screenshot({ path: testInfo.outputPath('featured-current.png'), fullPage: true })
+  payload.current = null
+  await page.clock.fastForward(61000)
+  await expect(delivery).toContainText('次回予告')
+  await expect(delivery.locator('a[href^="/problems/"]')).toHaveCount(0)
+  await expect(page.locator('.round').first()).toContainText('定期便の新作')
+})
+
+test('empty inventory and long credits fit a narrow screen', async ({ page }) => {
+  await page.goto('/problems')
+  const payload = await (await page.request.get('/api/featured')).json()
+  payload.waiting = { easy: 0, hard: 0 }
+  payload.nextSlots[0] = { slot: 'easy', kind: 'missing', writer: '', testers: [], difficulty: null }
+  payload.nextSlots[1] = { slot: 'hard', kind: 'revival', writer: 'a'.repeat(32), testers: ['b'.repeat(32), 'c'.repeat(32)], difficulty: 10 }
+  await page.route('**/api/featured**', route => route.fulfill({ json: payload }))
+  await page.setViewportSize({ width: 320, height: 1000 })
+  await page.locator('header').getByRole('link', { name: '定期便', exact: true }).click()
+  const delivery = page.getByRole('region', { name: 'ShareOJ定期便' })
+  await expect(delivery).toContainText('出題する問題を募集中です。')
+  await expect(delivery).toContainText('復刻')
+  await expect(delivery.locator('.delivery-waiting')).toContainText('Easy 0問')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320)
+})
+
+test('home keeps its navigation and retries when the delivery API fails', async ({ page }) => {
+  await page.goto('/problems')
+  let failing = true
+  const payload = await (await page.request.get('/api/featured')).json()
+  await page.route('**/api/featured**', route => failing ? route.fulfill({ status: 502, json: {} }) : route.fulfill({ json: payload }))
+  await page.locator('header').getByRole('link', { name: /ShareOJ/ }).click()
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('考える楽しさを、')
+  await expect(page.getByRole('alert')).toContainText('定期便を取得できませんでした')
+  failing = false
+  await page.getByRole('button', { name: '再試行' }).click()
+  await expect(page.getByRole('region', { name: 'ShareOJ定期便' })).toContainText('次回予告')
+})
