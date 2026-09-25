@@ -24,6 +24,7 @@ test('featured editions show two slots, revivals, vacancies and the Ultimate lab
 test('authors choose a preference, see validation failures, apply and withdraw', async ({ page }) => {
   let applied = false
   let attempts = 0
+  let withdrawals = 0
   await page.route('**/api/my/featured', route => route.fulfill({ json: { items: applied ? [{ problemId: id, title: '応募する問題', preference: 'later', enteredAt: updatedAt }] : [] } }))
   await page.route(/\/api\/my\/problems(?:\?.*)?$/, route => route.fulfill({ json: { items: [
     { id, title: '応募する問題', featuredPreference: applied ? 'later' : '', updatedAt },
@@ -36,7 +37,11 @@ test('authors choose a preference, see validation failures, apply and withdraw',
   await page.route(`**/api/my/problems/${id}/featured`, route => {
     const body = route.request().postDataJSON()
     expect(body.version).toBe(3)
-    if (body.preference === '') { applied = false; return route.fulfill({ status: 204 }) }
+    if (body.preference === '') {
+      if (++withdrawals === 1) return route.fulfill({ status: 503, json: {} })
+      applied = false
+      return route.fulfill({ status: 204 })
+    }
     expect(body.preference).toBe('later')
     if (++attempts === 1) return route.fulfill({ status: 400, json: { data: { code: 'featured_ineligible' } } })
     applied = true
@@ -59,7 +64,32 @@ test('authors choose a preference, see validation failures, apply and withdraw',
   await expect(row).toContainText('定期便予定')
   await row.getByRole('img', { name: 'ゆっくりで良い' }).focus()
   await expect(row.getByRole('tooltip')).toHaveText('ゆっくりで良い')
-  await row.getByRole('button', { name: '応募する問題の定期便応募を取り下げる' }).click()
+  const withdrawButton = row.getByRole('button', { name: '応募する問題の定期便応募を取り下げる' })
+  const confirmation = page.getByRole('dialog', { name: '定期便の応募を取り下げますか？' })
+  await withdrawButton.click()
+  await expect(confirmation).toContainText('応募する問題')
+  await expect(confirmation.getByRole('button', { name: 'キャンセル' })).toBeFocused()
+  expect(withdrawals).toBe(0)
+  await confirmation.getByRole('button', { name: 'キャンセル' }).click()
+  await expect(confirmation).toBeHidden()
+  await expect(withdrawButton).toBeFocused()
+  await expect(row).toContainText('定期便予定')
+  await withdrawButton.click()
+  await page.keyboard.press('Escape')
+  await expect(confirmation).toBeHidden()
+  expect(withdrawals).toBe(0)
+  await page.setViewportSize({ width: 375, height: 812 })
+  await withdrawButton.click()
+  const bounds = (await confirmation.boundingBox())!
+  expect(bounds.x).toBeGreaterThanOrEqual(0)
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(375)
+  await confirmation.getByRole('button', { name: '取り下げる', exact: true }).click()
+  await expect(confirmation.getByRole('alert')).toBeVisible()
+  expect(applied).toBe(true)
+  await expect(row).toContainText('定期便予定')
+  await confirmation.getByRole('button', { name: '取り下げる', exact: true }).click()
+  await expect(confirmation).toBeHidden()
+  expect(withdrawals).toBe(2)
   await expect(row).toContainText('未公開')
   await expect(row.getByRole('img')).toHaveCount(0)
 })
