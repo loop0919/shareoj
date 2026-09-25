@@ -3,6 +3,9 @@ package httpapi
 import (
 	"net/http"
 	"strconv"
+	"time"
+
+	"github.com/danielgtaylor/huma/v2"
 
 	"judge/api/internal/problems"
 	"judge/api/internal/submissions"
@@ -70,4 +73,38 @@ func (p problemHandler) featuredApplication(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type featuredStandingsResponse = problems.FeaturedStandings
+
+func featuredStandingsParameters() []*huma.Param {
+	return append(offsetParameters(), &huma.Param{Name: "at", In: "query", Required: true, Description: "対象回のscheduledAt（RFC3339形式）。", Schema: &huma.Schema{Type: "string", Format: "date-time"}})
+}
+
+func (p problemHandler) featuredStandings(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	at, err := time.Parse(time.RFC3339Nano, r.URL.Query().Get("at"))
+	if err != nil || at.Year() < 1 {
+		authError(w, 400, "invalid_request")
+		return
+	}
+	offset := 0
+	if raw := r.URL.Query().Get("offset"); raw != "" {
+		offset, err = strconv.Atoi(raw)
+		if err != nil || offset < 0 || offset > 1000000 {
+			authError(w, 400, "invalid_request")
+			return
+		}
+	}
+	store, ok := p.Store.(*problems.Store)
+	if !ok {
+		authError(w, 503, "database_unavailable")
+		return
+	}
+	page, err := store.FeaturedStandings(r.Context(), at, offset)
+	if err != nil {
+		problemError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, page)
 }

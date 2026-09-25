@@ -24,6 +24,18 @@ const featured = {
     ] },
   ],
 }
+const featuredResult = (timeMs = null, wrong = 0) => ({ accepted: timeMs !== null, timeMs, wrong })
+const featuredStandings = {
+  round: featured.items[0], closesAt: '2099-09-29T13:00:00Z', closed: false, hasMore: false,
+  items: [
+    { rank: 1, handle: 'carol', timeMs: 1200000, easy: featuredResult(300000, 2), hard: featuredResult(1200000, 1) },
+    { rank: 1, handle: 'alice', timeMs: 1800000, easy: featuredResult(600000), hard: featuredResult(1800000) },
+    { rank: 3, handle: 'bob', timeMs: 900000, easy: featuredResult(null, 3), hard: featuredResult(900000, 1) },
+    { rank: 4, handle: 'yuki', timeMs: 120000, easy: featuredResult(120000, 1), hard: featuredResult() },
+    { rank: 5, handle: 'henry', timeMs: null, easy: featuredResult(null, 2), hard: featuredResult() },
+    { rank: 5, handle: 'mika', timeMs: null, easy: featuredResult(), hard: featuredResult(null, 1) },
+  ],
+}
 const submission = {
   id: '22222222-2222-4222-8222-222222222222', problemId: problem.id, problemTitle: problem.title,
   problemVersion: 1, author: 'alice', runtime: 'cpp17', source: 'int main(){}', status: 'DONE',
@@ -65,6 +77,12 @@ createServer(async (req, res) => {
   else if (['/users/alice', '/users/bob', '/users/carol', '/users/yuki'].includes(path)) res.end(JSON.stringify({ handle: path.split('/').at(-1), accounts: path === '/users/yuki' ? { yukicoder: '123' } : {}, avatar: '', createdAt: '2026-09-10T00:00:00Z' }))
   else if (path === '/health') res.end('{}')
   else if (path === '/runtimes') res.end(JSON.stringify({ items: [{ id: 'cpp17', label: 'C++17 (GCC)' }, { id: 'python314', label: 'Python 3.14' }] }))
+  else if (path === '/featured/standings') {
+    const at = new URL(req.url, 'http://localhost').searchParams.get('at')
+    const round = featured.items.find(round => round.scheduledAt === at)
+    if (!round) return res.writeHead(404).end('{}')
+    res.end(JSON.stringify({ ...featuredStandings, round }))
+  }
   else if (path === '/featured') res.end(JSON.stringify(featured))
   else if (path === `/problems/${featuredProblem.id}`) res.end(JSON.stringify(featuredProblem))
   else if (path === '/problems') res.end(JSON.stringify({ items: !new URL(req.url, 'http://localhost').searchParams.get('author') || new URL(req.url, 'http://localhost').searchParams.get('author') === 'alice' ? [problem] : [], nextCursor: '' }))

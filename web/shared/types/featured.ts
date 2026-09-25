@@ -27,3 +27,12 @@ export const featuredApplicationsSchema = z.object({ items: z.array(z.object({
   problemId: z.string().uuid(), title: z.string(), preference: z.enum(['soon', 'later']),
   enteredAt: z.string().datetime({ offset: true }),
 })) })
+
+const featuredResultSchema = z.object({ accepted: z.boolean(), timeMs: z.number().int().nonnegative().nullable(), wrong: z.number().int().nonnegative() })
+export const featuredStandingsSchema = z.object({
+  round: roundSchema,
+  closesAt: z.string().datetime({ offset: true }),
+  closed: z.boolean(),
+  items: z.array(z.object({ rank: z.number().int().positive(), handle: z.string(), timeMs: z.number().int().nonnegative().nullable(), easy: featuredResultSchema, hard: featuredResultSchema })),
+  hasMore: z.boolean(),
+})

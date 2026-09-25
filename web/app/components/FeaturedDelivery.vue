@@ -4,6 +4,7 @@ import { contestDate } from '~~/shared/types/contest'
 
 const props = defineProps<{ page: FeaturedPage; home?: boolean }>()
 const slots = computed(() => props.page.current?.slots ?? props.page.nextSlots.map(slot => ({ ...slot, problemId: '', title: '', editorialHidden: false, revealAt: '' })))
+const standingsRound = computed(() => props.page.current ?? props.page.items[0])
 const date = computed(() => props.page.current?.scheduledAt ?? props.page.nextAt)
 </script>
 
@@ -49,8 +50,11 @@ const date = computed(() => props.page.current?.scheduledAt ?? props.page.nextAt
       <div class="delivery-waiting">
         <p><span>出題待ち</span><strong>Easy <b>{{ page.waiting.easy }}</b>問</strong><span aria-hidden="true">/</span><strong>Hard <b>{{ page.waiting.hard }}</b>問</strong></p>
       </div>
-      <NuxtLink v-if="home" class="delivery-more" to="/featured">定期便・新作の応募<span aria-hidden="true">→</span></NuxtLink>
-      <a v-else class="delivery-more" href="#history-title">過去の出題へ<span aria-hidden="true">↓</span></a>
+      <div class="delivery-links">
+        <NuxtLink v-if="standingsRound" class="delivery-more" :to="{ path: '/featured/standings', query: { at: standingsRound.scheduledAt } }">{{ page.current ? '順位表' : '前回の順位表' }}</NuxtLink>
+        <NuxtLink v-if="home" class="delivery-more" to="/featured">定期便・新作の応募<span aria-hidden="true">→</span></NuxtLink>
+        <a v-else class="delivery-more" href="#history-title">過去の出題へ<span aria-hidden="true">↓</span></a>
+      </div>
     </footer>
     <details class="delivery-details">
       <summary>定期便について</summary>
@@ -107,6 +111,7 @@ const date = computed(() => props.page.current?.scheduledAt ?? props.page.nextAt
 .delivery-details summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 2px; }
 .delivery-details ul { margin: 4px 0 0; padding-left: 1.5em; }
 .delivery-details li { margin-block: 6px; overflow-wrap: anywhere; }
+.delivery-links { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; }
 .delivery-more { display: inline-flex; align-items: center; gap: 20px; min-height: 44px; font-size: .8125rem; text-decoration: none; }
 .delivery-more:hover { text-decoration: underline; }
 .delivery-more:active { transform: translateY(1px); }
