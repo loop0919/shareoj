@@ -23,19 +23,19 @@ const date = computed(() => props.page.current?.scheduledAt ?? props.page.nextAt
       </div>
     </header>
     <div class="delivery-problems">
-      <article v-for="(slot, index) in slots" :key="slot.slot" class="delivery-problem">
+      <article v-for="slot in slots" :key="slot.slot" class="delivery-problem">
         <header class="delivery-level">
-          <span class="delivery-number" aria-hidden="true">0{{ index + 1 }}</span>
-          <h3>{{ slot.slot === 'easy' ? 'Easy' : (slot.difficulty ?? 0) >= 9 ? 'Ultimate' : 'Hard' }}</h3>
+          <span class="delivery-slot-label">{{ slot.slot === 'easy' ? 'Easy' : (slot.difficulty ?? 0) >= 9 ? 'Ultimate' : 'Hard' }}</span>
+          <h3 class="delivery-problem-title">
+            <NuxtLink v-if="page.current && slot.problemId" :to="`/problems/${slot.problemId}`">{{ slot.title }}</NuxtLink>
+            <template v-else-if="slot.kind === 'missing'">{{ page.current ? '出題なし' : '募集中' }}</template>
+            <template v-else>{{ page.current ? '非公開' : '???' }}</template>
+          </h3>
           <DifficultyBadge v-if="slot.difficulty" :level="slot.difficulty" />
           <span v-else class="muted">{{ slot.slot === 'easy' ? 'Lv.1〜4' : 'Lv.5〜10' }}</span>
           <span v-if="slot.kind !== 'missing'" class="delivery-kind">{{ slot.kind === 'new' ? '新作' : '復刻' }}</span>
         </header>
         <template v-if="slot.kind !== 'missing'">
-          <p v-if="page.current" class="delivery-problem-title">
-            <NuxtLink v-if="slot.problemId" :to="`/problems/${slot.problemId}`">{{ slot.title }}<span aria-hidden="true">↗</span></NuxtLink>
-            <span v-else>現在、この問題は公開されていません。</span>
-          </p>
           <dl class="delivery-credits">
             <div><dt>writer</dt><dd><UserLink :handle="slot.writer" /></dd></div>
             <div><dt>tester</dt><dd><template v-if="slot.testers.length"><UserLink v-for="tester in slot.testers" :key="tester" :handle="tester" /></template><span v-else>—</span></dd></div>
@@ -82,14 +82,12 @@ const date = computed(() => props.page.current?.scheduledAt ?? props.page.nextAt
 .delivery-problems { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-block: 1px solid var(--color-line); background: var(--color-surface); }
 .delivery-problem { min-width: 0; padding: 24px 28px; }
 .delivery-problem + .delivery-problem { border-left: 1px solid var(--color-line); }
-.delivery-level { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 24px; font-size: .8125rem; }
-.delivery-number { color: var(--color-muted); font-family: var(--font-code); font-size: .6875rem; }
-.delivery-level h3 { margin: 0 auto 0 0; font-size: 1.25rem; font-weight: 650; }
+.delivery-level { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 8px 12px; align-items: baseline; margin-bottom: 24px; font-size: .8125rem; }
+.delivery-slot-label { color: var(--color-muted); font-family: var(--font-code); font-size: .75rem; }
 .delivery-kind { padding: 0 6px; border: 1px solid var(--color-line); border-radius: 3px; font-size: .6875rem; }
-.delivery-problem-title { font-size: 1.25rem; font-weight: 650; line-height: 1.7; overflow-wrap: anywhere; }
-.delivery-problem-title a { display: flex; justify-content: space-between; gap: 16px; color: var(--color-ink); text-decoration: none; }
+.delivery-problem-title { margin: 0; font-size: 1.25rem; font-weight: 650; line-height: 1.7; overflow-wrap: anywhere; }
+.delivery-problem-title a { color: var(--color-ink); text-decoration: none; }
 .delivery-problem-title a:hover { color: var(--color-accent); text-decoration: underline; }
-.delivery-problem-title a span { color: var(--color-accent); font-size: 1rem; }
 .delivery-credits { display: grid; gap: 8px; margin: 0; font-size: .8125rem; }
 .delivery-credits > div { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; }
 .delivery-credits dt { font-family: var(--font-code); font-size: .75rem; }
@@ -116,6 +114,7 @@ const date = computed(() => props.page.current?.scheduledAt ?? props.page.nextAt
   .delivery-date { justify-items: start; }
   .delivery-problems { grid-template-columns: minmax(0, 1fr); }
   .delivery-problem { padding: 22px 20px; }
+  .delivery-level { column-gap: 8px; }
   .delivery-problem + .delivery-problem { border-left: 0; border-top: 1px solid var(--color-line); }
 }
 @media (max-width: 360px) { .delivery-problem { padding-inline: 14px; } .delivery-waiting p { column-gap: 8px; } }
