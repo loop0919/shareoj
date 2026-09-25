@@ -88,7 +88,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
     </section>
     <section v-if="activeView === 'problems'" id="problems" class="contest-section" aria-labelledby="problems-title">
       <h2 id="problems-title">問題</h2>
-      <p v-if="contest.status === 'scheduled'" class="notice">問題文は開始時刻に公開されます。事前に閲覧できるのは作成者・担当の作問者・テスターです。</p>
+      <p v-if="contest.status === 'scheduled'" class="notice">問題文は開始時刻に公開されます。</p>
       <div v-if="contest.problems.length" class="content-table-scroll" role="region" aria-label="コンテストの問題" tabindex="0">
         <table class="content-table contest-problems"><thead><tr><th scope="col">#</th><th scope="col">問題</th><th scope="col"><abbr title="実行時間制限 / メモリ制限">TL / ML</abbr></th><th scope="col">配点</th></tr></thead><tbody><tr v-for="(p, index) in contest.problems" :key="p.id || index" :class="{ solved: p.solved }"><td>{{ problemLabel(index) }}</td><th scope="row"><NuxtLink v-if="p.id" :to="`/contests/${contest.id}/problems/${p.id}`" :aria-label="p.solved ? `${p.title}（AC 済み）` : undefined">{{ p.title }}</NuxtLink><span v-else>???</span></th><td class="problem-limits">{{ !p.timeLimitMs ? '—' : `${Number(p.timeLimitMs) / 1000} 秒` }}・{{ !p.memoryLimitMb ? '—' : `${p.memoryLimitMb} MiB` }}</td><td>{{ p.points }} 点</td></tr></tbody></table>
       </div>

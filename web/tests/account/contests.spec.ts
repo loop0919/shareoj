@@ -168,7 +168,7 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   await reader.goto(`/contests/${id}`)
   await expect(reader.getByRole('heading', { name: 'ブラウザ作成コンテスト' })).toBeVisible()
   await reader.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '問題', exact: true }).click()
-  await expect(reader.getByText('問題文は開始時刻に公開されます。事前に閲覧できるのは作成者・担当の作問者・テスターです。')).toBeVisible()
+  await expect(reader.getByText('問題文は開始時刻に公開されます。')).toBeVisible()
   const hidden = reader.locator('.contest-problems tbody tr')
   await expect(hidden).toHaveCount(2)
   await expect(hidden.locator('th')).toHaveText(['???', '???'])
