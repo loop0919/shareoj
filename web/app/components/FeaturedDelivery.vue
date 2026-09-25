@@ -48,12 +48,20 @@ const date = computed(() => props.page.current?.scheduledAt ?? props.page.nextAt
     <footer class="delivery-footer">
       <div class="delivery-waiting">
         <p><span>出題待ち</span><strong>Easy <b>{{ page.waiting.easy }}</b>問</strong><span aria-hidden="true">/</span><strong>Hard <b>{{ page.waiting.hard }}</b>問</strong></p>
-        <small>次回予定を含む、出題可能な新作の応募数</small>
       </div>
       <NuxtLink v-if="home" class="delivery-more" to="/featured">定期便・新作の応募<span aria-hidden="true">→</span></NuxtLink>
       <a v-else class="delivery-more" href="#history-title">過去の出題へ<span aria-hidden="true">↓</span></a>
     </footer>
-    <p v-if="!page.current" class="delivery-disclaimer">応募の取り下げや内容の変更により、予告は変更されることがあります。</p>
+    <details class="delivery-details">
+      <summary>定期便について</summary>
+      <ul>
+        <li>Easy（Lv.1〜4）とHard（Lv.5〜10）を一問ずつ出題します。</li>
+        <li>新作の解説と他者の提出は、出題翌日の22時（日本時間）に公開します。</li>
+        <li>新作がない枠は公開済みの問題を復刻します。復刻の解説と提出は閲覧できます。</li>
+        <li>出題待ちは、次回予定を含む、出題可能な新作の応募数です。復刻は含みません。</li>
+        <li>応募の取り下げや内容の変更により、予告は変更されることがあります。</li>
+      </ul>
+    </details>
   </section>
 </template>
 
@@ -95,8 +103,12 @@ const date = computed(() => props.page.current?.scheduledAt ?? props.page.nextAt
 .delivery-waiting p > span { color: var(--color-muted); font-size: .75rem; }
 .delivery-waiting strong { white-space: nowrap; font-weight: 500; }
 .delivery-waiting b { margin-inline: 4px 2px; font-size: 1.375rem; font-family: var(--font-code); font-weight: 600; }
-.delivery-waiting small, .delivery-disclaimer { color: var(--color-muted); font-size: .6875rem; }
-.delivery-disclaimer { margin: 8px 0 0; }
+.delivery-details { color: var(--color-muted); font-size: .75rem; }
+.delivery-details summary { width: fit-content; padding-block: 10px; cursor: pointer; }
+.delivery-details summary:hover, .delivery-details summary:active { color: var(--color-accent); }
+.delivery-details summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 2px; }
+.delivery-details ul { margin: 4px 0 0; padding-left: 1.5em; }
+.delivery-details li { margin-block: 6px; overflow-wrap: anywhere; }
 .delivery-more { display: inline-flex; align-items: center; gap: 20px; min-height: 44px; font-size: .8125rem; text-decoration: none; }
 .delivery-more:hover { text-decoration: underline; }
 .delivery-more:active { transform: translateY(1px); }

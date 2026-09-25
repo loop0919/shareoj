@@ -12,8 +12,6 @@ usePolling(() => refresh(), 60000)
   <div class="catalogue featured-page">
     <ProblemPostDialog ref="dialog" featured @posted="refresh()" />
     <header class="catalogue-heading"><h1>定期便</h1><button class="editor-button primary" @click="dialog?.open()">新作を応募</button></header>
-    <p>毎週月曜・木曜23時（日本時間）に、Easy（Lv.1〜4）とHard（Lv.5〜10）を一問ずつ出題します。</p>
-    <p class="muted">新作の解説と他者の提出は翌22時に公開します。復刻は解説公開済みです。</p>
     <FeaturedDelivery v-if="data" :page="data" />
     <p v-if="error" role="alert">定期便を取得できませんでした。<button class="editor-button" @click="refresh()">再試行</button></p>
     <section aria-labelledby="history-title" :aria-busy="status === 'pending'">
@@ -40,7 +38,6 @@ usePolling(() => refresh(), 60000)
 </template>
 
 <style scoped>
-.featured-page > p { line-height: 1.8; }
 .round { margin-block: 28px; }
 .round h3 { font-size: 1rem; font-variant-numeric: tabular-nums; }
 .slots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
