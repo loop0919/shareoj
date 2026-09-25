@@ -35,6 +35,7 @@ onMounted(() => { void refreshAccount().then(account => { if (account) return re
       <nav aria-label="メインナビゲーション">
         <NuxtLink to="/">ホーム</NuxtLink>
         <NuxtLink to="/problems">問題</NuxtLink>
+        <NuxtLink to="/featured">定期便</NuxtLink>
         <NuxtLink to="/contests">コンテスト</NuxtLink>
         <NuxtLink to="/blog">記事</NuxtLink>
         <details ref="createMenu" class="create-menu" @keydown.esc.prevent="closeCreateMenu(); createMenu?.querySelector('summary')?.focus()">

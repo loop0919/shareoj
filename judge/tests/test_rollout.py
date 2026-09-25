@@ -74,7 +74,8 @@ class RolloutTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     rollout.finish(config, directory, dict(prepared=True), report_path)
             delivery.assert_not_called()
-            updates = [c.args[2] for c in update.call_args_list]
+            updates = [c.args[2] for c in update.call_args_list if c.args[1] == config['api']]
+            update.assert_any_call('test', 'bridge', dict(JUDGE_RUNTIME_DIGEST=digest, JUDGE_ENABLED_RUNTIMES='python314'))
             self.assertFalse(any(v.get('JUDGE_ENABLED_RUNTIMES') == 'python314' for v in updates))
 
     def test_failure_repauses_admission_and_records_recovery_state(self):

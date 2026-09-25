@@ -33,7 +33,8 @@ const contestPublic = `NOT COALESCE((job->>'easyTest')::boolean,false)
  AND EXISTS(SELECT 1 FROM contests c WHERE c.id=$1 AND (
   (contest_id=c.id AND (` + contestStaff + ` OR (statement_timestamp()>=c.ends_at AND submissions.created_at>=c.starts_at)))
   OR (contest_id IS NULL AND ` + contestStaff + ` AND EXISTS(
-   SELECT 1 FROM contest_problems cp WHERE cp.contest_id=c.id AND cp.problem_id=submissions.problem_id))))`
+   SELECT 1 FROM contest_problems cp WHERE cp.contest_id=c.id AND cp.problem_id=submissions.problem_id))))
+ AND (owner_id=$3 OR COALESCE(featured_reveal_at(problem_id),'-infinity')<=statement_timestamp())`
 
 func (s *Store) ContestGet(ctx context.Context, contestID, id, viewer string) (Submission, error) {
 	item, err := scan(s.Pool.QueryRow(ctx, `SELECT `+columns+` FROM submissions WHERE `+contestPublic+` AND id=$2`, contestID, id, viewer))

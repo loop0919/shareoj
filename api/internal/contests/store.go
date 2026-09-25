@@ -208,6 +208,9 @@ func (s *Store) Save(ctx context.Context, owner, id string, in Input, policy Jud
 		if err != nil {
 			return err
 		}
+		if _, err = tx.Exec(ctx, `DELETE FROM featured_applications WHERE problem_id=$1`, p.ID); err != nil {
+			return err
+		}
 	}
 	// Reject a save that crossed the start boundary while waiting for locks.
 	var future bool
@@ -255,10 +258,10 @@ func (s *Store) Problem(ctx context.Context, id, pid, viewer string) (problems.P
 	var p problems.PublicProblem
 	var raw []byte
 	var editorial bool
-	err := s.Pool.QueryRow(ctx, `SELECT cp.problem_id,cp.draft,u.handle,c.ends_at,
+	err := s.Pool.QueryRow(ctx, `SELECT cp.problem_id,cp.draft,u.handle,c.ends_at,featured_reveal_at(d.id),COALESCE(statement_timestamp()<featured_reveal_at(d.id),false),
  (statement_timestamp()>=c.ends_at OR c.owner_id=$3 OR d.owner_id=$3 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3))
  FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id JOIN problem_drafts d ON d.id=cp.problem_id JOIN user_profiles u ON u.owner_id=c.owner_id
- WHERE c.id=$1 AND cp.problem_id=$2 AND (statement_timestamp()>=c.starts_at OR c.owner_id=$3 OR d.owner_id=$3 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3))`, id, pid, viewer).Scan(&p.ID, &raw, &p.Author, &p.PublishedAt, &editorial)
+ WHERE c.id=$1 AND cp.problem_id=$2 AND (statement_timestamp()>=c.starts_at OR c.owner_id=$3 OR d.owner_id=$3 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3))`, id, pid, viewer).Scan(&p.ID, &raw, &p.Author, &p.PublishedAt, &p.EditorialRevealAt, &p.EditorialHidden, &editorial)
 	if err != nil {
 		return p, err
 	}
@@ -274,7 +277,7 @@ func (s *Store) Problem(ctx context.Context, id, pid, viewer string) (problems.P
 	p.SpecialJudge = d.Checker != nil
 	p.Interactive = d.Interactor != nil
 	p.HasSamples = d.HasSamples()
-	if editorial {
+	if editorial && !p.EditorialHidden {
 		p.Editorial = d.Editorial
 	}
 	p.Testers, err = problems.New(s.Pool).Testers(ctx, pid)

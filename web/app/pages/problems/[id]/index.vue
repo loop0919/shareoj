@@ -1,11 +1,13 @@
 <script setup lang="ts">
+import { contestDate } from '~~/shared/types/contest'
 definePageMeta({ key: route => String(route.params.id) })
 const route = useRoute()
 const config = useRuntimeConfig()
 useResponseHeader('Cache-Control').value = 'no-store'
 useResponseHeader('Vary').value = 'Cookie'
-const { data: problem, error } = await useFetch(() => `/api/problems/${encodeURIComponent(String(route.params.id))}`)
+const { data: problem, error, refresh } = await useFetch(() => `/api/problems/${encodeURIComponent(String(route.params.id))}`)
 if (error.value || !problem.value) throw createError({ statusCode: error.value?.statusCode === 404 ? 404 : 502, statusMessage: error.value?.statusCode === 404 ? 'Problem not found' : 'Problem service unavailable', fatal: true })
+usePolling(() => problem.value?.editorialHidden ? refresh() : Promise.resolve(), 60000)
 const { user, profile } = useAccount()
 const canEdit = computed(() => problem.value?.isPrivate || (!!user.value && !!profile.value && (
   profile.value.handle === problem.value?.author || problem.value?.testers.includes(profile.value.handle)
@@ -48,10 +50,13 @@ useSharePreview({ title: () => problem.value!.title, path: () => `/problems/${pr
       </div>
       <dl class="limits"><div><dt>実行時間制限</dt><dd>{{ problem.timeLimitMs / 1000 }} 秒</dd></div><div><dt>メモリ制限</dt><dd>{{ problem.memoryLimitMb }} MiB</dd></div></dl>
     </header>
-    <ProblemSubmissionList v-if="submissionView" :key="String(route.query.view)" :problem-id="problem.id" :mine="route.query.view === 'my-submissions'" />
+    <p v-if="problem.editorialHidden" class="notice">定期便の新作です。解説と他者の提出は{{ problem.editorialRevealAt ? contestDate(problem.editorialRevealAt) : '翌22時' }}（日本時間）に公開します。解禁前に感想を共有するときは、解法のネタバレを含めないでください。</p>
+    <p v-if="problem.editorialHidden && route.query.view === 'submissions'" class="muted">他者の提出は解禁後に閲覧できます。自分の提出と採点結果は「自分の提出」から確認できます。</p>
+    <ProblemSubmissionList v-else-if="submissionView" :key="String(route.query.view)" :problem-id="problem.id" :mine="route.query.view === 'my-submissions'" />
     <article v-else class="problem-body" aria-label="問題詳細">
       <template v-if="showingEditorial">
-        <ProblemMarkdown v-if="problem.editorial" :source="problem.editorial" />
+        <p v-if="problem.editorialHidden" class="muted">解説は公開待ちです。</p>
+        <ProblemMarkdown v-else-if="problem.editorial" :source="problem.editorial" />
         <p v-else class="muted">解説はまだありません。</p>
       </template>
       <template v-else>

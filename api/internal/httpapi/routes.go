@@ -63,11 +63,20 @@ type (
 )
 
 // releaseBefore keeps local and end-of-contest reads current without coupling unrelated APIs to release.
-func releaseBefore(store *contests.Store, next actorHandler) actorHandler {
+func releaseBefore(store *contests.Store, featured *problems.Store, judging submissions.Config, next actorHandler) actorHandler {
 	return func(w http.ResponseWriter, r *http.Request, actor string) {
 		if store != nil {
 			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 			err := store.Release(ctx)
+			cancel()
+			if err != nil {
+				authError(w, 503, "database_unavailable")
+				return
+			}
+		}
+		if featured != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+			err := featured.ReleaseFeatured(ctx, submissions.RuntimeIDs(), judging.RuntimeIDs())
 			cancel()
 			if err != nil {
 				authError(w, 503, "database_unavailable")
@@ -82,6 +91,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	docs := newPublicDocumentation()
 	documentPublicRoute(docs, "GET /health", publicOperation{Summary: "稼働状態", Response: healthResponse{}})
 	judging := submissions.Config{JudgeImage: d.JudgeImage, JudgeRuntime: d.JudgeRuntime, JudgeEnabledRuntimes: d.JudgeEnabledRuntimes}
+	featuredStore, _ := d.Store.(*problems.Store)
 	problems := problemHandler{Store: d.Store, Files: d.Files, Judging: judging}
 	posts := postHandler{Posts: d.Posts, Operators: d.Operators}
 	profiles := profileHandler{Profiles: d.Profiles}
@@ -96,7 +106,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 			mux.HandleFunc(pattern, handler)
 			return
 		}
-		released := releaseBefore(d.Contests, func(w http.ResponseWriter, r *http.Request, _ string) { handler(w, r) })
+		released := releaseBefore(d.Contests, featuredStore, judging, func(w http.ResponseWriter, r *http.Request, _ string) { handler(w, r) })
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-store")
 			released(w, r, "")
@@ -105,7 +115,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 
 	private := func(pattern string, handler actorHandler, release bool) {
 		if release {
-			handler = releaseBefore(d.Contests, handler)
+			handler = releaseBefore(d.Contests, featuredStore, judging, handler)
 		}
 		mux.HandleFunc(pattern, auth.require(handler, true, 10*time.Second))
 	}
@@ -119,8 +129,9 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	public("GET /contests/{id}/submissions/{submission}", contests.publicContest, true, publicOperation{Summary: "コンテスト提出詳細", Description: "コンテスト終了後に取得可能です。非公開テストの入出力やチェッカー診断は返しません。", Response: publicSubmissionResponse{}})
 	public("GET /images/{id}", images.publicImage, false, publicOperation{Summary: "公開画像", Description: "公開コンテンツから参照される画像をPNGまたはJPEGで返します。", Image: true})
 	public("GET /runtimes", submissions.runtimes, false, publicOperation{Summary: "利用可能な言語", Response: runtimesResponse{}})
+	public("GET /featured", problems.featured, true, publicOperation{Summary: "定期便", Description: "毎週月・木23時（日本時間）のEasy/Hard各一問。新作の解説と他者の提出は翌22時に公開。20回ずつ出題履歴を返します。", Response: featuredPageResponse{}, Parameters: offsetParameters()})
 	public("GET /problems", problems.publicProblems, true, publicOperation{Summary: "公開問題一覧", Description: "公開日時の降順。本文・解説は詳細APIで取得します。", Response: publicProblemPage{}, Parameters: catalogueParameters()})
-	public("GET /problems/{id}", problems.publicProblems, true, publicOperation{Summary: "公開問題詳細", Description: "公開版の問題文・解説・制限値。timeLimitMsとmemoryLimitMbは数値の文字列です。下書きは返しません。", Response: publicProblemResponse{}})
+	public("GET /problems/{id}", problems.publicProblems, true, publicOperation{Summary: "公開問題詳細", Description: "公開版の問題文・解説・制限値。定期便の新作はeditorialHidden=trueの間、解説を返しません。editorialRevealAtが解禁時刻です。timeLimitMsとmemoryLimitMbは数値の文字列です。下書きは返しません。", Response: publicProblemResponse{}})
 	public("GET /problems/{id}/samples", problems.publicSamples, true, publicOperation{Summary: "公開サンプルケース", Description: "公開版でサンプルに指定したケースを保存順に返します。空ならitemsは空配列です。空白・改行を保持します。Markdownだけに書かれた例は抽出しません。inputFile/outputFileがある場合はurlから本文を取得してください。URLは10分間有効で、非公開化しても発行済みURLは期限まで利用できます。", Response: itemsResponse[publicSample]{}})
 	public("GET /problems/{id}/submissions", submissions.publicProblemSubmissions, true, publicOperation{Summary: "公開問題の提出一覧", Description: "提出日時の降順。下書き・サンプル実行・開催中コンテストの提出は非公開です。ソースコードとケース別結果は含みません。mine=1は公開APIでは利用できません。", Response: publicSubmissionPage{}, Parameters: offsetParameters()})
 	public("GET /problems/{id}/submissions/{submission}", submissions.publicProblemSubmissions, true, publicOperation{Summary: "公開提出詳細", Description: "ソースコードと公開採点結果。非公開テストの入出力やチェッカー診断は返しません。", Response: publicSubmissionResponse{}})
@@ -153,6 +164,8 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	private("POST /my/submissions", submissions.submission, true)
 	private("GET /my/submissions", submissions.submission, false)
 	private("GET /my/submissions/{id}", submissions.submission, false)
+	private("GET /my/featured", problems.featuredApplication, true)
+	private("PUT /my/problems/{id}/featured", problems.featuredApplication, true)
 	private("PUT /my/problems/{id}/publication", problems.publishProblem, true)
 	private("GET /my/posts", posts.privatePost, false)
 	private("GET /my/posts/{id}", posts.privatePost, false)

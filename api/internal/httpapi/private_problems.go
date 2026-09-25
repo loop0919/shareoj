@@ -159,6 +159,10 @@ func (p problemHandler) list(w http.ResponseWriter, r *http.Request, owner strin
 
 func problemError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, problems.ErrFeaturedIneligible):
+		authError(w, 400, "featured_ineligible")
+	case errors.Is(err, problems.ErrFeaturedLimit):
+		authError(w, 409, "featured_limit")
 	case errors.Is(err, problems.ErrContestLocked):
 		authError(w, 409, "contest_problem_locked")
 	case errors.Is(err, problems.ErrNotFound):

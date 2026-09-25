@@ -81,6 +81,7 @@ type Problem struct {
 }
 
 type Summary struct {
+	EverPublished    bool      `json:"everPublished"`
 	ContestID        string    `json:"contestId,omitempty"`
 	PublishedVersion int64     `json:"publishedVersion"`
 	ID               string    `json:"id"`
@@ -149,7 +150,7 @@ func (s *Store) ListTesting(ctx context.Context, owner string, cursor *Cursor) (
 }
 
 func (s *Store) list(ctx context.Context, owner string, cursor *Cursor, testing bool) ([]Summary, error) {
-	query := `SELECT id, draft->>'title', updated_at, published_version,COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),'') FROM problem_drafts WHERE owner_id=$1`
+	query := `SELECT id, draft->>'title', updated_at, published_version,ever_published,COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),'') FROM problem_drafts WHERE owner_id=$1`
 	if testing {
 		query = strings.Replace(query, "WHERE owner_id=$1", "WHERE owner_id<>$1 AND EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=problem_drafts.id AND t.owner_id=$1)", 1)
 	}
@@ -164,13 +165,13 @@ func (s *Store) list(ctx context.Context, owner string, cursor *Cursor, testing 
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Summary, error) {
 		var p Summary
-		err := row.Scan(&p.ID, &p.Title, &p.UpdatedAt, &p.PublishedVersion, &p.ContestID)
+		err := row.Scan(&p.ID, &p.Title, &p.UpdatedAt, &p.PublishedVersion, &p.EverPublished, &p.ContestID)
 		return p, err
 	})
 }
 
 func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft Draft) (Problem, error) {
-	if err := s.validateTestFiles(ctx, owner, id, draft.TestCases); err != nil {
+	if err := validateTestFiles(ctx, s.pool.Query, owner, id, draft.TestCases); err != nil {
 		return Problem{}, err
 	}
 	data, err := json.Marshal(draft)
@@ -209,7 +210,7 @@ func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft
 	return Problem{}, ErrConflict
 }
 
-func (s *Store) validateTestFiles(ctx context.Context, owner, problemID string, cases []TestCase) error {
+func validateTestFiles(ctx context.Context, query func(context.Context, string, ...any) (pgx.Rows, error), owner, problemID string, cases []TestCase) error {
 	want := make(map[string]TestFile)
 	for _, c := range cases {
 		for _, file := range []*TestFile{c.InputFile, c.OutputFile} {
@@ -229,7 +230,7 @@ func (s *Store) validateTestFiles(ctx context.Context, owner, problemID string, 
 	for id := range want {
 		ids = append(ids, id)
 	}
-	rows, err := s.pool.Query(ctx, `SELECT id::text,size,sha256 FROM test_files WHERE (owner_id=$1 OR can_manage_problem(problem_id,$1)) AND problem_id=$2 AND ready AND id::text=ANY($3::text[])`, owner, problemID, ids)
+	rows, err := query(ctx, `SELECT id::text,size,sha256 FROM test_files WHERE (owner_id=$1 OR can_manage_problem(problem_id,$1)) AND problem_id=$2 AND ready AND id::text=ANY($3::text[])`, owner, problemID, ids)
 	if err != nil {
 		return err
 	}

@@ -426,3 +426,22 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 - 登録者は未提出でも0点で順位表に表示されます。開催中の提出には登録が必要です（作成者・テスターを除く）。終了後の練習提出には登録不要です。
 - 終了後の新規登録・対象外ユーザーの登録は409 `contest_participation_unavailable`、未登録での提出は409 `contest_participation_required` です。
 - 移行020で既存の公式提出者を登録済みにします。撤回済みの移行019は番号を予約し、既存環境で番号を再利用しません。
+
+## 定期便
+
+[ADR 0011](../docs/adr/0011-schedule-featured-problems.md)に従い、日本時間の月曜と木曜23時にEasyとHardを各一問出題する。
+`GET /featured?offset=0`は最新と過去の出題を20回ずつ返す。
+応募は`PUT /my/problems/{id}/featured`へ`{"version":1,"preference":"soon"}`を送り、`later`なら後日の公開を希望し、空文字なら取り下げる。
+応募一覧は`GET /my/featured`で取得する。
+
+新作の公開問題レスポンスは、翌22時まで`editorialHidden: true`と`editorialRevealAt`を返し、`editorial`を返さない。
+提出一覧と詳細にも同じ解禁条件を適用する。
+その間も自分の提出は認証済みAPIから確認できる。
+
+反映時はマイグレーション021を先に適用し、API、Web、judge-bridgeの成果物を更新する。
+既存の毎分ディスパッチが定期出題も処理するため、常駐プロセスや新しいスケジューラーは不要である。
+judge-bridgeの`JUDGE_ENABLED_RUNTIMES`はAPIと同じ値にする。
+通常配布の`judge/rollout.py run`はこの値とランタイムダイジェストを同期する。
+未設定時は既存の既定値であるC++17だけを有効として再確認する。
+ディスパッチ停止中も関連APIへのアクセスで出題を回復するが、アクセスがなければ出題は遅れる。
+定時処理の精度と遅延時の扱いはADRの「実装時の決定」を参照する。

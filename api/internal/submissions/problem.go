@@ -18,7 +18,8 @@ const problemSubmissionVisible = `problem_id=$1 AND ($2='' OR contest_id=NULLIF(
     OR (p.published_draft IS NOT NULL AND NOT COALESCE((submissions.job->>'privateDraft')::boolean,true)))))
   OR EXISTS(SELECT 1 FROM contests c WHERE c.id=contest_id
    AND (` + contestStaff + ` OR (statement_timestamp()>=c.ends_at AND submissions.created_at>=c.starts_at)))
- )))`
+ )))
+ AND (owner_id=$3 OR COALESCE(featured_reveal_at(problem_id),'-infinity')<=statement_timestamp())`
 
 func (s *Store) problemSubmissionsAccess(ctx context.Context, problemID, contestID, viewer string, mine bool) error {
 	var allowed bool

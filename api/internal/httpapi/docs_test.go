@@ -45,7 +45,7 @@ func TestPublicDocumentation(t *testing.T) {
 		if err := json.Unmarshal(w.Body.Bytes(), &doc); err != nil {
 			t.Fatal(err)
 		}
-		if doc.OpenAPI != "3.1.0" || len(doc.Paths) != 18 {
+		if doc.OpenAPI != "3.1.0" || len(doc.Paths) != 19 {
 			t.Fatalf("unexpected public operations: %s %d", doc.OpenAPI, len(doc.Paths))
 		}
 		seen := map[string]bool{}

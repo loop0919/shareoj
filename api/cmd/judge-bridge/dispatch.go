@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -15,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"judge/api/internal/contests"
+	"judge/api/internal/problems"
 	"judge/api/internal/submissions"
 )
 
@@ -31,6 +33,9 @@ func (b bridge) dispatch(ctx context.Context) (err error) {
 	}
 	// The existing minute schedule also releases contests without incoming web traffic.
 	if err := (&contests.Store{Pool: b.db}).Release(ctx); err != nil {
+		return err
+	}
+	if err := problems.New(b.db).ReleaseFeatured(ctx, submissions.RuntimeIDs(), (submissions.Config{JudgeImage: b.runtime, JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: os.Getenv("JUDGE_ENABLED_RUNTIMES")}).RuntimeIDs()); err != nil {
 		return err
 	}
 	// Bounded expiry covers queue retries too; it does not rejudge a finalized submission.

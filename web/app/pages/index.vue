@@ -65,8 +65,8 @@ useSharePreview({ type: 'website', title: 'Share Online Judge', path: '/', descr
         <div class="delivery-slot"><span class="slot-index">02</span><strong>Hard</strong><span>Lv.5〜10</span></div>
       </div>
       <div class="delivery-foot">
-        <p><span class="delivery-status">準備中</span>新作の解説は翌22時に公開します。</p>
-        <NuxtLink to="/problems">公開中の問題を見る<span aria-hidden="true">→</span></NuxtLink>
+        <p><span class="delivery-status">新作募集中</span>新作の解説は翌22時に公開します。</p>
+        <NuxtLink to="/featured">定期便を見る<span aria-hidden="true">→</span></NuxtLink>
       </div>
     </section>
   </div>

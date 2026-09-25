@@ -325,7 +325,7 @@ def finish(config, directory, state, report_path):
     wait_empty(config)
     healthy_workers(config, directory, digest)
     checkpoint(directory, state, 'sync-bridge', runtimeDigest=digest)
-    update_env(config['region'], config['bridge'], dict(JUDGE_RUNTIME_DIGEST=digest))
+    update_env(config['region'], config['bridge'], dict(JUDGE_RUNTIME_DIGEST=digest, JUDGE_ENABLED_RUNTIMES=published))
     if database_status(config)['runtimeDigest'] != digest:
         raise ValueError('bridge digest did not match')
     checkpoint(directory, state, 'sync-settings')

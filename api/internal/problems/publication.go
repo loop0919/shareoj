@@ -10,24 +10,26 @@ import (
 )
 
 type PublicProblem struct {
-	DifficultyDistribution []int64   `json:"difficultyDistribution,omitempty"`
-	DifficultyAverage      *float64  `json:"difficultyAverage"`
-	DifficultyVoteCount    int64     `json:"difficultyVoteCount"`
-	Testers                []string  `json:"testers,omitempty"`
-	Difficulty             *int      `json:"difficulty"`
-	SolverCount            int64     `json:"solverCount"`
-	FavoriteCount          int64     `json:"favoriteCount"`
-	HasSamples             bool      `json:"hasSamples"`
-	Interactive            bool      `json:"interactive,omitempty"`
-	SpecialJudge           bool      `json:"specialJudge,omitempty"`
-	ID                     string    `json:"id"`
-	Title                  string    `json:"title"`
-	Markdown               string    `json:"markdown,omitempty"`
-	Editorial              string    `json:"editorial,omitempty"`
-	TimeLimitMS            string    `json:"timeLimitMs,omitempty"`
-	MemoryLimitMB          string    `json:"memoryLimitMb,omitempty"`
-	Author                 string    `json:"author"`
-	PublishedAt            time.Time `json:"publishedAt"`
+	EditorialHidden        bool       `json:"editorialHidden"`
+	EditorialRevealAt      *time.Time `json:"editorialRevealAt,omitempty"`
+	DifficultyDistribution []int64    `json:"difficultyDistribution,omitempty"`
+	DifficultyAverage      *float64   `json:"difficultyAverage"`
+	DifficultyVoteCount    int64      `json:"difficultyVoteCount"`
+	Testers                []string   `json:"testers,omitempty"`
+	Difficulty             *int       `json:"difficulty"`
+	SolverCount            int64      `json:"solverCount"`
+	FavoriteCount          int64      `json:"favoriteCount"`
+	HasSamples             bool       `json:"hasSamples"`
+	Interactive            bool       `json:"interactive,omitempty"`
+	SpecialJudge           bool       `json:"specialJudge,omitempty"`
+	ID                     string     `json:"id"`
+	Title                  string     `json:"title"`
+	Markdown               string     `json:"markdown,omitempty"`
+	Editorial              string     `json:"editorial,omitempty"`
+	TimeLimitMS            string     `json:"timeLimitMs,omitempty"`
+	MemoryLimitMB          string     `json:"memoryLimitMb,omitempty"`
+	Author                 string     `json:"author"`
+	PublishedAt            time.Time  `json:"publishedAt"`
 }
 type Publications interface {
 	Publish(context.Context, string, string, int64, bool) (Problem, error)
@@ -83,7 +85,7 @@ const publicSolverCount = `(SELECT count(DISTINCT s.owner_id) FROM submissions s
 func (s *Store) PublicGet(ctx context.Context, id string) (PublicProblem, error) {
 	var p PublicProblem
 	var data []byte
-	err := s.pool.QueryRow(ctx, `SELECT d.id,d.published_draft,u.handle,d.published_at,(SELECT count(*) FROM problem_favorites f WHERE f.problem_id=d.id),`+publicSolverCount+`,(SELECT avg(difficulty)::float8 FROM problem_difficulty_votes WHERE problem_id=d.id),(SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id),ARRAY(SELECT (SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id AND difficulty=level) FROM generate_series(1,10) level ORDER BY level) FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id WHERE d.id=$1 AND d.published_draft IS NOT NULL`, id).Scan(&p.ID, &data, &p.Author, &p.PublishedAt, &p.FavoriteCount, &p.SolverCount, &p.DifficultyAverage, &p.DifficultyVoteCount, &p.DifficultyDistribution)
+	err := s.pool.QueryRow(ctx, `SELECT d.id,CASE WHEN statement_timestamp()<featured_reveal_at(d.id) THEN d.published_draft-'editorial' ELSE d.published_draft END,u.handle,d.published_at,featured_reveal_at(d.id),COALESCE(statement_timestamp()<featured_reveal_at(d.id),false),(SELECT count(*) FROM problem_favorites f WHERE f.problem_id=d.id),`+publicSolverCount+`,(SELECT avg(difficulty)::float8 FROM problem_difficulty_votes WHERE problem_id=d.id),(SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id),ARRAY(SELECT (SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id AND difficulty=level) FROM generate_series(1,10) level ORDER BY level) FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id WHERE d.id=$1 AND d.published_draft IS NOT NULL`, id).Scan(&p.ID, &data, &p.Author, &p.PublishedAt, &p.EditorialRevealAt, &p.EditorialHidden, &p.FavoriteCount, &p.SolverCount, &p.DifficultyAverage, &p.DifficultyVoteCount, &p.DifficultyDistribution)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return p, ErrNotFound

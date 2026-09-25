@@ -5,6 +5,20 @@ const problem = {
   markdown: '2 つの整数 $A$ と $B$ の和を求めてください。\n\n## 制約\n\n$1 \\le A,B \\le 10^9$\n\n## 入出力例\n\n```\n3 5\n```\n\n```\n8\n```\n\n最大の答えは 2000000000 です。',
   editorial: '## 解説\n\n$A+B$ を計算します。',
 }
+const featuredProblem = { ...problem, id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', title: '定期便の新作', difficulty: 9, editorial: '', editorialHidden: true, editorialRevealAt: '2099-09-29T13:00:00Z' }
+const featured = {
+  nextAt: '2099-10-01T14:00:00Z', hasMore: false,
+  items: [
+    { scheduledAt: '2099-09-28T14:00:00Z', slots: [
+      { slot: 'easy', kind: 'revival', problemId: problem.id, title: problem.title, difficulty: 2, revealAt: '2099-09-29T13:00:00Z', editorialHidden: false },
+      { slot: 'hard', kind: 'new', problemId: featuredProblem.id, title: featuredProblem.title, difficulty: 9, revealAt: featuredProblem.editorialRevealAt, editorialHidden: true },
+    ] },
+    { scheduledAt: '2099-09-24T14:00:00Z', slots: [
+      { slot: 'easy', kind: 'missing', problemId: '', title: '', difficulty: null, revealAt: '2099-09-25T13:00:00Z', editorialHidden: false },
+      { slot: 'hard', kind: 'revival', problemId: problem.id, title: problem.title, difficulty: 7, revealAt: '2099-09-25T13:00:00Z', editorialHidden: false },
+    ] },
+  ],
+}
 const submission = {
   id: '22222222-2222-4222-8222-222222222222', problemId: problem.id, problemTitle: problem.title,
   problemVersion: 1, author: 'alice', runtime: 'cpp17', source: 'int main(){}', status: 'DONE',
@@ -46,6 +60,8 @@ createServer(async (req, res) => {
   else if (['/users/alice', '/users/bob', '/users/carol', '/users/yuki'].includes(path)) res.end(JSON.stringify({ handle: path.split('/').at(-1), accounts: path === '/users/yuki' ? { yukicoder: '123' } : {}, avatar: '', createdAt: '2026-09-10T00:00:00Z' }))
   else if (path === '/health') res.end('{}')
   else if (path === '/runtimes') res.end(JSON.stringify({ items: [{ id: 'cpp17', label: 'C++17 (GCC)' }, { id: 'python314', label: 'Python 3.14' }] }))
+  else if (path === '/featured') res.end(JSON.stringify(featured))
+  else if (path === `/problems/${featuredProblem.id}`) res.end(JSON.stringify(featuredProblem))
   else if (path === '/problems') res.end(JSON.stringify({ items: !new URL(req.url, 'http://localhost').searchParams.get('author') || new URL(req.url, 'http://localhost').searchParams.get('author') === 'alice' ? [problem] : [], nextCursor: '' }))
   else if (path === `/problems/${problem.id}`) res.end(JSON.stringify(problem))
   else if (path === `/problems/${problem.id}/samples`) res.end(JSON.stringify({ items: [
