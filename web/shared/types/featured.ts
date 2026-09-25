@@ -27,4 +27,3 @@ export const featuredApplicationsSchema = z.object({ items: z.array(z.object({
   problemId: z.string().uuid(), title: z.string(), preference: z.enum(['soon', 'later']),
   enteredAt: z.string().datetime({ offset: true }),
 })) })
-export type FeaturedApplication = z.infer<typeof featuredApplicationsSchema>['items'][number]

@@ -69,7 +69,7 @@ async function post() {
         <select id="post-problem" v-model="selected" required :disabled="busy"><option disabled value="">問題を選択してください</option><option v-for="problem in available" :key="problem.id" :value="problem.id">{{ problem.title.trim() || '無題の問題' }}</option></select>
         <template v-if="featured">
           <label class="publication-note" for="featured-preference">公開の希望</label>
-          <select id="featured-preference" v-model="preference" :disabled="busy"><option value="soon">早めに出したい</option><option value="later">あとからでもよい</option></select>
+          <select id="featured-preference" v-model="preference" :disabled="busy"><option value="soon">早めに出したい</option><option value="later">ゆっくりで良い</option></select>
           <p class="publication-note">Easy（Lv.1〜4）・Hard（Lv.5〜10）から各一問を選び、月曜・木曜23時に出題します。「早め」2回・「あとから」1回を基本に、それぞれ応募順で選びます。選出までは作者とテスターだけが確認できます。</p>
         </template>
         <p v-else class="publication-note">保存済みの内容が公開され、誰でも閲覧・提出できるようになります。</p>

@@ -81,12 +81,14 @@ type Problem struct {
 }
 
 type Summary struct {
-	EverPublished    bool      `json:"everPublished"`
-	ContestID        string    `json:"contestId,omitempty"`
-	PublishedVersion int64     `json:"publishedVersion"`
-	ID               string    `json:"id"`
-	Title            string    `json:"title"`
-	UpdatedAt        time.Time `json:"updatedAt"`
+	FeaturedPreference string    `json:"featuredPreference,omitempty"`
+	ContestScheduled   bool      `json:"contestScheduled,omitempty"`
+	EverPublished      bool      `json:"everPublished"`
+	ContestID          string    `json:"contestId,omitempty"`
+	PublishedVersion   int64     `json:"publishedVersion"`
+	ID                 string    `json:"id"`
+	Title              string    `json:"title"`
+	UpdatedAt          time.Time `json:"updatedAt"`
 }
 
 type Cursor struct {
@@ -150,7 +152,7 @@ func (s *Store) ListTesting(ctx context.Context, owner string, cursor *Cursor) (
 }
 
 func (s *Store) list(ctx context.Context, owner string, cursor *Cursor, testing bool) ([]Summary, error) {
-	query := `SELECT id, draft->>'title', updated_at, published_version,ever_published,COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),'') FROM problem_drafts WHERE owner_id=$1`
+	query := `SELECT id, draft->>'title', updated_at, published_version,ever_published,COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),COALESCE((SELECT preference FROM featured_applications WHERE problem_id=problem_drafts.id),''),EXISTS(SELECT 1 FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=problem_drafts.id AND NOT c.released) FROM problem_drafts WHERE owner_id=$1`
 	if testing {
 		query = strings.Replace(query, "WHERE owner_id=$1", "WHERE owner_id<>$1 AND EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=problem_drafts.id AND t.owner_id=$1)", 1)
 	}
@@ -165,7 +167,7 @@ func (s *Store) list(ctx context.Context, owner string, cursor *Cursor, testing 
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Summary, error) {
 		var p Summary
-		err := row.Scan(&p.ID, &p.Title, &p.UpdatedAt, &p.PublishedVersion, &p.EverPublished, &p.ContestID)
+		err := row.Scan(&p.ID, &p.Title, &p.UpdatedAt, &p.PublishedVersion, &p.EverPublished, &p.ContestID, &p.FeaturedPreference, &p.ContestScheduled)
 		return p, err
 	})
 }

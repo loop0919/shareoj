@@ -390,3 +390,44 @@ func TestFeaturedPreviewRevalidationPostgres(t *testing.T) {
 		t.Fatal("deleted draft retained preview")
 	}
 }
+
+func TestProblemListPublicationPlansPostgres(t *testing.T) {
+	f := newFeaturedTest(t)
+	a, b, c := f.draft("alice", 3), f.draft("alice", 6), f.draft("alice", 2)
+	f.apply(a, "soon", 204)
+	f.apply(b, "later", 204)
+	f.exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'tester')`, a.ID)
+	cid := newSubmissionID()
+	f.request("PUT", "/my/contests/"+cid, "alice", map[string]any{"version": 0, "title": "Contest", "description": "", "startsAt": time.Now().Add(time.Hour), "endsAt": time.Now().Add(2 * time.Hour), "penaltyMinutes": 5, "problems": []map[string]any{{"id": c.ID, "points": 100}}}, 200)
+	list := func(owner, path string) map[string]problems.Summary {
+		t.Helper()
+		var result struct {
+			Items []problems.Summary `json:"items"`
+		}
+		if err := json.Unmarshal([]byte(f.request("GET", path, owner, nil, 200)), &result); err != nil {
+			t.Fatal(err)
+		}
+		items := make(map[string]problems.Summary)
+		for _, item := range result.Items {
+			items[item.ID] = item
+		}
+		return items
+	}
+	items := list("alice", "/my/problems")
+	if items[a.ID].FeaturedPreference != "soon" || items[b.ID].FeaturedPreference != "later" || !items[c.ID].ContestScheduled || items[c.ID].ContestID != cid {
+		t.Fatal(items)
+	}
+	if tested := list("tester", "/my/problems?role=tester"); len(tested) != 1 || tested[a.ID].FeaturedPreference != "soon" {
+		t.Fatal(tested)
+	}
+	if other := list("bob", "/my/problems"); len(other) != 0 {
+		t.Fatal("other author's plans leaked", other)
+	}
+	f.apply(a, "", 204)
+	f.request("PUT", "/my/problems/"+b.ID+"/publication", "alice", map[string]any{"version": b.Version, "publish": true}, 200)
+	f.exec(`UPDATE contests SET released=true WHERE id=$1`, cid)
+	items = list("alice", "/my/problems")
+	if items[a.ID].FeaturedPreference != "" || items[b.ID].FeaturedPreference != "" || items[b.ID].PublishedVersion == 0 || items[c.ID].ContestScheduled || items[c.ID].ContestID != cid {
+		t.Fatal(items)
+	}
+}

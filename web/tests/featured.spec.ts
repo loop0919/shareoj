@@ -25,8 +25,8 @@ test('authors choose a preference, see validation failures, apply and withdraw',
   let applied = false
   let attempts = 0
   await page.route('**/api/my/featured', route => route.fulfill({ json: { items: applied ? [{ problemId: id, title: '応募する問題', preference: 'later', enteredAt: updatedAt }] : [] } }))
-  await page.route('**/api/my/problems?*', route => route.fulfill({ json: { items: [
-    { id, title: '応募する問題', updatedAt },
+  await page.route(/\/api\/my\/problems(?:\?.*)?$/, route => route.fulfill({ json: { items: [
+    { id, title: '応募する問題', featuredPreference: applied ? 'later' : '', updatedAt },
     { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', title: '過去に公開済み', everPublished: true, updatedAt },
     { id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', title: 'コンテスト用', contestId: 'contest', updatedAt },
   ], nextCursor: '' } }))
@@ -53,9 +53,15 @@ test('authors choose a preference, see validation failures, apply and withdraw',
   await expect(dialog.getByRole('alert')).toContainText('難易度・解説')
   await dialog.getByRole('button', { name: '応募する', exact: true }).click()
   await expect(dialog).not.toBeVisible()
-  await expect(page.locator('.applications')).toContainText('あとからでもよい')
-  await page.getByRole('button', { name: '取り下げる' }).click()
-  await expect(page.getByText('応募中の問題はありません。')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '応募中の問題', exact: true })).toHaveCount(0)
+  await page.goto('/my?tab=problems')
+  const row = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: '応募する問題', exact: true }) })
+  await expect(row).toContainText('定期便予定')
+  await row.getByRole('img', { name: 'ゆっくりで良い' }).focus()
+  await expect(row.getByRole('tooltip')).toHaveText('ゆっくりで良い')
+  await row.getByRole('button', { name: '応募する問題の定期便応募を取り下げる' }).click()
+  await expect(row).toContainText('未公開')
+  await expect(row.getByRole('img')).toHaveCount(0)
 })
 
 test('hidden editorial and other submissions show the unlock time while own results stay accessible', async ({ page }) => {

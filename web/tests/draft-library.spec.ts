@@ -77,3 +77,45 @@ for (const width of [375, 1280]) {
     await expect(page.getByRole('heading', { name: 'A + B', exact: true })).toBeVisible()
   })
 }
+
+
+test('problem states and SVG delivery preferences appear in the library', async ({ page }, testInfo) => {
+  const updatedAt = '2026-09-26T00:00:00Z'
+  const items = [
+    { id: '11111111-1111-4111-8111-111111111111', title: 'まだ書きかけの問題', publishedVersion: 0 },
+    { id: '22222222-2222-4222-8222-222222222222', title: '週末コンテストの問題', contestId: 'contest', contestScheduled: true },
+    { id: '33333333-3333-4333-8333-333333333333', title: '石の並べ替え', featuredPreference: 'soon' },
+    { id: '44444444-4444-4444-8444-444444444444', title: '遠回りの最短路', featuredPreference: 'later' },
+    { id: '55555555-5555-4555-8555-555555555555', title: 'A + B', publishedVersion: 2, contestId: 'past-contest' },
+    { id: '66666666-6666-4666-8666-666666666666', title: '公開を取り消した問題', publishedVersion: 0, everPublished: true, contestId: 'past-contest' },
+  ].map(entry => ({ ...entry, updatedAt }))
+  await page.route('**/api/my/problems**', route => route.fulfill({ json: { items, nextCursor: '' } }))
+  await page.goto('/my?tab=problems')
+  const table = page.getByRole('table', { name: '自分の問題', exact: true })
+  const rows = table.locator('tbody tr')
+  for (const [index, state] of ['未公開', 'コンテスト予定', '定期便予定', '定期便予定', '公開済み', '未公開'].entries()) {
+    await expect(rows.nth(index).locator('td').first()).toContainText(state)
+  }
+  for (const label of ['早めに出したい', 'ゆっくりで良い']) {
+    const mark = table.getByRole('img', { name: label })
+    await expect(mark.locator('svg')).toHaveCount(1)
+    await mark.hover()
+    await expect(mark.getByRole('tooltip')).toHaveText(label)
+    await page.mouse.move(0, 0)
+    await mark.focus()
+    await expect(mark.getByRole('tooltip')).toBeVisible()
+    await page.keyboard.press('Tab')
+    await expect(mark.getByRole('tooltip')).toBeHidden()
+  }
+  await expect(table.getByRole('button', { name: /定期便応募を取り下げる/ })).toHaveCount(2)
+  for (const width of [320, 375, 414, 768, 1280]) {
+    await page.setViewportSize({ width, height: 1000 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+    await table.getByRole('img', { name: '早めに出したい' }).focus()
+    await page.screenshot({ path: testInfo.outputPath(`problem-states-${width}.png`), fullPage: true })
+  }
+  await page.getByRole('button', { name: 'テスト中の問題', exact: true }).click()
+  const testing = page.getByRole('table', { name: 'テスト中の問題', exact: true })
+  await expect(testing.getByRole('img', { name: '早めに出したい' })).toBeVisible()
+  await expect(testing.getByRole('button', { name: /定期便応募を取り下げる/ })).toHaveCount(0)
+})
