@@ -150,15 +150,17 @@ func TestContestsPostgres(t *testing.T) {
 	request("GET", "/contests", "", nil, 200)
 	request("GET", "/contests?offset=-1", "", nil, 400)
 	detail := request("GET", "/contests/"+cid, "", nil, 200)
-	if strings.Contains(detail, "Secret") || !strings.Contains(detail, `"problems":[]`) {
+	if strings.Contains(detail, "Secret") || strings.Contains(detail, a) || strings.Contains(detail, b) {
 		t.Fatal("prestart leak", detail)
 	}
 	var credits contests.Contest
 	if err := json.Unmarshal([]byte(detail), &credits); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(credits.ProblemAuthors, []string{"alice"}) || len(credits.Testers) != 0 {
-		t.Fatal("initial contest credits", credits)
+	if !slices.Equal(credits.ProblemAuthors, []string{"alice"}) || len(credits.Testers) != 0 ||
+		len(credits.Problems) != 2 || credits.Problems[0].Points != 100 || credits.Problems[1].Points != 200 ||
+		credits.Problems[0].ID != "" || credits.Problems[0].Title != "" || credits.Problems[0].TimeLimitMS != "" {
+		t.Fatal("initial contest credits and redacted problems", credits)
 	}
 	// Credits cover all registered problems, including those hidden before the start.
 	exec(`UPDATE problem_drafts SET owner_id='bob' WHERE id=$1`, b)
@@ -166,9 +168,19 @@ func TestContestsPostgres(t *testing.T) {
 	if err := json.Unmarshal([]byte(request("GET", "/contests/"+cid, "", nil, 200)), &credits); err != nil {
 		t.Fatal(err)
 	}
-	if len(credits.Problems) != 0 || !slices.Equal(credits.ProblemAuthors, []string{"alice", "bob"}) || !slices.Equal(credits.Testers, []string{"carol", "tester"}) {
-		t.Fatal("contest credits must be unique and include hidden problems", credits)
+	if len(credits.Problems) != 2 || credits.Problems[0].ID != "" || credits.Problems[1].ID != "" ||
+		!slices.Equal(credits.ProblemAuthors, []string{"alice", "bob"}) || !slices.Equal(credits.Testers, []string{"carol", "tester"}) {
+		t.Fatal("contest credits must be unique and include redacted problems", credits)
 	}
+	var authorView contests.Contest
+	if err := json.Unmarshal([]byte(request("GET", "/my/contests/"+cid, "bob", nil, 200)), &authorView); err != nil {
+		t.Fatal(err)
+	}
+	if len(authorView.Problems) != 2 || authorView.Problems[0].ID != "" || authorView.Problems[1].ID != b || authorView.Problems[1].Title != "Secret A" {
+		t.Fatal("author must only see their problem", authorView.Problems)
+	}
+	request("GET", "/my/contests/"+cid+"/problems/"+a, "bob", nil, 404)
+	request("GET", "/my/contests/"+cid+"/problems/"+b, "bob", nil, 200)
 	exec(`DELETE FROM problem_testers WHERE problem_id IN ($1,$2)`, a, b)
 	exec(`UPDATE problem_drafts SET owner_id='alice' WHERE id=$1`, b)
 	request("GET", "/contests/"+cid+"/problems/"+a, "", nil, 404)
@@ -193,11 +205,11 @@ func TestContestsPostgres(t *testing.T) {
 	if err := json.Unmarshal([]byte(request("GET", "/my/contests/"+cid, "tester", nil, 200)), &testerView); err != nil {
 		t.Fatal(err)
 	}
-	if testerView.Official || !testerView.CanViewSubmissions || len(testerView.Problems) != 1 {
-		t.Fatal(testerView)
-	}
-	if testerView.Problems[0].TimeLimitMS != "1000" || testerView.Problems[0].MemoryLimitMB != "256" {
-		t.Fatal("missing contest problem limits", testerView.Problems)
+	if testerView.Official || !testerView.CanViewSubmissions || len(testerView.Problems) != 2 ||
+		testerView.Problems[0].ID != "" || testerView.Problems[0].Points != 200 ||
+		testerView.Problems[1].ID != a || testerView.Problems[1].Title != "Secret A" ||
+		testerView.Problems[1].TimeLimitMS != "1000" || testerView.Problems[1].MemoryLimitMB != "256" {
+		t.Fatal("tester must only see their problem after reorder", testerView.Problems)
 	}
 	// Registration is authenticated, idempotent and immediately visible before the start.
 	joinPath := "/my/contests/" + cid + "/participation"

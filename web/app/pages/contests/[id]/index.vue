@@ -88,23 +88,23 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
     </section>
     <section v-if="activeView === 'problems'" id="problems" class="contest-section" aria-labelledby="problems-title">
       <h2 id="problems-title">問題</h2>
-      <p v-if="contest.status === 'scheduled'" class="notice">問題は開始時刻に公開されます。事前に閲覧できるのは作成者と、その問題のテスターです。</p>
+      <p v-if="contest.status === 'scheduled'" class="notice">問題文は開始時刻に公開されます。事前に閲覧できるのは作成者・担当の作問者・テスターです。</p>
       <div v-if="contest.problems.length" class="content-table-scroll" role="region" aria-label="コンテストの問題" tabindex="0">
-        <table class="content-table contest-problems"><thead><tr><th scope="col">#</th><th scope="col">問題</th><th scope="col"><abbr title="実行時間制限 / メモリ制限">TL / ML</abbr></th><th scope="col">配点</th></tr></thead><tbody><tr v-for="(p, index) in contest.problems" :key="p.id" :class="{ solved: p.solved }"><td>{{ problemLabel(index) }}</td><th scope="row"><NuxtLink :to="`/contests/${contest.id}/problems/${p.id}`" :aria-label="p.solved ? `${p.title}（AC 済み）` : undefined">{{ p.title }}</NuxtLink></th><td class="problem-limits">{{ p.timeLimitMs == null ? '—' : `${Number(p.timeLimitMs) / 1000} 秒` }}・{{ p.memoryLimitMb == null ? '—' : `${p.memoryLimitMb} MiB` }}</td><td>{{ p.points }} 点</td></tr></tbody></table>
+        <table class="content-table contest-problems"><thead><tr><th scope="col">#</th><th scope="col">問題</th><th scope="col"><abbr title="実行時間制限 / メモリ制限">TL / ML</abbr></th><th scope="col">配点</th></tr></thead><tbody><tr v-for="(p, index) in contest.problems" :key="p.id || index" :class="{ solved: p.solved }"><td>{{ problemLabel(index) }}</td><th scope="row"><NuxtLink v-if="p.id" :to="`/contests/${contest.id}/problems/${p.id}`" :aria-label="p.solved ? `${p.title}（AC 済み）` : undefined">{{ p.title }}</NuxtLink><span v-else>???</span></th><td class="problem-limits">{{ !p.timeLimitMs ? '—' : `${Number(p.timeLimitMs) / 1000} 秒` }}・{{ !p.memoryLimitMb ? '—' : `${p.memoryLimitMb} MiB` }}</td><td>{{ p.points }} 点</td></tr></tbody></table>
       </div>
     </section>
     <section v-if="activeView === 'standings'" id="standings" class="contest-section" aria-labelledby="standings-title">
       <header class="contest-section-heading"><h2 id="standings-title">公式順位表</h2><button class="editor-button" :disabled="updating" :aria-busy="updating" @click="update">{{ updating ? '更新中…' : '今すぐ更新' }}</button></header>
       <p v-if="user && !contest.official" class="notice">作成者・テスターとしての提出は公式順位の対象外です。</p>
       <p v-if="standingsError" class="notice notice-error" role="alert">順位表を取得できませんでした。</p>
-      <p v-else-if="!standings?.length" class="contest-empty muted">参加者はまだいません。</p>
-      <div v-else class="content-table-scroll" role="region" aria-label="順位表のスクロール領域" tabindex="0" :aria-busy="updating">
+      <p v-if="!standingsError && !standings?.length" class="contest-empty muted">参加者はまだいません。</p>
+      <div v-if="!standingsError && contest.problems.length" class="content-table-scroll" role="region" aria-label="順位表のスクロール領域" tabindex="0" :aria-busy="updating">
         <table class="content-table standings-table">
-          <thead><tr><th scope="col">順位</th><th scope="col">ユーザー</th><th scope="col">得点</th><th scope="col">時間</th><th v-for="(p, i) in contest.problems" :key="p.id" scope="col"><NuxtLink :to="`/contests/${contest.id}/problems/${p.id}`">{{ problemLabel(i) }}</NuxtLink></th></tr></thead>
+          <thead><tr><th scope="col">順位</th><th scope="col">ユーザー</th><th scope="col">得点</th><th scope="col">時間</th><th v-for="(p, i) in contest.problems" :key="p.id || i" scope="col"><NuxtLink v-if="contest.status !== 'scheduled' && p.id" :to="`/contests/${contest.id}/problems/${p.id}`">{{ problemLabel(i) }}</NuxtLink><span v-else>{{ problemLabel(i) }}</span></th></tr></thead>
           <tbody>
             <tr v-for="row in standings" :key="row.handle">
               <td>{{ row.rank }}</td><th scope="row"><UserLink :handle="row.handle" /></th><td class="standing-total">{{ row.points }}</td><td>{{ duration(row.timeMs) }}</td>
-              <td v-for="p in contest.problems" :key="p.id">
+              <td v-for="(p, i) in contest.problems" :key="p.id || i">
                 <template v-if="row.problems[p.id]">
                   <span class="standing-result">
                     <strong v-if="row.problems[p.id]!.acceptedAt" class="standing-accepted">{{ row.problems[p.id]!.points }}</strong>
@@ -119,8 +119,8 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
             </tr>
           </tbody>
           <tfoot>
-            <tr><th colspan="4" scope="row">FA（初正解）</th><td v-for="stat in problemStats" :key="stat.id"><template v-if="stat.accepted"><span v-for="handle in stat.handles" :key="handle" class="standing-fa"><UserLink :handle="handle" /></span><small>{{ stat.time }}</small></template><span v-else class="muted">—</span></td></tr>
-            <tr><th colspan="4" scope="row">正解者数 / 提出者数</th><td v-for="stat in problemStats" :key="stat.id"><span class="standing-accepted">{{ stat.accepted }}</span> / {{ stat.submitted }}</td></tr>
+            <tr><th colspan="4" scope="row">FA（初正解）</th><td v-for="(stat, i) in problemStats" :key="stat.id || i"><template v-if="stat.accepted"><span v-for="handle in stat.handles" :key="handle" class="standing-fa"><UserLink :handle="handle" /></span><small>{{ stat.time }}</small></template><span v-else class="muted">—</span></td></tr>
+            <tr><th colspan="4" scope="row">正解者数 / 提出者数</th><td v-for="(stat, i) in problemStats" :key="stat.id || i"><span class="standing-accepted">{{ stat.accepted }}</span> / {{ stat.submitted }}</td></tr>
           </tfoot>
         </table>
       </div>

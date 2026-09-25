@@ -111,7 +111,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	}
 	public("GET /users/{handle}", profiles.publicProfile, false, publicOperation{Summary: "公開プロフィール", Response: publicProfileResponse{}})
 	public("GET /contests", contests.publicContest, true, publicOperation{Summary: "コンテスト一覧", Description: "開始日時の降順。各要素のproblemsは空配列です。問題一覧は詳細APIで取得します。", Response: publicContestPage{}, Parameters: offsetParameters()})
-	public("GET /contests/{id}", contests.publicContest, true, publicOperation{Summary: "コンテスト詳細", Description: "開始前は問題一覧を公開しません。", Response: publicContestResponse{}})
+	public("GET /contests/{id}", contests.publicContest, true, publicOperation{Summary: "コンテスト詳細", Description: "開始前も出題順と配点を公開します。問題ID・タイトル・制限値は作成者と担当の作問者・テスターだけに返します。", Response: publicContestResponse{}})
 	public("GET /contests/{id}/problems/{problem}", contests.publicContest, true, publicOperation{Summary: "コンテストの問題", Description: "開始後に取得可能です。解説は終了後に公開されます。publishedAtはコンテスト終了日時です。", Response: publicProblemResponse{}})
 	public("GET /contests/{id}/problems/{problem}/submissions", contests.publicContest, true, publicOperation{Summary: "コンテストの問題別提出一覧", Description: "コンテスト終了後に取得可能です。ソースコードとケース別結果は含みません。mine=1は認証が必要なため公開APIでは利用できません。", Response: publicSubmissionPage{}, Parameters: offsetParameters()})
 	public("GET /contests/{id}/standings", contests.publicContest, true, publicOperation{Summary: "コンテスト順位表", Response: publicStandingsResponse{}})

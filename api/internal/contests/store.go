@@ -107,15 +107,20 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
   AND NOT COALESCE((s.job->>'easyTest')::boolean,false)
   AND NOT COALESCE((s.job->>'generate')::boolean,false)
   AND NOT COALESCE((s.job->>'validate')::boolean,false)
-  AND s.created_at>=$4)
- FROM contest_problems cp
- WHERE cp.contest_id=$1 AND ($2 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3)) ORDER BY cp.position`, id, c.Status != "scheduled" || viewer == c.Owner, viewer, c.StartsAt)
+  AND s.created_at>=$4),
+ ($2 OR $3=$5 OR d.owner_id=$3 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3))
+ FROM contest_problems cp JOIN problem_drafts d ON d.id=cp.problem_id
+ WHERE cp.contest_id=$1 ORDER BY cp.position`, id, c.Status != "scheduled", viewer, c.StartsAt, c.Owner)
 	if err != nil {
 		return c, err
 	}
 	c.Problems, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (Problem, error) {
 		var p Problem
-		e := row.Scan(&p.ID, &p.Points, &p.Title, &p.TimeLimitMS, &p.MemoryLimitMB, &p.Solved)
+		var visible bool
+		e := row.Scan(&p.ID, &p.Points, &p.Title, &p.TimeLimitMS, &p.MemoryLimitMB, &p.Solved, &visible)
+		if !visible {
+			p.ID, p.Title, p.TimeLimitMS, p.MemoryLimitMB, p.Solved = "", "", "", "", false
+		}
 		return p, e
 	})
 	if err != nil {
@@ -251,9 +256,9 @@ func (s *Store) Problem(ctx context.Context, id, pid, viewer string) (problems.P
 	var raw []byte
 	var editorial bool
 	err := s.Pool.QueryRow(ctx, `SELECT cp.problem_id,cp.draft,u.handle,c.ends_at,
- (statement_timestamp()>=c.ends_at OR c.owner_id=$3 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3))
- FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id JOIN user_profiles u ON u.owner_id=c.owner_id
- WHERE c.id=$1 AND cp.problem_id=$2 AND (statement_timestamp()>=c.starts_at OR c.owner_id=$3 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3))`, id, pid, viewer).Scan(&p.ID, &raw, &p.Author, &p.PublishedAt, &editorial)
+ (statement_timestamp()>=c.ends_at OR c.owner_id=$3 OR d.owner_id=$3 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3))
+ FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id JOIN problem_drafts d ON d.id=cp.problem_id JOIN user_profiles u ON u.owner_id=c.owner_id
+ WHERE c.id=$1 AND cp.problem_id=$2 AND (statement_timestamp()>=c.starts_at OR c.owner_id=$3 OR d.owner_id=$3 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3))`, id, pid, viewer).Scan(&p.ID, &raw, &p.Author, &p.PublishedAt, &editorial)
 	if err != nil {
 		return p, err
 	}

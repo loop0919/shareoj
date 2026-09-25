@@ -112,3 +112,23 @@ test('contest problem rows highlight own ACs and refresh after judging', async (
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('contest-solved-mobile.png'), fullPage: true })
 })
+
+
+test('scheduled problems show points and labels without links', async ({ page }) => {
+  const scheduled: Contest = { ...contest, status: 'scheduled', problems: [
+    { id: '', points: 100 },
+    { id: '', points: 200 },
+  ] }
+  await page.route(`**/api/contests/${id}**`, route => route.fulfill({ json: route.request().url().includes('/standings') ? [] : scheduled }))
+  await page.goto(`/contests/${id}?view=standings`, { waitUntil: 'networkidle' })
+  await page.getByRole('button', { name: '今すぐ更新' }).click()
+  await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '問題', exact: true }).click()
+  const problems = page.locator('.contest-problems tbody tr')
+  await expect(problems).toHaveCount(2)
+  await expect(problems.locator('th')).toHaveText(['???', '???'])
+  await expect(problems.locator('td:last-child')).toHaveText(['100 点', '200 点'])
+  await expect(problems.locator('a')).toHaveCount(0)
+  await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '順位表', exact: true }).click()
+  await expect(page.locator('.standings-table thead th')).toHaveText(['順位', 'ユーザー', '得点', '時間', 'A', 'B'])
+  await expect(page.locator('.standings-table thead a')).toHaveCount(0)
+})
