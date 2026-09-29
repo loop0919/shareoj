@@ -204,6 +204,18 @@ test('empty inventory and long credits fit a narrow screen', async ({ page }) =>
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320)
 })
 
+test('home announces 定期便 with a link that fits narrow screens', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.goto('/')
+  await page.screenshot({ path: testInfo.outputPath('home-news-1280.png') })
+  await page.setViewportSize({ width: 320, height: 800 })
+  const news = page.getByRole('complementary', { name: 'お知らせ' })
+  await expect(news).toContainText('新機能「定期便」が追加されました！')
+  await expect(news.getByRole('link', { name: '定期便を見る' })).toHaveAttribute('href', '/featured')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await news.screenshot({ path: testInfo.outputPath('home-news-320.png') })
+})
+
 test('home keeps its navigation and retries when the delivery API fails', async ({ page }) => {
   await page.goto('/problems')
   let failing = true

@@ -21,6 +21,9 @@ useHead({
   }).replace(/</g, '\\u003c') }],
 })
 useSharePreview({ type: 'website', title: 'Share Online Judge', path: '/', description })
+// Launch notice for 定期便; it disappears on its own after this date (JST end of October).
+const featuredNewsUntil = Date.parse('2026-10-31T15:00:00Z')
+const showFeaturedNews = Date.now() < featuredNewsUntil
 </script>
 
 <template>
@@ -57,6 +60,11 @@ useSharePreview({ type: 'website', title: 'Share Online Judge', path: '/', descr
         </svg>
       </figure>
     </section>
+    <aside v-if="showFeaturedNews" class="news-banner" aria-label="お知らせ">
+      <span class="news-label">NEW</span>
+      <p>新機能「定期便」が追加されました！</p>
+      <NuxtLink to="/featured">定期便を見る<span aria-hidden="true">→</span></NuxtLink>
+    </aside>
     <FeaturedDelivery v-if="featured" :page="featured" home />
     <section v-else class="delivery-fallback" aria-label="ShareOJ定期便">
       <h2>ShareOJ定期便</h2>
@@ -102,6 +110,14 @@ useSharePreview({ type: 'website', title: 'Share Online Judge', path: '/', descr
 .end-halo { fill: var(--color-accent-soft); }
 .check { fill: none; stroke: var(--color-paper); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .delivery-fallback { padding-block: 32px; border-top: 2px solid var(--color-accent); }
+.news-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 16px; border: 1px solid var(--color-accent); border-radius: 4px; background: var(--color-accent-soft); }
+.news-label { padding: 2px 8px; border-radius: 999px; background: var(--color-accent); color: var(--color-paper); font-family: var(--font-code); font-size: .6875rem; font-weight: 700; letter-spacing: .08em; }
+.news-banner p { flex: 1; min-width: 0; margin: 0; font-size: .9375rem; font-weight: 600; overflow-wrap: anywhere; }
+.news-banner a { display: inline-flex; align-items: center; gap: 12px; min-height: 44px; font-size: .875rem; font-weight: 600; white-space: nowrap; text-decoration: none; color: var(--color-accent); }
+.news-banner a:hover { text-decoration: underline; text-underline-offset: 6px; }
+.news-banner a:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 3px; }
+/* Narrow screens keep the label and message together and move the link below. */
+@media (max-width: 520px) { .news-banner a { flex-basis: 100%; } }
 /* After the reveal, use the live theme colors instead of retaining animated fill/stroke values. */
 @media (prefers-reduced-motion: no-preference) {
   .answer-path { stroke-dasharray: 1; animation: trace-path .8s cubic-bezier(.76, 0, .24, 1) .3s both; }
