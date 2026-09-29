@@ -58,6 +58,77 @@ class RolloutTests(unittest.TestCase):
             self.assertTrue(state['prepared'])
             self.assertEqual(state['alarm_actions'], {'alarm': True})
 
+    def test_prepare_also_stops_retired_hosts(self):
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            package = directory / 'bridge.zip'
+            package.write_bytes(b'package')
+            digest = base64.b64encode(hashlib.sha256(b'package').digest()).decode()
+            config = dict(region='test', api='api', bridge='bridge', bridge_package=str(package),
+                          nodes=['i-0123456789abcdef0'], retire_nodes=['mi-a', 'mi-b'], worker_alarms=['alarm'])
+            def aws(region, service, operation, *args):
+                if operation == 'get-function-configuration':
+                    return dict(CodeSha256=digest, Timeout=0)
+                if operation == 'describe-alarms':
+                    return dict(MetricAlarms=[dict(AlarmName='alarm', ActionsEnabled=True)])
+                return {}
+            stopped = []
+            with patch.object(rollout, 'preflight'), patch.object(rollout, 'backup_lambda'), \
+                    patch.object(rollout, 'aws', side_effect=aws), patch.object(rollout, 'database_status'), \
+                    patch.object(rollout, 'update_env'), patch.object(rollout, 'wait_empty'), patch.object(rollout, 'delivery'), \
+                    patch.object(rollout.time, 'sleep'), \
+                    patch.object(rollout, 'new_run', side_effect=lambda d, r, nodes, p: dict(runId='a' * 32, instances=nodes, commands={})), \
+                    patch.object(rollout, 'submit', side_effect=lambda d, receipt, node, script: stopped.append(node)), \
+                    patch.object(rollout, 'collect', return_value=0):
+                rollout.prepare(config, directory, {})
+            self.assertEqual(stopped, ['i-0123456789abcdef0', 'mi-a', 'mi-b'])
+
+    def test_enabled_retired_worker_blocks_finish(self):
+        commands = {}
+        with tempfile.TemporaryDirectory() as name, \
+                patch.object(rollout, 'new_run', side_effect=lambda d, r, nodes, p: dict(runId='a' * 32, instances=nodes, commands={})), \
+                patch.object(rollout, 'submit', side_effect=lambda d, receipt, node, script: commands.setdefault(node, script)), \
+                patch.object(rollout, 'collect', return_value=1):
+            rollout.retired_workers_stopped(dict(region='test'), Path(name))
+            with self.assertRaises(RuntimeError):
+                rollout.retired_workers_stopped(dict(region='test', retire_nodes=['mi-a']), Path(name))
+        self.assertIn('systemctl is-enabled', commands['mi-a'])
+        subprocess.run(['bash', '-n', '-c', commands['mi-a']], check=True)
+
+    def pool_aws(self, states, calls):
+        def aws(region, service, operation, *args):
+            calls.append((operation, *args))
+            if operation == 'describe-instances':
+                return dict(Reservations=[dict(Instances=[dict(InstanceId=node, State=dict(Name=state))]) for node, state in states.items()])
+            if operation == 'describe-instance-information':
+                return dict(InstanceInformationList=[dict(PingStatus='Online')] * len(states))
+            return {}
+        return aws
+
+    def test_pool_must_match_deployment_targets(self):
+        calls = []
+        config = dict(region='test', pool='judge-dev', nodes=['i-0123456789abcdef0', 'i-0123456789abcdef1'])
+        with patch.object(rollout, 'aws', side_effect=self.pool_aws({'i-0123456789abcdef0': 'running'}, calls)), \
+                patch.object(rollout, 'run') as run, self.assertRaises(ValueError):
+            rollout.ensure_pool(config)
+        self.assertEqual([c[0] for c in calls], ['describe-instances'])
+        run.assert_not_called()
+
+    def test_pool_hosts_are_held_started_and_online_before_maintenance(self):
+        calls, waits = [], []
+        states = {'i-0123456789abcdef0': 'running', 'i-0123456789abcdef1': 'stopped', 'i-0123456789abcdef2': 'stopping'}
+        config = dict(region='test', pool='judge-dev', nodes=list(states))
+        with patch.object(rollout, 'aws', side_effect=self.pool_aws(states, calls)), \
+                patch.object(rollout, 'run', side_effect=lambda *args: waits.append(args[3]) or calls.append(('wait', args[3]))):
+            rollout.ensure_pool(config)
+        self.assertEqual([c[0] for c in calls], ['describe-instances', 'create-tags', 'wait', 'start-instances', 'wait', 'describe-instance-information'])
+        self.assertTrue(calls[1][-1].startswith('Key=JudgeMaintenanceHoldUntil,Value=20'))
+        self.assertEqual(calls[3][2:], ('i-0123456789abcdef1', 'i-0123456789abcdef2'))
+        self.assertEqual(waits, ['instance-stopped', 'instance-running'])
+        with patch.object(rollout, 'aws') as aws:
+            rollout.ensure_pool(dict(region='test', nodes=['mi-a']))
+        aws.assert_not_called()
+
     def test_settings_failure_never_enables_delivery_or_publishes(self):
         with tempfile.TemporaryDirectory() as name:
             directory = Path(name)
@@ -100,7 +171,7 @@ class RolloutTests(unittest.TestCase):
             self.assertEqual(state['status'], 'failed')
             self.assertTrue(state['admissionPaused'])
 
-    def test_finish_reaches_complete_only_after_api_smoke_and_state_refresh(self):
+    def run_finish(self, **extra):
         with tempfile.TemporaryDirectory() as name:
             directory = Path(name)
             digest = 'sha256:' + 'a' * 64
@@ -109,30 +180,49 @@ class RolloutTests(unittest.TestCase):
             nodes = ['i-0123456789abcdef0', 'i-0123456789abcdef1', 'i-0123456789abcdef2']
             report_path.write_text(json.dumps({**host, 'hosts': dict.fromkeys(nodes, host)}))
             config = dict(region='test', api='api', bridge='bridge', nodes=nodes, runtimes=['python314'],
-                          smoke_runtime='python314', api_url='https://test.invalid')
-            calls = []
+                          smoke_runtime='python314', api_url='https://test.invalid', **extra)
+            calls, events = [], []
             def command(*args):
                 calls.append(args)
                 if 'judge/smoke-api.py' in args:
                     Path(args[args.index('--report') + 1]).write_text('{"status":"passed"}')
                 return ''
+            def aws(region, service, operation, *args):
+                events.append((operation, *args))
+                return dict(Timeout=0)
             catalog = io.BytesIO(b'{"maintenance":false,"items":[{"id":"python314"}]}')
             with patch.object(rollout, 'update_env'), patch.object(rollout, 'wait_empty'), \
-                    patch.object(rollout, 'aws', return_value=dict(Timeout=0)), patch.object(rollout.time, 'sleep'), \
-                    patch.object(rollout, 'healthy_workers'), patch.object(rollout, 'database_status', return_value=dict(runtimeDigest=digest)), \
-                    patch.object(rollout, 'sync_settings'), patch.object(rollout, 'delivery'), \
+                    patch.object(rollout, 'aws', side_effect=aws), patch.object(rollout.time, 'sleep'), \
+                    patch.object(rollout, 'healthy_workers', side_effect=lambda *a: events.append(('healthy',))), \
+                    patch.object(rollout, 'database_status', return_value=dict(runtimeDigest=digest)), \
+                    patch.object(rollout, 'sync_settings'), patch.object(rollout, 'delivery', side_effect=lambda *a: events.append(('delivery',))), \
                     patch.object(rollout.urllib.request, 'urlopen', return_value=catalog), patch.object(rollout, 'run', side_effect=command):
                 state = dict(prepared=True, alarm_actions={'enabled': True, 'disabled': False})
                 rollout.finish(config, directory, state, report_path)
-            self.assertEqual(state['status'], 'passed')
-            self.assertEqual(state['step'], 'complete')
-            self.assertFalse(state['maintenance'])
-            self.assertFalse(state['admissionPaused'])
-            smoke = next(args for args in calls if 'judge/smoke-api.py' in args)
-            self.assertEqual([smoke[i + 1] for i, arg in enumerate(smoke) if arg == '--instance'], nodes)
-            plans = [args for args in calls if args[0] == 'terraform' and 'plan' in args]
-            self.assertEqual(len(plans), 2)
-            self.assertTrue(all('-refresh-only' in args for args in plans))
+            return state, calls, events, nodes, digest
+
+    def test_finish_reaches_complete_only_after_api_smoke_and_state_refresh(self):
+        state, calls, events, nodes, _ = self.run_finish()
+        self.assertEqual(state['status'], 'passed')
+        self.assertEqual(state['step'], 'complete')
+        self.assertFalse(state['maintenance'])
+        self.assertFalse(state['admissionPaused'])
+        self.assertFalse(any(e[0] == 'create-tags' for e in events))
+        smoke = next(args for args in calls if 'judge/smoke-api.py' in args)
+        self.assertEqual([smoke[i + 1] for i, arg in enumerate(smoke) if arg == '--instance'], nodes)
+        plans = [args for args in calls if args[0] == 'terraform' and 'plan' in args]
+        self.assertEqual(len(plans), 2)
+        self.assertTrue(all('-refresh-only' in args for args in plans))
+
+    def test_finish_tags_the_pool_after_health_and_releases_the_hold(self):
+        state, _, events, nodes, digest = self.run_finish(pool='judge-dev')
+        names = [e[0] for e in events]
+        tags = [e for e in events if e[0] == 'create-tags']
+        self.assertEqual(tags[0], ('create-tags', '--resources', *nodes, '--tags', 'Key=JudgeInstalledDigest,Value=' + digest))
+        self.assertLess(names.index('healthy'), names.index('create-tags'))
+        self.assertLess(names.index('create-tags'), names.index('delivery'))
+        self.assertTrue(tags[1][-1].startswith('Key=JudgeMaintenanceHoldUntil,Value=20'))
+        self.assertTrue(state['maintenanceHoldReleased'])
 
     def test_release_cleanup_keeps_only_published_worker_version(self):
         release = 'a' * 64

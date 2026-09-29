@@ -9,8 +9,10 @@
   "bucket": "judge-dev-judge-5983370c65ca9cd6b9cd685c8d",
   "dispatch_rule": "judge-dev-judge-dispatch",
   "result_mapping": "413e7012-ae81-435a-93f5-e04d7ca708dd",
-  "nodes": ["mi-08a9ccbdc9116b369", "mi-07cb78f3b979951e7"],
-  "worker_alarms": ["judge-dev-judge-worker", "judge-dev-judge-worker-2"],
+  "pool": "judge-dev",
+  "nodes": ["i-0123456789abcdef0", "i-0123456789abcdef1", "i-0123456789abcdef2"],
+  "retire_nodes": [],
+  "worker_alarms": ["judge-dev-judge-worker", "judge-dev-judge-worker-2", "judge-dev-judge-worker-3"],
   "queues": [
     "https://sqs.ap-northeast-1.amazonaws.com/907170969801/judge-dev-judge-requests",
     "https://sqs.ap-northeast-1.amazonaws.com/907170969801/judge-dev-judge-results",

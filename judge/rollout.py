@@ -89,6 +89,40 @@ def delivery(config, enabled):
         aws(region, 'events', 'enable-rule', '--name', config['dispatch_rule'])
 
 
+def hold_time(seconds):
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() + seconds))
+
+
+def ensure_pool(config):
+    """Start every EC2 judge host, including stopped burst hosts, and keep it up for maintenance."""
+    if not config.get('pool'):
+        return
+    region = config['region']
+    reservations = aws(region, 'ec2', 'describe-instances', '--filters', 'Name=tag:JudgePool,Values=' + config['pool'],
+                       'Name=instance-state-name,Values=pending,running,stopping,stopped')['Reservations']
+    states = {i['InstanceId']: i['State']['Name'] for r in reservations for i in r['Instances']}
+    # A host left out of a rollout would later be started with a stale runtime.
+    if set(states) != set(config['nodes']):
+        raise ValueError('EC2 pool hosts differ from deployment targets')
+    nodes = sorted(states)
+    # Burst hosts power themselves off when idle past this hold, even mid-rollout.
+    aws(region, 'ec2', 'create-tags', '--resources', *nodes, '--tags', 'Key=JudgeMaintenanceHoldUntil,Value=' + hold_time(4 * 3600))
+    stopping = [node for node in nodes if states[node] == 'stopping']
+    if stopping:
+        run('aws', 'ec2', 'wait', 'instance-stopped', '--region', region, '--instance-ids', *stopping)
+    stopped = [node for node in nodes if states[node] in ('stopping', 'stopped')]
+    if stopped:
+        aws(region, 'ec2', 'start-instances', '--instance-ids', *stopped)
+    run('aws', 'ec2', 'wait', 'instance-running', '--region', region, '--instance-ids', *nodes)
+    for _ in range(60):
+        info = aws(region, 'ssm', 'describe-instance-information', '--filters',
+                   'Key=InstanceIds,Values=' + ','.join(nodes))['InstanceInformationList']
+        if len(info) == len(nodes) and all(i['PingStatus'] == 'Online' for i in info):
+            return
+        time.sleep(10)
+    raise ValueError('EC2 pool hosts did not come online in SSM')
+
+
 def checkpoint(directory, state, step, **values):
     state.pop('error', None)
     state.update(step=step, status='running')
@@ -159,6 +193,11 @@ def preflight(config):
     if not config['nodes'] or len(set(config['nodes'])) != len(config['nodes']) or len(set(config['queues'])) != 4 or any(
             not NODE_ID.fullmatch(node) for node in config['nodes']):
         raise ValueError('configure distinct hosts and request/result/dead queue URLs')
+    retired = config.get('retire_nodes', [])
+    if len(set(retired)) != len(retired) or set(retired) & set(config['nodes']) or any(not NODE_ID.fullmatch(node) for node in retired):
+        raise ValueError('retired hosts must be distinct SSM nodes outside the deployment targets')
+    if 'pool' in config and not re.fullmatch('[a-z0-9-]+', config['pool']):
+        raise ValueError('configure the EC2 pool tag value')
     bridge = aws(region, 'lambda', 'get-function-configuration', '--function-name', config['bridge'])
     mapping = aws(region, 'lambda', 'get-event-source-mapping', '--uuid', config['result_mapping'])
     targets = aws(region, 'events', 'list-targets-by-rule', '--rule', config['dispatch_rule'])['Targets']
@@ -177,7 +216,7 @@ def preflight(config):
     alarms = aws(region, 'cloudwatch', 'describe-alarms', '--alarm-names', *config['worker_alarms'])['MetricAlarms']
     if {a['AlarmName'] for a in alarms} != set(config['worker_alarms']):
         raise ValueError('a worker alarm is missing')
-    for node in config['nodes']:
+    for node in config['nodes'] + config.get('retire_nodes', []):
         info = aws(region, 'ssm', 'describe-instance-information', '--filters', 'Key=InstanceIds,Values=' + node)['InstanceInformationList']
         if len(info) != 1 or info[0]['PingStatus'] != 'Online':
             raise ValueError('SSM node is not online: ' + node)
@@ -245,8 +284,10 @@ def prepare(config, directory, state):
     checkpoint(directory, state, 'stop-workers')
     stop_dir = Path(state.get('stopDirectory', str(directory / 'stop')))
     if not stop_dir.exists():
-        receipt = new_run(stop_dir, config['region'], config['nodes'], 'install')
-        for node in config['nodes']:
+        # Retired hosts keep the old runtime; they must never receive a new-digest request.
+        targets = config['nodes'] + config.get('retire_nodes', [])
+        receipt = new_run(stop_dir, config['region'], targets, 'install')
+        for node in targets:
             submit(stop_dir, receipt, node, '''set -eu
 umask 077
 systemctl disable --now judge-worker.service
@@ -295,6 +336,17 @@ PY
         raise RuntimeError('workers are not ready')
 
 
+def retired_workers_stopped(config, directory):
+    if not config.get('retire_nodes'):
+        return
+    check_dir = directory / ('retired-' + str(time.time_ns()))
+    receipt = new_run(check_dir, config['region'], config['retire_nodes'], 'install')
+    for node in config['retire_nodes']:
+        submit(check_dir, receipt, node, '! systemctl is-active --quiet judge-worker && ! systemctl is-enabled --quiet judge-worker')
+    if collect(check_dir, receipt, wait=True) != 0:
+        raise RuntimeError('a retired worker is still enabled')
+
+
 def sync_settings(config, directory, digest, runtimes):
     for name, value in {'JUDGE_RUNTIME_DIGEST': digest, 'JUDGE_ENABLED_RUNTIMES': json.dumps(runtimes)}.items():
         run('gh', 'variable', 'set', name, '--repo', config['repository'], '--env', config['github_environment'], '--body', value)
@@ -326,6 +378,10 @@ def finish(config, directory, state, report_path):
     time.sleep(api['Timeout'] + 5)
     wait_empty(config)
     healthy_workers(config, directory, digest)
+    retired_workers_stopped(config, directory)
+    if config.get('pool'):
+        # The bridge starts a stopped host only when this matches its dispatch digest.
+        aws(config['region'], 'ec2', 'create-tags', '--resources', *config['nodes'], '--tags', 'Key=JudgeInstalledDigest,Value=' + digest)
     checkpoint(directory, state, 'sync-bridge', runtimeDigest=digest)
     update_env(config['region'], config['bridge'], dict(JUDGE_RUNTIME_DIGEST=digest, JUDGE_ENABLED_RUNTIMES=published))
     if database_status(config)['runtimeDigest'] != digest:
@@ -354,7 +410,15 @@ def finish(config, directory, state, report_path):
         plan = directory / (root.replace('/', '-') + '.tfplan')
         run('terraform', '-chdir=' + root, 'plan', '-input=false', '-refresh-only', '-out=' + str(plan))
         run('terraform', '-chdir=' + root, 'apply', '-input=false', str(plan))
-    checkpoint(directory, state, 'complete', maintenance=False, admissionPaused=False, status='passed', apiReport=str(api_report))
+    released = True
+    if config.get('pool'):
+        # Let idle burst hosts stop soon; otherwise the 4-hour maintenance hold keeps them running.
+        try:
+            aws(config['region'], 'ec2', 'create-tags', '--resources', *config['nodes'], '--tags', 'Key=JudgeMaintenanceHoldUntil,Value=' + hold_time(900))
+        except Exception:
+            released = False
+    checkpoint(directory, state, 'complete', maintenance=False, admissionPaused=False, status='passed', apiReport=str(api_report),
+               maintenanceHoldReleased=released)
 
 
 def main():
@@ -403,6 +467,7 @@ def main():
                 print('already complete for these artifact hashes')
                 return
             save(state_path, state)
+            ensure_pool(config)
             if args.action == 'prepare' or (args.action == 'run' and not state.get('prepared')):
                 prepare(config, directory, state)
             if args.action == 'run':
