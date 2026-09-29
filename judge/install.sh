@@ -46,6 +46,8 @@ else
   old_runtime_sha=''
 fi
 if [ "$old_runtime_sha" != "$runtime_archive_sha" ]; then
+  # Keep one previous tree: the disk holds the current tree, archive and staged tree during the swap.
+  rm -rf /opt/judge-runtimes.previous-*
   runtime_stage=$(mktemp -d /opt/judge-runtime.XXXXXX)
   tar -xzf runtime.tar.gz -C "$runtime_stage"
   test -d "$runtime_stage/judge-runtimes"
@@ -77,4 +79,6 @@ systemd-tmpfiles --create /etc/tmpfiles.d/judge.conf
 install -m 0644 judge-worker.service /etc/systemd/system/judge-worker.service
 systemctl daemon-reload
 /usr/bin/python3 /opt/judge/fingerprint.py
+# The release stays in S3; drop the local archive copy only after a complete installation.
+rm -f runtime.tar.gz
 printf 'Installed. Configure credentials/environment, run smoke, then enable the worker.\n'
