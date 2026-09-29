@@ -40,7 +40,7 @@ async function post() {
   message.value = ''
   try {
     const problem = accountProblemSchema.parse(await $fetch(`/api/my/problems/${selected.value}`))
-    if (!problem.draft.title.trim() || !problem.draft.markdown.trim()) { message.value = '投稿するには問題のタイトルと本文を入力してください。'; return }
+    if (!problem.draft.title.trim() || !problem.draft.markdown.trim() || problem.draft.difficulty == null) { message.value = '投稿するには問題のタイトル・本文・難易度を設定してください。'; return }
     if (problem.publishedVersion) { message.value = 'この問題はすでに公開されています。別の問題を選んでください。'; return }
     if (props.featured) {
       await $fetch(`/api/my/problems/${problem.id}/featured`, { method: 'PUT', body: { version: problem.version, preference: preference.value } })

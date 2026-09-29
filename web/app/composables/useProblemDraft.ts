@@ -133,6 +133,7 @@ export function useProblemDraft() {
     if (publishing.value || saving.value || generating.value) return
     publicationError.value = ''
     if (publish && (!draft.title.trim() || !draft.markdown.trim())) { publicationError.value = '公開するにはタイトルと本文を入力してください。'; return }
+    if (publish && draft.difficulty == null) { publicationError.value = '公開するには難易度を設定してください。'; return }
     if (publish && errors.value.checker) { publicationError.value = errors.value.checker; return }
     if (!await saveDraft(true)) return
     if (!window.confirm(publish ? '現在の内容を公開しますか？誰でも閲覧できるようになります。' : 'この問題を非公開に戻しますか？')) return

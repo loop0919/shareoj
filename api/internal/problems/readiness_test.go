@@ -36,9 +36,13 @@ func TestAssessListsEveryReason(t *testing.T) {
 			},
 		},
 		{
-			"featured needs difficulty, editorial and tests", with(func(d *Draft) { d.Difficulty, d.Editorial, d.TestCases = nil, " ", nil }),
+			"difficulty is required everywhere; 定期便 also needs editorial and tests", with(func(d *Draft) { d.Difficulty, d.Editorial, d.TestCases = nil, " ", nil }),
 			ProblemState{},
-			Readiness{Publish: []Issue{}, Contest: []Issue{IssueTestCases}, Featured: []Issue{IssueTestCases, IssueDifficulty, IssueEditorial}},
+			Readiness{
+				Publish:  []Issue{IssueDifficulty},
+				Contest:  []Issue{IssueDifficulty, IssueTestCases},
+				Featured: []Issue{IssueDifficulty, IssueTestCases, IssueEditorial},
+			},
 		},
 		{
 			"judge code in a disabled runtime without source", with(func(d *Draft) { d.Checker = &Generator{Runtime: "python314"} }),

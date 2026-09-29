@@ -66,7 +66,8 @@ func TestTesterInvitationsPostgres(t *testing.T) {
 	exec(`INSERT INTO user_profiles(owner_id,handle) VALUES ('alice','alice'),('bob','bob'),('tester','tester'),('carol','carol')`)
 	const a = "11111111-1111-4111-8111-111111111111"
 	const b = "22222222-2222-4222-8222-222222222222"
-	draft := problems.Draft{Title: "Secret A", Markdown: "secret statement", Editorial: "secret editorial", TimeLimitMS: "1000", MemoryLimitMB: "512", TestCases: []problems.TestCase{{Input: "1", Output: "2", IsSample: true}, {Input: "private input", Output: "private output"}}}
+	difficulty := 3
+	draft := problems.Draft{Difficulty: &difficulty, Title: "Secret A", Markdown: "secret statement", Editorial: "secret editorial", TimeLimitMS: "1000", MemoryLimitMB: "512", TestCases: []problems.TestCase{{Input: "1", Output: "2", IsSample: true}, {Input: "private input", Output: "private output"}}}
 	for _, id := range []string{a, b} {
 		if _, err = store.Save(ctx, "alice", id, 0, draft); err != nil {
 			t.Fatal(err)

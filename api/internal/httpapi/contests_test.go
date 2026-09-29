@@ -101,7 +101,8 @@ func TestContestsPostgres(t *testing.T) {
 	const b = "22222222-2222-4222-8222-222222222222"
 	const cid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 	const other = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
-	draft := problems.Draft{Title: "Secret A", Markdown: "secret statement", Editorial: "secret editorial", TimeLimitMS: "1000", MemoryLimitMB: "256", TestCases: []problems.TestCase{{Input: "1", Output: "2", IsSample: true}, {Input: "private input", Output: "private output"}}}
+	difficulty := 3
+	draft := problems.Draft{Difficulty: &difficulty, Title: "Secret A", Markdown: "secret statement", Editorial: "secret editorial", TimeLimitMS: "1000", MemoryLimitMB: "256", TestCases: []problems.TestCase{{Input: "1", Output: "2", IsSample: true}, {Input: "private input", Output: "private output"}}}
 	for _, id := range []string{a, b} {
 		if _, err = store.Save(ctx, "alice", id, 0, draft); err != nil {
 			t.Fatal(err)

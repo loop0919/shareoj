@@ -13,8 +13,9 @@ func TestContestProblemMemoryLimits(t *testing.T) {
 		"512": true, "513": false, "1024": false, "invalid": false,
 	} {
 		t.Run(memory, func(t *testing.T) {
+			difficulty := 1
 			draft := problems.Draft{
-				Title: "Welcome to ShareOJ!", Markdown: "Print a greeting.",
+				Difficulty: &difficulty, Title: "Welcome to ShareOJ!", Markdown: "Print a greeting.",
 				TimeLimitMS: "2000", MemoryLimitMB: memory,
 				TestCases: []problems.TestCase{{Output: "Hello"}},
 			}

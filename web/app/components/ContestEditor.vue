@@ -152,7 +152,7 @@ async function save() {
           <div class="management-content">
             <header><h2 id="contest-problems-title">問題・配点</h2><p class="muted">自分の未公開問題から選び、出題順と配点を設定します。</p></header>
             <fieldset :disabled="!ready || locked || busy" class="problem-columns">
-              <section aria-labelledby="available-problems-title"><h3 id="available-problems-title">問題を選択</h3><p class="muted">テストケースが必要です。他のコンテストに登録済みの問題は選べません。</p>
+              <section aria-labelledby="available-problems-title"><h3 id="available-problems-title">問題を選択</h3><p class="muted">難易度とテストケースが必要です。他のコンテストに登録済みの問題は選べません。</p>
                 <p v-if="ready && !available.length"><NuxtLink to="/problems/new?fresh=1" target="_blank" rel="noopener noreferrer">問題を作成・保存 ↗</NuxtLink>してから、この画面を再読み込みしてください。</p>
                 <div class="problem-picker"><label v-for="p in available" :key="p.id"><input type="checkbox" :checked="selected.some(item => item.id === p.id)" @change="choose(p, ($event.target as HTMLInputElement).checked)"><span>{{ p.title || '無題の問題' }}</span></label></div>
               </section>

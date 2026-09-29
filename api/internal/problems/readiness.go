@@ -57,6 +57,10 @@ func PublishIssues(d Draft, knownRuntimes, enabledRuntimes []string) []Issue {
 	if strings.TrimSpace(d.Markdown) == "" {
 		issues = append(issues, IssueStatement)
 	}
+	// Required since 2026-09-30; problems published earlier stay public until their next update.
+	if d.Difficulty == nil {
+		issues = append(issues, IssueDifficulty)
+	}
 	for _, judge := range []struct {
 		code             *Generator
 		source, language Issue
@@ -87,9 +91,6 @@ func ContestContentIssues(d Draft, knownRuntimes, enabledRuntimes []string) []Is
 // FeaturedContentIssues adds what 定期便 needs from the draft itself.
 func FeaturedContentIssues(d Draft, knownRuntimes, enabledRuntimes []string) []Issue {
 	issues := ContestContentIssues(d, knownRuntimes, enabledRuntimes)
-	if d.Difficulty == nil {
-		issues = append(issues, IssueDifficulty)
-	}
 	if strings.TrimSpace(d.Editorial) == "" {
 		issues = append(issues, IssueEditorial)
 	}

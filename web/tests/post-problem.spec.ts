@@ -3,6 +3,8 @@ import { expect, test } from './fixtures/account'
 test('posting selects only unpublished standalone problems across pages and handles failures', async ({ page }, testInfo) => {
   await page.goto('/problems/new')
   await page.locator('#problem-title').fill('投稿する下書き')
+  await page.getByRole('combobox', { name: '難易度（作成者設定）' }).click()
+  await page.getByRole('option', { name: 'Lv.2', exact: true }).click()
   await page.locator('#problem-source').fill('問題本文')
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page).toHaveURL(/problem=/)

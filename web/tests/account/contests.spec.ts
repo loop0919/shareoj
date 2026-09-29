@@ -11,7 +11,7 @@ async function login(page: Page, name = 'alice') {
 }
 async function seed(page: Page, title: string) {
   const id = randomUUID()
-  const response = await page.request.put(`/api/my/problems/${id}`, { headers: { origin }, data: { version: 0, draft: { title, markdown: '## コンテスト本文\n整数を出力してください。', editorial: '## コンテスト解説\n答えは2です。', timeLimitMs: '1500', memoryLimitMb: '256', testCases: [{ input: '1', output: '2', isSample: true }] } } })
+  const response = await page.request.put(`/api/my/problems/${id}`, { headers: { origin }, data: { version: 0, draft: { title, difficulty: 3, markdown: '## コンテスト本文\n整数を出力してください。', editorial: '## コンテスト解説\n答えは2です。', timeLimitMs: '1500', memoryLimitMb: '256', testCases: [{ input: '1', output: '2', isSample: true }] } } })
   expect(response.status()).toBe(200)
   return id
 }
