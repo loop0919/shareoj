@@ -10,6 +10,8 @@ test('test cases can be edited, restored, published and used for submission with
   page.on('dialog', dialog => dialog.accept())
   await page.goto('/problems/new')
   await page.getByLabel('問題のタイトル').fill('UIからのテスト登録')
+  await page.getByRole('combobox', { name: '難易度（作成者設定）' }).click()
+  await page.getByRole('option', { name: 'Lv.1', exact: true }).click()
   await page.getByRole('button', { name: 'テストケース', exact: true }).click()
   await expect(page.getByRole('heading', { name: /^テストケース/ })).toBeVisible()
   await page.getByRole('button', { name: 'テストケースを追加' }).click()
