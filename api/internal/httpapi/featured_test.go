@@ -286,12 +286,17 @@ func TestFeaturedFallbackAndFairnessPostgres(t *testing.T) {
 		t.Fatal("revival hid editorial")
 	}
 	// An outage past the reveal deadline records missing slots without consuming inventory.
+	// A regular slot from the last 23 hours is still inside its own deadline and may be filled late.
 	f.exec(`DELETE FROM featured_slots`)
-	f.exec(`UPDATE featured_schedule SET next_at=$1`, time.Now().Add(-24*time.Hour))
+	var late time.Time
+	if err := f.store.Pool().QueryRow(context.Background(), `UPDATE featured_schedule SET next_at=clock_timestamp()-interval '24 hours' RETURNING next_at`).Scan(&late); err != nil {
+		t.Fatal(err)
+	}
 	f.request("GET", "/featured", "", nil, 200)
-	var nonmissing int
-	if err := f.store.Pool().QueryRow(context.Background(), `SELECT count(*) FROM featured_slots WHERE kind<>'missing'`).Scan(&nonmissing); err != nil || nonmissing != 0 {
-		t.Fatal("late recovery consumed inventory", nonmissing, err)
+	var missing, consumed int
+	if err := f.store.Pool().QueryRow(context.Background(), `SELECT count(*) FILTER (WHERE scheduled_at=$1 AND kind='missing'),
+ count(*) FILTER (WHERE kind<>'missing' AND reveal_at<=clock_timestamp()) FROM featured_slots`, late).Scan(&missing, &consumed); err != nil || missing != 2 || consumed != 0 {
+		t.Fatal("late recovery consumed inventory", missing, consumed, err)
 	}
 }
 
