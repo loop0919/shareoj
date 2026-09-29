@@ -36,6 +36,8 @@ if __name__ == '__main__':
         '--endpoint-url', 'https://s3.dualstack.' + args.region + '.amazonaws.com', '--expires-in', '3600'], text=True).strip()
     command = '\n'.join([
         'set -eu', 'umask 077', 'systemctl stop judge-worker.service || true',
+        # Free the kept rollback tree first: download, archive and staged runtime peak at about 50 GB.
+        'rm -rf /opt/judge-runtimes.previous-*',
         'install -d -m 700 /opt/judge-release',
         'curl --fail --location --proto "=https" ' + shlex.quote(url) + ' -o /opt/judge-release/worker.tar.gz',
         "printf '%s\\n' '" + digest + "  /opt/judge-release/worker.tar.gz' | sha256sum -c -",

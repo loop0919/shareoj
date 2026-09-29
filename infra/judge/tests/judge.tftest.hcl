@@ -172,6 +172,14 @@ run "observability" {
     error_message = "A stopped burst host is expected to send no heartbeat."
   }
   assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.worker["judge-dev-judge-worker"].actions_enabled &&
+      !aws_cloudwatch_metric_alarm.worker["judge-dev-judge-primary"].actions_enabled &&
+      aws_cloudwatch_metric_alarm.judge["platform"].actions_enabled
+    )
+    error_message = "Pool heartbeats stay silent until the pool serves traffic, without muting existing alarms."
+  }
+  assert {
     condition     = aws_cloudwatch_metric_alarm.judge["judge-code"].metric_name != aws_cloudwatch_metric_alarm.judge["platform"].metric_name && aws_cloudwatch_metric_alarm.judge["judge-code"].treat_missing_data == "notBreaching"
     error_message = "Author errors must be separate from infrastructure errors; inactivity is healthy."
   }
@@ -186,6 +194,18 @@ run "observability" {
   assert {
     condition     = aws_lambda_function.notify.environment[0].variables.WEBHOOK_SECRET_KEY == "ALART_DISCORD_WEBHOOK" && length(aws_lambda_function.notify.vpc_config) == 0
     error_message = "Notifier reads the selected secret key and requires no NAT or judge host network."
+  }
+}
+run "pool_alerts" {
+  command = plan
+  variables {
+    alerts_enabled             = true
+    pool_alerts_enabled        = true
+    discord_webhook_secret_arn = "arn:aws:secretsmanager:ap-northeast-1:123456789012:secret:discord-test"
+  }
+  assert {
+    condition     = alltrue([for alarm in aws_cloudwatch_metric_alarm.worker : alarm.actions_enabled])
+    error_message = "After the cutover every host heartbeat notifies."
   }
 }
 run "reject_alerts_without_secret" {
@@ -211,7 +231,7 @@ run "pool_hosts" {
       host.metadata_options[0].http_tokens == "required" && host.metadata_options[0].http_put_response_hop_limit == 1 &&
       host.metadata_options[0].http_protocol_ipv6 == "enabled" && host.metadata_options[0].instance_metadata_tags == "enabled" &&
       !host.associate_public_ip_address && host.ipv6_address_count == 1 && host.instance_initiated_shutdown_behavior == "stop" &&
-      host.root_block_device[0].encrypted && host.root_block_device[0].volume_type == "gp3" && host.root_block_device[0].volume_size == 50
+      host.root_block_device[0].encrypted && host.root_block_device[0].volume_type == "gp3" && host.root_block_device[0].volume_size == 60
     )])
     error_message = "Hosts must be unthrottled, IPv6-only, IMDSv2-only, stop on shutdown and hold an upgrade on disk."
   }

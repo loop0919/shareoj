@@ -133,7 +133,7 @@ resource "aws_cloudwatch_metric_alarm" "worker" {
   period              = 60
   statistic           = "Maximum"
   treat_missing_data  = each.value
-  actions_enabled     = var.alerts_enabled
+  actions_enabled     = var.alerts_enabled && (var.pool_alerts_enabled || !contains(keys(local.pool_hosts), each.key))
   alarm_actions       = local.alarm_actions
   ok_actions          = local.alarm_actions
 }

@@ -39,20 +39,25 @@ variable "burst_worker_count" {
 variable "worker_availability_zones" {
   description = "Zones offering t3a.small; check with describe-instance-type-offerings. Hosts are spread in order."
   type        = list(string)
-  default     = ["ap-northeast-1a", "ap-northeast-1c"]
+  default     = ["ap-northeast-1a", "ap-northeast-1d"]
   validation {
     condition     = length(var.worker_availability_zones) >= 1 && length(var.worker_availability_zones) <= 3
     error_message = "Specify one to three availability zones."
   }
 }
 variable "worker_volume_size" {
-  description = "Root gp3 size in GB. An upgrade holds the current runtime, its archive and the staged runtime at once."
+  description = "Root gp3 size in GB. An upgrade holds the current runtime (about 20 GB), its archive and the staged runtime at once."
   type        = number
-  default     = 50
+  default     = 60
   validation {
     condition     = var.worker_volume_size >= 30 && var.worker_volume_size <= 200
     error_message = "worker_volume_size must be 30 to 200 GB."
   }
+}
+variable "pool_alerts_enabled" {
+  description = "Notify for EC2 host heartbeats. Keep false until the pool serves traffic; the primary alarms while its worker is not installed."
+  type        = bool
+  default     = false
 }
 variable "capacity_enabled" {
   description = "Let the bridge start EC2 hosts for contests. Enable after the pool serves traffic."

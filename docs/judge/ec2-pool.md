@@ -86,13 +86,16 @@ applyでbridgeの`JUDGE_ENABLED_RUNTIMES`を消さないためである。
 ### 1. 台を作る
 
 t3a.smallを使えるアベイラビリティゾーンを確認し、`worker_availability_zones`に指定する。
+2026年9月時点では`ap-northeast-1a`と`ap-northeast-1d`で使え、`ap-northeast-1c`では使えない。
 
 ```sh
 aws ec2 describe-instance-type-offerings --region ap-northeast-1 \
   --location-type availability-zone --filters Name=instance-type,Values=t3a.small
 ```
 
-`infra/judge/terraform.tfvars`に`enabled_runtimes`を設定し、`capacity_enabled = false`のままplanを確認する。
+`infra/judge/terraform.tfvars`に`enabled_runtimes`を設定し、`capacity_enabled = false`と`pool_alerts_enabled = false`のままplanを確認する。
+primaryのプロセス監視アラームは、ワーカーが動くまでALARMになる。
+`pool_alerts_enabled = false`の間は、EC2の台のアラームだけ通知しない。
 planでLightsailの台、キュー、bridgeが置換されないことと、作成されるのがEC2の台とその周辺、変更されるのがbridgeの権限と環境変数とアラームであることを確かめる。
 `infra/deploy-access`のDenyも、管理者の権限で適用する。
 
@@ -145,7 +148,10 @@ sudo bash install-observability.sh amazon-cloudwatch-agent.deb 記録したSHA25
 続いて、[定型コマンド](deployment-checks.md)の「配布の開始と回収」と「全ホストの実機検証」に従い、3台へ配布してsmokeを通す。
 この段階では`verify.py start`を実行しない。
 EC2の台はカーネルがLightsailと異なるため、新しいruntime digestになる。
-検証後、各台で`df -h /`と`du -sh /opt/judge-runtimes`を記録し、ランタイム更新時のピーク（現行ツリー、アーカイブ、展開中のツリー）が`worker_volume_size`に収まることを確かめる。
+検証後、各台で`df -h /`と`du -sh /opt/judge-runtimes`を記録する。
+2026年9月時点のランタイムは展開後に約20 GBある。
+更新時は、配布の前に退避ツリーを削除しても、現行ツリー、アーカイブ、展開中のツリーが同時に置かれて約50 GBになる。
+`worker_volume_size`の既定値60 GBは、この値を元にしている。
 
 代表的な提出をLightsailとEC2で繰り返し実行し、CPU時間の中央値とばらつきを比べる。
 この比較のための専用ツールはまだない。
@@ -178,7 +184,7 @@ python3 judge/rollout.py finish --config judge/.build/rollout.json --run-dir "$J
 
 ### 5. 台数制御を有効にする
 
-`capacity_enabled = true`にしてapplyする。
+`capacity_enabled = true`と`pool_alerts_enabled = true`にしてapplyする。
 試験のため、一時的に`burst_min_participants = 1`にし、運営者のアカウントで参加登録した試験コンテストを35分後に開始する設定で作る。
 開始30分前にbridgeのログに`capacity_start`が出てburstが起動すること、対象期間の後に10分で`idle_stop`が出て停止することを確かめる。
 確認後に`burst_min_participants`を10へ戻す。
@@ -214,7 +220,7 @@ burstは停止中に何も送らないのが正常なので、欠測を正常と
 
 ## 費用
 
-月額はAWSの公開料金（東京、2026年9月）で約27〜30 USDと見込む。
-primaryのSavings Plans約11.2 USD、ディスク（gp3で50〜60 GB × 3台）約14.4〜17.3 USD、burstの稼働（毎週4時間）約1.9 USDの合計である。
+月額はAWSの公開料金（東京、2026年9月）で約30 USDと見込む。
+primaryのSavings Plans約11.2 USD、ディスク（gp3で60 GB × 3台）約17.3 USD、burstの稼働（毎週4時間）約1.9 USDの合計である。
 停止中の台もディスク代はかかる。
 ディスクを増やす前に、手順3で記録したピーク時の使用量を確認する。
