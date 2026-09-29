@@ -64,12 +64,12 @@ onMounted(() => { void loadAccount() })
       <p v-if="!accountEntries.length && !accountMessage">{{ testing ? 'テスト中の問題はまだありません。テスターリンクから参加すると、ここに表示されます。' : '保存した問題はまだありません。' }}</p>
       <div v-if="accountEntries.length" class="content-table-scroll">
         <table class="content-table" :aria-label="heading">
-          <thead><tr><th scope="col">タイトル</th><th scope="col">公開状態</th><th scope="col">更新日時</th><th scope="col">操作</th></tr></thead>
+          <thead><tr><th scope="col">タイトル</th><th scope="col">状態</th><th scope="col">更新日時</th><th scope="col">操作</th></tr></thead>
           <tbody><tr v-for="entry in accountEntries" :key="entry.id">
             <th scope="row">{{ entry.title.trim() || '無題の問題' }}</th>
             <td>
               <span class="problem-state">
-                {{ entry.publishedVersion ? '公開済み' : entry.contestScheduled ? 'コンテスト予定' : entry.featuredPreference ? '定期便予定' : '未公開' }}
+                <ProblemStatus :problem="entry" />
                 <span v-if="!entry.publishedVersion && !entry.contestScheduled && entry.featuredPreference" class="featured-preference" tabindex="0" role="img" :aria-label="preferenceLabel(entry.featuredPreference)" :aria-describedby="`${tooltipId}-${entry.id}`">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <template v-if="entry.featuredPreference === 'soon'">
@@ -113,7 +113,7 @@ onMounted(() => { void loadAccount() })
 </template>
 
 <style scoped>
-.problem-state { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.problem-state { display: inline-flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; }
 .featured-preference { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; color: var(--color-muted); cursor: help; }
 .featured-preference:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 4px; }
 .preference-tooltip { display: none; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); padding: 4px 8px; border-radius: 4px; background: var(--color-ink); color: var(--color-paper); font-size: .75rem; font-weight: 400; z-index: 1; }

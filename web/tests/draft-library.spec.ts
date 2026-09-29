@@ -93,7 +93,7 @@ test('problem states and SVG delivery preferences appear in the library', async 
   await page.goto('/my?tab=problems')
   const table = page.getByRole('table', { name: '自分の問題', exact: true })
   const rows = table.locator('tbody tr')
-  for (const [index, state] of ['未公開', 'コンテスト予定', '定期便予定', '定期便予定', '公開済み', '未公開'].entries()) {
+  for (const [index, state] of ['準備中', '応募中（コンテスト）', '応募中（定期便）', '応募中（定期便）', '公開中', '準備中'].entries()) {
     await expect(rows.nth(index).locator('td').first()).toContainText(state)
   }
   for (const label of ['早めに出したい', 'ゆっくりで良い']) {
@@ -119,3 +119,36 @@ test('problem states and SVG delivery preferences appear in the library', async 
   await expect(testing.getByRole('img', { name: '早めに出したい' })).toBeVisible()
   await expect(testing.getByRole('button', { name: /定期便応募を取り下げる/ })).toHaveCount(0)
 })
+
+for (const width of [320, 1280]) {
+  test(`status shows five states and why a draft is not ready at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    const updatedAt = '2026-09-10T00:00:00Z'
+    const ready = { publish: [], contest: [], featured: [] }
+    await page.route('**/api/my/problems', route => route.fulfill({ json: { items: [
+      { id: '11111111-1111-4111-8111-111111111111', title: '準備完了', updatedAt, readiness: ready },
+      { id: '22222222-2222-4222-8222-222222222222', title: '書きかけ', updatedAt, readiness: { publish: [], contest: ['test_cases_missing'], featured: ['test_cases_missing', 'editorial_missing'] } },
+      { id: '33333333-3333-4333-8333-333333333333', title: '応募中', updatedAt, featuredPreference: 'soon', readiness: { publish: [], contest: [], featured: ['difficulty_missing'] } },
+      { id: '44444444-4444-4444-8444-444444444444', title: '公開した問題', publishedVersion: 1, updatedAt, readiness: { publish: [], contest: ['published'], featured: ['ever_published'] } },
+    ], nextCursor: '' } }))
+    await page.route('**/api/my/posts', route => route.fulfill({ json: { items: [], nextCursor: '' } }))
+    await page.route('**/api/my/submissions', route => route.fulfill({ json: { items: [] } }))
+    await page.goto('/my?tab=problems')
+    const row = (title: string) => page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: title, exact: true }) })
+    await expect(row('準備完了').locator('[data-kind="ready"]')).toContainText('準備中')
+    await expect(row('公開した問題').locator('[data-kind="published"]')).toContainText('公開中')
+    // Where a published problem already is, is not a missing item.
+    await expect(row('公開した問題').locator('summary')).toHaveCount(0)
+    const draft = row('書きかけ')
+    await expect(draft.getByText('テストケースが1件もありません')).toBeHidden()
+    await draft.locator('summary', { hasText: '準備中' }).click()
+    await expect(draft.getByRole('listitem')).toHaveText(['テストケースが1件もありません', '解説がありません'])
+    // An application that no longer qualifies is flagged instead of silently waiting.
+    const applied = row('応募中').locator('summary')
+    await expect(applied).toHaveText('応募中（定期便）')
+    await expect(applied).toHaveAttribute('aria-label', /このままでは選出されません/)
+    await applied.click()
+    await expect(row('応募中').getByText('難易度が設定されていません')).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  })
+}

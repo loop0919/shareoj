@@ -78,7 +78,7 @@ async function post() {
         <details v-if="featured" class="application-details">
           <summary>応募条件・出題のルール</summary>
           <ul>
-            <li>完成した未公開問題が対象です。難易度と解説を必ず設定してください。</li>
+            <li>完成した未公開問題が対象です。難易度と解説、1件以上のテストケースが必要です。</li>
             <li>応募は作者ごとに3件までです。</li>
             <li>公開したことのある問題、コンテストに登録した問題は応募できません。</li>
             <li>毎週月曜・木曜23時（日本時間）に、Easy（Lv.1〜4）とHard（Lv.5〜10）を一問ずつ出題します。</li>
