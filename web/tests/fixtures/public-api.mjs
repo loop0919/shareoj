@@ -7,18 +7,18 @@ const problem = {
 }
 const featuredProblem = { ...problem, id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', title: '定期便の新作', difficulty: 9, editorial: '', editorialHidden: true, editorialRevealAt: '2099-09-29T13:00:00Z' }
 const featured = {
-  nextAt: '2099-10-01T14:00:00Z', hasMore: false,
+  nextNumber: 13, nextAt: '2099-10-01T14:00:00Z', hasMore: false,
   current: null, waiting: { easy: 3, hard: 2 },
   nextSlots: [
     { slot: 'easy', kind: 'new', difficulty: 4, writer: 'alice', testers: ['bob'] },
     { slot: 'hard', kind: 'new', difficulty: 7, writer: 'carol', testers: ['alice', 'bob'] },
   ],
   items: [
-    { scheduledAt: '2099-09-28T14:00:00Z', slots: [
+    { number: 12, scheduledAt: '2099-09-28T14:00:00Z', slots: [
       { writer: 'alice', testers: ['bob'], slot: 'easy', kind: 'revival', problemId: problem.id, title: problem.title, difficulty: 2, revealAt: '2099-09-29T13:00:00Z', editorialHidden: false },
       { writer: 'bob', testers: ['carol'], slot: 'hard', kind: 'new', problemId: featuredProblem.id, title: featuredProblem.title, difficulty: 9, revealAt: featuredProblem.editorialRevealAt, editorialHidden: true },
     ] },
-    { scheduledAt: '2099-09-24T14:00:00Z', slots: [
+    { number: 11, scheduledAt: '2099-09-24T14:00:00Z', slots: [
       { writer: '', testers: [], slot: 'easy', kind: 'missing', problemId: '', title: '', difficulty: null, revealAt: '2099-09-25T13:00:00Z', editorialHidden: false },
       { writer: 'alice', testers: ['bob'], slot: 'hard', kind: 'revival', problemId: problem.id, title: problem.title, difficulty: 7, revealAt: '2099-09-25T13:00:00Z', editorialHidden: false },
     ] },

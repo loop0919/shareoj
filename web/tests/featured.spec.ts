@@ -18,6 +18,10 @@ test('featured editions show two slots, revivals, vacancies and the Ultimate lab
   await expect(notes.locator('ul')).toBeHidden()
   await expect(page.locator('.featured-page > p')).toHaveCount(0)
   await expect(page.locator('.round')).toHaveCount(2)
+  // The heading names the edition instead of a tagline.
+  await expect(page.getByRole('heading', { name: '定期便 vol.13', exact: true })).toBeVisible()
+  await expect(page.getByText('次の一問が、届く。')).toHaveCount(0)
+  await expect(page.locator('.round h3')).toContainText(['vol.12', 'vol.11'])
   await expect(page.locator('.round').first().locator('.slot')).toHaveCount(2)
   await expect(page.getByRole('heading', { name: 'Ultimate', exact: true })).toBeVisible()
   await expect(page.getByText('欠番', { exact: true })).toBeVisible()

@@ -492,3 +492,21 @@ func TestProblemReadinessPostgres(t *testing.T) {
 		t.Fatal("an application without test cases was selected", kind, err)
 	}
 }
+
+func TestFeaturedRoundNumbersPostgres(t *testing.T) {
+	f := newFeaturedTest(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	first, second := now.Add(-7*24*time.Hour), now.Add(-3*24*time.Hour)
+	f.exec(`INSERT INTO featured_slots(scheduled_at,slot,kind,difficulty,reveal_at) VALUES($1,'easy','new',1,$1),($1,'hard','new',6,$1),($2,'easy','new',2,$2)`, first, second)
+	var page struct {
+		NextNumber int
+		Items      []struct{ Number int }
+	}
+	if err := json.Unmarshal([]byte(f.request("GET", "/featured", "", nil, 200)), &page); err != nil {
+		t.Fatal(err)
+	}
+	// Rounds are numbered from the first, so the page can say 定期便 vol.N without a tagline.
+	if page.NextNumber != 3 || len(page.Items) != 2 || page.Items[0].Number != 2 || page.Items[1].Number != 1 {
+		t.Fatalf("round numbers %+v", page)
+	}
+}

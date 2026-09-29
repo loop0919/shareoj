@@ -35,6 +35,8 @@ type FeaturedSlot struct {
 }
 
 type FeaturedRound struct {
+	// Number counts recorded rounds from the first, including rounds with no problem, so vol.N follows the calendar.
+	Number      int            `json:"number"`
 	ScheduledAt time.Time      `json:"scheduledAt"`
 	Slots       []FeaturedSlot `json:"slots"`
 }
@@ -55,12 +57,13 @@ type FeaturedWaiting struct {
 }
 
 type FeaturedPage struct {
-	Items     []FeaturedRound   `json:"items"`
-	HasMore   bool              `json:"hasMore"`
-	NextAt    time.Time         `json:"nextAt"`
-	Waiting   FeaturedWaiting   `json:"waiting"`
-	NextSlots []FeaturedPreview `json:"nextSlots"`
-	Current   *FeaturedRound    `json:"current"`
+	NextNumber int               `json:"nextNumber"`
+	Items      []FeaturedRound   `json:"items"`
+	HasMore    bool              `json:"hasMore"`
+	NextAt     time.Time         `json:"nextAt"`
+	Waiting    FeaturedWaiting   `json:"waiting"`
+	NextSlots  []FeaturedPreview `json:"nextSlots"`
+	Current    *FeaturedRound    `json:"current"`
 }
 
 func featuredEligible(d Draft, known, enabled []string) bool {
@@ -322,7 +325,10 @@ func (s *Store) FeaturedList(ctx context.Context, offset int, known, enabled []s
 		}
 		page.NextSlots = append(page.NextSlots, preview)
 	}
-	rows, err := tx.Query(ctx, `SELECT f.scheduled_at,f.slot,f.kind,
+	if err = tx.QueryRow(ctx, `SELECT count(DISTINCT scheduled_at)+1 FROM featured_slots`).Scan(&page.NextNumber); err != nil {
+		return page, err
+	}
+	rows, err := tx.Query(ctx, `SELECT f.scheduled_at,(SELECT count(DISTINCT s.scheduled_at) FROM featured_slots s WHERE s.scheduled_at<=f.scheduled_at),f.slot,f.kind,
  CASE WHEN d.published_draft IS NOT NULL THEN d.id::text ELSE '' END,COALESCE(d.published_draft->>'title',''),f.difficulty,f.reveal_at,
  f.kind='new' AND $2<f.reveal_at, COALESCE(u.handle,''),
  ARRAY(SELECT u.handle FROM problem_testers t JOIN user_profiles u ON u.owner_id=t.owner_id WHERE t.problem_id=d.id AND d.published_draft IS NOT NULL ORDER BY u.handle)
@@ -336,13 +342,14 @@ func (s *Store) FeaturedList(ctx context.Context, offset int, known, enabled []s
 	}
 	for rows.Next() {
 		var at time.Time
+		var number int
 		var slot FeaturedSlot
-		if err = rows.Scan(&at, &slot.Slot, &slot.Kind, &slot.ProblemID, &slot.Title, &slot.Difficulty, &slot.RevealAt, &slot.EditorialHidden, &slot.Writer, &slot.Testers); err != nil {
+		if err = rows.Scan(&at, &number, &slot.Slot, &slot.Kind, &slot.ProblemID, &slot.Title, &slot.Difficulty, &slot.RevealAt, &slot.EditorialHidden, &slot.Writer, &slot.Testers); err != nil {
 			rows.Close()
 			return page, err
 		}
 		if len(page.Items) == 0 || !page.Items[len(page.Items)-1].ScheduledAt.Equal(at) {
-			page.Items = append(page.Items, FeaturedRound{ScheduledAt: at, Slots: []FeaturedSlot{}})
+			page.Items = append(page.Items, FeaturedRound{Number: number, ScheduledAt: at, Slots: []FeaturedSlot{}})
 		}
 		i := len(page.Items) - 1
 		page.Items[i].Slots = append(page.Items[i].Slots, slot)

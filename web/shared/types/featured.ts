@@ -8,6 +8,8 @@ const slotMetadata = z.object({
   testers: z.array(z.string()),
 })
 const roundSchema = z.object({
+  // Recorded rounds counted from the first: 定期便 vol.N.
+  number: z.number().int().nonnegative().default(0),
   scheduledAt: z.string().datetime({ offset: true }),
   slots: z.array(slotMetadata.extend({
     problemId: z.string(), title: z.string(),
@@ -15,6 +17,7 @@ const roundSchema = z.object({
   })),
 })
 export const featuredPageSchema = z.object({
+  nextNumber: z.number().int().positive().default(1),
   nextAt: z.string().datetime({ offset: true }),
   hasMore: z.boolean(),
   waiting: z.object({ easy: z.number().int().nonnegative(), hard: z.number().int().nonnegative() }),

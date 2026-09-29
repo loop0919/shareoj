@@ -18,7 +18,7 @@ usePolling(() => refresh(), 60000)
       <h2 id="history-title">{{ offset ? '過去の出題' : '最新・過去の出題' }}</h2>
       <p v-if="data && !data.items.length" class="muted">まだ出題されていません。次回の定期便をお待ちください。</p>
       <article v-for="round in data?.items" :key="round.scheduledAt" class="round">
-        <header class="round-heading"><h3><time :datetime="round.scheduledAt">{{ contestDate(round.scheduledAt) }}</time></h3><NuxtLink :to="{ path: '/featured/standings', query: { at: round.scheduledAt } }">順位表</NuxtLink></header>
+        <header class="round-heading"><h3><span v-if="round.number" class="round-volume">vol.{{ round.number }}</span><time :datetime="round.scheduledAt">{{ contestDate(round.scheduledAt) }}</time></h3><NuxtLink :to="{ path: '/featured/standings', query: { at: round.scheduledAt } }">順位表</NuxtLink></header>
         <div class="slots">
           <section v-for="slot in round.slots" :key="slot.slot" class="slot">
             <div class="slot-heading"><h4>{{ slot.slot === 'easy' ? 'Easy' : (slot.difficulty ?? 0) >= 9 ? 'Ultimate' : 'Hard' }}</h4><span>{{ slot.kind === 'new' ? '新作' : slot.kind === 'revival' ? '復刻' : '欠番' }}</span></div>
@@ -42,6 +42,7 @@ usePolling(() => refresh(), 60000)
 .round-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .round-heading a { font-size: .8125rem; min-height: 44px; display: inline-flex; align-items: center; }
 .round h3 { margin: 0; font-size: 1rem; font-variant-numeric: tabular-nums; }
+.round-volume { margin-right: 10px; }
 .slots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .slot { padding: 20px; border: 1px solid var(--color-line); border-radius: 4px; }
 .slot-heading { display: flex; align-items: baseline; gap: 12px; }

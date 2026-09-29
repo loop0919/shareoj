@@ -36,6 +36,9 @@ func (s *Store) FeaturedStandings(ctx context.Context, at time.Time, offset int)
 		return page, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if err = tx.QueryRow(ctx, `SELECT count(DISTINCT scheduled_at) FROM featured_slots WHERE scheduled_at<=$1`, at).Scan(&page.Round.Number); err != nil {
+		return page, err
+	}
 	rows, err := tx.Query(ctx, `SELECT f.slot,f.kind,
  CASE WHEN d.published_draft IS NOT NULL THEN d.id::text ELSE '' END,
  COALESCE(d.published_draft->>'title',''),f.difficulty,f.reveal_at,

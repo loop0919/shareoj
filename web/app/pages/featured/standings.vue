@@ -28,7 +28,7 @@ function elapsed(ms: number | null) {
     <p v-if="error" class="notice notice-error" role="alert">{{ error.statusCode === 404 ? 'この回の順位表は見つかりません。' : '順位表を取得できませんでした。' }}<button class="editor-button" :disabled="status === 'pending'" @click="refresh()">再試行</button></p>
     <p v-else-if="!data" role="status" class="muted">順位表を読み込んでいます…</p>
     <template v-if="data && !error">
-      <p class="standings-period"><time :datetime="data.round.scheduledAt">{{ contestDate(data.round.scheduledAt) }}</time> の定期便<span>{{ data.closed ? '集計期間終了' : '集計中' }}</span></p>
+      <p class="standings-period"><template v-if="data.round.number">定期便 vol.{{ data.round.number }} </template><time :datetime="data.round.scheduledAt">{{ contestDate(data.round.scheduledAt) }}</time><template v-if="!data.round.number"> の定期便</template><span>{{ data.closed ? '集計期間終了' : '集計中' }}</span></p>
       <p class="muted">集計締め切り：<time :datetime="data.closesAt">{{ contestDate(data.closesAt) }}</time>（日本時間）</p>
       <div class="content-table-scroll" role="region" aria-label="定期便の順位表" tabindex="0" :aria-busy="status === 'pending'">
         <table class="content-table featured-standings-table">

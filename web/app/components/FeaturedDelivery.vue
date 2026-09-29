@@ -6,6 +6,7 @@ const props = defineProps<{ page: FeaturedPage; home?: boolean }>()
 const slots = computed(() => props.page.current?.slots ?? props.page.nextSlots.map(slot => ({ ...slot, problemId: '', title: '', editorialHidden: false, revealAt: '' })))
 const standingsRound = computed(() => props.page.current ?? props.page.items[0])
 const date = computed(() => props.page.current?.scheduledAt ?? props.page.nextAt)
+const volume = computed(() => props.page.current?.number || props.page.nextNumber)
 </script>
 
 <template>
@@ -13,8 +14,7 @@ const date = computed(() => props.page.current?.scheduledAt ?? props.page.nextAt
     <header class="delivery-heading">
       <div>
         <p class="delivery-kicker">毎週 月・木 23:00 <span>日本時間</span></p>
-        <h2>次の一問が、届く。</h2>
-        <p class="delivery-caption">Easy と Hard を、一問ずつ。<span v-if="home">ShareOJ定期便</span></p>
+        <h2>定期便 vol.{{ volume }}</h2>
       </div>
       <div class="delivery-date">
         <span class="delivery-phase">{{ page.current ? '公開中の問題' : '次回予告' }}</span>
@@ -78,8 +78,6 @@ const date = computed(() => props.page.current?.scheduledAt ?? props.page.nextAt
 .delivery-kicker { margin: 0 0 10px; color: var(--color-accent); font-family: var(--font-code); font-size: .8125rem; letter-spacing: .04em; }
 .delivery-kicker span { margin-left: 8px; color: var(--color-muted); font-family: var(--font-body); font-size: .6875rem; }
 .delivery-heading h2 { margin: 0 0 10px; font-size: clamp(1.5rem, 3vw, 2rem); letter-spacing: -.04em; }
-.delivery-caption { margin: 0; color: var(--color-muted); font-size: .8125rem; }
-.delivery-caption span { margin-left: 8px; }
 .delivery-date { display: grid; justify-items: end; gap: 4px; font-size: .875rem; font-variant-numeric: tabular-nums; }
 .delivery-date > span:last-child { color: var(--color-muted); font-size: .75rem; }
 .delivery-phase { color: var(--color-accent); font-weight: 650; }
