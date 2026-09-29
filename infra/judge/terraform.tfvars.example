@@ -22,7 +22,7 @@ enabled_runtimes = ["cpp17"]
 
 # EC2 pool (ADR 0012). Lightsail hosts stay until worker_count = 0 after the cutover.
 burst_worker_count        = 2
-worker_availability_zones = ["ap-northeast-1a", "ap-northeast-1d"] # confirm t3a.small offerings first
+worker_availability_zones = ["ap-northeast-1a", "ap-northeast-1d"] # confirm t3.small offerings first
 worker_volume_size        = 60
 pool_alerts_enabled       = false # enable after the pool serves traffic
 capacity_enabled          = false # enable after the pool serves traffic

@@ -227,7 +227,7 @@ run "pool_hosts" {
   }
   assert {
     condition = alltrue([for host in aws_instance.pool : (
-      host.instance_type == "t3a.small" && host.credit_specification[0].cpu_credits == "unlimited" &&
+      host.instance_type == "t3.small" && host.credit_specification[0].cpu_credits == "unlimited" &&
       host.metadata_options[0].http_tokens == "required" && host.metadata_options[0].http_put_response_hop_limit == 1 &&
       host.metadata_options[0].http_protocol_ipv6 == "enabled" && host.metadata_options[0].instance_metadata_tags == "enabled" &&
       !host.associate_public_ip_address && host.ipv6_address_count == 1 && host.instance_initiated_shutdown_behavior == "stop" &&

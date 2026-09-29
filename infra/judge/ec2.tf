@@ -105,9 +105,11 @@ data "aws_ssm_parameter" "ubuntu" {
   name = "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
 }
 resource "aws_instance" "pool" {
-  for_each      = local.pool_hosts
-  ami           = data.aws_ssm_parameter.ubuntu.insecure_value
-  instance_type = "t3a.small"
+  for_each = local.pool_hosts
+  ami      = data.aws_ssm_parameter.ubuntu.insecure_value
+  # Same Xeon generation as the former Lightsail hosts; t3a.small compiled Go and Nim
+  # libraries past the 30-second limit (ADR 0012).
+  instance_type = "t3.small"
   subnet_id     = aws_subnet.pool[var.worker_availability_zones[each.value.index % length(var.worker_availability_zones)]].id
   # Every host must share one runtime digest, so hosts are installed together by rollout.py.
   vpc_security_group_ids               = [aws_security_group.pool.id]

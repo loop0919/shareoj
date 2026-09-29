@@ -37,7 +37,7 @@ variable "burst_worker_count" {
   }
 }
 variable "worker_availability_zones" {
-  description = "Zones offering t3a.small; check with describe-instance-type-offerings. Hosts are spread in order."
+  description = "Zones offering t3.small; check with describe-instance-type-offerings. Hosts are spread in order."
   type        = list(string)
   default     = ["ap-northeast-1a", "ap-northeast-1d"]
   validation {

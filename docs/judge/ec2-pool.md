@@ -8,7 +8,7 @@
 ## 台の役割とタグ
 
 EC2の台は`infra/judge/ec2.tf`で作る。
-どの台もt3a.small（unlimitedモード）で、1台が同時に採点するのは1件である。
+どの台もt3.small（Intel Xeon、unlimitedモード）で、1台が同時に採点するのは1件である。
 
 | 名前 | 役割 | 平常時 |
 | --- | --- | --- |
@@ -85,12 +85,13 @@ applyでbridgeの`JUDGE_ENABLED_RUNTIMES`を消さないためである。
 
 ### 1. 台を作る
 
-t3a.smallを使えるアベイラビリティゾーンを確認し、`worker_availability_zones`に指定する。
-2026年9月時点では`ap-northeast-1a`と`ap-northeast-1d`で使え、`ap-northeast-1c`では使えない。
+t3.smallを使えるアベイラビリティゾーンを確認し、`worker_availability_zones`に指定する。
+2026年9月時点では`ap-northeast-1a`、`ap-northeast-1c`、`ap-northeast-1d`で使える。
+既定値は、最初に検討したt3a.smallが使えた`ap-northeast-1a`と`ap-northeast-1d`である。
 
 ```sh
 aws ec2 describe-instance-type-offerings --region ap-northeast-1 \
-  --location-type availability-zone --filters Name=instance-type,Values=t3a.small
+  --location-type availability-zone --filters Name=instance-type,Values=t3.small
 ```
 
 `infra/judge/terraform.tfvars`に`enabled_runtimes`を設定し、`capacity_enabled = false`と`pool_alerts_enabled = false`のままplanを確認する。
@@ -131,10 +132,14 @@ aws ssm send-command --instance-ids "$JUDGE_PRIMARY" --document-name AWS-RunShel
 
 出力にインスタンスロール名（`judge-dev-judge-pool`）が含まれていれば、IPv6のIMDSに届いている。
 
+2026-09-29の構築では、3台とも作成から数分でSSMがOnlineになり、この確認に通った。
+IPv6専用のサブネットでも、IPv4のIMDS（169.254.169.254）とAmazon Time Sync（169.254.169.123）に届いた。
+SSMエージェントはec2messagesに接続できず、ログに`GetMessages`のエラーを残す。
+ec2messagesは2026年9月時点でIPv6のアドレスを公開していないためだ。
+Run CommandはMGS（ssmmessages）経由で届くので、配布と検証には影響しない。
+
 SSMがOnlineにならない場合や認証情報を取得できない場合は、デュアルスタックへの切り替えを検討する。
 サブネットにIPv4のCIDRとインターネットゲートウェイを追加し、台にパブリックIPv4を付ける変更で、起動中の台1台あたり月約3.7 USD増える。
-SSMエージェントのログにec2messagesへの接続失敗がないことも確かめる。
-ec2messagesのデュアルスタックの接続先は、2026年9月時点でIPv6のアドレスを公開していない。
 
 ### 3. 監視と配布物を導入し、実機で検証する
 
@@ -149,6 +154,7 @@ sudo bash install-observability.sh amazon-cloudwatch-agent.deb 記録したSHA25
 この段階では`verify.py start`を実行しない。
 EC2の台はカーネルがLightsailと異なるため、新しいruntime digestになる。
 検証後、各台で`df -h /`と`du -sh /opt/judge-runtimes`を記録する。
+2026-09-29の初回導入後は、60 GBのうち23 GB（40%）を使っていた。
 2026年9月時点のランタイムは展開後に約20 GBある。
 更新時は、配布の前に退避ツリーを削除しても、現行ツリー、アーカイブ、展開中のツリーが同時に置かれて約50 GBになる。
 `worker_volume_size`の既定値60 GBは、この値を元にしている。
@@ -195,7 +201,7 @@ python3 judge/rollout.py finish --config judge/.build/rollout.json --run-dir "$J
 
 - `worker_count = 0`をapplyし、Lightsailの台とそのアラームを削除する。
 - LightsailのworkerのIAMユーザーのアクセスキーを無効化してから削除し、`mi-`形式のSSM管理ノードの登録を解除する。
-- EC2 Instance Savings Plans（t3a、東京、1年、前払いなし、1時間あたり0.0154 USD）を購入する。unlimitedモードの追加料金は割引の対象外で、`CPUSurplusCreditsCharged`で確認できる。
+- EC2 Instance Savings Plans（t3、東京、1年、前払いなし、1時間あたり0.0171 USD）を購入する。unlimitedモードの追加料金は割引の対象外で、`CPUSurplusCreditsCharged`で確認できる。
 
 安定期間中にLightsailへ戻す場合は、台数制御を無効にし、`nodes`と`retire_nodes`を入れ替えて配布する。
 旧digestの配布物は、切り替え前にローカルへ保存しておく。
@@ -220,7 +226,7 @@ burstは停止中に何も送らないのが正常なので、欠測を正常と
 
 ## 費用
 
-月額はAWSの公開料金（東京、2026年9月）で約30 USDと見込む。
-primaryのSavings Plans約11.2 USD、ディスク（gp3で60 GB × 3台）約17.3 USD、burstの稼働（毎週4時間）約1.9 USDの合計である。
+月額はAWSの公開料金（東京、2026年9月）で約32 USDと見込む。
+primaryのSavings Plans約12.5 USD、ディスク（gp3で60 GB × 3台）約17.3 USD、burstの稼働（毎週4時間）約2.0 USDの合計である。
 停止中の台もディスク代はかかる。
 ディスクを増やす前に、手順3で記録したピーク時の使用量を確認する。
