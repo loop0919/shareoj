@@ -20,6 +20,7 @@ type bridge struct {
 	objects                   *s3.Client
 	queue                     *sqs.Client
 	bucket, queueURL, runtime string
+	capacity                  *capacity // nil until the EC2 pool is enabled
 }
 
 type envelope struct {
@@ -49,7 +50,9 @@ func (b bridge) deploymentStatus(ctx context.Context) (any, error) {
 
 func (b bridge) handle(ctx context.Context, raw json.RawMessage) (any, error) {
 	var event struct {
-		Operation string `json:"operation"`
+		Operation  string `json:"operation"`
+		Source     string `json:"source"`
+		DetailType string `json:"detail-type"`
 		events.SQSEvent
 	}
 	if err := json.Unmarshal(raw, &event); err != nil {
@@ -64,7 +67,12 @@ func (b bridge) handle(ctx context.Context, raw json.RawMessage) (any, error) {
 	if len(event.Records) > 0 {
 		return b.results(ctx, event.SQSEvent), nil
 	}
-	if err := b.dispatch(ctx); err != nil {
+	err := b.dispatch(ctx)
+	// Only the minute schedule sizes the pool; per-submission wake-ups never call EC2.
+	if b.capacity != nil && event.Source == "aws.events" && event.DetailType == "Scheduled Event" {
+		b.capacity.run(ctx, b.db, b.runtime)
+	}
+	if err != nil {
 		return nil, errors.New("dispatch failed; see operational logs")
 	}
 	return nil, nil
