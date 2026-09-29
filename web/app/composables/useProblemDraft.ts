@@ -1,4 +1,4 @@
-import { accountProblemSchema } from '~~/shared/types/account-problems'
+import { accountProblemSchema, type AccountProblem, type Readiness } from '~~/shared/types/account-problems'
 import { accountError } from '~/utils/account-problems'
 import { problemDraftSchema, emptyGenerators, inlineTestDataLimit, inlineTestSetLimit, type ProblemDraft } from '~~/shared/types/problem-draft'
 import { draftErrors, initialEditorialMarkdown, initialProblemMarkdown, persistedDraft, testCaseError, type TestCase } from '~/utils/problem-draft'
@@ -27,6 +27,17 @@ export function useProblemDraft() {
   const publishing = ref(false)
   const publishedVersion = ref(0)
   const contestId = ref('')
+  // Server readiness of the saved content; absent for testers and unsaved problems.
+  const readiness = ref<Readiness>()
+  const featuredPreference = ref('')
+  const contestScheduled = ref(false)
+  function applyServerState(problem: AccountProblem) {
+    publishedVersion.value = problem.publishedVersion
+    contestId.value = problem.contestId
+    readiness.value = problem.readiness
+    featuredPreference.value = problem.featuredPreference
+    contestScheduled.value = problem.contestScheduled
+  }
   const manualSaveOnly = computed(() => !!publishedVersion.value || !!contestId.value)
   const publicationError = ref('')
   let cloudOwner = ''
@@ -109,8 +120,7 @@ export function useProblemDraft() {
         if (result.id !== id) throw new Error('Mismatched problem')
         writeProblemCache(cloudOwner, result)
         cloudVersion.value = result.version
-        publishedVersion.value = result.publishedVersion
-        contestId.value = result.contestId
+        applyServerState(result)
         saved = snapshot
         allowAutosave = true
         storageError.value = ''
@@ -142,8 +152,7 @@ export function useProblemDraft() {
     try {
       const result = accountProblemSchema.parse(await $fetch(`/api/my/problems/${cloudId.value}/publication`, { method: 'PUT', body: { version: cloudVersion.value, publish } }))
       cloudVersion.value = result.version
-      publishedVersion.value = result.publishedVersion
-      contestId.value = result.contestId
+      applyServerState(result)
       writeProblemCache(cloudOwner, result)
       saveState.value = publish ? 'published' : 'unpublished'
     } catch (error) { publicationError.value = accountError(error) }
@@ -187,8 +196,7 @@ export function useProblemDraft() {
         Object.assign(draft, entry.draft)
         if (Number(draft.memoryLimitMb) > 512) draft.memoryLimitMb = '512'
         cloudVersion.value = entry.version
-        publishedVersion.value = entry.publishedVersion
-        contestId.value = entry.contestId
+        applyServerState(entry)
         saveState.value = 'saved'
       } catch (error) {
         removeProblemCache(cloudOwner, cloudId.value)
@@ -275,7 +283,7 @@ export function useProblemDraft() {
   }
 
   return {
-    user, draft, ready, cloudId, cloudVersion, saving, publishing, publishedVersion, contestId, manualSaveOnly,
+    user, draft, ready, cloudId, cloudVersion, saving, publishing, publishedVersion, contestId, readiness, featuredPreference, contestScheduled, manualSaveOnly,
     publicationError, saveLocation, saveState, status, storageError, leaveDialog, leaveError,
     manageDialog, generating, deleteError, errors, saveDraft, publishProblem, finishLeave,
     openDeleteConfirmation, closeDeleteConfirmation, removeProblem,

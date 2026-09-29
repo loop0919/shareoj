@@ -4,11 +4,12 @@ import { accountError } from '~/utils/account-problems'
 definePageMeta({ editorLayout: true })
 useSeoMeta({ title: '問題を作成 | ShareOJ', robots: 'noindex, nofollow' })
 const {
-  user, draft, ready, cloudId, cloudVersion, saving, publishing, publishedVersion, contestId, manualSaveOnly,
+  user, draft, ready, cloudId, cloudVersion, saving, publishing, publishedVersion, contestId, readiness, featuredPreference, contestScheduled, manualSaveOnly,
   publicationError, saveLocation, saveState, status, storageError, leaveDialog, leaveError,
   manageDialog, generating, deleteError, errors, saveDraft, publishProblem, finishLeave,
   openDeleteConfirmation, closeDeleteConfirmation, removeProblem,
 } = useProblemDraft()
+const statusInput = computed(() => ({ readiness: readiness.value, publishedVersion: publishedVersion.value, contestScheduled: contestScheduled.value, featuredPreference: featuredPreference.value }))
 const testerLink = ref('')
 const testerLinkBusy = ref(false)
 const testerLinkMessage = ref('')
@@ -187,6 +188,7 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
     <section v-if="managing" class="problem-management" aria-labelledby="management-title">
       <div class="management-content">
         <header><h1 id="management-title">問題管理</h1><p class="manage-problem-title">{{ draft.title.trim() || '無題の問題' }}</p><p class="muted">{{ saveLocation }}</p></header>
+        <section class="management-row readiness-row" aria-labelledby="readiness-title"><div><h2 id="readiness-title">状態</h2><ProblemReadiness :problem="statusInput" :saved="!!cloudId" @jump="section = $event" /></div></section>
         <section class="management-row"><div><h2>公開設定</h2><p>問題文・テストケース・判定方法は「公開内容を更新」を押すまで採点に反映されません。テストケースの入出力は公開ページには表示しません。</p><p v-if="publicationError" class="editor-error" role="alert">{{ publicationError }}</p><NuxtLink v-if="publishedVersion" :to="`/problems/${cloudId}`" target="_blank">公開ページを見る</NuxtLink></div><div class="publication-actions"><button v-if="publishedVersion" class="editor-button primary" :disabled="saving || publishing || generating" @click="publishProblem(true)">公開内容を更新</button><p v-else>未公開の問題は問題一覧の「投稿」から公開できます。</p><button v-if="publishedVersion" class="editor-button" :disabled="saving || publishing || generating" @click="publishProblem(false)">非公開に戻す</button></div></section>
         <section class="management-row"><div><h2>テスターリンク</h2><p>リンクを受け取ったユーザーが「許可する」を押すと、テスターになります。テスターは問題の編集・公開・削除を含め、作者と同じ操作ができます。</p><template v-if="testerLink"><label for="tester-link">招待リンク</label><input id="tester-link" :value="testerLink" readonly @focus="($event.target as HTMLInputElement).select()"><button type="button" class="editor-button" @click="copyTesterLink">リンクをコピー</button></template><p v-if="testerLinkMessage" role="status">{{ testerLinkMessage }}</p></div><button type="button" class="editor-button" :disabled="!ready || saving || publishing || generating || testerLinkBusy" @click="createTesterLink">{{ testerLinkBusy ? '発行中…' : 'リンクを発行' }}</button></section>
         <section class="management-row"><div><h2>リジャッジ</h2><p>テストケースや採点設定の変更後に、提出を再採点します。</p></div><button type="button" class="editor-button" disabled>リジャッジ（準備中）</button></section>
@@ -205,6 +207,7 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
 .problem-settings { --problem-setting-height: 43px; display: contents; }
 .problem-settings :deep(.difficulty-select > button), .problem-settings :deep(.limit-stepper) { min-height: var(--problem-setting-height); }
 .difficulty-heading { align-items: center; flex-wrap: nowrap; gap: 2px; }
+.readiness-row > div { flex: 1; min-width: 0; }
 .difficulty-heading .source-guide-link { width: 18px; height: 18px; flex-shrink: 0; }
 .problem-settings-toggle { display: none; }
 @media (pointer: coarse) {
