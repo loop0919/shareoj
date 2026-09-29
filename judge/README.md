@@ -9,6 +9,10 @@ C、C++、Python、RustとJavaを構築し、実機検証済みのランタイ�
 APIとDBは既存のAWS環境を使い、専用の管理ワーカーがSQSとS3を介して処理する。
 Terraformは[infra/judge](../infra/judge/)に置く。
 
+採点ホストは、EC2の常時稼働1台とコンテスト時に起動する増設の台へ移行する（[ADR 0012](../docs/adr/0012-run-judge-on-ec2-pool.md)）。
+EC2の台の構成、台数の制御、切り替え手順は[EC2の採点台の運用と切り替え](../docs/judge/ec2-pool.md)に従う。
+この文書のLightsailに関する手順は、切り替えが終わるまで有効である。
+
 ## 隔離と制限
 
 提出ごとのVMは作らず、isolateの名前空間、UID 60000、cgroup v2で隔離する。

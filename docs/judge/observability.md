@@ -48,7 +48,7 @@ fields @timestamp, service, event, category, reason, submissionId, attemptId, ph
 
 | 名前の末尾 | 条件 | 最初に確認する対象 |
 | --- | --- | --- |
-| `worker` | プロセス数0または欠測が3期間 | SSM接続、`systemctl status judge-worker amazon-cloudwatch-agent`、journal |
+| 台の名前（`judge-dev-judge-primary`など） | プロセス数0が3期間。常時稼働の台では欠測も含む | SSM接続、`systemctl status judge-worker amazon-cloudwatch-agent`、journal |
 | `pending` | 未完了提出の最長経過時間が300秒超 | 未送信提出、要求キュー、実行中提出、結果キュー |
 | `dispatch-missing` | DB観測の欠測が3期間 | 定期EventBridge、bridgeのErrors/Throttles、DB接続 |
 | `platform` | 基盤または未分類のエラーが5分間に1件以上 | `category`と`reason`、該当提出のログ |
@@ -93,7 +93,9 @@ Secretの値はTerraformで管理せず、AWSコンソールで保存する。
 sudo bash install-observability.sh amazon-cloudwatch-agent.deb 記録したSHA256 agent.json
 ```
 
-Agentはon-premiseモードで既存worker用credentialsを使い、CloudWatchのdual-stackエンドポイントへ接続する。
+LightsailのAgentはon-premiseモードで既存worker用credentialsを使い、CloudWatchのdual-stackエンドポイントへ接続する。
+EC2の台では4番目の引数に`ec2`を渡し、インスタンスロールの認証情報を使う。
+EC2の台の増設が停止中に鳴らない理由と、台数制御の障害の分類は[EC2の採点台の運用と切り替え](ec2-pool.md)に記載する。
 インストーラーは設定原本を`/etc/judge/cloudwatch-agent.json`へ保存し、初期化時のリージョンも明示する。
 メモリのメトリクスは元からディメンションがないため、`drop_original_metrics`を設定しない。
 メトリクス送信権限は専用namespace、ログ送信権限は専用ロググループに制限する。

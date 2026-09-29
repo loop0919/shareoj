@@ -10,12 +10,13 @@ Browser -> Frontend HTTP API -> Nuxt Lambda -> API HTTP API -> Go Lambda
 | --- | --- | --- |
 | `bootstrap/` | Terraform state用S3バケット | 初回はローカル、作成後にS3へ移行 |
 | `api/` | パッケージ用S3、Lambda、HTTP API、Cognito、RDS、VPC、IAM、ログ | S3の`judge/dev/api.tfstate` |
-| `judge/` | 採点用Lightsail 2 GB、S3、SQS、配送Lambda | S3の`judge/dev/judge.tfstate` |
+| `judge/` | 採点用EC2（常時1台と増設の台）と専用VPC、移行中のLightsail 2 GB、S3、SQS、配送Lambda | S3の`judge/dev/judge.tfstate` |
 | `frontend/` | Nuxt Lambda、HTTP API、パッケージ用S3、IAM、ログ | S3の`judge/dev/frontend.tfstate` |
 | `domain/` | 購入済みRoute 53ゾーン、ACM証明書、独自ドメインとAPIマッピング | S3の`judge/dev/domain.tfstate` |
 | `deploy-access/` | 既存GitHubデプロイロールの信頼関係・操作権限 | S3の`judge/dev/deploy-access.tfstate` |
 
-採点用のLightsail、SQS、配送用S3、配送と結果反映用Lambdaは`judge/`で管理する。
+採点用のEC2とLightsail、SQS、配送用S3、配送と結果反映用Lambdaは`judge/`で管理する。
+EC2の台の構成と切り替えは[EC2の採点台の運用と切り替え](../docs/judge/ec2-pool.md)に記載する。
 配送と結果反映を行うbridge Lambdaは予約同時実行5とし、コンテスト時の一斉提出でDB接続が急増しないようにする。
 [ジャッジ構築手順](../judge/README.md)に従って手動で構築し、IPv6通信と2 GB実機でのisolateの制限と計測を確認してから提出受付を有効にする。
 本番テストセットの取り込みとバンドル展開は未実装である。

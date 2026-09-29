@@ -1,6 +1,6 @@
 # ADR 0006: Lightsailの2 GBインスタンスでisolateを使う
 
-- 状態：Accepted
+- 状態：Superseded by [ADR 0012](0012-run-judge-on-ec2-pool.md)（採点ホスト基盤。isolateによる隔離と計測の決定は引き継ぐ）
 - 決定日：2026-09-11
 - 置き換え対象：[ADR 0005](0005-use-firecracker-and-isolate-on-ec2.md)
 
