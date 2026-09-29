@@ -36,7 +36,7 @@ install -d -m 755 /opt/judge/sandbox-etc /var/local/lib/isolate
 printf 'root:x:0:0:root:/:/usr/sbin/nologin\nisolate:x:60000:60000::/box:/usr/sbin/nologin\nisolate1:x:60001:60001::/box:/usr/sbin/nologin\n' > /opt/judge/sandbox-etc/passwd
 printf 'root:x:0:\nisolate:x:60000:\nisolate1:x:60001:\n' > /opt/judge/sandbox-etc/group
 chmod 644 /opt/judge/sandbox-etc/*
-install -m 0644 host.py sandbox.py interactive.py interactive_smoke.py testlib_smoke.py worker.py telemetry.py smoke.py fingerprint.py runtimes.py language-smoke.json /opt/judge/
+install -m 0644 host.py sandbox.py interactive.py interactive_smoke.py testlib_smoke.py worker.py telemetry.py pool.py smoke.py fingerprint.py runtimes.py language-smoke.json /opt/judge/
 test -f runtime.tar.gz
 runtime_archive_sha=$(sha256sum runtime.tar.gz | cut -d ' ' -f1)
 if [ -e /opt/judge-runtimes ]; then

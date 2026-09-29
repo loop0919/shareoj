@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""SQS/S3 transport; runs as a single systemd-managed slot on the Lightsail host."""
+"""SQS/S3 transport; runs as a single systemd-managed slot on each judge host."""
 import base64
 import uuid
 import hashlib
@@ -10,6 +10,7 @@ import signal
 import time
 
 from host import judge, prepare_cgroup, verify_assets, pointer, slot
+import pool
 
 
 def read_test_file(s3, bucket, item):
@@ -148,6 +149,7 @@ def main():
     results = os.environ['JUDGE_RESULT_QUEUE_URL']
     bucket = os.environ['JUDGE_JOB_BUCKET']
     test_bucket = os.environ.get('JUDGE_TEST_DATA_BUCKET', '')
+    idle_stop = pool.IdleStop.from_environment()
     telemetry.emit('worker_started')
     while True:
         try:
@@ -157,12 +159,18 @@ def main():
                     raise ValueError('runtime changed')
             except Exception:
                 raise telemetry.FatalPlatformError('runtime_verification_failed') from None
+            # Checked only between jobs, so a stopping host never holds a request.
+            if idle_stop and idle_stop.due():
+                idle_stop.stop()
+                return
             with telemetry.operation('queue_receive_failed'):
                 messages = sqs.receive_message(QueueUrl=requests, MaxNumberOfMessages=1, WaitTimeSeconds=20,
                                                VisibilityTimeout=2100).get('Messages', [])
             for message in messages:
                 process_message(message, sqs, s3, progress_client, runtime, cgroup,
                                 bucket, test_bucket, requests, results)
+            if messages and idle_stop:
+                idle_stop.touch()
         except Exception as error:
             telemetry.failure(error)
             time.sleep(5)
