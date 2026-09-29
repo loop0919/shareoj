@@ -13,7 +13,7 @@ type JudgePolicy struct {
 }
 
 func (p JudgePolicy) validProblem(d problems.Draft) bool {
-	return problems.Publishable(d, p.KnownRuntimes, p.EnabledRuntimes) && len(d.TestCases) > 0
+	return len(problems.ContestContentIssues(d, p.KnownRuntimes, p.EnabledRuntimes)) == 0
 }
 
 func ValidInput(in Input) bool {

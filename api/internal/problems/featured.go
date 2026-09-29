@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -65,7 +64,7 @@ type FeaturedPage struct {
 }
 
 func featuredEligible(d Draft, known, enabled []string) bool {
-	return d.Difficulty != nil && strings.TrimSpace(d.Editorial) != "" && Publishable(d, known, enabled)
+	return len(FeaturedContentIssues(d, known, enabled)) == 0
 }
 
 // NextFeatured returns the first Monday/Thursday 23:00 JST strictly after now.
@@ -123,7 +122,7 @@ func (s *Store) ApplyFeatured(ctx context.Context, owner, id string, version int
 		if err = tx.QueryRow(ctx, `SELECT count(*) FROM featured_applications a JOIN problem_drafts d ON d.id=a.problem_id WHERE d.owner_id=$1 AND d.id<>$2`, owner, id).Scan(&count); err != nil {
 			return err
 		}
-		if count >= 3 {
+		if count >= featuredApplicationsPerAuthor {
 			return ErrFeaturedLimit
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO featured_applications(problem_id,preference) VALUES($1,$2) ON CONFLICT(problem_id) DO UPDATE SET preference=excluded.preference`, id, preference)

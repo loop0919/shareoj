@@ -83,13 +83,5 @@ func ValidDraft(d Draft, knownRuntimes []string) bool {
 
 // Publishable adds publication requirements to the rules for a saved draft.
 func Publishable(d Draft, knownRuntimes, enabledRuntimes []string) bool {
-	if !ValidDraft(d, knownRuntimes) || strings.TrimSpace(d.Title) == "" || strings.TrimSpace(d.Markdown) == "" {
-		return false
-	}
-	for _, code := range []*Generator{d.Checker, d.Interactor} {
-		if code != nil && (!slices.Contains(enabledRuntimes, code.Runtime) || strings.TrimSpace(code.Source) == "") {
-			return false
-		}
-	}
-	return true
+	return len(PublishIssues(d, knownRuntimes, enabledRuntimes)) == 0
 }
