@@ -25,4 +25,4 @@ createServer((req, res) => {
     res.writeHead(503)
     res.end(JSON.stringify({ error: 'private-upstream-diagnostic' }))
   }
-}).listen(18081, '127.0.0.1')
+}).listen(18081, '127.0.0.1', () => console.log('failing API ready'))

@@ -108,4 +108,4 @@ createServer(async (req, res) => {
   else if (/^\/contests\/(88888888-8888-4888-8888-888888888888|99999999-9999-4999-8999-999999999999)\/standings$/.test(path)) res.end('[]')
   else if (path === `/contests/88888888-8888-4888-8888-888888888888/problems/${problem.id}` || path === `/contests/99999999-9999-4999-8999-999999999999/problems/${problem.id}`) res.end(JSON.stringify(problem))
   else res.writeHead(404).end('{}')
-}).listen(18080, '127.0.0.1')
+}).listen(18080, '127.0.0.1', () => console.log('fixture API ready'))
