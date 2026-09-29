@@ -64,7 +64,7 @@ class TelemetryTests(unittest.TestCase):
             with self.assertRaisesRegex(telemetry.PlatformError, 'isolate_init_failed'):
                 sandbox.execute({'runtime': 'cpp17-isolate', 'source': 'test'}, True)
 
-    def process(self, judge_result=None, judge_error=None, s3_error=None):
+    def process(self, judge_result=None, judge_error=None, s3_error=None, progress=None):
         data = json.dumps(dict(submissionId='id', attemptId='attempt')).encode()
         item = dict(submissionId='id', attemptId='attempt', key='key', versionId='v', sha256=hashlib.sha256(data).hexdigest())
         s3, sqs = Mock(), Mock()
@@ -74,8 +74,35 @@ class TelemetryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch.object(worker, 'pointer', return_value=item), \
                 patch.object(worker, 'judge', return_value=judge_result or dict(verdict='AC'), side_effect=judge_error), \
                 patch.object(worker.time, 'sleep'):
-            worker.process_message({'Body': 'secret source', 'ReceiptHandle': 'receipt'}, sqs, s3, Mock(), 'runtime', Path(tmp), 'bucket', 'tests', 'requests', 'results')
+            worker.process_message({'Body': 'secret source', 'ReceiptHandle': 'receipt'}, sqs, s3, progress or Mock(), 'runtime', Path(tmp), 'bucket', 'tests', 'requests', 'results')
         return sqs
+
+    def test_stop_during_judging_releases_the_request(self):
+        progress = Mock()
+        with self.assertRaises(SystemExit):
+            self.process(judge_error=SystemExit(0), progress=progress)
+        progress.change_message_visibility.assert_called_once_with(QueueUrl='requests', ReceiptHandle='receipt', VisibilityTimeout=0)
+        self.assertFalse(any(e['event'] == 'failure' for e in self.events()))
+
+    def test_stop_after_result_keeps_the_request_hidden(self):
+        progress = Mock()
+        with patch.object(worker.telemetry, 'emit', side_effect=lambda event, **fields: event == 'result_sent' and sys.exit(0)):
+            with self.assertRaises(SystemExit):
+                self.process(progress=progress)
+        progress.change_message_visibility.assert_not_called()
+
+    def test_failed_release_is_reported(self):
+        progress = Mock()
+        progress.change_message_visibility.side_effect = RuntimeError('network')
+        with self.assertRaises(SystemExit):
+            self.process(judge_error=SystemExit(0), progress=progress)
+        self.assertEqual(self.events()[-1]['reason'], 'request_release_failed')
+
+    def test_fatal_error_is_not_released(self):
+        progress = Mock()
+        with self.assertRaises(telemetry.FatalPlatformError):
+            self.process(judge_error=telemetry.FatalPlatformError('isolate_cleanup_failed'), progress=progress)
+        progress.change_message_visibility.assert_not_called()
 
     def test_transport_and_unknown_failures_do_not_leak_payloads(self):
         self.process(s3_error=RuntimeError('secret credential'))

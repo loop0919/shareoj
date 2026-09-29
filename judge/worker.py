@@ -63,10 +63,19 @@ def progress_reporter(client, queue, item):
     return report
 
 
+def release_message(client, queue, message):
+    # A stopped worker returns its job now instead of after the 35-minute visibility timeout.
+    try:
+        client.change_message_visibility(QueueUrl=queue, ReceiptHandle=message['ReceiptHandle'], VisibilityTimeout=0)
+    except Exception:
+        telemetry.emit('failure', category='platform', reason='request_release_failed')
+
+
 def process_message(message, sqs, s3, progress_client, runtime, cgroup, bucket, test_bucket, requests, results):
     with telemetry.operation('invalid_queue_envelope'):
         item = pointer(message['Body'])
     with telemetry.submission(item):
+        settled = False
         try:
             telemetry.emit('job_received', phase='PREPARING')
             with telemetry.operation('job_fetch_failed'):
@@ -101,6 +110,7 @@ def process_message(message, sqs, s3, progress_client, runtime, cgroup, bucket, 
             payload = {'submissionId': item['submissionId'], 'attemptId': item['attemptId'], 'result': result}
             with telemetry.operation('result_send_failed'):
                 sqs.send_message(QueueUrl=results, MessageBody=json.dumps(payload, allow_nan=False, ensure_ascii=False))
+            settled = True
             telemetry.emit('result_sent', phase='DELIVERY', verdict=result['verdict'])
             with telemetry.operation('request_delete_failed'):
                 sqs.delete_message(QueueUrl=requests, ReceiptHandle=message['ReceiptHandle'])
@@ -112,6 +122,11 @@ def process_message(message, sqs, s3, progress_client, runtime, cgroup, bucket, 
                 raise
             # Retry the queue message, without losing its correlation IDs in the log.
             time.sleep(5)
+        except SystemExit:
+            # SIGTERM; a result already sent is final, so redelivery would only repeat it.
+            if not settled:
+                release_message(progress_client, requests, message)
+            raise
 
 
 def main():
