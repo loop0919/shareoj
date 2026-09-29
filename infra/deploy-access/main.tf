@@ -207,6 +207,14 @@ resource "aws_iam_role_policy" "deploy" {
         Action    = ["iam:CreateServiceLinkedRole"]
         Resource  = "${local.arn}:iam::${local.account}:role/aws-service-role/rds.amazonaws.com/AWSServiceRoleForRDS"
         Condition = { StringEquals = { "iam:AWSServiceName" = "rds.amazonaws.com" } }
+      },
+      {
+        # Judge hosts (infra/judge) carry the application tags above; only operators may change them.
+        Sid       = "ProtectJudgePool"
+        Effect    = "Deny"
+        NotAction = ["ec2:Describe*", "ec2:Get*"]
+        Resource  = "*"
+        Condition = { StringEquals = { "ec2:ResourceTag/Component" = "judge-worker" } }
       }
     ]
   })

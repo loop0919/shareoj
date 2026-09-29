@@ -82,7 +82,7 @@ run "deployment_boundary" {
         "arn:aws:rds:ap-northeast-1:123456789012:subgrp:judge-dev",
         "arn:aws:rds:ap-northeast-1:123456789012:snapshot:judge-dev-postgres-*"
       ])
-    ) if contains(statement.Action, "rds:ModifyDBInstance") || contains(statement.Action, "rds:DeleteDBInstance")])
+    ) if contains(try(statement.Action, []), "rds:ModifyDBInstance") || contains(try(statement.Action, []), "rds:DeleteDBInstance")])
     error_message = "Database write permissions must remain limited to application resources."
   }
   assert {
@@ -94,6 +94,14 @@ run "deployment_boundary" {
     error_message = "Creation must authorize the parent VPC by existing resource tags, separately from new resource request tags."
   }
   assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_role_policy.deploy.policy).Statement : (
+      statement.Effect == "Deny" && statement.Resource == "*" &&
+      toset(statement.NotAction) == toset(["ec2:Describe*", "ec2:Get*"]) &&
+      tomap(statement.Condition.StringEquals) == tomap({ "ec2:ResourceTag/Component" = "judge-worker" })
+    ) if try(statement.Sid, "") == "ProtectJudgePool"])
+    error_message = "The deploy role must not change judge hosts, their network or their hold tags."
+  }
+  assert {
     condition     = length(aws_iam_role_policy.deploy.policy) <= 10240
     error_message = "Deployment permissions must fit the IAM role inline policy size limit."
   }
@@ -102,7 +110,7 @@ run "deployment_boundary" {
     error_message = "Trust must match the exact immutable repository and environment subject."
   }
   assert {
-    condition     = alltrue([for statement in jsondecode(aws_iam_role_policy.deploy.policy).Statement : !contains(statement.Action, "iam:*")]) && !contains(local.execution_roles, "arn:aws:iam::123456789012:role/judge-dev-github-deploy")
+    condition     = alltrue([for statement in jsondecode(aws_iam_role_policy.deploy.policy).Statement : !contains(try(statement.Action, []), "iam:*")]) && !contains(local.execution_roles, "arn:aws:iam::123456789012:role/judge-dev-github-deploy")
     error_message = "The deployment role must not grant itself IAM permissions."
   }
 }
