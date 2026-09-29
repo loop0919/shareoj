@@ -107,9 +107,9 @@ PY
             pair = {e['event']: datetime.fromisoformat(e['timestamp']) for e in events if e['submissionId'] == submission}
             if 'judge_started' in pair and 'judge_finished' in pair:
                 intervals.append((node, pair['judge_started'], pair['judge_finished']))
-    if not all(events_by_node.values()) or not any(
-            a[0] != b[0] and max(a[1], b[1]) < min(a[2], b[2]) for a in intervals for b in intervals):
-        raise ValueError('concurrent judging was not observed on both workers')
+    # With more hosts than overlapping submissions, some hosts may legitimately receive none.
+    if not any(a[0] != b[0] and max(a[1], b[1]) < min(a[2], b[2]) for a in intervals for b in intervals):
+        raise ValueError('concurrent judging was not observed on two workers')
     return events_by_node
 
 
@@ -120,14 +120,14 @@ def main():
     parser.add_argument('--region', default='ap-northeast-1')
     parser.add_argument('--runtime', default='python314', help='Published CPython/PyPy runtime used for the API fixture')
     parser.add_argument('--report', type=Path, required=True)
-    parser.add_argument('--instance', action='append', default=[], help='Specify both hosts to require concurrent judging')
+    parser.add_argument('--instance', action='append', default=[], help='Specify every running host to require concurrent judging')
     parser.add_argument('--cleanup', action='store_true')
     args = parser.parse_args()
     args.api_url = args.api_url.rstrip('/')
     if not args.api_url.startswith('https://'):
         parser.error('use an HTTPS API URL')
-    if args.instance and (len(set(args.instance)) != 2 or len(args.instance) != 2):
-        parser.error('parallel verification requires exactly two distinct hosts')
+    if args.instance and (len(set(args.instance)) < 2 or len(set(args.instance)) != len(args.instance)):
+        parser.error('parallel verification requires at least two distinct hosts')
     pool = aws(args.region, 'lambda', 'get-function-configuration', '--function-name', args.function)['Environment']['Variables']['COGNITO_USER_POOL_ID']
     cleanup_path = args.report.with_suffix('.cleanup.json')
     if args.cleanup:

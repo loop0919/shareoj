@@ -68,6 +68,14 @@ class VerificationTests(unittest.TestCase):
                 verify.collect(Path(name), self.receipt)
             self.assertEqual(json.loads(Path(name, 'status.json').read_text())['status'], 'failed')
 
+    def test_new_run_accepts_ec2_and_hybrid_nodes(self):
+        with tempfile.TemporaryDirectory() as name, patch.object(verify, 'aws', return_value={'Account': '1'}):
+            nodes = ['i-0123456789abcdef0', 'i-0123abcd', 'mi-0a1b']
+            self.assertEqual(verify.new_run(Path(name) / 'ok', 'test', nodes, 'smoke')['instances'], nodes)
+            for invalid in ([], ['i-0a1b2c3d', 'i-0a1b2c3d'], ['i-XYZ12345'], ['i-0a1b'], ['vol-0123456789abcdef0']):
+                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                    verify.new_run(Path(name) / 'bad', 'test', invalid, 'smoke')
+
     def test_submission_receipt_is_saved_before_collection(self):
         with tempfile.TemporaryDirectory() as name, patch.object(verify, 'aws', return_value={'Command': {'CommandId': 'id'}}):
             receipt = {**self.receipt, 'commands': {}}

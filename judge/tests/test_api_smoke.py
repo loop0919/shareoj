@@ -93,3 +93,19 @@ class APISmokeTests(unittest.TestCase):
                 else:
                     with self.assertRaises(ValueError):
                         smoke.parallel_check(args, args.instance)
+
+    def test_idle_extra_host_does_not_fail_parallel_evidence(self):
+        args = SimpleNamespace(region='test', instance=['mi-a', 'mi-b', 'mi-c'])
+        def fake_aws(region, service, operation, *options):
+            if operation == 'send-command':
+                return {'Command': {'CommandId': 'command'}}
+            if operation == 'list-command-invocations':
+                return {'CommandInvocations': [{'Status': 'Success'}]}
+            node = options[options.index('--instance-id') + 1]
+            if node == 'mi-c':
+                return {'StandardOutputContent': ''}
+            events = [dict(submissionId=node, event=event, timestamp=f'2026-01-01T00:00:0{second}+00:00')
+                      for event, second in [('judge_started', 0), ('judge_finished', 2)]]
+            return {'StandardOutputContent': '\n'.join(json.dumps(e) for e in events)}
+        with patch.object(smoke, 'aws', side_effect=fake_aws), patch.object(smoke.time, 'sleep'):
+            self.assertEqual(smoke.parallel_check(args, args.instance)['mi-c'], [])

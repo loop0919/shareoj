@@ -3,11 +3,10 @@
 import argparse
 import hashlib
 from pathlib import Path
-import re
 import shlex
 import subprocess
 import uuid
-from verify import collect, new_run, submit
+from verify import NODE_ID, collect, new_run, submit
 
 
 if __name__ == '__main__':
@@ -20,8 +19,8 @@ if __name__ == '__main__':
     parser.add_argument('--run-dir', type=Path, help='Save durable SSM command IDs for later collection')
     parser.add_argument('--no-wait', action='store_true', help='Return after submission; requires --run-dir')
     args = parser.parse_args()
-    if not re.fullmatch('mi-[a-f0-9]+', args.instance):
-        parser.error('expected a Lightsail SSM managed-node ID')
+    if not NODE_ID.fullmatch(args.instance):
+        parser.error('expected an SSM managed-node ID')
     if args.no_wait and not args.run_dir:
         parser.error('--no-wait requires --run-dir')
     # Create the receipt before uploading or changing a host; never overwrite an earlier run.

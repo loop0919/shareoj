@@ -42,10 +42,14 @@ def save(path, value):
         temporary.unlink(missing_ok=True)
 
 
+# EC2 instance IDs, plus Lightsail hybrid-activation IDs until the migration completes.
+NODE_ID = re.compile(r'i-[0-9a-f]{8,17}|mi-[a-f0-9]+')
+
+
 def new_run(directory, region, instances, phase):
     if not instances or len(set(instances)) != len(instances) or any(
-            not re.fullmatch(r'mi-[a-f0-9]+', node) for node in instances):
-        raise ValueError('provide distinct Lightsail managed-node IDs')
+            not NODE_ID.fullmatch(node) for node in instances):
+        raise ValueError('provide distinct SSM managed-node IDs')
     account = aws(region, 'sts', 'get-caller-identity')['Account']
     directory.mkdir(parents=True, mode=0o700, exist_ok=False)
     receipt = dict(version=1, runId=uuid.uuid4().hex, region=region, account=account,

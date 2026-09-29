@@ -106,8 +106,9 @@ class RolloutTests(unittest.TestCase):
             digest = 'sha256:' + 'a' * 64
             host = dict(runtimeDigest=digest, passedRuntimes=['python314-isolate'], failedRuntimes=[], ready=True, runId='b' * 32)
             report_path = directory / 'report.json'
-            report_path.write_text(json.dumps({**host, 'hosts': {'mi-a': host, 'mi-b': host}}))
-            config = dict(region='test', api='api', bridge='bridge', nodes=['mi-a', 'mi-b'], runtimes=['python314'],
+            nodes = ['i-0123456789abcdef0', 'i-0123456789abcdef1', 'i-0123456789abcdef2']
+            report_path.write_text(json.dumps({**host, 'hosts': dict.fromkeys(nodes, host)}))
+            config = dict(region='test', api='api', bridge='bridge', nodes=nodes, runtimes=['python314'],
                           smoke_runtime='python314', api_url='https://test.invalid')
             calls = []
             def command(*args):
@@ -127,6 +128,8 @@ class RolloutTests(unittest.TestCase):
             self.assertEqual(state['step'], 'complete')
             self.assertFalse(state['maintenance'])
             self.assertFalse(state['admissionPaused'])
+            smoke = next(args for args in calls if 'judge/smoke-api.py' in args)
+            self.assertEqual([smoke[i + 1] for i, arg in enumerate(smoke) if arg == '--instance'], nodes)
             plans = [args for args in calls if args[0] == 'terraform' and 'plan' in args]
             self.assertEqual(len(plans), 2)
             self.assertTrue(all('-refresh-only' in args for args in plans))
@@ -204,17 +207,19 @@ class RolloutTests(unittest.TestCase):
             for path in ('infra/api', 'infra/judge', 'run'):
                 (root / path).mkdir(parents=True)
             previous = root / 'infra/judge/zz-rollout.auto.tfvars.json'
-            previous.write_text('{"runtime_digest":"old"}')
+            previous.write_text('{"runtime_digest":"old","worker_count":2}')
             values = {}
             def command(*args):
                 if args[2] == 'set':
                     values[args[3]] = args[args.index('--body') + 1]
                     return ''
                 return json.dumps([dict(name=name, value=value) for name, value in values.items()])
-            config = dict(repository='owner/repo', github_environment='dev', nodes=['mi-a', 'mi-b'])
+            config = dict(repository='owner/repo', github_environment='dev', nodes=['i-0a', 'i-0b', 'i-0c'])
             with patch.object(rollout, 'ROOT', root), patch.object(rollout, 'run', side_effect=command):
                 rollout.sync_settings(config, root / 'run', 'sha256:fixed', ['python314'])
-            self.assertEqual(json.loads(previous.read_text())['worker_count'], 2)
+                # A resumed sync merges into the saved original, not into its own earlier output.
+                rollout.sync_settings(config, root / 'run', 'sha256:fixed', ['python314'])
+            self.assertEqual(json.loads(previous.read_text()), dict(runtime_digest='sha256:fixed', enabled=True, worker_count=2))
             backup = json.loads((root / 'run/infra-judge-variables.json').read_text())
             self.assertEqual(json.loads(backup['content'])['runtime_digest'], 'old')
 

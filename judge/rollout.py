@@ -14,7 +14,7 @@ import time
 import urllib.request
 
 from admission import publication
-from verify import aws, collect, new_run, save, submit
+from verify import NODE_ID, aws, collect, new_run, save, submit
 
 ROOT = Path(__file__).resolve().parents[1]
 LOG_DIRECTORY = None
@@ -156,9 +156,9 @@ def preflight(config):
         raise ValueError('configure an HTTPS API URL')
     if aws(region, 'sts', 'get-caller-identity')['Account'] != config['account']:
         raise ValueError('wrong AWS account')
-    if len(config['nodes']) != 2 or len(set(config['nodes'])) != 2 or len(set(config['queues'])) != 4 or any(
-            not re.fullmatch('mi-[a-f0-9]+', node) for node in config['nodes']):
-        raise ValueError('configure two distinct hosts and request/result/dead queue URLs')
+    if not config['nodes'] or len(set(config['nodes'])) != len(config['nodes']) or len(set(config['queues'])) != 4 or any(
+            not NODE_ID.fullmatch(node) for node in config['nodes']):
+        raise ValueError('configure distinct hosts and request/result/dead queue URLs')
     bridge = aws(region, 'lambda', 'get-function-configuration', '--function-name', config['bridge'])
     mapping = aws(region, 'lambda', 'get-event-source-mapping', '--uuid', config['result_mapping'])
     targets = aws(region, 'events', 'list-targets-by-rule', '--rule', config['dispatch_rule'])['Targets']
@@ -302,13 +302,15 @@ def sync_settings(config, directory, digest, runtimes):
     values = {v['name']: v['value'] for v in saved}
     if values.get('JUDGE_RUNTIME_DIGEST') != digest or json.loads(values.get('JUDGE_ENABLED_RUNTIMES', 'null')) != runtimes:
         raise ValueError('GitHub deployment variables did not match')
+    # Terraform owns the fleet shape; keep values such as the host count that rollout does not manage.
     for root, values in [('infra/api', dict(judge_runtime_digest=digest, judge_enabled_runtimes=runtimes)),
-                         ('infra/judge', dict(runtime_digest=digest, enabled=True, worker_count=len(config['nodes'])))]:
+                         ('infra/judge', dict(runtime_digest=digest, enabled=True))]:
         path = ROOT / root / 'zz-rollout.auto.tfvars.json'
         backup = directory / (root.replace('/', '-') + '-variables.json')
         if not backup.exists():
             save(backup, dict(existed=path.exists(), content=path.read_text() if path.exists() else ''))
-        save(path, values)
+        previous = json.loads(backup.read_text())
+        save(path, {**json.loads(previous['content'] or '{}'), **values})
 
 
 def finish(config, directory, state, report_path):
@@ -344,7 +346,7 @@ def finish(config, directory, state, report_path):
     api_report = directory / ('api-' + str(time.time_ns()) + '.json')
     run(sys.executable, 'judge/smoke-api.py', '--function', config['api'], '--api-url', config['api_url'],
         '--region', config['region'], '--runtime', config['smoke_runtime'], '--report', str(api_report),
-        '--instance', config['nodes'][0], '--instance', config['nodes'][1])
+        *[option for node in config['nodes'] for option in ('--instance', node)])
     if json.loads(api_report.read_text())['status'] != 'passed':
         raise ValueError('API smoke did not pass')
     checkpoint(directory, state, 'refresh-state')
@@ -422,7 +424,7 @@ def main():
                 verification = directory / 'verify'
                 if not verification.exists():
                     run(sys.executable, 'judge/verify.py', 'submit', '--run-dir', str(verification), '--region', config['region'],
-                        '--instance', config['nodes'][0], '--instance', config['nodes'][1])
+                        *[option for node in config['nodes'] for option in ('--instance', node)])
                 run(sys.executable, 'judge/verify.py', 'collect', '--run-dir', str(verification), '--wait')
                 receipt = json.loads((verification / 'receipt.json').read_text())
                 checkpoint(directory, state, 'start')
