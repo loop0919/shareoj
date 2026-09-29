@@ -436,3 +436,59 @@ func TestProblemListPublicationPlansPostgres(t *testing.T) {
 		t.Fatal(items)
 	}
 }
+
+func TestProblemReadinessPostgres(t *testing.T) {
+	f := newFeaturedTest(t)
+	ready, empty := f.draft("alice", 3), f.draft("alice", 7)
+	f.exec(`UPDATE problem_drafts SET draft=draft-'testCases' WHERE id=$1`, empty.ID)
+	// 定期便 now requires test cases, like contests; the reason is visible before applying.
+	if !strings.Contains(f.request("PUT", "/my/problems/"+empty.ID+"/featured", "alice", map[string]any{"version": empty.Version, "preference": "soon"}, 400), "featured_ineligible") {
+		t.Fatal("a problem without test cases was accepted")
+	}
+	f.apply(ready, "soon", 204)
+	type readiness struct{ Publish, Contest, Featured []string }
+	var list struct {
+		Items []struct {
+			ID        string
+			Readiness *readiness
+		}
+	}
+	if err := json.Unmarshal([]byte(f.request("GET", "/my/problems", "alice", nil, 200)), &list); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]readiness{
+		ready.ID: {Publish: []string{}, Contest: []string{}, Featured: []string{}},
+		empty.ID: {Publish: []string{}, Contest: []string{"test_cases_missing"}, Featured: []string{"test_cases_missing"}},
+	}
+	for _, item := range list.Items {
+		if item.Readiness == nil || !reflect.DeepEqual(*item.Readiness, want[item.ID]) {
+			t.Fatalf("list readiness for %s: %+v", item.ID, item.Readiness)
+		}
+	}
+	// Saving answers with the new readiness, so the editor updates without another request.
+	var saved struct {
+		Readiness          readiness
+		FeaturedPreference string
+	}
+	draft := problems.Draft{Title: "Featured problem", Markdown: "Statement", TimeLimitMS: "1000", MemoryLimitMB: "256", TestCases: []problems.TestCase{{Input: "1", Output: "2"}}}
+	if err := json.Unmarshal([]byte(f.request("PUT", "/my/problems/"+ready.ID, "alice", map[string]any{"version": ready.Version, "draft": draft}, 200)), &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.FeaturedPreference != "soon" || !reflect.DeepEqual(saved.Readiness.Featured, []string{"difficulty_missing", "editorial_missing"}) {
+		t.Fatalf("saved readiness %+v", saved)
+	}
+	// Testers cannot publish or apply, so they receive no readiness at all.
+	f.exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'tester')`, ready.ID)
+	if strings.Contains(f.request("GET", "/my/problems/"+ready.ID, "tester", nil, 200), "readiness") ||
+		strings.Contains(f.request("GET", "/my/problems?role=tester", "tester", nil, 200), "readiness") {
+		t.Fatal("tester received author readiness")
+	}
+	// An application that loses its test cases is skipped at selection instead of being published.
+	f.exec(`UPDATE problem_drafts SET draft=jsonb_set(draft-'testCases','{difficulty}','3')||'{"editorial":"SECRET EDITORIAL"}' WHERE id=$1`, ready.ID)
+	at := f.due()
+	f.request("GET", "/featured", "", nil, 200)
+	var kind string
+	if err := f.store.Pool().QueryRow(context.Background(), `SELECT kind FROM featured_slots WHERE scheduled_at=$1 AND slot='easy'`, at).Scan(&kind); err != nil || kind != "missing" {
+		t.Fatal("an application without test cases was selected", kind, err)
+	}
+}

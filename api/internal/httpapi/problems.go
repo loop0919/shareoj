@@ -147,6 +147,9 @@ func (p problemHandler) publishProblem(w http.ResponseWriter, r *http.Request, o
 	}
 
 	result, err := store.Publish(r.Context(), owner, id, in.Version, *in.Publish)
+	if err == nil {
+		err = p.withReadiness(r.Context(), owner, &result)
+	}
 	if err != nil {
 		problemError(w, err)
 		return

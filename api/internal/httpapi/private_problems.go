@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"mime"
 	"net/http"
@@ -14,6 +15,31 @@ import (
 )
 
 var problemID = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$`)
+
+// problemReadiness is implemented by the database store; test fakes may omit it.
+type problemReadiness interface {
+	ApplicationCount(context.Context, string) (int, error)
+	State(context.Context, string, string) (problems.ProblemState, error)
+}
+
+// withReadiness tells the author where the saved problem can go; testers receive none.
+func (p problemHandler) withReadiness(ctx context.Context, owner string, result *problems.Problem) error {
+	store, ok := p.Store.(problemReadiness)
+	if !ok {
+		return nil
+	}
+	state, err := store.State(ctx, owner, result.ID)
+	if errors.Is(err, problems.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	readiness := problems.Assess(result.Draft, state, submissions.RuntimeIDs(), p.Judging.RuntimeIDs())
+	result.Readiness = &readiness
+	result.FeaturedPreference, result.ContestScheduled, result.EverPublished = state.FeaturedPreference, state.ContestScheduled, state.EverPublished
+	return nil
+}
 
 func (p problemHandler) problem(w http.ResponseWriter, r *http.Request, owner string) {
 	ctx := r.Context()
@@ -64,6 +90,9 @@ func (p problemHandler) problem(w http.ResponseWriter, r *http.Request, owner st
 			w.WriteHeader(204)
 			return
 		}
+	}
+	if err == nil {
+		err = p.withReadiness(ctx, owner, &result)
 	}
 	if err != nil {
 		problemError(w, err)
@@ -127,7 +156,8 @@ func (p problemHandler) list(w http.ResponseWriter, r *http.Request, owner strin
 	}
 	var items []problems.Summary
 	var err error
-	switch r.URL.Query().Get("role") {
+	role := r.URL.Query().Get("role")
+	switch role {
 	case "", "author":
 		items, err = p.Store.List(r.Context(), owner, cursor)
 	case "tester":
@@ -150,6 +180,18 @@ func (p problemHandler) list(w http.ResponseWriter, r *http.Request, owner strin
 		items = items[:50]
 		last := items[49]
 		next = nextContentCursor(last.ID, last.UpdatedAt)
+	}
+	if store, ok := p.Store.(problemReadiness); ok && role != "tester" {
+		applications, err := store.ApplicationCount(r.Context(), owner)
+		if err != nil {
+			problemError(w, err)
+			return
+		}
+		known, enabled := submissions.RuntimeIDs(), p.Judging.RuntimeIDs()
+		for i := range items {
+			readiness := problems.Assess(items[i].Draft, problems.SummaryState(items[i], applications), known, enabled)
+			items[i].Readiness = &readiness
+		}
 	}
 	writeAuthJSON(w, 200, struct {
 		Items      []problems.Summary `json:"items"`

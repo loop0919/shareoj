@@ -70,25 +70,32 @@ type TestFile struct {
 }
 
 type Problem struct {
-	Testers          []string  `json:"testers,omitempty"`
-	ContestID        string    `json:"contestId,omitempty"`
-	Author           string    `json:"author"`
-	PublishedVersion int64     `json:"publishedVersion"`
-	ID               string    `json:"id"`
-	Version          int64     `json:"version"`
-	UpdatedAt        time.Time `json:"updatedAt"`
-	Draft            Draft     `json:"draft"`
+	// The author also receives the problem's destinations and why it cannot go there.
+	Readiness          *Readiness `json:"readiness,omitempty"`
+	FeaturedPreference string     `json:"featuredPreference,omitempty"`
+	ContestScheduled   bool       `json:"contestScheduled,omitempty"`
+	EverPublished      bool       `json:"everPublished,omitempty"`
+	Testers            []string   `json:"testers,omitempty"`
+	ContestID          string     `json:"contestId,omitempty"`
+	Author             string     `json:"author"`
+	PublishedVersion   int64      `json:"publishedVersion"`
+	ID                 string     `json:"id"`
+	Version            int64      `json:"version"`
+	UpdatedAt          time.Time  `json:"updatedAt"`
+	Draft              Draft      `json:"draft"`
 }
 
 type Summary struct {
-	FeaturedPreference string    `json:"featuredPreference,omitempty"`
-	ContestScheduled   bool      `json:"contestScheduled,omitempty"`
-	EverPublished      bool      `json:"everPublished"`
-	ContestID          string    `json:"contestId,omitempty"`
-	PublishedVersion   int64     `json:"publishedVersion"`
-	ID                 string    `json:"id"`
-	Title              string    `json:"title"`
-	UpdatedAt          time.Time `json:"updatedAt"`
+	Readiness          *Readiness `json:"readiness,omitempty"`
+	Draft              Draft      `json:"-"`
+	FeaturedPreference string     `json:"featuredPreference,omitempty"`
+	ContestScheduled   bool       `json:"contestScheduled,omitempty"`
+	EverPublished      bool       `json:"everPublished"`
+	ContestID          string     `json:"contestId,omitempty"`
+	PublishedVersion   int64      `json:"publishedVersion"`
+	ID                 string     `json:"id"`
+	Title              string     `json:"title"`
+	UpdatedAt          time.Time  `json:"updatedAt"`
 }
 
 type Cursor struct {
@@ -152,7 +159,7 @@ func (s *Store) ListTesting(ctx context.Context, owner string, cursor *Cursor) (
 }
 
 func (s *Store) list(ctx context.Context, owner string, cursor *Cursor, testing bool) ([]Summary, error) {
-	query := `SELECT id, draft->>'title', updated_at, published_version,ever_published,COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),COALESCE((SELECT preference FROM featured_applications WHERE problem_id=problem_drafts.id),''),EXISTS(SELECT 1 FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=problem_drafts.id AND NOT c.released) FROM problem_drafts WHERE owner_id=$1`
+	query := `SELECT id, draft, updated_at, published_version,ever_published,COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),COALESCE((SELECT preference FROM featured_applications WHERE problem_id=problem_drafts.id),''),EXISTS(SELECT 1 FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=problem_drafts.id AND NOT c.released) FROM problem_drafts WHERE owner_id=$1`
 	if testing {
 		query = strings.Replace(query, "WHERE owner_id=$1", "WHERE owner_id<>$1 AND EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=problem_drafts.id AND t.owner_id=$1)", 1)
 	}
@@ -167,9 +174,49 @@ func (s *Store) list(ctx context.Context, owner string, cursor *Cursor, testing 
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Summary, error) {
 		var p Summary
-		err := row.Scan(&p.ID, &p.Title, &p.UpdatedAt, &p.PublishedVersion, &p.EverPublished, &p.ContestID, &p.FeaturedPreference, &p.ContestScheduled)
+		var data []byte
+		if err := row.Scan(&p.ID, &data, &p.UpdatedAt, &p.PublishedVersion, &p.EverPublished, &p.ContestID, &p.FeaturedPreference, &p.ContestScheduled); err != nil {
+			return p, err
+		}
+		err := json.Unmarshal(data, &p.Draft)
+		p.Title = p.Draft.Title
 		return p, err
 	})
+}
+
+// ApplicationCount counts the author's 定期便 applications.
+func (s *Store) ApplicationCount(ctx context.Context, owner string) (int, error) {
+	var count int
+	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM featured_applications a JOIN problem_drafts d ON d.id=a.problem_id WHERE d.owner_id=$1`, owner).Scan(&count)
+	return count, err
+}
+
+// State reads what readiness needs beyond the draft; ErrNotFound unless owner is the author.
+func (s *Store) State(ctx context.Context, owner, id string) (ProblemState, error) {
+	var state ProblemState
+	err := s.pool.QueryRow(ctx, `SELECT published_version>0, ever_published,
+  EXISTS(SELECT 1 FROM contest_problems WHERE problem_id=d.id),
+  EXISTS(SELECT 1 FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=d.id AND NOT c.released),
+  COALESCE((SELECT preference FROM featured_applications WHERE problem_id=d.id),''),
+  (SELECT count(*) FROM featured_applications a JOIN problem_drafts o ON o.id=a.problem_id WHERE o.owner_id=$1 AND a.problem_id<>d.id)
+  FROM problem_drafts d WHERE d.owner_id=$1 AND d.id=$2`, owner, id).Scan(
+		&state.Published, &state.EverPublished, &state.InContest, &state.ContestScheduled, &state.FeaturedPreference, &state.OtherApplications)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return state, ErrNotFound
+	}
+	return state, err
+}
+
+// SummaryState derives the state of a listed problem; applications is the author's total.
+func SummaryState(p Summary, applications int) ProblemState {
+	state := ProblemState{
+		Published: p.PublishedVersion > 0, EverPublished: p.EverPublished, InContest: p.ContestID != "",
+		ContestScheduled: p.ContestScheduled, FeaturedPreference: p.FeaturedPreference, OtherApplications: applications,
+	}
+	if p.FeaturedPreference != "" {
+		state.OtherApplications--
+	}
+	return state
 }
 
 func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft Draft) (Problem, error) {
