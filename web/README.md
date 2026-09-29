@@ -261,6 +261,8 @@ with the [Discord Embed Debugger](https://discord.com/developers/embeds).
 
 `/featured`に次回予告または公開中の問題、Easy／Hard別の待ち件数、過去の出題を表示する。
 応募状態と取り下げはマイページの「自分の問題」にまとめる。
+問題の状態（×準備中、✅準備中、応募中（コンテスト）、応募中（定期便）、公開中）と足りない項目は、APIが返す`readiness`をそのまま表示する。
+公開、コンテスト、定期便の条件は画面側に持たず、`app/utils/problem-readiness.ts`は理由のコードを文言と編集画面のセクションに対応づけるだけにする。
 各回の「順位表」から`/featured/standings?at=<scheduledAt>`へ移動できる。
 公開から翌22時までの提出を集計し、両方正解・Hardのみ・Easyのみ・0完の順に並べ、同じ正解状況は同順位にする。
 正解は得点の代わりにチェックマークで示し、経過時間と不正解数を併記する。
