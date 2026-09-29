@@ -31,7 +31,11 @@ if __name__ == '__main__':
     if args.expected_sha256 is not None and digest != args.expected_sha256:
         parser.error('release SHA-256 differs from the rollout receipt')
     uri = 's3://' + args.bucket + '/releases/' + digest + '/worker.tar.gz'
-    subprocess.run(['aws', 's3', 'cp', str(args.release), uri, '--region', args.region, '--only-show-errors'], check=True)
+    # The key is the content hash and hosts verify it after download, so an existing object is reused.
+    uploaded = subprocess.run(['aws', 's3api', 'head-object', '--bucket', args.bucket, '--key', 'releases/' + digest + '/worker.tar.gz',
+                               '--region', args.region], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    if not uploaded:
+        subprocess.run(['aws', 's3', 'cp', str(args.release), uri, '--region', args.region, '--only-show-errors'], check=True)
     url = subprocess.check_output(['aws', 's3', 'presign', uri, '--region', args.region,
         '--endpoint-url', 'https://s3.dualstack.' + args.region + '.amazonaws.com', '--expires-in', '3600'], text=True).strip()
     command = '\n'.join([
