@@ -37,7 +37,6 @@ useSharePreview({ type: 'website', title: '問題', path: '/problems', descripti
   <div class="catalogue">
     <ProblemPostDialog ref="postDialog" />
     <header class="catalogue-heading"><h1>問題</h1><button type="button" class="editor-button primary" @click="postDialog?.open()">問題投稿</button></header>
-    <p><NuxtLink to="/featured">定期便：毎週月曜・木曜23時に出題。新作の応募はこちら</NuxtLink></p>
     <p v-if="!current.items.length" class="muted">公開された問題はまだありません。</p>
     <div v-else class="content-table-scroll" tabindex="0" role="region" aria-label="問題一覧" :aria-busy="loading">
       <table class="content-table">
