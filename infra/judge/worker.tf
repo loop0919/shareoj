@@ -1,4 +1,15 @@
+# Lightsail hosts remain until the EC2 pool (ec2.tf) takes over; set worker_count = 0 to retire them.
 # No peering to the application VPC and no database credentials on the worker.
+locals {
+  # Shared by the Lightsail IAM user and the EC2 instance role.
+  worker_statements = concat([
+    { Effect = "Allow", Action = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:ChangeMessageVisibility"], Resource = aws_sqs_queue.queue["requests"].arn },
+    { Effect = "Allow", Action = ["sqs:SendMessage"], Resource = aws_sqs_queue.queue["results"].arn },
+    { Effect = "Allow", Action = ["s3:GetObjectVersion"], Resource = concat(["${aws_s3_bucket.jobs.arn}/jobs/*"], var.test_data_bucket == null ? [] : ["${var.test_data_bucket.arn}/test-files/*"]) }
+    ], var.test_data_bucket == null ? [] : [
+    { Effect = "Allow", Action = ["s3:PutObject", "s3:PutObjectTagging"], Resource = "${var.test_data_bucket.arn}/test-files/*/*/generated/*" }
+  ])
+}
 resource "aws_lightsail_key_pair" "worker" {
   name       = "${local.name}-judge"
   public_key = var.ssh_public_key
@@ -72,15 +83,6 @@ resource "aws_iam_user" "worker" {
   name = "${local.name}-judge-worker"
 }
 resource "aws_iam_user_policy" "worker" {
-  user = aws_iam_user.worker.name
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = concat([
-      { Effect = "Allow", Action = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:ChangeMessageVisibility"], Resource = aws_sqs_queue.queue["requests"].arn },
-      { Effect = "Allow", Action = ["sqs:SendMessage"], Resource = aws_sqs_queue.queue["results"].arn },
-      { Effect = "Allow", Action = ["s3:GetObjectVersion"], Resource = concat(["${aws_s3_bucket.jobs.arn}/jobs/*"], var.test_data_bucket == null ? [] : ["${var.test_data_bucket.arn}/test-files/*"]) }
-      ], var.test_data_bucket == null ? [] : [
-      { Effect = "Allow", Action = ["s3:PutObject", "s3:PutObjectTagging"], Resource = "${var.test_data_bucket.arn}/test-files/*/*/generated/*" }
-    ])
-  })
+  user   = aws_iam_user.worker.name
+  policy = jsonencode({ Version = "2012-10-17", Statement = local.worker_statements })
 }

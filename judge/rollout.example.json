@@ -12,7 +12,7 @@
   "pool": "judge-dev",
   "nodes": ["i-0123456789abcdef0", "i-0123456789abcdef1", "i-0123456789abcdef2"],
   "retire_nodes": [],
-  "worker_alarms": ["judge-dev-judge-worker", "judge-dev-judge-worker-2", "judge-dev-judge-worker-3"],
+  "worker_alarms": ["judge-dev-judge-primary", "judge-dev-judge-burst-1", "judge-dev-judge-burst-2"],
   "queues": [
     "https://sqs.ap-northeast-1.amazonaws.com/907170969801/judge-dev-judge-requests",
     "https://sqs.ap-northeast-1.amazonaws.com/907170969801/judge-dev-judge-results",

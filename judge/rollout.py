@@ -356,7 +356,7 @@ def sync_settings(config, directory, digest, runtimes):
         raise ValueError('GitHub deployment variables did not match')
     # Terraform owns the fleet shape; keep values such as the host count that rollout does not manage.
     for root, values in [('infra/api', dict(judge_runtime_digest=digest, judge_enabled_runtimes=runtimes)),
-                         ('infra/judge', dict(runtime_digest=digest, enabled=True))]:
+                         ('infra/judge', dict(runtime_digest=digest, enabled=True, enabled_runtimes=runtimes))]:
         path = ROOT / root / 'zz-rollout.auto.tfvars.json'
         backup = directory / (root.replace('/', '-') + '-variables.json')
         if not backup.exists():

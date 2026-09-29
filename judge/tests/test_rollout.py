@@ -309,7 +309,8 @@ class RolloutTests(unittest.TestCase):
                 rollout.sync_settings(config, root / 'run', 'sha256:fixed', ['python314'])
                 # A resumed sync merges into the saved original, not into its own earlier output.
                 rollout.sync_settings(config, root / 'run', 'sha256:fixed', ['python314'])
-            self.assertEqual(json.loads(previous.read_text()), dict(runtime_digest='sha256:fixed', enabled=True, worker_count=2))
+            self.assertEqual(json.loads(previous.read_text()),
+                             dict(runtime_digest='sha256:fixed', enabled=True, enabled_runtimes=['python314'], worker_count=2))
             backup = json.loads((root / 'run/infra-judge-variables.json').read_text())
             self.assertEqual(json.loads(backup['content'])['runtime_digest'], 'old')
 

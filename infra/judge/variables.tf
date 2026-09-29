@@ -19,12 +19,61 @@ variable "availability_zone" {
   default = "ap-northeast-1a"
 }
 variable "worker_count" {
-  description = "Number of single-slot workers sharing the request queue. Each host must pass smoke with the same runtime digest before starting."
+  description = "Number of Lightsail single-slot workers. Set 0 after the EC2 pool takes over."
   type        = number
   default     = 1
   validation {
-    condition     = var.worker_count >= 1 && var.worker_count <= 6 && floor(var.worker_count) == var.worker_count
-    error_message = "worker_count must be an integer from 1 to 6."
+    condition     = var.worker_count >= 0 && var.worker_count <= 6 && floor(var.worker_count) == var.worker_count
+    error_message = "worker_count must be an integer from 0 to 6."
+  }
+}
+variable "burst_worker_count" {
+  description = "Normally stopped EC2 hosts that the bridge starts for contests, besides the always-on primary."
+  type        = number
+  default     = 2
+  validation {
+    condition     = var.burst_worker_count >= 0 && var.burst_worker_count <= 4 && floor(var.burst_worker_count) == var.burst_worker_count
+    error_message = "burst_worker_count must be an integer from 0 to 4."
+  }
+}
+variable "worker_availability_zones" {
+  description = "Zones offering t3a.small; check with describe-instance-type-offerings. Hosts are spread in order."
+  type        = list(string)
+  default     = ["ap-northeast-1a", "ap-northeast-1c"]
+  validation {
+    condition     = length(var.worker_availability_zones) >= 1 && length(var.worker_availability_zones) <= 3
+    error_message = "Specify one to three availability zones."
+  }
+}
+variable "worker_volume_size" {
+  description = "Root gp3 size in GB. An upgrade holds the current runtime, its archive and the staged runtime at once."
+  type        = number
+  default     = 50
+  validation {
+    condition     = var.worker_volume_size >= 30 && var.worker_volume_size <= 200
+    error_message = "worker_volume_size must be 30 to 200 GB."
+  }
+}
+variable "capacity_enabled" {
+  description = "Let the bridge start EC2 hosts for contests. Enable after the pool serves traffic."
+  type        = bool
+  default     = false
+}
+variable "burst_min_participants" {
+  description = "Registered participants a contest needs before burst hosts start for it."
+  type        = number
+  default     = 10
+  validation {
+    condition     = var.burst_min_participants >= 1 && floor(var.burst_min_participants) == var.burst_min_participants
+    error_message = "burst_min_participants must be a positive integer."
+  }
+}
+variable "enabled_runtimes" {
+  description = "Published runtime IDs, kept in sync by judge/rollout.py. Required so an apply never resets the bridge."
+  type        = list(string)
+  validation {
+    condition     = length(var.enabled_runtimes) > 0 && alltrue([for id in var.enabled_runtimes : can(regex("^[a-z][a-z0-9-]*$", id))])
+    error_message = "enabled_runtimes must list published runtime IDs."
   }
 }
 variable "ssh_public_key" {
@@ -77,7 +126,7 @@ variable "test_data_bucket" {
   nullable = true
 }
 variable "enabled" {
-  description = "Start dispatcher after migrations and Lightsail smoke tests pass."
+  description = "Start dispatcher after migrations and worker smoke tests pass."
   type        = bool
   default     = false
 }

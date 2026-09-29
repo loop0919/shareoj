@@ -1,0 +1,87 @@
+#!/bin/bash
+set -euo pipefail
+# All pool hosts must keep identical packages and kernels, which form the runtime digest.
+# Updates happen only in planned maintenance, followed by fingerprint and smoke.
+systemctl disable --now unattended-upgrades.service apt-daily-upgrade.timer apt-daily-upgrade.service 2>/dev/null || true
+printf 'APT::Periodic::Unattended-Upgrade "0";\n' > /etc/apt/apt.conf.d/99judge-maintenance
+# The subnet is IPv6-only; use mirrors and AWS endpoints that publish IPv6 addresses.
+if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+  sed -i 's|^URIs:.*|URIs: https://archive.ubuntu.com/ubuntu/|' /etc/apt/sources.list.d/ubuntu.sources
+fi
+printf 'Acquire::ForceIPv6 "true";\n' > /etc/apt/apt.conf.d/99force-ipv6
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nftables ca-certificates
+cat > /etc/nftables.conf <<'NFT'
+#!/usr/sbin/nft -f
+flush ruleset
+table inet judge {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    iifname "lo" accept
+    ct state established,related accept
+    meta l4proto ipv6-icmp accept
+    # DHCP replies to multicast/broadcast requests need explicit input rules;
+    # conntrack established,related alone does not cover those exchanges.
+    meta nfproto ipv4 udp sport 67 udp dport 68 accept
+    meta nfproto ipv6 udp sport 547 udp dport 546 accept
+  }
+  chain forward { type filter hook forward priority 0; policy drop; }
+  chain output {
+    type filter hook output priority 0; policy drop;
+    oifname "lo" accept
+    ct state established,related accept
+    meta l4proto ipv6-icmp accept
+    udp dport 53 accept
+    tcp dport 53 accept
+    # Instance credentials are served by IMDS; only root services may reach it.
+    # Submissions have a separate network namespace and cannot reach IMDS at all.
+    ip daddr 169.254.169.254 tcp dport 80 meta skuid 0 accept
+    ip6 daddr fd00:ec2::254 tcp dport 80 meta skuid 0 accept
+    ip6 daddr ::/0 tcp dport 443 accept
+    udp dport 123 accept
+    udp sport 68 udp dport 67 accept
+    udp sport 546 udp dport 547 accept
+  }
+}
+NFT
+systemctl enable --now nftables
+# Burst holds are compared with the host clock; use Amazon Time Sync over IPv6.
+if [ -d /etc/chrony/sources.d ]; then
+  printf 'server fd00:ec2::123 prefer iburst\n' > /etc/chrony/sources.d/judge-ec2.sources
+  chronyc reload sources >/dev/null 2>&1 || systemctl restart chrony
+else
+  install -d /etc/systemd/timesyncd.conf.d
+  printf '[Time]\nNTP=fd00:ec2::123\n' > /etc/systemd/timesyncd.conf.d/judge-ec2.conf
+  systemctl restart systemd-timesyncd || true
+fi
+# SSM and CloudWatch agents: dual-stack endpoints and the IPv6 IMDS endpoint.
+install -d /etc/amazon/ssm
+cat > /etc/amazon/ssm/amazon-ssm-agent.json <<'JSON'
+{"Agent": {"Region": "${region}", "UseDualStackEndpoint": true}, "Ssm": {"Endpoint": "ssm.${region}.api.aws"}, "Mgs": {"Endpoint": "ssmmessages.${region}.api.aws"}}
+JSON
+for unit in snap.amazon-ssm-agent.amazon-ssm-agent.service amazon-cloudwatch-agent.service; do
+  install -d "/etc/systemd/system/$unit.d"
+  printf '[Service]\nEnvironment=AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE=IPv6\n' > "/etc/systemd/system/$unit.d/judge-imds.conf"
+done
+systemctl daemon-reload
+# An agent refresh right after a start would kill a rollout command in flight.
+snap refresh --hold amazon-ssm-agent || true
+systemctl restart snap.amazon-ssm-agent.amazon-ssm-agent.service || true
+swapoff -a
+sed -i '/^[^#].*[[:space:]]swap[[:space:]]/s/^/#/' /etc/fstab
+cat > /etc/sysctl.d/90-judge.conf <<'SYSCTL'
+fs.protected_hardlinks=1
+fs.protected_symlinks=1
+kernel.unprivileged_bpf_disabled=1
+kernel.perf_event_paranoid=3
+kernel.kptr_restrict=2
+kernel.yama.ptrace_scope=2
+SYSCTL
+sysctl --system
+# Worker settings contain no secrets; credentials come from the instance role.
+# The release is installed later by rollout.py over SSM; nothing is judged at boot.
+install -d -m 700 /opt/judge
+umask 077
+cat > /opt/judge/worker.env <<'ENV'
+${worker_environment}
+ENV

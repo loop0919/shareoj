@@ -19,7 +19,14 @@ resource "aws_iam_role_policy" "bridge" {
       { Effect = "Allow", Action = ["s3:PutObject"], Resource = "${aws_s3_bucket.jobs.arn}/jobs/*" },
       { Effect = "Allow", Action = ["sqs:SendMessage"], Resource = aws_sqs_queue.queue["requests"].arn },
       { Effect = "Allow", Action = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"], Resource = aws_sqs_queue.queue["results"].arn },
-      { Effect = "Allow", Action = ["ec2:CreateNetworkInterface", "ec2:DescribeNetworkInterfaces", "ec2:DescribeSubnets", "ec2:DeleteNetworkInterface", "ec2:AssignPrivateIpAddresses", "ec2:UnassignPrivateIpAddresses"], Resource = "*" }
+      { Effect = "Allow", Action = ["ec2:CreateNetworkInterface", "ec2:DescribeNetworkInterfaces", "ec2:DescribeSubnets", "ec2:DeleteNetworkInterface", "ec2:AssignPrivateIpAddresses", "ec2:UnassignPrivateIpAddresses"], Resource = "*" },
+      # Capacity: start pool hosts and extend their contest hold; never stop, terminate or relabel them.
+      { Effect = "Allow", Action = ["ec2:DescribeInstances"], Resource = "*" },
+      { Effect = "Allow", Action = ["ec2:StartInstances"], Resource = "arn:aws:ec2:${var.aws_region}:*:instance/*", Condition = { StringEquals = { "aws:ResourceTag/JudgePool" = local.name } } },
+      {
+        Effect    = "Allow", Action = ["ec2:CreateTags"], Resource = "arn:aws:ec2:${var.aws_region}:*:instance/*",
+        Condition = { StringEquals = { "aws:ResourceTag/JudgePool" = local.name }, "ForAllValues:StringEquals" = { "aws:TagKeys" = ["JudgeHoldUntil"] } }
+      }
     ]
   })
 }
@@ -43,19 +50,27 @@ resource "aws_lambda_function" "bridge" {
   }
   environment {
     variables = {
-      DATABASE_HOST              = var.database.host
-      DATABASE_NAME              = var.database.name
-      DATABASE_SECRET_ARN        = var.database.secret_arn
-      AWS_USE_DUALSTACK_ENDPOINT = "true"
-      JUDGE_JOB_BUCKET           = aws_s3_bucket.jobs.id
-      JUDGE_REQUEST_QUEUE_URL    = aws_sqs_queue.queue["requests"].url
-      JUDGE_RUNTIME_DIGEST       = var.runtime_digest
+      DATABASE_HOST                = var.database.host
+      DATABASE_NAME                = var.database.name
+      DATABASE_SECRET_ARN          = var.database.secret_arn
+      AWS_USE_DUALSTACK_ENDPOINT   = "true"
+      JUDGE_JOB_BUCKET             = aws_s3_bucket.jobs.id
+      JUDGE_REQUEST_QUEUE_URL      = aws_sqs_queue.queue["requests"].url
+      JUDGE_RUNTIME_DIGEST         = var.runtime_digest
+      JUDGE_ENABLED_RUNTIMES       = join(",", var.enabled_runtimes)
+      JUDGE_CAPACITY_ENABLED       = tostring(var.capacity_enabled)
+      JUDGE_POOL                   = local.name
+      JUDGE_BURST_MIN_PARTICIPANTS = tostring(var.burst_min_participants)
     }
   }
   lifecycle {
     precondition {
       condition     = !var.enabled || var.runtime_digest != ""
       error_message = "Install and smoke-test the runtime before enabling dispatch."
+    }
+    precondition {
+      condition     = !var.capacity_enabled || var.runtime_digest != ""
+      error_message = "Tag the pool with a smoke-tested runtime before the bridge starts hosts."
     }
   }
   depends_on = [aws_iam_role_policy.bridge]

@@ -7,6 +7,9 @@ mock_provider "aws" {
   mock_resource "aws_lambda_function" { defaults = { arn = "arn:aws:lambda:ap-northeast-1:123456789012:function:judge-test" } }
   mock_resource "aws_cloudwatch_log_group" { defaults = { arn = "arn:aws:logs:ap-northeast-1:123456789012:log-group:judge-test" } }
   mock_resource "aws_cloudwatch_event_rule" { defaults = { arn = "arn:aws:events:ap-northeast-1:123456789012:rule/judge-test" } }
+  mock_resource "aws_vpc" { defaults = { ipv6_cidr_block = "2001:db8:1234:5600::/56" } }
+  mock_resource "aws_iam_instance_profile" { defaults = { arn = "arn:aws:iam::123456789012:instance-profile/judge-test" } }
+  mock_data "aws_ssm_parameter" { defaults = { insecure_value = "ami-0123456789abcdef0", value = "ami-0123456789abcdef0" } }
 }
 variables {
   discord_webhook_secret_arn = ""
@@ -15,6 +18,7 @@ variables {
   ssh_public_key             = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJbU10sbvSiPykk/v/mzxDSkNPF1hvszNuRt/RLGKd5L"
   admin_ipv6_cidr            = "2001:db8::1/128"
   runtime_digest             = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  enabled_runtimes           = ["cpp17", "python314"]
   bridge_package_path        = "tests/package.txt"
   notify_package_path        = "tests/package.txt"
   database = {
@@ -121,17 +125,29 @@ run "two_workers" {
   }
   assert {
     condition = (
-      aws_cloudwatch_metric_alarm.judge["worker"].dimensions.Worker == "judge-dev-judge-worker" &&
-      aws_cloudwatch_metric_alarm.additional_worker[0].dimensions.Worker == "judge-dev-judge-worker-2" &&
+      aws_cloudwatch_metric_alarm.worker["judge-dev-judge-worker"].dimensions.Worker == "judge-dev-judge-worker" &&
+      aws_cloudwatch_metric_alarm.worker["judge-dev-judge-worker-2"].dimensions.Worker == "judge-dev-judge-worker-2" &&
       jsondecode(output.cloudwatch_agent_configs["judge-dev-judge-worker-2"]).metrics.metrics_collected.procstat[0].append_dimensions.Worker == "judge-dev-judge-worker-2"
     )
     error_message = "Each worker needs its own process heartbeat and missing-data alarm."
   }
 }
 
-run "reject_zero_workers" {
+run "retire_lightsail" {
   command = plan
   variables { worker_count = 0 }
+  assert {
+    condition = (
+      length(aws_lightsail_instance.worker) == 0 && output.worker_instance_name == null &&
+      keys(aws_cloudwatch_metric_alarm.worker) == ["judge-dev-judge-burst-1", "judge-dev-judge-burst-2", "judge-dev-judge-primary"]
+    )
+    error_message = "Retiring Lightsail must leave only the EC2 pool and its heartbeats."
+  }
+}
+
+run "reject_too_many_workers" {
+  command = plan
+  variables { worker_count = 7 }
   expect_failures = [var.worker_count]
 }
 
@@ -143,8 +159,17 @@ run "observability" {
     discord_webhook_secret_key = "ALART_DISCORD_WEBHOOK"
   }
   assert {
-    condition     = aws_cloudwatch_metric_alarm.judge["worker"].treat_missing_data == "breaching" && aws_cloudwatch_metric_alarm.judge["worker"].evaluation_periods == 3 && aws_cloudwatch_metric_alarm.judge["dispatch-missing"].treat_missing_data == "breaching"
-    error_message = "Both worker and scheduled DB observation must detect missing telemetry."
+    condition = (
+      aws_cloudwatch_metric_alarm.worker["judge-dev-judge-worker"].treat_missing_data == "breaching" &&
+      aws_cloudwatch_metric_alarm.worker["judge-dev-judge-primary"].treat_missing_data == "breaching" &&
+      aws_cloudwatch_metric_alarm.worker["judge-dev-judge-primary"].evaluation_periods == 3 &&
+      aws_cloudwatch_metric_alarm.judge["dispatch-missing"].treat_missing_data == "breaching"
+    )
+    error_message = "Always-on workers and scheduled DB observation must detect missing telemetry."
+  }
+  assert {
+    condition     = alltrue([for name in ["judge-dev-judge-burst-1", "judge-dev-judge-burst-2"] : aws_cloudwatch_metric_alarm.worker[name].treat_missing_data == "notBreaching"])
+    error_message = "A stopped burst host is expected to send no heartbeat."
   }
   assert {
     condition     = aws_cloudwatch_metric_alarm.judge["judge-code"].metric_name != aws_cloudwatch_metric_alarm.judge["platform"].metric_name && aws_cloudwatch_metric_alarm.judge["judge-code"].treat_missing_data == "notBreaching"
@@ -167,4 +192,109 @@ run "reject_alerts_without_secret" {
   command = plan
   variables { alerts_enabled = true }
   expect_failures = [aws_lambda_function.notify]
+}
+
+run "pool_hosts" {
+  command = apply
+  assert {
+    condition = (
+      keys(aws_instance.pool) == ["judge-dev-judge-burst-1", "judge-dev-judge-burst-2", "judge-dev-judge-primary"] &&
+      aws_instance.pool["judge-dev-judge-primary"].tags.JudgeRole == "primary" &&
+      aws_instance.pool["judge-dev-judge-burst-1"].tags.JudgeRole == "burst" &&
+      alltrue([for host in aws_instance.pool : host.tags.JudgePool == "judge-dev" && host.tags.Component == "judge-worker"])
+    )
+    error_message = "The pool must have one primary and the configured burst hosts, tagged for the bridge."
+  }
+  assert {
+    condition = alltrue([for host in aws_instance.pool : (
+      host.instance_type == "t3a.small" && host.credit_specification[0].cpu_credits == "unlimited" &&
+      host.metadata_options[0].http_tokens == "required" && host.metadata_options[0].http_put_response_hop_limit == 1 &&
+      host.metadata_options[0].http_protocol_ipv6 == "enabled" && host.metadata_options[0].instance_metadata_tags == "enabled" &&
+      !host.associate_public_ip_address && host.ipv6_address_count == 1 && host.instance_initiated_shutdown_behavior == "stop" &&
+      host.root_block_device[0].encrypted && host.root_block_device[0].volume_type == "gp3" && host.root_block_device[0].volume_size == 50
+    )])
+    error_message = "Hosts must be unthrottled, IPv6-only, IMDSv2-only, stop on shutdown and hold an upgrade on disk."
+  }
+  assert {
+    condition = (
+      alltrue([for subnet in aws_subnet.pool : subnet.ipv6_native]) &&
+      aws_vpc_security_group_egress_rule.pool_https.cidr_ipv6 == "::/0" && aws_vpc_security_group_egress_rule.pool_https.from_port == 443 &&
+      one(aws_route_table.pool.route).ipv6_cidr_block == "::/0" && one(aws_route_table.pool.route).egress_only_gateway_id != ""
+    )
+    error_message = "The pool network must be IPv6-only with outbound HTTPS through an egress-only gateway."
+  }
+  assert {
+    condition = (
+      strcontains(file("${path.module}/user-data-ec2.sh.tftpl"), "ip6 daddr fd00:ec2::254 tcp dport 80 meta skuid 0 accept") &&
+      strcontains(file("${path.module}/user-data-ec2.sh.tftpl"), "ip daddr 169.254.169.254 tcp dport 80 meta skuid 0 accept") &&
+      !strcontains(file("${path.module}/user-data-ec2.sh.tftpl"), "dport 22")
+    )
+    error_message = "Only root may reach IMDS, and pool hosts accept no SSH."
+  }
+  assert {
+    condition = (
+      strcontains(output.pool_worker_environments["judge-dev-judge-primary"], "JUDGE_POOL_ROLE=primary") &&
+      strcontains(output.pool_worker_environments["judge-dev-judge-burst-2"], "JUDGE_POOL_ROLE=burst") &&
+      alltrue([for env in output.pool_worker_environments : (
+        strcontains(env, "AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE=IPv6") && strcontains(env, "JUDGE_TEST_DATA_BUCKET=judge-test-data") &&
+        !strcontains(env, "AWS_SHARED_CREDENTIALS_FILE") && !strcontains(env, "AWS_EC2_METADATA_DISABLED")
+      )])
+    )
+    error_message = "Pool workers use instance-role credentials over IPv6 IMDS and know their role."
+  }
+  assert {
+    condition = (
+      !strcontains(aws_iam_role_policy.pool.policy, "secretsmanager") && !strcontains(aws_iam_role_policy.pool.policy, "ssm:GetParameter") &&
+      strcontains(aws_iam_role_policy.pool.policy, "ssm:UpdateInstanceInformation") && strcontains(aws_iam_role_policy.pool.policy, "sqs:ReceiveMessage") &&
+      strcontains(aws_iam_role_policy.pool.policy, "cloudwatch:namespace")
+    )
+    error_message = "The instance role carries worker, monitoring and SSM agent access only."
+  }
+  assert {
+    condition = (
+      anytrue([for s in jsondecode(aws_iam_role_policy.bridge.policy).Statement : contains(s.Action, "ec2:StartInstances")]) &&
+      alltrue([for s in jsondecode(aws_iam_role_policy.bridge.policy).Statement :
+        !(contains(s.Action, "ec2:StartInstances") || contains(s.Action, "ec2:CreateTags")) ||
+        try(s.Condition.StringEquals["aws:ResourceTag/JudgePool"], "") == "judge-dev"
+      ]) &&
+      alltrue([for s in jsondecode(aws_iam_role_policy.bridge.policy).Statement :
+        !contains(s.Action, "ec2:CreateTags") || try(s.Condition["ForAllValues:StringEquals"]["aws:TagKeys"], []) == ["JudgeHoldUntil"]
+      ]) &&
+      !strcontains(aws_iam_role_policy.bridge.policy, "StopInstances") && !strcontains(aws_iam_role_policy.bridge.policy, "TerminateInstances")
+    )
+    error_message = "The bridge may only start pool hosts and extend their contest hold."
+  }
+  assert {
+    condition = (
+      aws_lambda_function.bridge.environment[0].variables.JUDGE_CAPACITY_ENABLED == "false" &&
+      aws_lambda_function.bridge.environment[0].variables.JUDGE_POOL == "judge-dev" &&
+      aws_lambda_function.bridge.environment[0].variables.JUDGE_BURST_MIN_PARTICIPANTS == "10" &&
+      aws_lambda_function.bridge.environment[0].variables.JUDGE_ENABLED_RUNTIMES == "cpp17,python314"
+    )
+    error_message = "Capacity control is opt-in, and the published runtimes survive a Terraform apply."
+  }
+}
+
+run "no_burst_hosts" {
+  command = plan
+  variables { burst_worker_count = 0 }
+  assert {
+    condition     = keys(aws_instance.pool) == ["judge-dev-judge-primary"]
+    error_message = "The primary host exists without burst hosts."
+  }
+}
+
+run "reject_capacity_without_runtime" {
+  command = plan
+  variables {
+    capacity_enabled = true
+    runtime_digest   = ""
+  }
+  expect_failures = [aws_lambda_function.bridge]
+}
+
+run "reject_missing_runtimes" {
+  command = plan
+  variables { enabled_runtimes = [] }
+  expect_failures = [var.enabled_runtimes]
 }

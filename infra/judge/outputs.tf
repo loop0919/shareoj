@@ -1,8 +1,13 @@
-output "worker_instance_name" { value = aws_lightsail_instance.worker[0].name }
-output "worker_ipv6_addresses" { value = aws_lightsail_instance.worker[0].ipv6_addresses }
+output "worker_instance_name" { value = try(aws_lightsail_instance.worker[0].name, null) }
+output "worker_ipv6_addresses" { value = try(aws_lightsail_instance.worker[0].ipv6_addresses, null) }
 output "workers" {
   value = { for worker in aws_lightsail_instance.worker : worker.name => worker.ipv6_addresses }
 }
+output "pool_hosts" {
+  description = "EC2 judge hosts; rollout nodes must list every id."
+  value       = { for name, instance in aws_instance.pool : name => { id = instance.id, role = local.pool_hosts[name].role } }
+}
+output "pool_worker_environments" { value = local.pool_environment }
 output "worker_iam_user" { value = aws_iam_user.worker.name }
 output "worker_ssm_role" { value = aws_iam_role.worker_ssm.name }
 output "worker_environment" {

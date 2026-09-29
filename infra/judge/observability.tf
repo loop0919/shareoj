@@ -51,13 +51,21 @@ resource "aws_cloudwatch_log_group" "worker" {
   name              = local.worker_log_group
   retention_in_days = 14
 }
-resource "aws_iam_user_policy" "worker_observability" {
-  user = aws_iam_user.worker.name
-  name = "observability"
-  policy = jsonencode({ Version = "2012-10-17", Statement = [
+locals {
+  observability_statements = [
     { Effect = "Allow", Action = ["logs:CreateLogStream", "logs:PutLogEvents"], Resource = "${aws_cloudwatch_log_group.worker.arn}:*" },
     { Effect = "Allow", Action = ["cloudwatch:PutMetricData"], Resource = "*", Condition = { StringEquals = { "cloudwatch:namespace" = local.metrics_namespace } } }
-  ] })
+  ]
+  # Every host has its own process heartbeat. A stopped burst host is expected to report nothing.
+  worker_alarms = merge(
+    { for worker in aws_lightsail_instance.worker : worker.name => "breaching" },
+    { for name, host in local.pool_hosts : name => host.role == "primary" ? "breaching" : "notBreaching" },
+  )
+}
+resource "aws_iam_user_policy" "worker_observability" {
+  user   = aws_iam_user.worker.name
+  name   = "observability"
+  policy = jsonencode({ Version = "2012-10-17", Statement = local.observability_statements })
 }
 resource "aws_cloudwatch_log_metric_filter" "errors" {
   for_each = {
@@ -88,7 +96,6 @@ resource "aws_cloudwatch_log_metric_filter" "pending_age" {
 }
 resource "aws_cloudwatch_metric_alarm" "judge" {
   for_each = {
-    worker           = { metric = "procstat_lookup_pid_count", comparison = "LessThanThreshold", threshold = 1, periods = 3, period = 60, statistic = "Maximum", missing = "breaching" }
     pending          = { metric = "OldestPendingSeconds", comparison = "GreaterThanThreshold", threshold = 300, periods = 1, period = 60, statistic = "Maximum", missing = "notBreaching" }
     dispatch-missing = { metric = "OldestPendingSeconds", comparison = "LessThanThreshold", threshold = 0, periods = 3, period = 60, statistic = "Minimum", missing = "breaching" }
     platform         = { metric = "PlatformErrors", comparison = "GreaterThanThreshold", threshold = 0, periods = 1, period = 300, statistic = "Sum", missing = "notBreaching" }
@@ -100,7 +107,7 @@ resource "aws_cloudwatch_metric_alarm" "judge" {
   alarm_description   = "See docs/judge/observability.md; ${local.logs_url}"
   namespace           = local.metrics_namespace
   metric_name         = each.value.metric
-  dimensions          = each.key == "worker" ? { Worker = "${local.name}-judge-worker" } : {}
+  dimensions          = {}
   comparison_operator = each.value.comparison
   threshold           = each.value.threshold
   evaluation_periods  = each.value.periods
@@ -112,23 +119,31 @@ resource "aws_cloudwatch_metric_alarm" "judge" {
   alarm_actions       = local.alarm_actions
   ok_actions          = local.alarm_actions
 }
-resource "aws_cloudwatch_metric_alarm" "additional_worker" {
-  count               = var.worker_count - 1
-  alarm_name          = "${local.name}-judge-worker-${count.index + 2}"
+resource "aws_cloudwatch_metric_alarm" "worker" {
+  for_each            = local.worker_alarms
+  alarm_name          = each.key
   alarm_description   = "See docs/judge/observability.md; ${local.logs_url}"
   namespace           = local.metrics_namespace
   metric_name         = "procstat_lookup_pid_count"
-  dimensions          = { Worker = aws_lightsail_instance.worker[count.index + 1].name }
+  dimensions          = { Worker = each.key }
   comparison_operator = "LessThanThreshold"
   threshold           = 1
   evaluation_periods  = 3
   datapoints_to_alarm = 3
   period              = 60
   statistic           = "Maximum"
-  treat_missing_data  = "breaching"
+  treat_missing_data  = each.value
   actions_enabled     = var.alerts_enabled
   alarm_actions       = local.alarm_actions
   ok_actions          = local.alarm_actions
+}
+moved {
+  from = aws_cloudwatch_metric_alarm.judge["worker"]
+  to   = aws_cloudwatch_metric_alarm.worker["judge-dev-judge-worker"]
+}
+moved {
+  from = aws_cloudwatch_metric_alarm.additional_worker[0]
+  to   = aws_cloudwatch_metric_alarm.worker["judge-dev-judge-worker-2"]
 }
 resource "aws_cloudwatch_metric_alarm" "bridge_failure" {
   alarm_name          = "${local.name}-judge-bridge-failure"
@@ -243,7 +258,7 @@ resource "aws_sns_topic_subscription" "notify" {
 }
 output "cloudwatch_agent_config" { value = jsonencode(local.agent_config) }
 output "cloudwatch_agent_configs" {
-  value = { for worker in aws_lightsail_instance.worker : worker.name => replace(jsonencode(local.agent_config), "${local.name}-judge-worker", worker.name) }
+  value = { for name in keys(local.worker_alarms) : name => replace(jsonencode(local.agent_config), "${local.name}-judge-worker", name) }
 }
 output "alerts_topic_arn" { value = aws_sns_topic.alerts.arn }
 output "notification_dead_queue_url" { value = aws_sqs_queue.notification_dead.url }
