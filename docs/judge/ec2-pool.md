@@ -73,6 +73,12 @@ EC2の台へ配布するときは、`judge/rollout.example.json`を元に次の�
 `finish`では健全性を確かめた後に`JudgeInstalledDigest`を付け、完了時に`JudgeMaintenanceHoldUntil`を現在+15分に縮める。
 縮められなかった場合は`state.json`の`maintenanceHoldReleased`が`false`になり、burstは4時間の期限まで動き続ける。
 
+bridgeのパッケージは、本番のAPIとDBのマイグレーションと同じコミットからビルドする。
+bridgeは毎分のdispatchで、コンテストの問題公開や定期便の出題もDBに対して行う。
+本番より進んだコミットから作ったbridgeは、まだ適用されていないマイグレーションのテーブルを参照し、dispatch全体が失敗する。
+2026-09-29の切り替えでは、未リリースの定期便の変更を含む`main`からbridgeを作ったため、約2時間dispatchが止まった。
+`rollout.py`の`prepare`は`bridge_package`の内容でbridgeを更新するので、配布の前にビルド元のコミットを確かめる。
+
 `infra/judge`は公開言語を`enabled_runtimes`として必須の変数に持つ。
 applyでbridgeの`JUDGE_ENABLED_RUNTIMES`を消さないためである。
 初回だけは`terraform.tfvars`へ手で設定し、以後は`rollout.py`が`zz-rollout.auto.tfvars.json`へ書き込む。
@@ -187,6 +193,11 @@ python3 judge/rollout.py finish --config judge/.build/rollout.json --run-dir "$J
 
 `finish`はLightsailのworkerが停止して無効になっていることを確かめてから、配信を再開する。
 完了条件は`state.json`が`status: passed`かつ`step: complete`になることである。
+
+2026-09-30（日本時間）の切り替えでは、受付の停止は約29分だった。
+`prepare`に約5分、ワーカーの起動（ランタイム全体の照合を含む）に約4.5分、`finish`に約3分かかった。
+残りは、bridgeの問題の調査と差し替えに使った時間である。
+t3.smallでの全ランタイムのsmokeは、3台並列で約28分、1台あたりのCPU時間は22〜24分だった。
 
 ### 5. 台数制御を有効にする
 
