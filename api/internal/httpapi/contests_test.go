@@ -200,7 +200,9 @@ func TestContestsPostgres(t *testing.T) {
 	request("PUT", "/my/contests/"+cid, "bob", in, 404)
 	// Only the registered problem is visible to a tester before the start.
 	exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'tester')`, a)
-	request("GET", "/my/contests/"+cid+"/problems/"+a, "tester", nil, 200)
+	if detail = request("GET", "/my/contests/"+cid+"/problems/"+a, "tester", nil, 200); !strings.Contains(detail, "secret editorial") {
+		t.Fatal("tester must read the editorial before the start", detail)
+	}
 	request("GET", "/my/contests/"+cid+"/problems/"+b, "tester", nil, 404)
 	var testerView contests.Contest
 	if err := json.Unmarshal([]byte(request("GET", "/my/contests/"+cid, "tester", nil, 200)), &testerView); err != nil {

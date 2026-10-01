@@ -13,6 +13,8 @@ if (error.value || !problem.value || !contest.value) throw createError({ statusC
 const showingEditorial = computed(() => route.query.view === 'editorial')
 const submissionView = computed(() => route.query.view === 'my-submissions' || route.query.view === 'submissions')
 const problemPath = `/contests/${id}/problems/${pid}`
+// The API returns the editorial before the end to the setter and this problem's testers.
+const canReadEditorial = computed(() => contest.value?.status === 'ended' || (!!profile.value && (profile.value.handle === problem.value?.author || !!problem.value?.testers?.includes(profile.value.handle))))
 useSeoMeta({ title: () => `${problem.value?.title} | ${contest.value?.title} | ShareOJ` })
 watch(() => user.value?.id, () => { void refreshContest() })
 usePolling(() => Promise.all([refresh(), refreshContest()]), 15000)
@@ -21,7 +23,7 @@ useSharePreview({ title: () => problem.value!.title, path: problemPath, descript
 <template>
   <div v-if="problem && contest" class="problem-page">
     <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink :to="`/contests/${id}?view=problems`">{{ contest.title }}</NuxtLink><span aria-hidden="true">/</span><span>{{ problem.title }}</span></nav><TweetButton v-if="contest.status !== 'scheduled'" :title="problem.title" :url="problemPath" /></div>
-    <nav class="problem-menu" aria-label="問題メニュー"><NuxtLink :to="problemPath" :aria-current="showingEditorial || submissionView ? undefined : 'page'">問題</NuxtLink><NuxtLink v-if="contest.status === 'ended' || profile?.handle === problem.author" :to="{ path: problemPath, query: { view: 'editorial' } }" :aria-current="showingEditorial ? 'page' : undefined">解説</NuxtLink><NuxtLink :to="{ path: problemPath, query: { view: 'my-submissions' } }" :aria-current="route.query.view === 'my-submissions' ? 'page' : undefined">自分の提出</NuxtLink><NuxtLink :to="{ path: problemPath, query: { view: 'submissions' } }" :aria-current="route.query.view === 'submissions' ? 'page' : undefined">すべての提出</NuxtLink></nav>
+    <nav class="problem-menu" aria-label="問題メニュー"><NuxtLink :to="problemPath" :aria-current="showingEditorial || submissionView ? undefined : 'page'">問題</NuxtLink><NuxtLink v-if="canReadEditorial" :to="{ path: problemPath, query: { view: 'editorial' } }" :aria-current="showingEditorial ? 'page' : undefined">解説</NuxtLink><NuxtLink :to="{ path: problemPath, query: { view: 'my-submissions' } }" :aria-current="route.query.view === 'my-submissions' ? 'page' : undefined">自分の提出</NuxtLink><NuxtLink :to="{ path: problemPath, query: { view: 'submissions' } }" :aria-current="route.query.view === 'submissions' ? 'page' : undefined">すべての提出</NuxtLink></nav>
     <header class="problem-header"><h1>{{ problem.title }}</h1><div class="problem-summary"><div class="problem-meta muted"><p>作成者 <UserLink :handle="problem.author" /></p><p v-if="problem.testers?.length">テスター <template v-for="(tester, index) in problem.testers" :key="tester"><span v-if="index">、</span><UserLink :handle="tester" /></template></p><p>配点 {{ contest.problems.find(p => p.id === problem!.id)?.points }} 点</p></div></div><dl class="limits"><div><dt>実行時間制限</dt><dd>{{ Number(problem.timeLimitMs) / 1000 }} 秒</dd></div><div><dt>メモリ制限</dt><dd>{{ problem.memoryLimitMb }} MiB</dd></div></dl></header>
     <template v-if="submissionView">
       <p v-if="route.query.view === 'submissions' && !contest.canViewSubmissions" class="notice submission-notice">すべての提出はコンテスト終了後に公開されます。終了前はコンテストセッターとテスターが閲覧できます。</p>
