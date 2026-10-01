@@ -269,5 +269,5 @@ with the [Discord Embed Debugger](https://discord.com/developers/embeds).
 誤答ペナルティはなく、同順位内はその正解状況に到達した提出が早い順に表示する。
 「新作を応募」から保存済みの未公開問題と公開希望を選び、応募中の問題は同じ画面で取り下げられる。
 応募条件と選出方法は[ADR 0011](../docs/adr/0011-schedule-featured-problems.md)に記載する。
-新作の問題画面はAPIの`editorialHidden`に従い、解禁日時とネタバレを避ける案内を表示する。
+新作の問題画面はAPIの`editorialHidden`に従い、解禁日時を表示する。
 解禁前も「自分の提出」と通常の提出フォームは利用できる。

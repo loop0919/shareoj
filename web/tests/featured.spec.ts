@@ -117,7 +117,7 @@ test('authors choose a preference, see validation failures, apply and withdraw',
 test('hidden editorial and other submissions show the unlock time while own results stay accessible', async ({ page }) => {
   await page.goto(`/problems/${hidden}?view=editorial`)
   await expect(page.getByText('解説は公開待ちです。')).toBeVisible()
-  await expect(page.getByText(/解法のネタバレを含めないでください/)).toBeVisible()
+  await expect(page.locator('.notice')).toHaveText('定期便の新作です。解説と他者の提出は2099/09/29 22:00（日本時間）に公開します。')
   await page.getByRole('link', { name: 'すべての提出', exact: true }).click()
   await expect(page.getByText(/他者の提出は解禁後に閲覧できます/)).toBeVisible()
   await expect(page.locator('.problem-submissions')).toHaveCount(0)
