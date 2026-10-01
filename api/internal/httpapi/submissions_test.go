@@ -375,7 +375,7 @@ func TestSubmissionsPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	public, err := store.PublicGet(ctx, id)
+	public, err := store.PublicGet(ctx, id, "")
 	if err != nil {
 		t.Fatal(err)
 	}

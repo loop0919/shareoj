@@ -7,6 +7,7 @@ import (
 
 // Staff can review ordinary draft submissions from the contest problem page.
 // Public views still hide draft runs and ongoing contests.
+// The author and testers also review a featured problem's submissions before they unlock.
 const problemSubmissionVisible = `problem_id=$1 AND ($2='' OR contest_id=NULLIF($2,'')::uuid OR
  (contest_id IS NULL AND EXISTS(SELECT 1 FROM contests c WHERE c.id=NULLIF($2,'')::uuid AND ` + contestStaff + `)))
  AND NOT COALESCE((job->>'easyTest')::boolean,false)
@@ -19,7 +20,7 @@ const problemSubmissionVisible = `problem_id=$1 AND ($2='' OR contest_id=NULLIF(
   OR EXISTS(SELECT 1 FROM contests c WHERE c.id=contest_id
    AND (` + contestStaff + ` OR (statement_timestamp()>=c.ends_at AND submissions.created_at>=c.starts_at)))
  )))
- AND (owner_id=$3 OR COALESCE(featured_reveal_at(problem_id),'-infinity')<=statement_timestamp())`
+ AND (owner_id=$3 OR can_manage_problem(problem_id,$3) OR COALESCE(featured_reveal_at(problem_id),'-infinity')<=statement_timestamp())`
 
 func (s *Store) problemSubmissionsAccess(ctx context.Context, problemID, contestID, viewer string, mine bool) error {
 	var allowed bool

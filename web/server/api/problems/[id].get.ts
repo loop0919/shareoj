@@ -29,5 +29,17 @@ export default defineEventHandler(async event => {
   }
   const result = publicProblemSchema.safeParse(content)
   if (!result.success || result.data.id !== id) throw createError({ statusCode: 502 })
+  // The author and testers read a featured editorial before it unlocks.
+  if (result.data.editorialHidden && hasSession(event)) {
+    let staff: unknown
+    try { staff = await privateAPI(event, `/my/problems/${id}/publication`) }
+    catch (error) {
+      if (![401, 403, 404].includes((error as { statusCode?: number }).statusCode ?? 0)) throw error
+      return { ...result.data, isPrivate: false }
+    }
+    const parsed = publicProblemSchema.safeParse(staff)
+    if (!parsed.success || parsed.data.id !== id) throw createError({ statusCode: 502 })
+    return { ...parsed.data, isPrivate: false }
+  }
   return { ...result.data, isPrivate: false }
 })

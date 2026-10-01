@@ -437,6 +437,8 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 新作の公開問題レスポンスは、翌22時まで`editorialHidden: true`と`editorialRevealAt`を返し、`editorial`を返さない。
 提出一覧と詳細にも同じ解禁条件を適用する。
 その間も自分の提出は認証済みAPIから確認できる。
+作者とテスターは解禁前も、`GET /my/problems/{id}/publication`で公開版の解説を、`GET /my/problems/{id}/submissions`ですべての提出を取得できる。
+`GET /my/problems/{id}/publication`は`GET /problems/{id}`と同じ形で返し、`editorialHidden`は一般公開の解禁状態を表す。
 
 反映時はマイグレーション021を先に適用し、API、Web、judge-bridgeの成果物を更新する。
 既存の毎分ディスパッチが定期出題も処理するため、常駐プロセスや新しいスケジューラーは不要である。

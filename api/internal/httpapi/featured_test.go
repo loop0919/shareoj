@@ -61,7 +61,7 @@ func newFeaturedTest(t *testing.T) featuredTest {
 		t.Fatal(err)
 	}
 	f := featuredTest{t: t, store: store}
-	f.exec(`INSERT INTO user_profiles(owner_id,handle) VALUES('alice','alice'),('bob','bob'),('tester','tester')`)
+	f.exec(`INSERT INTO user_profiles(owner_id,handle) VALUES('alice','alice'),('bob','bob'),('carol','carol'),('tester','tester')`)
 	sign := newSigningFixture(t)
 	h := newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Profiles: profiles.New(store.Pool()), Submissions: &submissions.Store{Pool: store.Pool()}, JudgeImage: "sha256:" + strings.Repeat("a", 64), JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: "cpp17", Verifier: newCognitoVerifier(sign.server.URL, "client")})
 	f.request = func(method, path, owner string, body any, want int) string {
@@ -199,6 +199,14 @@ func TestFeaturedReleaseAndEmbargoPostgres(t *testing.T) {
 			t.Fatal("editorial leaked", body)
 		}
 	}
+	// The author and testers read the published editorial before it unlocks; others still cannot.
+	for viewer, visible := range map[string]bool{"alice": true, "tester": true, "bob": false} {
+		body := f.request("GET", "/my/problems/"+a.ID+"/publication", viewer, nil, 200)
+		if strings.Contains(body, "SECRET EDITORIAL") != visible || !strings.Contains(body, `"editorialHidden":true`) {
+			t.Fatal("wrong editorial access", viewer, body)
+		}
+	}
+	f.request("GET", "/my/problems/"+a.ID+"/publication", "", nil, 401)
 	f.request("GET", "/images/"+imageID, "", nil, 404)
 	f.request("GET", "/my/images/"+imageID, "bob", nil, 404)
 	f.request("GET", "/my/images/"+imageID, "tester", nil, 200)
@@ -209,16 +217,15 @@ func TestFeaturedReleaseAndEmbargoPostgres(t *testing.T) {
 	f.request("POST", "/my/submissions", "bob", map[string]any{"problemId": a.ID, "runtime": "cpp17", "source": "int main(){}"}, 202)
 	sid := newSubmissionID()
 	f.exec(`INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,result) VALUES($1,'bob',$2,2,'Featured','cpp17','SECRET SOURCE','{"privateDraft":false}','DONE','{"verdict":"AC","passed":1,"total":1}')`, sid, a.ID)
-	for _, viewer := range []string{"", "alice", "tester"} {
+	for viewer, visible := range map[string]bool{"": false, "carol": false, "alice": true, "tester": true} {
 		path := "/problems/" + a.ID + "/submissions"
 		if viewer != "" {
 			path = "/my" + path
 		}
-		body := f.request("GET", path, viewer, nil, 200)
-		if strings.Contains(body, sid) {
-			t.Fatal("submission list leaked", body)
+		if body := f.request("GET", path, viewer, nil, 200); strings.Contains(body, sid) != visible {
+			t.Fatal("wrong submission list access", viewer, body)
 		}
-		f.request("GET", path+"/"+sid, viewer, nil, 404)
+		f.request("GET", path+"/"+sid, viewer, nil, map[bool]int{true: 200, false: 404}[visible])
 	}
 	f.request("GET", "/my/problems/"+a.ID+"/submissions/"+sid, "bob", nil, 200)
 	f.request("GET", "/my/submissions/"+sid, "bob", nil, 200)

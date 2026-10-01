@@ -44,6 +44,11 @@ func nextContentCursor(id string, date time.Time) string {
 }
 
 func (p problemHandler) publicProblems(w http.ResponseWriter, r *http.Request) {
+	p.publishedProblems(w, r, "")
+}
+
+// publishedProblems also serves the author and testers, who read a featured editorial before it unlocks.
+func (p problemHandler) publishedProblems(w http.ResponseWriter, r *http.Request, viewer string) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	id := r.PathValue("id")
@@ -65,7 +70,7 @@ func (p problemHandler) publicProblems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if id != "" {
-		value, err := store.PublicGet(ctx, id)
+		value, err := store.PublicGet(ctx, id, viewer)
 		if err != nil {
 			problemError(w, err)
 			return
