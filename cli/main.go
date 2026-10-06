@@ -267,6 +267,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(out)
 	api, username, expected := defaultAPI, "", int64(-1)
+	google, noBrowser, site := false, false, ""
 	if value := os.Getenv("SHAREOJ_API_URL"); value != "" {
 		api = value
 	}
@@ -278,6 +279,9 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	}
 	if command == "login" {
 		flags.StringVar(&username, "username", "", "Login email address")
+		flags.BoolVar(&google, "google", false, "Sign in with Google in a browser")
+		flags.BoolVar(&noBrowser, "no-browser", false, "Print the Google login URL without opening a browser")
+		flags.StringVar(&site, "site", "", "ShareOJ website origin for Google login")
 	}
 	if err := flags.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -291,6 +295,9 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	}
 	if expected < -1 || expected > maxVersion {
 		return errors.New("invalid --expect-version")
+	}
+	if (google && username != "") || (!google && (noBrowser || site != "")) {
+		return errors.New("use --google without --username; --site and --no-browser require --google")
 	}
 	directory := flags.Arg(0)
 	switch command {
@@ -311,9 +318,18 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		}
 		switch command {
 		case "login":
-			if err := client.login(ctx, username, func(label string, secret bool) (string, error) {
-				return terminalPrompt(ctx, label, secret)
-			}); err != nil {
+			if google {
+				var opener func(string) error
+				if !noBrowser {
+					opener = openBrowser
+				}
+				err = client.browserLogin(ctx, site, out, opener)
+			} else {
+				err = client.login(ctx, username, func(label string, secret bool) (string, error) {
+					return terminalPrompt(ctx, label, secret)
+				})
+			}
+			if err != nil {
 				return err
 			}
 			fmt.Fprintln(out, "Logged in")
