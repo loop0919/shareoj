@@ -12,7 +12,10 @@ const resultSchema = z.object({
 export default defineEventHandler(async event => {
   privateHeaders(event)
   const action = getRouterParam(event, 'action')
-  if (action === 'providers' && event.method === 'GET') return { google: Boolean(googleOAuthConfig(event)) }
+  if (action === 'providers' && event.method === 'GET') {
+    const google = googleOAuthConfig(event)
+    return { google: Boolean(google), googleCLI: Boolean(google?.clientSecret) }
+  }
   if (action === 'me' && event.method === 'GET') {
     if (!hasSession(event)) return { user: null }
     try { return { user: await privateAPI<{ id: string }>(event, '/auth/me') } }

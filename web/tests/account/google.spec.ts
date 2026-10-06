@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto'
 import { cliTicket, redeemCliTicket } from '../../server/utils/cli-oauth'
 
 test('Google authorization uses PKCE and a private short-lived state cookie', async ({ page, context }) => {
+  const providers = await context.request.get('/api/auth/providers')
+  expect(await providers.json()).toEqual({ google: true, googleCLI: true })
   await page.goto('/login')
   await expect(page.getByRole('link', { name: 'Googleでログイン' })).toBeVisible()
   const response = await context.request.get('/auth/google', { maxRedirects: 0 })

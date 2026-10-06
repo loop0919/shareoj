@@ -24,6 +24,11 @@ func TestBrowserLogin(t *testing.T) {
 			challenge := ""
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
+				case "/api/auth/providers":
+					if r.Header.Get("Authorization") != "" {
+						t.Error("token sent to public capability check")
+					}
+					fmt.Fprint(w, `{"google":true,"googleCLI":true}`)
 				case "/api/auth/cli/exchange":
 					if r.Header.Get("Authorization") != "" {
 						t.Error("ambient token sent to exchange")
@@ -131,9 +136,41 @@ func TestBrowserLoginCancellation(t *testing.T) {
 	if err := client.browserLogin(context.Background(), "", io.Discard, nil); err == nil {
 		t.Fatal("custom API needs explicit site")
 	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"google":true,"googleCLI":true}`)
+	}))
+	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	if err := client.browserLogin(ctx, "http://127.0.0.1:12345", io.Discard, nil); err == nil || !strings.Contains(err.Error(), "deadline") {
+	if err := client.browserLogin(ctx, server.URL, io.Discard, nil); err == nil || !strings.Contains(err.Error(), "deadline") {
 		t.Fatalf("timeout: %v", err)
+	}
+}
+
+func TestBrowserLoginRejectsUnsupportedWebBeforeOpeningBrowser(t *testing.T) {
+	t.Setenv("SHAREOJ_CONFIG_DIR", t.TempDir())
+	for _, body := range []string{`{"google":true}`, `{"google":false,"googleCLI":false}`} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/api/auth/providers" {
+				t.Errorf("unexpected request: %s", r.URL.Path)
+			}
+			fmt.Fprint(w, body)
+		}))
+		client, _ := newClient(server.URL)
+		var output strings.Builder
+		err := client.browserLogin(context.Background(), server.URL, &output, func(string) error {
+			t.Error("opened browser on unsupported website")
+			return nil
+		})
+		server.Close()
+		if err == nil || !strings.Contains(err.Error(), "deploy the updated ShareOJ web server") {
+			t.Fatalf("missing deployment guidance: %v", err)
+		}
+		if output.Len() != 0 {
+			t.Fatal("printed a login URL or entered callback wait")
+		}
+		if _, err := os.Stat(client.credential); !os.IsNotExist(err) {
+			t.Fatal("unsupported website saved credentials")
+		}
 	}
 }

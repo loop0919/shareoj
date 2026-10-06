@@ -54,6 +54,15 @@ func (c *apiClient) browserLogin(ctx context.Context, site string, out io.Writer
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
+	var providers struct {
+		GoogleCLI bool `json:"googleCLI"`
+	}
+	if err := c.request(ctx, "GET", base.ResolveReference(&url.URL{Path: "/api/auth/providers"}).String(), nil, nil, &providers); err != nil {
+		return fmt.Errorf("could not check CLI Google login support: %w", err)
+	}
+	if !providers.GoogleCLI {
+		return errors.New("this website does not support CLI Google login yet; deploy the updated ShareOJ web server with Google login configured, then retry")
+	}
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		return errors.New("could not start the localhost login callback")
@@ -134,7 +143,7 @@ func (c *apiClient) browserLogin(ctx context.Context, site string, out io.Writer
 			}
 		}
 	}()
-	fmt.Fprintf(out, "Open this URL in a browser on this computer:\n%s\n", start.String())
+	fmt.Fprintf(out, "Open this URL in a browser on this computer:\n%s\nWaiting for the browser callback (up to 10 minutes).\n", start.String())
 	if open != nil {
 		if err := open(start.String()); err != nil {
 			fmt.Fprintln(out, "Could not open a browser automatically; open the URL above.")
@@ -144,6 +153,6 @@ func (c *apiClient) browserLogin(ctx context.Context, site string, out io.Writer
 	case err := <-finished:
 		return err
 	case <-ctx.Done():
-		return fmt.Errorf("browser login stopped: %w", ctx.Err())
+		return fmt.Errorf("browser login stopped: %w; if using WSL, Docker or SSH, check that the browser can reach the CLI at 127.0.0.1:%d", ctx.Err(), listener.Addr().(*net.TCPAddr).Port)
 	}
 }
