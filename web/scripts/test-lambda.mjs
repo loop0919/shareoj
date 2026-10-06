@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { readdir, mkdtemp, rm } from 'node:fs/promises'
+import { readFile, readdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
@@ -91,6 +91,10 @@ async function invoke(path, { method = 'GET', body, cookies, origin = 'https://f
   return handler({ version: '2.0', rawPath: pathname, rawQueryString: query, queryStringParameters: Object.fromEntries(new URLSearchParams(query)), headers: { host: 'frontend.example', 'x-forwarded-proto': 'https', origin, 'content-type': 'application/json' }, requestContext: { http: { method, path: pathname, sourceIp: '127.0.0.1' } }, body: body ? JSON.stringify(body) : undefined, cookies, isBase64Encoded: false }, {})
 }
 try {
+  const installer = await invoke('/install.sh')
+  assert.equal(installer.statusCode, 200)
+  assert.equal(Buffer.from(installer.body, installer.isBase64Encoded ? 'base64' : 'utf8').toString(),
+    await readFile(new URL('../public/install.sh', import.meta.url), 'utf8'))
   for (const [path, url, expected] of [
     ['/api/ratings/atcoder?handle=cachetest', 'https://atcoder.jp/users/cachetest/history/json', { rating: 1600, unavailable: false }],
     ['/api/ratings/codeforces?handle=cachetest', 'https://codeforces.com/api/user.info?handles=cachetest', { rating: 1500, unavailable: false }],

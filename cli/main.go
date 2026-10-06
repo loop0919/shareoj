@@ -20,6 +20,9 @@ import (
 const stateName = ".shareoj.json"
 const maxVersion = 9007199254740990
 
+// Set by the release build with -ldflags "-X main.version=cli-vX.Y.Z".
+var version = "dev"
+
 var problemID = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$`)
 
 type state struct {
@@ -256,8 +259,12 @@ func terminalPrompt(ctx context.Context, label string, secret bool) (string, err
 }
 
 func run(ctx context.Context, args []string, out io.Writer) error {
+	if len(args) == 1 && (args[0] == "version" || args[0] == "--version") {
+		fmt.Fprintln(out, "shareoj", version)
+		return nil
+	}
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprintln(out, "Usage: shareoj <init|check|push|login|logout> [options] [directory]\nUse shareoj <command> --help for options.")
+		fmt.Fprintln(out, "Usage: shareoj <init|check|push|login|logout|version> [options] [directory]\nUse shareoj <command> --help for options.")
 		return nil
 	}
 	command := args[0]

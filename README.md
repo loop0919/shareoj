@@ -25,6 +25,10 @@ ShareOJ（Share Online Judge）は、プログラミング問題を解き、作�
 作問から始めたい方は、[問題作成](https://www.share-oj.net/problems/new)へどうぞ。
 ローカルで問題文や生成コードを編集してアップロードする場合は、[Go 製の作問 CLI](cli/README.md)を利用できます。
 
+```sh
+curl -fsSL https://www.share-oj.net/install.sh | bash
+```
+
 ## バグ報告・機能提案
 
 バグ報告・機能提案は[Issue](https://github.com/loop0919/shareoj/issues)へお願いします。

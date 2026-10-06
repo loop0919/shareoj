@@ -1,20 +1,41 @@
 # ShareOJ CLI
 
 問題文、生成コード、テストケースをローカルで編集し、ShareOJ の下書きへ保存する Go 製 CLI です。
-Go 1.26 以降でビルドでき、利用者には単一の実行ファイルを配布できます。
+ビルド済みの実行ファイルをインストールでき、利用者の環境に Go は不要です。
 
-## ビルドと利用
+## インストールと利用
 
-リポジトリのルートから実行します。
+Linux / WSL と macOS の x86_64 / arm64 に対応しています。
+`curl` と `sha256sum` または `shasum` が必要です。
 
 ```sh
-cd cli
-go build -o shareoj .
-./shareoj init a-plus-b
-./shareoj check a-plus-b
-./shareoj login --username your-email@example.com
-./shareoj push a-plus-b
+curl -fsSL https://www.share-oj.net/install.sh | bash
 ```
+
+GitHub Releases からバイナリを取得し、SHA-256 を照合して `~/.local/bin/shareoj` に保存します。
+sudo は不要です。
+初回に PATH の案内が表示された場合は、表示された設定を `~/.bashrc` や `~/.zshrc` に追加し、端末を開き直してください。
+同じコマンドを再実行すると最新版に更新します。
+ダウンロードや検証が失敗した場合、既存のバイナリは保持します。
+
+```sh
+shareoj version
+shareoj init a-plus-b
+shareoj check a-plus-b
+shareoj login --google
+shareoj push a-plus-b
+```
+
+バージョンや保存先を指定する場合は次のように実行します。
+
+```sh
+curl -fsSL https://www.share-oj.net/install.sh | bash -s -- cli-v0.1.0
+curl -fsSL https://www.share-oj.net/install.sh | SHAREOJ_INSTALL_DIR="$HOME/bin" bash
+```
+
+Windows で直接使う場合は [Releases](https://github.com/loop0919/shareoj/releases) から `shareoj-windows-amd64.exe` または `shareoj-windows-arm64.exe` を取得し、`shareoj.exe` に名前を変更してください。
+削除する場合はインストール先の実行ファイルを削除します。
+認証情報を削除するには、その前に `shareoj logout` を実行してください。
 
 `login` は端末からパスワードを非表示で入力します。
 メールアドレスとパスワードによるログイン、SMS / TOTP / メールの追加認証、初回パスワード変更に対応します。
@@ -22,7 +43,7 @@ go build -o shareoj .
 Google アカウントを利用する場合は次のコマンドでブラウザーを開きます。
 
 ```sh
-./shareoj login --google
+shareoj login --google
 ```
 
 ブラウザーで Google 認証を完了すると CLI に戻り、トークンを保存します。
@@ -44,6 +65,7 @@ MFA の新規登録は Web で行ってください。
 | `login --google [--no-browser]` | ブラウザーで Google 認証を行いトークンを保存 |
 | `push <directory>` | 指定されたファイルを読み、下書きを作成または更新 |
 | `logout` | 接続先のローカル認証情報を削除 |
+| `version` / `--version` | インストール済みのバージョンを表示 |
 
 `check` はプログラムをコンパイルしたり実行したりしません。
 言語 ID は形式のみを検査し、サーバーで利用可能かどうかや公開条件は判定しません。
@@ -147,7 +169,7 @@ Web 側で編集されて更新番号が変わっていれば、`push` は停止
 Web の下書きとローカルの内容を比較して必要な変更を取り込んだ後、表示された更新番号を指定して再実行できます。
 
 ```sh
-./shareoj push --expect-version 4 a-plus-b
+shareoj push --expect-version 4 a-plus-b
 ```
 
 この指定でも、確認した番号からさらに変更されていれば保存を拒否します。
@@ -162,14 +184,14 @@ Web の下書きとローカルの内容を比較して必要な変更を取り�
 オプションはディレクトリ名より前に指定します。
 
 ```sh
-./shareoj login --api http://localhost:8080
-./shareoj push --api http://localhost:8080 a-plus-b
+shareoj login --api http://localhost:8080
+shareoj push --api http://localhost:8080 a-plus-b
 ```
 
 Google ログインで既定以外の API を使う場合は、対応する Web サイトも `--site` で指定します。
 
 ```sh
-./shareoj login --google --api http://localhost:8080 --site http://localhost:3000
+shareoj login --google --api http://localhost:8080 --site http://localhost:3000
 ```
 
 Google ログインには、この変更を含む Web サーバーの配布が必要です。
@@ -197,6 +219,8 @@ HTTPS を必須とし、ローカル開発用の `localhost` / `127.0.0.1` / `::
 
 ## 検証と配布
 
+ソースからビルドする場合は Go 1.26 以降を使用し、`cli/` で実行します。
+
 ```sh
 go test ./...
 go vet ./...
@@ -207,3 +231,26 @@ GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -o shareoj-darwin-arm6
 
 テストはローカルの模擬 HTTP API を使い、本番へ問題を作成しません。
 ビルド時の依存は TOML パーサーと端末入力用ライブラリで、実行時に Go や Python のインストールは不要です。
+
+### リリース手順（メンテナー向け）
+
+インストーラーは `web/public/install.sh` で、通常の Web 配布に含まれます。
+最初にこの変更を main へ push し、Web の配布を完了してください。
+続いて、配布するコミットに `cli-vX.Y.Z` 形式のタグを付けて push します。
+
+```sh
+git tag cli-v0.1.0
+git push origin cli-v0.1.0
+```
+
+`Release CLI` ワークフローがテスト・検査後、Linux / macOS / Windows の amd64 / arm64 向けにビルドします。
+全バイナリと `SHA256SUMS` のアップロード後に Release を公開し、Latest に指定します。
+初回 Release が公開されるまではインストールできません。
+インストーラーのバージョン省略時は GitHub の Latest を参照するため、このリポジトリの Latest は CLI の安定版に指定してください。
+アップロード失敗で draft が残った場合は、その draft を削除してからワークフローを再実行します。
+
+Web の配布前に試す場合は GitHub 上のスクリプトも使えます（バイナリの Release は必要です）。
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/loop0919/shareoj/main/web/public/install.sh | bash
+```
