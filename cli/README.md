@@ -61,6 +61,7 @@ MFA の新規登録は Web で行ってください。
 | --- | --- |
 | `init <directory>` | 新しいディレクトリに A + B の雛形を作成。既存ディレクトリは上書きしない |
 | `check <directory>` | TOML、ファイル、文字コード、容量、テストの対応関係を検査 |
+| `pull <problem-id> <directory>` | 自分または参加済みテスターの問題の下書きを新しいディレクトリへ取得 |
 | `login [--username <email>]` | メールアドレスとパスワードでログイン |
 | `login --google [--no-browser]` | ブラウザーで Google 認証を行いトークンを保存 |
 | `push <directory>` | 指定されたファイルを読み、下書きを作成または更新 |
@@ -70,6 +71,33 @@ MFA の新規登録は Web で行ってください。
 `check` はプログラムをコンパイルしたり実行したりしません。
 言語 ID は形式のみを検査し、サーバーで利用可能かどうかや公開条件は判定しません。
 生成器の実行と解答の正しさの検証は、ShareOJ の Web 画面または rime で行ってください。
+
+## 既存の下書きを取得
+
+Web の問題編集 URL に含まれる問題 ID（UUID）を指定します。
+テスターの問題は、Web で招待を受け入れたアカウントでログインしてください。
+作者・テスターとも同じコマンドを使います。
+
+```sh
+shareoj login
+shareoj pull <problem-id> ./my-problem
+shareoj check ./my-problem
+# ファイルを編集後、取得元の下書きへ保存
+shareoj push ./my-problem
+```
+
+問題文、解説、生成器、チェッカーまたはインタラクター、非公開を含む全テストケースを取得します。
+コードは `input.txt`、`output.txt`、`validation.txt`、`checker.txt`、`interactor.txt` に保存し、実行言語は `problem.toml` に保持します。
+テストファイルは `tests/case001.in` / `case001.out` のような連番で保存します。
+元のケース名（空の名前を含む）は `[tests.names]` に記録し、ケースの順序とサンプル指定も保持します。
+`samples` は元のケース名ではなく `case001` のようなファイル名の幹を指定します。
+
+取得先がすでに存在する場合は上書きせずエラーにします。
+取得中に失敗した場合は、作成途中のディレクトリを削除します。
+外部保存されたテストファイルはサイズと SHA-256 を検証します。
+取得した問題 ID と版番号を `.shareoj.json` に保存するため、後続の `push` は同じ問題を更新し、他の編集と競合した場合は停止します。
+再取得するときは別の新しいディレクトリを指定してください。
+接続先を変える場合は `shareoj pull --api <URL> <problem-id> <directory>` または `SHAREOJ_API_URL` を使います。
 
 ## 問題ディレクトリ
 

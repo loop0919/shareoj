@@ -264,11 +264,11 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return nil
 	}
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprintln(out, "Usage: shareoj <init|check|push|login|logout|version> [options] [directory]\nUse shareoj <command> --help for options.")
+		fmt.Fprintln(out, "Usage: shareoj <init|check|pull|push|login|logout|version> [options] [arguments]\nUse shareoj <command> --help for options.")
 		return nil
 	}
 	command := args[0]
-	if command != "init" && command != "check" && command != "push" && command != "login" && command != "logout" {
+	if command != "init" && command != "check" && command != "pull" && command != "push" && command != "login" && command != "logout" {
 		return fmt.Errorf("unknown command: %s", command)
 	}
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
@@ -278,8 +278,14 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	if value := os.Getenv("SHAREOJ_API_URL"); value != "" {
 		api = value
 	}
-	if command == "push" || command == "login" || command == "logout" {
+	if command == "pull" || command == "push" || command == "login" || command == "logout" {
 		flags.StringVar(&api, "api", api, "ShareOJ API URL")
+	}
+	if command == "pull" {
+		flags.Usage = func() {
+			fmt.Fprintln(out, "Usage: shareoj pull [--api URL] <problem-id> <directory>")
+			flags.PrintDefaults()
+		}
 	}
 	if command == "push" {
 		flags.Int64Var(&expected, "expect-version", -1, "Save against a reviewed remote version after a conflict")
@@ -297,7 +303,10 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return err
 	}
 	needsDirectory := command == "init" || command == "check" || command == "push"
-	if (needsDirectory && flags.NArg() != 1) || (!needsDirectory && flags.NArg() != 0) {
+	if command == "pull" && flags.NArg() != 2 {
+		return errors.New("expected pull <problem-id> <directory>; place options before the problem ID")
+	}
+	if (needsDirectory && flags.NArg() != 1) || (!needsDirectory && command != "pull" && flags.NArg() != 0) {
 		return errors.New("expected one directory for init/check/push; place options before the directory")
 	}
 	if expected < -1 || expected > maxVersion {
@@ -324,6 +333,12 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 			return err
 		}
 		switch command {
+		case "pull":
+			saved, err := pull(ctx, flags.Arg(0), flags.Arg(1), client)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(out, "Pulled draft %s (version %d) into %s\n", saved.ID, saved.Version, flags.Arg(1))
 		case "login":
 			if google {
 				var opener func(string) error

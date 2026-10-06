@@ -42,11 +42,14 @@ type problemConfig struct {
 	Generators map[string]codeConfig `toml:"generators"`
 	Checker    *codeConfig           `toml:"checker"`
 	Interactor *codeConfig           `toml:"interactor"`
-	Tests      *struct {
-		Directory string   `toml:"directory"`
-		Suffix    string   `toml:"output_suffix"`
-		Samples   []string `toml:"samples"`
-	} `toml:"tests"`
+	Tests      *testConfig           `toml:"tests"`
+}
+
+type testConfig struct {
+	Directory string            `toml:"directory"`
+	Suffix    string            `toml:"output_suffix"`
+	Samples   []string          `toml:"samples"`
+	Names     map[string]string `toml:"names,omitempty"`
 }
 
 type program struct {
@@ -231,11 +234,20 @@ func loadCases(root *os.Root, c problemConfig) ([]testCase, error) {
 			return nil, fmt.Errorf("sample case %q does not exist", sample)
 		}
 	}
+	for name := range t.Names {
+		if !slices.Contains(inputs, name) {
+			return nil, fmt.Errorf("named case %q does not exist", name)
+		}
+	}
 	cases, names, total := []testCase{}, map[string]bool{}, 0
 	for _, name := range inputs {
-		trimmed := strings.TrimSpace(name)
-		if !validText(name, 64) || trimmed == "" || strings.ContainsFunc(name, unicode.IsControl) || names[trimmed] {
-			return nil, fmt.Errorf("invalid or duplicate test case name: %q", name)
+		label := name
+		if mapped, ok := t.Names[name]; ok {
+			label = mapped
+		}
+		trimmed := strings.TrimSpace(label)
+		if !validText(label, 64) || (label != "" && trimmed == "") || strings.ContainsFunc(label, unicode.IsControl) || (trimmed != "" && names[trimmed]) {
+			return nil, fmt.Errorf("invalid or duplicate test case name: %q", label)
 		}
 		names[trimmed] = true
 		input, err := readText(dir, name+".in", 16<<20)
@@ -250,7 +262,7 @@ func loadCases(root *os.Root, c problemConfig) ([]testCase, error) {
 		if total > 512<<20 {
 			return nil, errors.New("test data exceeds 512 MiB")
 		}
-		cases = append(cases, testCase{Name: name, IsSample: slices.Contains(t.Samples, name), Input: input, Output: output})
+		cases = append(cases, testCase{Name: label, IsSample: slices.Contains(t.Samples, name), Input: input, Output: output})
 	}
 	return cases, nil
 }
