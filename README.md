@@ -23,6 +23,7 @@ ShareOJ（Share Online Judge）は、プログラミング問題を解き、作�
 [公開問題](https://www.share-oj.net/problems)から、気になる一問を探してみてください。
 アカウントは[新規登録](https://www.share-oj.net/signup)から作成できます。
 作問から始めたい方は、[問題作成](https://www.share-oj.net/problems/new)へどうぞ。
+ローカルで問題文や生成コードを編集してアップロードする場合は、[Go 製の作問 CLI](cli/README.md)を利用できます。
 
 ## バグ報告・機能提案
 

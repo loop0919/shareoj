@@ -139,6 +139,13 @@ jobs:
         working-directory: api
         run: go vet ./...
 
+      - name: Test and build authoring CLI
+        working-directory: cli
+        run: |
+          go test ./...
+          go vet ./...
+          CGO_ENABLED=0 go build -trimpath -o shareoj .
+
       - name: Build Lambda package
         working-directory: api
         run: make package package-judge
