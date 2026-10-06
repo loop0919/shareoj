@@ -59,6 +59,8 @@ MFA の新規登録は Web で行ってください。
 
 | コマンド | 動作 |
 | --- | --- |
+| `guide` | AIエージェント向けの作問手順を表示（通信と認証は不要） |
+| `guide --install-skill <codex\|claude\|all>` | 作問スキルをユーザーのスキルディレクトリへ登録 |
 | `init <directory>` | 新しいディレクトリに A + B の雛形を作成。既存ディレクトリは上書きしない |
 | `check <directory>` | TOML、ファイル、文字コード、容量、テストの対応関係を検査 |
 | `pull <problem-id> <directory>` | 自分または参加済みテスターの問題の下書きを新しいディレクトリへ取得 |
@@ -71,6 +73,32 @@ MFA の新規登録は Web で行ってください。
 `check` はプログラムをコンパイルしたり実行したりしません。
 言語 ID は形式のみを検査し、サーバーで利用可能かどうかや公開条件は判定しません。
 生成器の実行と解答の正しさの検証は、ShareOJ の Web 画面または rime で行ってください。
+
+## AIエージェントに作問を頼む
+
+一度、利用するエージェントのスキルを登録してください。
+CodexとClaude Codeの両方に登録する場合は次のコマンドを使います。
+
+```sh
+shareoj guide --install-skill all
+```
+
+Codexだけなら `codex`、Claude Codeだけなら `claude` を指定します。
+登録先はそれぞれ `~/.agents/skills/shareoj-authoring/SKILL.md` と `~/.claude/skills/shareoj-authoring/SKILL.md` です。
+同じ内容なら再実行でき、内容の異なる既存ファイルは上書きしません。
+
+新しいエージェントセッションで「ShareOJで作問して」と頼むと、作問スキルが選択候補になり、選択された場合は最初に `shareoj guide` を読みます。
+たとえば「ShareOJで二分探索の問題を作問して。ローカルで検証して、下書きまで保存して」と依頼できます。
+スキルの自動選択はエージェント側の判断に依存します。
+選択されない場合はCodexで `$shareoj-authoring`、Claude Codeで `/shareoj-authoring` を明示するか、「最初に `shareoj guide` を読んで」と指定してください。
+ローカルのスキルが使えない環境でも、CLIが実行できればガイドを直接読めます。
+
+ガイドとスキルはCLIバイナリに同梱されます。
+スキルはガイドへの入口を持ち、CLIを更新するとガイドも更新されます。
+`shareoj --help` にもガイドへの案内があります。
+登録を解除するには、上記の該当スキルディレクトリを削除します。
+
+スキル配置と自動選択の仕様: [OpenAI Docs](https://learn.chatgpt.com/docs/build-skills)、[Claude Code Docs](https://code.claude.com/docs/en/skills)。
 
 ## 既存の下書きを取得
 
@@ -208,7 +236,7 @@ shareoj push --expect-version 4 a-plus-b
 ## 認証と接続先
 
 既定の接続先は `https://api.share-oj.net` です。
-`login` / `push` / `logout` の `--api`、または環境変数 `SHAREOJ_API_URL` で変更できます。
+`login` / `pull` / `push` / `logout` の `--api`、または環境変数 `SHAREOJ_API_URL` で変更できます。
 オプションはディレクトリ名より前に指定します。
 
 ```sh
