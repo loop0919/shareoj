@@ -3,6 +3,7 @@
 [![Website](https://img.shields.io/badge/Website-share--oj.net-0f766e?style=flat-square)](https://www.share-oj.net/)
 [![CI](https://github.com/loop0919/shareoj/actions/workflows/ci.yml/badge.svg)](https://github.com/loop0919/shareoj/actions/workflows/ci.yml)
 [![Issues](https://img.shields.io/github/issues/loop0919/shareoj?style=flat-square&color=2563eb)](https://github.com/loop0919/shareoj/issues)
+[![Featured on BitsExplorer](https://bitsexplorer.com/badge/1103675.svg)](https://bitsexplorer.com/i/1103675/shareoj)
 
 **考える楽しさを、次の一問へ。**
 
