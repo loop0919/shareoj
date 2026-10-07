@@ -8,7 +8,7 @@ ShareOJへの保存まで依頼されている場合は、以下の手順で下�
 
 | コマンド | 用途 |
 | --- | --- |
-| `shareoj init <directory>` | A + B の雛形を新しいディレクトリに作る |
+| `shareoj init <directory>` | 問題の雛形を新しいディレクトリに作る |
 | `shareoj pull <problem-id> <directory>` | 作者または参加済みテスターとして、全テストを含む下書きを新しいディレクトリへ取得する |
 | `shareoj check <directory>` | 設定、ファイル、文字コード、容量、入出力の対応を検査する |
 | `shareoj push <directory>` | 下書きを作成または更新する |
