@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"judge/api/internal/database"
 	"judge/api/internal/problems"
 )
 
@@ -142,6 +143,9 @@ func (s *Store) Save(ctx context.Context, owner, id string, in Input, policy Jud
 		}
 	}()
 	if in.Version == 0 {
+		if err = database.ConsumeCreationQuota(ctx, tx, owner, "contest"); err != nil {
+			return err
+		}
 		_, err = tx.Exec(ctx, `INSERT INTO contests(id,owner_id,title,description,starts_at,ends_at,penalty_minutes)
  SELECT $1,$2,$3,$4,$5,$6,$7 WHERE $5>clock_timestamp()`, id, owner, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes)
 	} else {

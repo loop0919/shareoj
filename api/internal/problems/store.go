@@ -234,6 +234,9 @@ func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft
 	defer func() { _ = tx.Rollback(ctx) }()
 	var p Problem
 	if version == 0 {
+		if err = database.ConsumeCreationQuota(ctx, tx, owner, "problem"); err != nil {
+			return p, err
+		}
 		p, err = scan(tx.QueryRow(ctx, `INSERT INTO problem_drafts (id, owner_id, draft) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING RETURNING id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),'')`, id, owner, data))
 	} else {
 		p, err = scan(tx.QueryRow(ctx, `UPDATE problem_drafts SET draft=$4, version=version+1, updated_at=clock_timestamp() WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),'')`, owner, id, version, data))

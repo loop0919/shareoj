@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { postSchema } from '~~/shared/types/post'
+import { accountError } from '~/utils/account-problems'
 useSeoMeta({ title: '記事を書く | ShareOJ', robots: 'noindex, nofollow' })
 const route = useRoute()
 const router = useRouter()
@@ -27,6 +28,7 @@ let saved = ''
 let leaving = false
 const snapshot = () => JSON.stringify({ title: title.value, markdown: markdown.value })
 function failure(e: unknown) {
+  if ((e as { data?: { data?: { code?: string } } }).data?.data?.code === 'creation_quota_exceeded') return accountError(e)
   const code = (e as { statusCode?: number }).statusCode
   return code === 409 ? '別の画面で更新されています。入力内容をコピーしてから再読み込みしてください。' : code === 401 ? 'ログインし直してから保存してください。' : '処理に失敗しました。入力内容を残したまま、もう一度お試しください。'
 }

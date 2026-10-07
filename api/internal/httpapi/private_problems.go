@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"judge/api/internal/database"
 	"judge/api/internal/problems"
 	"judge/api/internal/submissions"
 	"judge/api/internal/testfiles"
@@ -201,6 +202,7 @@ func (p problemHandler) list(w http.ResponseWriter, r *http.Request, owner strin
 
 func problemError(w http.ResponseWriter, err error) {
 	switch {
+	case creationQuotaError(w, err):
 	case errors.Is(err, problems.ErrFeaturedIneligible):
 		authError(w, 400, "featured_ineligible")
 	case errors.Is(err, problems.ErrFeaturedLimit):
@@ -216,4 +218,14 @@ func problemError(w http.ResponseWriter, err error) {
 	default:
 		authError(w, 503, "database_unavailable")
 	}
+}
+
+func creationQuotaError(w http.ResponseWriter, err error) bool {
+	var limited *database.CreationQuotaError
+	if !errors.As(err, &limited) {
+		return false
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(limited.RetryAfter))
+	authError(w, http.StatusTooManyRequests, "creation_quota_exceeded")
+	return true
 }

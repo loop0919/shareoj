@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { accountListSchema, type AccountSummary } from '~~/shared/types/account-problems'
 import type { Contest, ContestProblem } from '~~/shared/types/contest'
+import { accountError } from '~/utils/account-problems'
 const props = defineProps<{ contestId?: string }>()
 const ready = ref(false)
 const busy = ref(false)
@@ -87,6 +88,7 @@ async function save() {
     await $fetch(`/api/my/contests/${id.value}`, { method: 'PUT', body: { title: title.value, description: description.value, startsAt: start.toISOString(), endsAt: end.toISOString(), penaltyMinutes: penaltyMinutes.value, version: version.value, problems: selected.value.map(({ id, points }) => ({ id, points })) } })
     await navigateTo(`/contests/${id.value}`)
   } catch (error) {
+    if ((error as { data?: { data?: { code?: string } } }).data?.data?.code === 'creation_quota_exceeded') { message.value = accountError(error); return }
     const status = (error as { statusCode?: number }).statusCode
     message.value = status === 409 ? '保存できませんでした。問題の公開状態・他コンテストへの登録・テストケースを確認してください。開催開始や別画面での更新があった場合は再読み込みが必要です。' : status === 400 ? '入力内容を確認してください。' : '保存を確認できませんでした。作成したコンテスト一覧を確認してから再度お試しください。'
   } finally { busy.value = false }

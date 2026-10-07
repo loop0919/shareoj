@@ -115,6 +115,7 @@ func (p contestHandler) contest(w http.ResponseWriter, r *http.Request, owner st
 	}
 	if err != nil {
 		switch {
+		case creationQuotaError(w, err):
 		case errors.Is(err, pgx.ErrNoRows):
 			authError(w, 404, "contest_not_found")
 		case errors.Is(err, contests.ErrParticipationUnavailable):

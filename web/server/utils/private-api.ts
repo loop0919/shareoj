@@ -23,7 +23,7 @@ export async function privateAPI<T>(event: H3Event, path: string, options: { met
     }
     const status = (error as { response?: { status?: number } }).response?.status
     const upstreamCode = (error as { data?: { error?: string } }).data?.error
-    if (status === 429 && upstreamCode === 'submission_rate_limited') {
+    if (status === 429 && ['submission_rate_limited', 'creation_quota_exceeded'].includes(upstreamCode ?? '')) {
       const seconds = Number((error as { response?: { headers?: Headers } }).response?.headers?.get('Retry-After'))
       const retryAfter = Number.isSafeInteger(seconds) && seconds > 0 ? seconds : undefined
       if (retryAfter) setResponseHeader(event, 'Retry-After', retryAfter)

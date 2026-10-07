@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"judge/api/internal/database"
 	"judge/api/internal/problems"
 )
 
@@ -45,7 +46,20 @@ func (s *Store) Save(ctx context.Context, owner, id, title, markdown string, ver
 	var p Post
 	var err error
 	if version == 0 {
-		p, err = scan(s.pool.QueryRow(ctx, `INSERT INTO blog_posts(id,owner_id,title,markdown) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO NOTHING RETURNING `+columns, id, owner, title, markdown))
+		tx, e := s.pool.Begin(ctx)
+		if e != nil {
+			return p, e
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		if err = database.ConsumeCreationQuota(ctx, tx, owner, "post"); err != nil {
+			return p, err
+		}
+		p, err = scan(tx.QueryRow(ctx, `INSERT INTO blog_posts(id,owner_id,title,markdown) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO NOTHING RETURNING `+columns, id, owner, title, markdown))
+		if err == nil {
+			err = tx.Commit(ctx)
+		} else {
+			_ = tx.Rollback(ctx)
+		}
 	} else {
 		p, err = scan(s.pool.QueryRow(ctx, `UPDATE blog_posts SET title=$4,markdown=$5,version=version+1,updated_at=clock_timestamp() WHERE owner_id=$1 AND id=$2 AND version=$3 RETURNING `+columns, owner, id, version, title, markdown))
 	}

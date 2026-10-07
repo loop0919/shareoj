@@ -262,11 +262,12 @@ func TestPrivateProblemsPostgres(t *testing.T) {
 	if _, err := store.Save(ctx, "alice", "55555555-5555-4555-8555-555555555555", 0, fileDraft); !errors.Is(err, problems.ErrTestFile) {
 		t.Fatal("forged file metadata accepted", err)
 	}
-	for n := range 51 {
-		otherID := fmt.Sprintf("22222222-2222-4222-8222-%012d", n)
-		if _, err := store.Save(ctx, "alice", otherID, 0, draft); err != nil {
-			t.Fatal(err)
-		}
+	// Seed pagination data directly; normal creation is limited to a burst of 20.
+	data, _ := json.Marshal(draft)
+	if _, err := store.Pool().Exec(ctx, `INSERT INTO problem_drafts(id,owner_id,draft)
+ SELECT ('22222222-2222-4222-8222-'||lpad(n::text,12,'0'))::uuid,'alice',$1
+ FROM generate_series(0,50) n`, data); err != nil {
+		t.Fatal(err)
 	}
 	w := request("GET", "/my/problems", alice, nil, 200)
 	var page struct {
