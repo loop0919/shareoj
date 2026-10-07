@@ -381,4 +381,5 @@ func main() {
 		fmt.Fprintln(os.Stderr, "shareoj:", err)
 		os.Exit(1)
 	}
+	notifyUpdate(ctx, os.Args[1:], os.Stderr)
 }
