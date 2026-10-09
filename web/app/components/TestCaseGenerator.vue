@@ -135,8 +135,12 @@ async function generate() {
       <NuxtLink to="/blog/generator-guide" target="_blank" rel="noopener noreferrer">入出力生成と入力検証の使い方 ↗</NuxtLink>
     </header>
     <div class="generator-panel">
+      <div class="problem-menu" role="group" aria-label="生成と検証の種類">
+        <button type="button" :aria-pressed="mode === 'input'" :disabled="disabled || busy" @click="mode = 'input'">入力生成</button>
+        <button type="button" :aria-pressed="mode === 'output'" :disabled="disabled || busy" @click="mode = 'output'">出力生成</button>
+        <button type="button" :aria-pressed="mode === 'validation'" :disabled="disabled || busy" @click="mode = 'validation'">入力検証</button>
+      </div>
       <div class="generator-options">
-        <label>種類<select v-model="mode" :disabled="disabled || busy"><option value="input">入力生成</option><option value="output">出力生成</option><option value="validation">入力検証</option></select></label>
         <label>言語<select v-model="program.runtime" :disabled="disabled || busy"><option v-for="item in available" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
         <label v-if="mode === 'input'">開始ケース番号<input v-model="start" type="number" step="1" :disabled="disabled || busy"></label>
         <label v-if="mode === 'input'">生成件数<input v-model="count" type="number" min="1" max="100" step="1" :disabled="disabled || busy"></label>

@@ -127,9 +127,10 @@ code { font-family: var(--font-code); }
 .problem-meta p { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; overflow-wrap: anywhere; min-width: 0; }
 .problem-header h1 { overflow-wrap: anywhere; }
 .problem-menu { display: flex; flex-wrap: wrap; gap: 24px; border-bottom: 1px solid var(--color-line); }
-.problem-menu a { display: inline-flex; align-items: center; min-height: 48px; padding: 10px 4px; border-bottom: 2px solid transparent; color: var(--color-muted); font-size: .875rem; text-decoration: none; }
-.problem-menu a[aria-current] { border-bottom-color: var(--color-accent); color: var(--color-accent); font-weight: 600; }
-.problem-menu a:hover { color: var(--color-accent); background: var(--color-accent-soft); }
+.problem-menu a, .problem-menu button { display: inline-flex; align-items: center; min-height: 48px; padding: 10px 4px; border-bottom: 2px solid transparent; color: var(--color-muted); font-size: .875rem; text-decoration: none; }
+.problem-menu button { border: 0; border-bottom: 2px solid transparent; background: none; font-family: inherit; cursor: pointer; }
+.problem-menu a[aria-current], .problem-menu button[aria-pressed="true"] { border-bottom-color: var(--color-accent); color: var(--color-accent); font-weight: 600; }
+.problem-menu a:hover, .problem-menu button:hover:not(:disabled) { color: var(--color-accent); background: var(--color-accent-soft); }
 
 @media (max-width: 480px) { .problem-menu { gap: 0 12px; } }
 
