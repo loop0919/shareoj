@@ -130,6 +130,11 @@ func TestPushLifecycle(t *testing.T) {
 	if len(generators) != 3 || generators["input"].Source == "" {
 		t.Fatal("missing generators")
 	}
+	var editorial string
+	if err := json.Unmarshal(saved.Draft["editorial"], &editorial); err != nil || editorial != "## 解説\n\n<!-- ここに解説を記載 -->\n" {
+		t.Fatalf("initial editorial: %q %v", editorial, err)
+	}
+	write(t, filepath.Join(dir, "problem.toml"), strings.Replace(template, "editorial = \"editorial.md\"\n", "", 1))
 	saved.Draft.set("editorial", "web editorial")
 	large := strings.Repeat("12345\r\n", 10000)
 	write(t, filepath.Join(dir, "tests/sample1.in"), large)

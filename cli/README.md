@@ -70,7 +70,7 @@ MFA の新規登録は Web で行ってください。
 | --- | --- |
 | `guide` | AIエージェント向けの作問手順を表示（通信と認証は不要） |
 | `guide --install-skill <codex\|claude\|all>` | 作問スキルをユーザーのスキルディレクトリへ登録 |
-| `init <directory>` | 新しいディレクトリに A + B の雛形を作成。既存ディレクトリは上書きしない |
+| `init <directory>` | 新しいディレクトリに画面と同じ問題文・解説の雛形と A + B の生成器・テスト例を作成。既存ディレクトリは上書きしない |
 | `check <directory>` | TOML、ファイル、文字コード、容量、テストの対応関係を検査 |
 | `pull <problem-id> <directory>` | 自分または参加済みテスターの問題の下書きを新しいディレクトリへ取得 |
 | `login [--username <email>]` | メールアドレスとパスワードでログイン |
@@ -142,6 +142,7 @@ shareoj push ./my-problem
 a-plus-b/
   problem.toml
   statement.md
+  editorial.md
   input.cpp
   output.cpp
   validate.cpp
@@ -157,9 +158,9 @@ a-plus-b/
 ```toml
 title = "A + B"
 statement = "statement.md"
+editorial = "editorial.md"
 time_limit_ms = 2000
 memory_limit_mb = 512
-# editorial = "editorial.md"
 # difficulty = 1
 
 [generators.input]
