@@ -48,7 +48,7 @@
 .markdown-body ul, .markdown-body ol { padding-inline-start: 24px; }
 .markdown-body pre, .markdown-body .input-format { margin-block: 16px; font-size: .875rem; }
 .markdown-body :not(pre) > code { background: var(--color-surface); padding: 2px 4px; border-radius: 3px; }
-.markdown-body blockquote { margin-inline: 0; padding: 12px 20px; border-inline-start: 2px solid var(--color-line); color: var(--color-muted); }
+.markdown-body blockquote { margin-inline: 0; padding: 12px 20px; border-inline-start: 2px solid var(--color-line); }
 .markdown-body blockquote p:last-child { margin-bottom: 0; }
 .markdown-body img { max-width: 100%; height: auto; }
 .markdown-body details { margin-block: 16px; padding: 12px 16px; border: 1px solid var(--color-line); border-radius: 6px; }
