@@ -38,6 +38,10 @@ run "frontend_contract" {
     )
     error_message = "Keep public routing, scoped invocation, log retention, and private versioned artifacts."
   }
+  assert {
+    condition     = jsondecode(aws_apigatewayv2_stage.default.access_log_settings[0].format).ip == "$context.identity.sourceIp"
+    error_message = "Record the viewer IP in access logs so abuse can be traced."
+  }
 }
 run "configured_public_site_url" {
   command = plan

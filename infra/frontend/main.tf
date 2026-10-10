@@ -81,7 +81,7 @@ resource "aws_apigatewayv2_stage" "default" {
   }
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.gateway.arn
-    format          = jsonencode({ requestId = "$context.requestId", httpMethod = "$context.httpMethod", status = "$context.status", responseLength = "$context.responseLength" })
+    format          = jsonencode({ requestId = "$context.requestId", ip = "$context.identity.sourceIp", httpMethod = "$context.httpMethod", status = "$context.status", responseLength = "$context.responseLength" })
   }
 }
 resource "aws_lambda_permission" "gateway" {
