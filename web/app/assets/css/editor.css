@@ -236,3 +236,10 @@
 
 /* Links used as actions share the button layout, including height and padding. */
 a.editor-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; }
+/* Program I/O contract shown above generator, validator and checker code. */
+.code-spec { display: grid; gap: 6px; max-width: 1000px; margin: 16px 0 0; padding: 12px 16px; border-radius: 6px; background: var(--color-surface); font-size: .8125rem; line-height: 1.7; }
+.code-spec > div { display: grid; grid-template-columns: 5.5em minmax(0, 1fr); gap: 12px; }
+.code-spec dt { color: var(--color-muted); font-size: .75rem; line-height: calc(.8125rem * 1.7); }
+.code-spec dd { margin: 0; font-weight: 400; overflow-wrap: anywhere; }
+.code-spec code { padding: 0 4px; border-radius: 3px; background: var(--color-paper); font-size: .75rem; }
+@media (max-width: 420px) { .code-spec > div { grid-template-columns: minmax(0, 1fr); gap: 0; } }

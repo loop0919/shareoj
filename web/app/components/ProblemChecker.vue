@@ -44,38 +44,53 @@ const error = computed(() => code.value && (!code.value.source.trim() || new Tex
 
 <template>
   <section class="checker-settings" aria-label="判定方法">
-    <label for="judge-method">判定方法</label>
-    <select id="judge-method" v-model="method" :disabled="disabled">
-      <option value="normal">通常判定（空白区切りで比較）</option>
-      <option value="special">スペシャルジャッジ</option>
-      <option value="interactive">インタラクティブ（対話形式）</option>
-    </select>
+    <div class="checker-options">
+      <div class="checker-option">
+        <label for="judge-method">判定方法</label>
+        <select id="judge-method" v-model="method" :disabled="disabled">
+          <option value="normal">通常判定（空白区切りで比較）</option>
+          <option value="special">スペシャルジャッジ</option>
+          <option value="interactive">インタラクティブ（対話形式）</option>
+        </select>
+      </div>
+      <template v-if="code">
+        <div class="checker-option">
+          <label for="checker-language">{{ codeLabel }}の言語</label>
+          <select id="checker-language" v-model="code.runtime" :disabled="disabled">
+            <option v-if="!available.some(item => item.id === code?.runtime)" :value="code.runtime">{{ code.runtime }}（現在利用できません）</option>
+            <option v-for="item in available" :key="item.id" :value="item.id">{{ item.label }}</option>
+          </select>
+        </div>
+        <div class="checker-option">
+          <label for="checker-protocol">判定コードの形式</label>
+          <select id="checker-protocol" v-model="protocol" :disabled="disabled">
+            <option value="legacy">現行形式（標準入力と終了コード）</option>
+            <option v-if="supportsTestlib" value="testlib">testlib形式（Codeforces互換）</option>
+          </select>
+        </div>
+      </template>
+    </div>
     <template v-if="code">
-      <p v-if="!interactor && protocol === 'legacy'">提出の出力を標準入力で読み、終了コード0で正解、0以外で不正解とします。assertも使用できます。</p>
-      <p v-if="interactor">標準入力で提出の発言を読み、標準出力で応答します。応答を待つ前にflushしてください。</p>
-      <p v-if="interactor && protocol === 'legacy'">終了コード0で正解、0以外やassertの失敗で不正解とします。</p>
-      <p v-if="interactor">テスト入力は自動送信しません。入力ファイルから読み取り、必要な初期情報を出力してください。</p>
-      <p v-if="protocol === 'legacy'">引数は順に、入力・期待出力・提出ソース・スコアのファイルパスです。期待出力は空でも構いません。スコアファイルへの書き込みは採点に使いません。</p>
-      <p v-else>testlib.hをincludeし、{{ interactor ? 'registerInteraction' : 'registerTestlibCmd' }}(argc, argv)で初期化してください。quitf(_ok, ...)で正解、_waや_peで不正解、_failでJEとします。部分点には対応していません。</p>
-      <p v-if="protocol === 'testlib'">引数は順に、入力・{{ interactor ? 'toutの書き込み先' : '提出出力' }}・正解のファイルパスです。{{ interactor ? 'toutは通信には使わず、内容の後段判定も行いません。' : '提出出力はouf、正解はansから読みます。' }}</p>
-      <p v-if="protocol === 'testlib'"><NuxtLink to="/blog/language-guide#testlib" target="_blank" rel="noopener noreferrer">testlibのコード例を見る</NuxtLink></p>
-      <label for="checker-language">{{ codeLabel }}の言語</label>
-      <select id="checker-language" v-model="code.runtime" :disabled="disabled">
-        <option v-if="!available.some(item => item.id === code?.runtime)" :value="code.runtime">{{ code.runtime }}（現在利用できません）</option>
-        <option v-for="item in available" :key="item.id" :value="item.id">{{ item.label }}</option>
-      </select>
-      <label for="checker-protocol">判定コードの形式</label>
-      <select id="checker-protocol" v-model="protocol" :disabled="disabled">
-        <option value="legacy">現行形式（標準入力と終了コード）</option>
-        <option v-if="supportsTestlib" value="testlib">testlib形式（Codeforces互換）</option>
-      </select>
-      <p class="muted">コードは自動保存。64 KiBまで。ジャッジ側は各ケースCPU 5秒・{{ interactor ? 256 : 512 }} MiBで実行し、制限超過はJEになります。</p>
+      <dl class="code-spec" :aria-label="`${codeLabel}の仕様`">
+        <template v-if="interactor">
+          <div><dt>対話</dt><dd>標準入力で提出の発言を読み、標準出力で応答します。応答を待つ前に flush してください。</dd></div>
+          <div><dt>初期情報</dt><dd>テスト入力は自動で送りません。入力ファイルから読み、必要な情報を出力してください。</dd></div>
+        </template>
+        <div v-else-if="protocol === 'legacy'"><dt>標準入力</dt><dd>提出の出力</dd></div>
+        <div v-if="protocol === 'testlib'"><dt>初期化</dt><dd><code>testlib.h</code> を include し、<code>{{ interactor ? 'registerInteraction' : 'registerTestlibCmd' }}(argc, argv)</code> を呼びます。<NuxtLink to="/blog/language-guide#testlib" target="_blank" rel="noopener noreferrer">コード例 ↗</NuxtLink></dd></div>
+        <div v-if="protocol === 'legacy'"><dt>引数</dt><dd>入力・期待出力・提出ソース・スコアのファイルパス（この順）。期待出力は空でもよく、スコアは採点に使いません。</dd></div>
+        <div v-else-if="interactor"><dt>引数</dt><dd>入力・tout の書き込み先・正解のファイルパス（この順）。tout は通信に使わず、あとから判定もしません。</dd></div>
+        <div v-else><dt>引数</dt><dd>入力・提出出力（ouf）・正解（ans）のファイルパス（この順）</dd></div>
+        <div v-if="protocol === 'legacy'"><dt>結果</dt><dd>終了コード0で正解、それ以外（assert の失敗を含む）で不正解</dd></div>
+        <div v-else><dt>結果</dt><dd><code>quitf(_ok, …)</code> で正解、<code>_wa</code>・<code>_pe</code> で不正解、<code>_fail</code> でJE。部分点はありません。</dd></div>
+        <div><dt>制限</dt><dd>各ケースCPU 5秒・{{ interactor ? 256 : 512 }} MiB。超えるとJEになります。</dd></div>
+      </dl>
       <SourceCodeEditor v-model="code.source" :runtime="code.runtime" :label="codeLabel" :disabled="disabled" />
       <p v-if="error" class="editor-error" role="alert">{{ error }}</p>
     </template>
     <div class="checker-trial">
       <p v-if="published">提出は公開中の設定で採点します。編集内容を採点へ反映するには、問題管理から公開内容を更新してください。</p>
-      <p v-else>テストケースを登録して問題ページから解答を提出すると、保存した下書きで採点できます。正解例と不正解例の両方を試してください。</p>
+      <p v-else>問題ページから解答を提出すると、保存した下書きで採点します。</p>
       <button type="button" class="editor-button" :disabled="disabled || !!error || opening" @click="openProblem">{{ opening ? '保存しています…' : '問題ページで提出する' }}</button>
       <p v-if="openError" class="editor-error" role="alert">{{ openError }}</p>
     </div>
@@ -84,8 +99,9 @@ const error = computed(() => code.value && (!code.value.source.trim() || new Tex
 
 <style scoped>
 .checker-settings p { max-width: 1000px; margin: 8px 0; font-size: .8125rem; }
-label { display: block; margin-block: 12px 4px; font-size: .75rem; }
-label:first-child { margin-top: 12px; }
+.checker-options { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.checker-option { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: 100%; }
+label { font-size: .75rem; }
 select { max-width: 100%; min-height: 36px; padding: 4px 8px; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-paper); color: var(--color-ink); }
 .checker-settings :deep(.source-code-editor) { max-width: 1000px; margin-block: 12px; }
 .checker-trial { max-width: 1000px; margin-top: 20px; }
