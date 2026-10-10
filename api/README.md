@@ -51,6 +51,8 @@ cd api
 ```
 
 開発シェルにはGo、gopls、gofumpt、golangci-lint、AWS CLI、Terraform、zipが含まれる。
+GoはCIと同じく`go.mod`の`toolchain`行のバージョンを使う。
+開発シェルのGoが古ければ、初回のコマンドで公式のtoolchainを取得し、チェックサムデータベースで検証する。
 以降のコマンドは`api/`ディレクトリで実行する。
 
 ## ローカル起動

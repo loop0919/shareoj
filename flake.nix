@@ -38,7 +38,9 @@
               zip
             ];
 
-            GOTOOLCHAIN = "local";
+            # Follow go.mod's toolchain line so local builds match CI, even before
+            # nixpkgs packages that patch release. Go verifies it with the checksum database.
+            GOTOOLCHAIN = "auto";
           };
         }
       );
