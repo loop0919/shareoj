@@ -144,6 +144,8 @@ nohup nix develop . --command python3 judge/rollout.py rolling --config judge/.b
 
 完了条件は`run`と同じく、`state.json`の`status: passed`かつ`step: complete`である。
 t3.smallの3台では、smokeを2回含めて2時間程度かかる。
+途中でAWSのSSOの認証が切れると、手元の回収が止まる（SSM上の処理は続く）。
+開始前に`aws sso login`でログインし直し、止まった場合も再ログインの後に同じコマンドと実行ディレクトリで再開する。
 実行中はポーリングせず、後で`state.json`の`step`を確認する。
 
 ### 処理の順序
