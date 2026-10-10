@@ -64,6 +64,13 @@ run "api_contract" {
     error_message = "Immediate dispatch must invoke only this environment's existing judge bridge."
   }
   assert {
+    condition = (
+      jsondecode(aws_iam_role_policy.cognito_users.policy).Statement[0].Action == ["cognito-idp:AdminGetUser", "cognito-idp:AdminDeleteUser"] &&
+      jsondecode(aws_iam_role_policy.cognito_users.policy).Statement[0].Resource == aws_cognito_user_pool.users.arn
+    )
+    error_message = "Account settings may only read and delete users of this environment's user pool."
+  }
+  assert {
     condition     = !aws_cognito_user_pool_client.api.allowed_oauth_flows_user_pool_client && aws_cognito_user_pool_client.api.default_redirect_uri == "https://disabled.invalid/auth/google/callback" && aws_cognito_user_pool_client.api.callback_urls == toset([aws_cognito_user_pool_client.api.default_redirect_uri])
     error_message = "Email-only configuration must disable OAuth and replace imported redirects with a consistent inert URL."
   }

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"judge/api/internal/accounts"
 	"judge/api/internal/contests"
 	"judge/api/internal/images"
 	"judge/api/internal/notifications"
@@ -22,6 +23,9 @@ type testFileStore interface {
 }
 
 type handlerDependencies struct {
+	Accounts             *accounts.Store
+	CognitoUsers         CognitoUsers
+	UserPoolID           string
 	Contests             *contests.Store
 	Images               *images.Store
 	Notifications        *notifications.Store
@@ -182,6 +186,11 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	mux.HandleFunc("GET /auth/me", auth.require(func(w http.ResponseWriter, r *http.Request, owner string) {
 		writeAuthJSON(w, 200, map[string]string{"id": owner})
 	}, false, 10*time.Second))
+	account := accountHandler{Users: d.CognitoUsers, PoolID: d.UserPoolID, Accounts: d.Accounts}
+	private("GET /my/account", account.account, false)
+	private("POST /my/password", account.password, false)
+	// Releasing first publishes problems of contests that just ended, so they stay instead of being deleted as drafts.
+	private("DELETE /my/account", account.remove, true)
 	mux.HandleFunc("GET /my/profile", auth.require(profiles.profile, false, 10*time.Second))
 	mux.HandleFunc("PUT /my/profile", auth.require(profiles.profile, false, 10*time.Second))
 	private("GET /my/problems", problems.problem, true)

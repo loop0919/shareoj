@@ -17,3 +17,6 @@ export const profileSchema = z.object({
 })
 export const profileResultSchema = z.object({ profile: profileSchema.nullable() })
 export type Profile = z.infer<typeof profileSchema>
+// A deleted account keeps its row under this placeholder handle; the API refuses it as a chosen handle.
+export const deletedHandle = /^deleted_[0-9a-f]{11}$/
+export const accountSchema = z.object({ email: z.string(), provider: z.string() })

@@ -403,6 +403,19 @@ Lambda用バイナリでは、ビルド時に`CGO_ENABLED=0`と対象アーキ�
 ユーザーIDを変更してもCognito内部IDと問題の所有権は変わらない。
 プロフィール未登録時、`/my/problems` は `403 profile_required` を返す。
 
+`deleted_` と16進数11桁からなるユーザーIDは退会済みアカウント用に予約し、`400 invalid_profile` とする。
+
+### ログイン方法・パスワード・アカウント削除
+
+- `GET /my/account`：Cognitoの`AdminGetUser`で`{"email":"...","provider":"password"}`を返す。Googleでログインしたユーザーは`provider`が`google`になる。
+- `POST /my/password`：`{"current":"...","proposed":"..."}`を受け取り、Cognitoの`ChangePassword`でパスワードを変更して204を返す。現在のパスワードの誤りは`400 incorrect_password`、パスワードの条件違反は`400 invalid_password`、Googleのユーザーは`409 password_unavailable`、試行回数の超過は429とする。
+- `DELETE /my/account`：確認として`{"handle":"現在のユーザーID"}`を受け取り、[ADR 0016](../docs/adr/0016-anonymize-deleted-accounts.md)に従ってアカウントを削除し、204を返す。ユーザーIDが違えば`400 confirmation_mismatch`、終了していない自分のコンテストがあれば`409 account_has_active_contest`とする。
+- 削除では、公開していない問題・記事・コンテストの下書き、公開済みの問題・記事の未公開の編集内容、お気に入り、自分宛ての通知、残るコンテンツから参照されない画像を消す。公開済みの問題・記事、終了したコンテスト、提出、参加登録、難易度の投票、テスターの担当は残す。
+- プロフィールの行は残し、ユーザーIDを`deleted_`で始まる値に置き換え、アイコンと外部アカウントを消して`deleted_at`を記録する。Cognitoのユーザーは`AdminDeleteUser`で削除し、失敗した場合はDBの変更も取り消す。
+- Cognitoのアクセストークンは期限まで有効なため、削除済みアカウントのトークンはすべての認証付きAPIで`401 account_deleted`とする。
+- `AdminGetUser`と`AdminDeleteUser`は、APIのLambdaロールの権限（`infra/api/main.tf`の`cognito_users`）で呼ぶ。Googleでログインしたトークンには、トークンで呼ぶ操作に必要なスコープがないためである。
+- 配布時は、APIを切り替える前に`terraform apply`でこの権限を追加し、マイグレーション`026_account_deletion.sql`を適用する。
+
 マイグレーションは `internal/database` にまとめ、バージョン2で `user_profiles` を追加した。
 既存DBは `go run ./cmd/migrate` で更新する。
 `make dev` で自動起動するローカルDBは起動時にマイグレーションを適用する。

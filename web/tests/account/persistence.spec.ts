@@ -105,7 +105,7 @@ test('DB-only library ignores legacy drafts, refreshes cache and deletes the sav
   expect((await page.request.get(`/api/my/problems/${id}`)).status()).toBe(404)
   expect(await page.evaluate(id => Object.keys(sessionStorage).some(k => k.endsWith(id)), id)).toBe(false)
   await page.locator('.site-header').getByRole('link', { name: 'マイページ', exact: true }).click()
-  await page.getByRole('button', { name: 'ログアウト' }).click()
+  await page.locator('#main').getByRole('button', { name: 'ログアウト' }).click()
   await expect(page).toHaveURL('/login')
 })
 

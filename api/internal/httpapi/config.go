@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"judge/api/internal/accounts"
 	"judge/api/internal/contests"
 	"judge/api/internal/database"
 	"judge/api/internal/images"
@@ -78,6 +79,16 @@ func configuredStorage(getenv func(string) string, auth AuthConfig, region strin
 			return nil, errors.New("invalid COGNITO_USER_POOL_ID")
 		}
 		private.Verifier = newCognitoVerifier("https://cognito-idp."+region+".amazonaws.com/"+poolID, auth.ClientID)
+		// Unlike the sign-in client, this one signs requests with the API role for the Admin operations.
+		sdk, err := awsconfig.LoadDefaultConfig(context.Background(), awsconfig.WithRegion(region))
+		if err != nil {
+			return nil, err
+		}
+		private.CognitoUsers = cognitoidentityprovider.NewFromConfig(sdk, func(o *cognitoidentityprovider.Options) {
+			o.HTTPClient = &http.Client{Timeout: 5 * time.Second}
+			o.RetryMaxAttempts = 1
+		})
+		private.UserPoolID = poolID
 	}
 	var pool *pgxpool.Pool
 	if getenv("DATABASE_URL") != "" || getenv("DATABASE_SECRET_ARN") != "" {
@@ -95,6 +106,7 @@ func configuredStorage(getenv func(string) string, auth AuthConfig, region strin
 		private.Images = &images.Store{Pool: pool}
 		private.Notifications = &notifications.Store{Pool: pool}
 		private.Profiles = profiles.New(pool)
+		private.Accounts = &accounts.Store{Pool: pool}
 		private.Posts = posts.New(pool)
 		private.Submissions = &submissions.Store{Pool: pool}
 		auth.Registrations = database.RegistrationQuota{Pool: pool}

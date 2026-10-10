@@ -18,6 +18,20 @@ resource "aws_iam_role_policy" "judge_dispatch" {
   })
 }
 
+# Account settings read the sign-in method and delete the user. Google sign-ins lack the scope for the token-based calls.
+resource "aws_iam_role_policy" "cognito_users" {
+  name = "cognito-users"
+  role = aws_iam_role.api.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["cognito-idp:AdminGetUser", "cognito-idp:AdminDeleteUser"]
+      Resource = aws_cognito_user_pool.users.arn
+    }]
+  })
+}
+
 resource "aws_cloudwatch_log_group" "lambda" {
   name              = "/aws/lambda/${local.name}-api"
   retention_in_days = var.log_retention_days
@@ -62,7 +76,7 @@ resource "aws_lambda_function" "api" {
   s3_key                         = aws_s3_object.api_package.key
   s3_object_version              = aws_s3_object.api_package.version_id
   source_code_hash               = filebase64sha256(local.lambda_package_path)
-  depends_on                     = [aws_iam_role_policy.logs, aws_iam_role_policy.database, aws_iam_role_policy.test_data, aws_iam_role_policy.judge_dispatch, aws_iam_role_policy.vpc, aws_route_table_association.private]
+  depends_on                     = [aws_iam_role_policy.logs, aws_iam_role_policy.database, aws_iam_role_policy.test_data, aws_iam_role_policy.judge_dispatch, aws_iam_role_policy.cognito_users, aws_iam_role_policy.vpc, aws_route_table_association.private]
   reserved_concurrent_executions = 20
 
   vpc_config {

@@ -99,7 +99,7 @@ func (p profileHandler) profile(w http.ResponseWriter, r *http.Request, owner st
 		return
 	}
 	input.Handle = strings.ToLower(strings.TrimSpace(input.Handle))
-	if !userHandle.MatchString(input.Handle) || input.Version < 0 || input.Version > 9007199254740990 {
+	if !userHandle.MatchString(input.Handle) || profiles.DeletedHandle.MatchString(input.Handle) || input.Version < 0 || input.Version > 9007199254740990 {
 		authError(w, 400, "invalid_profile")
 		return
 	}

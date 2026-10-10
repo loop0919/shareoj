@@ -73,13 +73,19 @@ func (a authentication) require(next actorHandler, profileRequired bool, timeout
 			authError(w, 401, "invalid_token")
 			return
 		}
-		if profileRequired && a.Profiles != nil {
-			if _, err := a.Profiles.Get(ctx, owner); err != nil {
-				if errors.Is(err, profiles.ErrNotFound) {
-					authError(w, 403, "profile_required")
-				} else {
-					authError(w, 503, "database_unavailable")
-				}
+		if a.Profiles != nil {
+			_, err := a.Profiles.Get(ctx, owner)
+			switch {
+			case errors.Is(err, profiles.ErrDeleted):
+				// Cognito access tokens stay valid until they expire, so a deleted account is refused here.
+				authError(w, 401, "account_deleted")
+				return
+			case !profileRequired:
+			case errors.Is(err, profiles.ErrNotFound):
+				authError(w, 403, "profile_required")
+				return
+			case err != nil:
+				authError(w, 503, "database_unavailable")
 				return
 			}
 		}

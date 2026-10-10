@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/jackc/pgx/v5"
 
+	"judge/api/internal/accounts"
 	"judge/api/internal/contests"
 	"judge/api/internal/images"
 	"judge/api/internal/notifications"
@@ -44,22 +45,47 @@ func (c *browserCognito) InitiateAuth(_ context.Context, in *cognitoidentityprov
 	name := in.AuthParameters["USERNAME"]
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if name == "alice@example.test" || name == "bob@example.test" || name == "test_cases@example.test" {
-		if in.AuthParameters["PASSWORD"] != "test-password" {
-			return nil, &types.NotAuthorizedException{}
-		}
-	} else {
-		user := c.users[name]
-		if user == nil || user.password != in.AuthParameters["PASSWORD"] {
-			return nil, &types.NotAuthorizedException{}
-		}
-		if !user.confirmed {
-			return nil, &types.UserNotConfirmedException{}
-		}
+	user := c.users[name]
+	if user == nil || user.password != in.AuthParameters["PASSWORD"] {
+		return nil, &types.NotAuthorizedException{}
+	}
+	if !user.confirmed {
+		return nil, &types.UserNotConfirmedException{}
 	}
 	return &cognitoidentityprovider.InitiateAuthOutput{AuthenticationResult: &types.AuthenticationResultType{
-		AccessToken: aws.String(c.signer.token(c.t, name, nil)), IdToken: aws.String("unused-id-token"), ExpiresIn: 3600, TokenType: aws.String("Bearer"),
+		AccessToken: aws.String(c.signer.token(c.t, name, map[string]any{"username": name})), IdToken: aws.String("unused-id-token"), ExpiresIn: 3600, TokenType: aws.String("Bearer"),
 	}}, nil
+}
+
+func (c *browserCognito) AdminGetUser(_ context.Context, in *cognitoidentityprovider.AdminGetUserInput, _ ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.AdminGetUserOutput, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.users[aws.ToString(in.Username)] == nil {
+		return nil, &types.UserNotFoundException{}
+	}
+	return &cognitoidentityprovider.AdminGetUserOutput{Username: in.Username, UserAttributes: []types.AttributeType{{Name: aws.String("email"), Value: in.Username}}}, nil
+}
+
+func (c *browserCognito) AdminDeleteUser(_ context.Context, in *cognitoidentityprovider.AdminDeleteUserInput, _ ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.AdminDeleteUserOutput, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.users, aws.ToString(in.Username))
+	return &cognitoidentityprovider.AdminDeleteUserOutput{}, nil
+}
+
+func (c *browserCognito) ChangePassword(_ context.Context, in *cognitoidentityprovider.ChangePasswordInput, _ ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.ChangePasswordOutput, error) {
+	_, name := bearer(&http.Request{Header: http.Header{"Authorization": {"Bearer " + aws.ToString(in.AccessToken)}}})
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	user := c.users[name]
+	if user == nil || user.password != aws.ToString(in.PreviousPassword) {
+		return nil, &types.NotAuthorizedException{}
+	}
+	if len(aws.ToString(in.ProposedPassword)) < 12 {
+		return nil, &types.InvalidPasswordException{}
+	}
+	user.password = aws.ToString(in.ProposedPassword)
+	return &cognitoidentityprovider.ChangePasswordOutput{}, nil
 }
 
 func (c *browserCognito) RespondToAuthChallenge(context.Context, *cognitoidentityprovider.RespondToAuthChallengeInput, ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.RespondToAuthChallengeOutput, error) {
@@ -101,13 +127,16 @@ func TestBrowserFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	profileStore := profiles.New(store.Pool())
-	for _, name := range []string{"alice", "bob", "test_cases"} {
+	f := newSigningFixture(t)
+	cognito := &browserCognito{t: t, signer: f, users: make(map[string]*browserUser)}
+	// leaver exists so the account deletion test cannot take a shared user with it.
+	for _, name := range []string{"alice", "bob", "test_cases", "leaver"} {
 		if _, err := profileStore.Save(ctx, name+"@example.test", name, "", 0, profiles.Accounts{}); err != nil {
 			t.Fatal(err)
 		}
+		cognito.users[name+"@example.test"] = &browserUser{password: "test-password", confirmed: true}
 	}
-	f := newSigningFixture(t)
-	handler := newHandler(AuthConfig{Client: &browserCognito{t: t, signer: f, users: make(map[string]*browserUser)}, ClientID: "client"}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Profiles: profileStore, Posts: posts.New(store.Pool()), Submissions: &submissions.Store{Pool: store.Pool()}, JudgeImage: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Operators: map[string]bool{"alice@example.test": true}, Verifier: newCognitoVerifier(f.server.URL, "client")})
+	handler := newHandler(AuthConfig{Client: cognito, ClientID: "client"}, handlerDependencies{Accounts: &accounts.Store{Pool: store.Pool()}, CognitoUsers: cognito, UserPoolID: "local_browser", Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Profiles: profileStore, Posts: posts.New(store.Pool()), Submissions: &submissions.Store{Pool: store.Pool()}, JudgeImage: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Operators: map[string]bool{"alice@example.test": true}, Verifier: newCognitoVerifier(f.server.URL, "client")})
 	address := os.Getenv("OPENOJ_BROWSER_API_ADDR")
 	if address == "" {
 		address = "127.0.0.1:18082"
