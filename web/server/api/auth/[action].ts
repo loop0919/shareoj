@@ -34,7 +34,7 @@ export default defineEventHandler(async event => {
   const body = await limitedJSON(event, 16 << 10)
   if (['signup', 'confirm-signup', 'resend-confirmation'].includes(action ?? '')) {
     const schema = action === 'resend-confirmation' ? z.object({ sent: z.literal(true) }) : z.object({ confirmed: z.boolean() })
-    const result = schema.safeParse(await privateAPI(event, `/auth/${action}`, { method: 'POST', body }))
+    const result = schema.safeParse(await privateAPI(event, `/auth/${action}`, { method: 'POST', body, headers: clientIPHeaders(event) }))
     if (!result.success) throw createError({ statusCode: 502 })
     return result.data
   }

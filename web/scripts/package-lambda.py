@@ -20,4 +20,6 @@ with ZipFile(archive, 'w', ZIP_DEFLATED) as bundle:
                 bundle.write(path, path.relative_to(output))
     # Nitro uses directory symlinks for dependencies; dereference them in the zip.
     add_directory(output)
+    # The Lambda handler wraps Nitro's to expose API Gateway's source IP.
+    bundle.write(root / 'lambda/index.mjs', 'lambda/index.mjs')
 print(f'Packaged {archive.name}: {archive.stat().st_size:,} bytes')

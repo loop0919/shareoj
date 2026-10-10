@@ -1,7 +1,7 @@
 import type { H3Event } from 'h3'
 import { sessionCookie, refreshCookie, refreshSession } from './private-session'
 
-export async function privateAPI<T>(event: H3Event, path: string, options: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE', body?: unknown, token?: string, timeout?: number } = {}): Promise<T> {
+export async function privateAPI<T>(event: H3Event, path: string, options: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE', body?: unknown, token?: string, timeout?: number, headers?: Record<string, string> } = {}): Promise<T> {
   let token = options.token ?? getCookie(event, sessionCookie)
   const canRefresh = options.token === undefined && (path === '/auth/me' || path.startsWith('/my/'))
   let refreshed = false
@@ -10,7 +10,7 @@ export async function privateAPI<T>(event: H3Event, path: string, options: { met
       baseURL: useRuntimeConfig(event).apiBaseUrl,
       method: options.method ?? 'GET',
       body: options.body as Record<string, unknown> | undefined,
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: token ? { ...options.headers, Authorization: `Bearer ${token}` } : options.headers ?? {},
       timeout: options.timeout ?? 12000, retry: 0,
     }) as Promise<T>
   try {

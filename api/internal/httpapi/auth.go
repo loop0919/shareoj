@@ -29,6 +29,13 @@ type AuthConfig struct {
 	Client       CognitoClient
 	ClientID     string
 	ClientSecret string
+	// Registrationsがnilなら確認メールの回数を制限しない。DBのない開発環境向け。
+	Registrations RegistrationQuota
+}
+
+// RegistrationQuotaは確認メールを送る操作を利用者のネットワークとメールアドレスごとに数える。
+type RegistrationQuota interface {
+	Consume(ctx context.Context, network, email string) error
 }
 
 type loginRequest struct {

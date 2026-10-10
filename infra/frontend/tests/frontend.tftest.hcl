@@ -15,7 +15,7 @@ run "frontend_contract" {
     condition = (
       length(aws_lambda_function.web.vpc_config) == 0 &&
       aws_lambda_function.web.runtime == "nodejs22.x" &&
-      aws_lambda_function.web.handler == "server/index.handler" &&
+      aws_lambda_function.web.handler == "lambda/index.handler" &&
       aws_lambda_function.web.architectures == tolist(["arm64"]) &&
       aws_lambda_function.web.memory_size == 512 &&
       aws_lambda_function.web.reserved_concurrent_executions == 200 &&

@@ -2,6 +2,9 @@ package httpapi_test
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
 	"github.com/aws/smithy-go"
+	"judge/api/internal/database"
 	"judge/api/internal/httpapi"
 )
 
@@ -160,5 +164,99 @@ func TestRegistrationErrorsAreSanitized(t *testing.T) {
 	w := authRequest(httpapi.NewHandler(httpapi.AuthConfig{Client: client, ClientID: "client"}), "/auth/signup", `{"email":"user@example.com","password":"ValidPassword123!"}`)
 	if w.Code != 502 || strings.Contains(w.Body.String(), "private") {
 		t.Fatalf("network error: %d %s", w.Code, w.Body.String())
+	}
+}
+
+type quotaRecorder struct {
+	calls []string
+	err   error
+}
+
+func (q *quotaRecorder) Consume(_ context.Context, network, email string) error {
+	q.calls = append(q.calls, network+" "+email)
+	return q.err
+}
+
+// signedClientIP mirrors the Nuxt proxy, so a change on either side fails here.
+func signedClientIP(secret, ip string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte("shareoj-client-ip:" + ip))
+	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
+}
+
+func TestRegistrationQuotaCountsSignedClientNetwork(t *testing.T) {
+	sent := 0
+	client := registrationStub{
+		signup: func(*cognitoidentityprovider.SignUpInput) (*cognitoidentityprovider.SignUpOutput, error) {
+			sent++
+			return &cognitoidentityprovider.SignUpOutput{}, nil
+		},
+		confirm: func(*cognitoidentityprovider.ConfirmSignUpInput) (*cognitoidentityprovider.ConfirmSignUpOutput, error) {
+			return &cognitoidentityprovider.ConfirmSignUpOutput{}, nil
+		},
+		resend: func(*cognitoidentityprovider.ResendConfirmationCodeInput) (*cognitoidentityprovider.ResendConfirmationCodeOutput, error) {
+			sent++
+			return &cognitoidentityprovider.ResendConfirmationCodeOutput{}, nil
+		},
+	}
+	quota := &quotaRecorder{}
+	h := httpapi.NewHandler(httpapi.AuthConfig{Client: client, ClientID: "client", ClientSecret: "secret", Registrations: quota})
+	send := func(path, body, remote string, headers map[string]string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		r.RemoteAddr = remote
+		for name, value := range headers {
+			r.Header.Set(name, value)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	const signup = `{"email":"User@Example.com","password":"ValidPassword123!"}`
+	for _, tc := range []struct {
+		name, remote string
+		headers      map[string]string
+		network      string
+	}{
+		{"API Gateway source", "203.0.113.7", nil, "203.0.113.7"},
+		{"signed by Nuxt", "198.51.100.1", map[string]string{"X-ShareOJ-Client-IP": "203.0.113.8", "X-ShareOJ-Client-IP-Signature": signedClientIP("secret", "203.0.113.8")}, "203.0.113.8"},
+		{"forged signature", "198.51.100.1", map[string]string{"X-ShareOJ-Client-IP": "203.0.113.8", "X-ShareOJ-Client-IP-Signature": signedClientIP("guess", "203.0.113.8")}, "198.51.100.1"},
+		{"IPv6 per /64", "2001:db8:1:2:3:4:5:6", nil, "2001:db8:1:2::/64"},
+		{"mapped IPv4 with port", "[::ffff:192.0.2.9]:1234", nil, "192.0.2.9"},
+		{"unparsable source", "", nil, "unknown"},
+	} {
+		quota.calls = nil
+		if w := send("/auth/signup", signup, tc.remote, tc.headers); w.Code != 200 {
+			t.Fatalf("%s: %d %s", tc.name, w.Code, w.Body.String())
+		}
+		if want := tc.network + " user@example.com"; len(quota.calls) != 1 || quota.calls[0] != want {
+			t.Fatalf("%s: counted %q, want %q", tc.name, quota.calls, want)
+		}
+	}
+	quota.calls = nil
+	if w := send("/auth/resend-confirmation", `{"email":"user@example.com"}`, "203.0.113.7", nil); w.Code != 200 || len(quota.calls) != 1 {
+		t.Fatalf("resend: %d %q", w.Code, quota.calls)
+	}
+	// Confirmation sends no email, so it does not spend the quota.
+	if w := send("/auth/confirm-signup", `{"email":"user@example.com","code":"123456"}`, "203.0.113.7", nil); w.Code != 200 || len(quota.calls) != 1 {
+		t.Fatalf("confirm: %d %q", w.Code, quota.calls)
+	}
+	// Invalid input is rejected before it can spend the quota.
+	if w := send("/auth/signup", `{"email":"user@example.com","password":"short"}`, "203.0.113.7", nil); w.Code != 400 || len(quota.calls) != 1 {
+		t.Fatalf("invalid signup: %d %q", w.Code, quota.calls)
+	}
+	before := sent
+	quota.err = &database.RegistrationQuotaError{RetryAfter: 42}
+	w := send("/auth/signup", signup, "203.0.113.7", nil)
+	if w.Code != 429 || w.Header().Get("Retry-After") != "42" || !strings.Contains(w.Body.String(), "too_many_requests") {
+		t.Fatalf("limited: %d %q %s", w.Code, w.Header().Get("Retry-After"), w.Body.String())
+	}
+	quota.err = errors.New("private database failure")
+	w = send("/auth/resend-confirmation", `{"email":"user@example.com"}`, "203.0.113.7", nil)
+	if w.Code != 503 || !strings.Contains(w.Body.String(), "registration_unavailable") || strings.Contains(w.Body.String(), "private") {
+		t.Fatalf("quota failure: %d %s", w.Code, w.Body.String())
+	}
+	if sent != before {
+		t.Fatal("a refused request reached Cognito")
 	}
 }

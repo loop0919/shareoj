@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
+import { createHmac } from 'node:crypto'
 
 // Test the shipped zip outside the repository so node_modules cannot hide missing files.
 const directory = await mkdtemp(join(tmpdir(), 'openoj-lambda-'))
@@ -23,6 +24,11 @@ const api = createServer(async (req, res) => {
     for await (const chunk of req) chunks.push(chunk)
     const input = JSON.parse(Buffer.concat(chunks).toString())
     if (input.email !== 'new@example.test') { res.writeHead(400).end('{}'); return }
+    // The API rate-limits by this IP, so it must be API Gateway's source, signed by the proxy.
+    const ip = req.headers['x-shareoj-client-ip']
+    if (ip !== '203.0.113.50' || req.headers['x-shareoj-client-ip-signature'] !== createHmac('sha256', 'test-secret').update(`shareoj-client-ip:${ip}`).digest('base64')) {
+      res.writeHead(400).end('{}'); return
+    }
     const result = req.url === '/auth/resend-confirmation' ? { sent: true } : { confirmed: req.url === '/auth/confirm-signup' }
     res.end(JSON.stringify({ ...result, access_token: 'must-not-reach-browser' })); return
   }
@@ -85,10 +91,10 @@ globalThis.fetch = async (input, options) => {
   assert.equal(form.get('grant_type'), 'authorization_code')
   return Response.json({ access_token: form.get('code') === 'valid' ? 'test-access-token' : 'invalid-token', token_type: 'Bearer', expires_in: 3600 })
 }
-const { handler } = await import(new URL('server/index.mjs', bundle).href)
+const { handler } = await import(new URL('lambda/index.mjs', bundle).href)
 async function invoke(path, { method = 'GET', body, cookies, origin = 'https://frontend.example' } = {}) {
   const [pathname, query = ''] = path.split('?')
-  return handler({ version: '2.0', rawPath: pathname, rawQueryString: query, queryStringParameters: Object.fromEntries(new URLSearchParams(query)), headers: { host: 'frontend.example', 'x-forwarded-proto': 'https', origin, 'content-type': 'application/json' }, requestContext: { http: { method, path: pathname, sourceIp: '127.0.0.1' } }, body: body ? JSON.stringify(body) : undefined, cookies, isBase64Encoded: false }, {})
+  return handler({ version: '2.0', rawPath: pathname, rawQueryString: query, queryStringParameters: Object.fromEntries(new URLSearchParams(query)), headers: { host: 'frontend.example', 'x-forwarded-proto': 'https', origin, 'content-type': 'application/json', 'X-ShareOJ-Client-IP': '198.51.100.66' }, requestContext: { http: { method, path: pathname, sourceIp: '203.0.113.50' } }, body: body ? JSON.stringify(body) : undefined, cookies, isBase64Encoded: false }, {})
 }
 try {
   const installer = await invoke('/install.sh')
@@ -204,7 +210,7 @@ try {
   assert.equal((await invoke(path, { method: 'PUT', cookies, body: boundaryBody })).statusCode, 200)
   boundaryBody.draft.markdown += 'x'
   assert.equal((await invoke(path, { method: 'PUT', cookies, body: boundaryBody })).statusCode, 413)
-  console.log('Lambda signup, confirmation, resend, login, secure cookie, authenticated body forwarding, CSRF protection, SSR, API proxy, canonical URL, JS/CSS, binary fonts, and 404 passed')
+  console.log('Lambda signup, confirmation, resend with signed viewer IP, login, secure cookie, authenticated body forwarding, CSRF protection, SSR, API proxy, canonical URL, JS/CSS, binary fonts, and 404 passed')
 } finally {
   Date.now = originalNow
   globalThis.fetch = originalFetch

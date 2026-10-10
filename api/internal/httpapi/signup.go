@@ -2,9 +2,14 @@ package httpapi
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"net/mail"
+	"net/netip"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -14,6 +19,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/aws/smithy-go"
+
+	"judge/api/internal/database"
 )
 
 type registrationClient interface {
@@ -59,6 +66,9 @@ func (a AuthConfig) registration(w http.ResponseWriter, r *http.Request) {
 			authError(w, 400, "invalid_password")
 			return
 		}
+		if !a.consumeRegistration(ctx, w, r, email) {
+			return
+		}
 		out, err := client.SignUp(ctx, &cognitoidentityprovider.SignUpInput{
 			ClientId: aws.String(a.ClientID), SecretHash: secretHash, Username: aws.String(email), Password: aws.String(input.Password),
 			UserAttributes: []types.AttributeType{{Name: aws.String("email"), Value: aws.String(email)}},
@@ -95,6 +105,9 @@ func (a AuthConfig) registration(w http.ResponseWriter, r *http.Request) {
 			authError(w, 400, "invalid_request")
 			return
 		}
+		if !a.consumeRegistration(ctx, w, r, email) {
+			return
+		}
 		out, err := client.ResendConfirmationCode(ctx, &cognitoidentityprovider.ResendConfirmationCodeInput{
 			ClientId: aws.String(a.ClientID), SecretHash: secretHash, Username: aws.String(email),
 		})
@@ -108,6 +121,60 @@ func (a AuthConfig) registration(w http.ResponseWriter, r *http.Request) {
 		}
 		writeAuthJSON(w, 200, map[string]bool{"sent": true})
 	}
+}
+
+// consumeRegistrationは確認メールを送る操作を数え、上限ならRetry-Afterを付けて429を返す。
+func (a AuthConfig) consumeRegistration(ctx context.Context, w http.ResponseWriter, r *http.Request, email string) bool {
+	if a.Registrations == nil {
+		return true
+	}
+	err := a.Registrations.Consume(ctx, a.registrationNetwork(r), email)
+	var limited *database.RegistrationQuotaError
+	if errors.As(err, &limited) {
+		w.Header().Set("Retry-After", strconv.Itoa(limited.RetryAfter))
+		authError(w, http.StatusTooManyRequests, "too_many_requests")
+		return false
+	}
+	if err != nil {
+		authError(w, http.StatusServiceUnavailable, "registration_unavailable")
+		return false
+	}
+	return true
+}
+
+// registrationNetworkは回数制限に使う利用者のネットワークを返す。
+// Nuxt経由ではAPI Gatewayの送信元がNuxtになるため、Nuxtがクライアントシークレットで
+// 署名した利用者IPを使う。署名が合わなければ送信元をそのまま使う。
+// IPv6は一人が/64を自由に使えるため、/64単位で数える。
+func (a AuthConfig) registrationNetwork(r *http.Request) string {
+	source := r.RemoteAddr
+	if ip := r.Header.Get("X-ShareOJ-Client-IP"); ip != "" && a.ClientSecret != "" {
+		signature, err := base64.StdEncoding.DecodeString(r.Header.Get("X-ShareOJ-Client-IP-Signature"))
+		if err == nil && hmac.Equal(signature, clientIPSignature(a.ClientSecret, ip)) {
+			source = ip
+		}
+	}
+	address, err := netip.ParseAddr(source)
+	if err != nil {
+		port, err := netip.ParseAddrPort(source)
+		if err != nil {
+			return "unknown"
+		}
+		address = port.Addr()
+	}
+	address = address.Unmap().WithZone("")
+	if address.Is6() {
+		prefix, _ := address.Prefix(64)
+		return prefix.String()
+	}
+	return address.String()
+}
+
+// clientIPSignatureはSECRET_HASHと同じ鍵を使うため、用途の接頭辞で区別する。
+func clientIPSignature(secret, ip string) []byte {
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte("shareoj-client-ip:" + ip))
+	return mac.Sum(nil)
 }
 
 func validSignupPassword(password string) bool {

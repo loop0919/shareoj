@@ -32,7 +32,7 @@ resource "aws_lambda_function" "web" {
   function_name                  = "${local.name}-web"
   description                    = "OpenOJ Nuxt SSR frontend"
   runtime                        = "nodejs22.x"
-  handler                        = "server/index.handler"
+  handler                        = "lambda/index.handler"
   architectures                  = ["arm64"]
   memory_size                    = 512
   timeout                        = 25

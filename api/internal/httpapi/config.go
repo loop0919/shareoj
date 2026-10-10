@@ -97,6 +97,7 @@ func configuredStorage(getenv func(string) string, auth AuthConfig, region strin
 		private.Profiles = profiles.New(pool)
 		private.Posts = posts.New(pool)
 		private.Submissions = &submissions.Store{Pool: pool}
+		auth.Registrations = database.RegistrationQuota{Pool: pool}
 		private.JudgeImage = getenv("JUDGE_CPP_IMAGE")
 		private.JudgeRuntime = getenv("JUDGE_RUNTIME")
 		private.JudgeEnabledRuntimes = getenv("JUDGE_ENABLED_RUNTIMES")
