@@ -3,11 +3,7 @@ import type { ProblemDraft } from '~~/shared/types/problem-draft'
 
 const checker = defineModel<ProblemDraft['checker']>({ required: true })
 const interactor = defineModel<ProblemDraft['interactor']>('interactor', { required: true })
-const props = defineProps<{ disabled: boolean, problemId: string, published: boolean, publishedVersion: number, hasSamples: boolean, save: () => Promise<boolean> }>()
-const { data: publishedProblem } = await useAsyncData(
-  () => `checker-samples-${props.problemId}-${props.publishedVersion}`,
-  () => props.published && props.problemId ? $fetch(`/api/problems/${props.problemId}`) : Promise.resolve(null),
-)
+const props = defineProps<{ disabled: boolean, problemId: string, published: boolean, save: () => Promise<boolean> }>()
 const { data: catalog, error: catalogError } = useJudgeCatalog()
 const available = computed(() => catalogError.value || catalog.value?.maintenance ? [] : catalog.value?.items ?? [])
 let previousCode: ProblemDraft['checker'] = null
@@ -29,6 +25,19 @@ const protocol = computed({
 })
 watch(supportsTestlib, supported => { if (!supported && protocol.value === 'testlib') protocol.value = 'legacy' })
 const codeLabel = computed(() => interactor.value ? '対話用ジャッジ' : '検証コード')
+const opening = ref(false)
+const openError = ref('')
+// Submissions run on the problem page; saving first keeps the draft judge in sync with this editor.
+async function openProblem() {
+  if (opening.value || props.disabled || error.value) return
+  opening.value = true
+  openError.value = ''
+  try {
+    if (!await props.save()) { openError.value = '下書きを保存できませんでした。保存内容を確認してください。'; return }
+    await nextTick()
+    if (props.problemId) await navigateTo(`/problems/${props.problemId}#submission-title`)
+  } finally { opening.value = false }
+}
 const error = computed(() => code.value && (!code.value.source.trim() || new TextEncoder().encode(code.value.source).length > 65536 || code.value.source.includes('\0'))
   ? '公開・採点するにはコードを1〜65,536バイトで、NUL文字を含めずに入力してください。' : '')
 </script>
@@ -64,9 +73,12 @@ const error = computed(() => code.value && (!code.value.source.trim() || new Tex
       <SourceCodeEditor v-model="code.source" :runtime="code.runtime" :label="codeLabel" :disabled="disabled" />
       <p v-if="error" class="editor-error" role="alert">{{ error }}</p>
     </template>
-    <p v-if="published">提出は公開中の設定で採点します。編集内容を採点へ反映するには、問題管理から公開内容を更新してください。</p>
-    <p v-else>テストケースを登録して解答を提出すると、保存した下書きで採点できます。正解例と不正解例の両方を試してください。</p>
-    <SubmissionForm v-if="problemId" class="checker-submission" :has-samples="published ? !!publishedProblem?.hasSamples : hasSamples" :problem-id="problemId" :before-submit="save" :disabled="disabled || !!error" />
+    <div class="checker-trial">
+      <p v-if="published">提出は公開中の設定で採点します。編集内容を採点へ反映するには、問題管理から公開内容を更新してください。</p>
+      <p v-else>テストケースを登録して問題ページから解答を提出すると、保存した下書きで採点できます。正解例と不正解例の両方を試してください。</p>
+      <button type="button" class="editor-button" :disabled="disabled || !!error || opening" @click="openProblem">{{ opening ? '保存しています…' : '問題ページで提出する' }}</button>
+      <p v-if="openError" class="editor-error" role="alert">{{ openError }}</p>
+    </div>
   </section>
 </template>
 
@@ -76,6 +88,6 @@ label { display: block; margin-block: 12px 4px; font-size: .75rem; }
 label:first-child { margin-top: 12px; }
 select { max-width: 100%; min-height: 36px; padding: 4px 8px; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-paper); color: var(--color-ink); }
 .checker-settings :deep(.source-code-editor) { max-width: 1000px; margin-block: 12px; }
-.checker-submission { max-width: 1000px; padding: 16px; border: 1px solid var(--color-line); border-radius: 4px; }
-.checker-submission :deep(h2:first-child) { margin-top: 0; }
+.checker-trial { max-width: 1000px; margin-top: 20px; }
+.checker-trial button { min-height: 40px; margin-top: 4px; }
 </style>
