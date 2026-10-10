@@ -49,7 +49,7 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   await page.getByRole('button', { name: 'コンテスト選択Aを追加', exact: true }).click()
   await search.fill(second.replaceAll('-', '').slice(0, 12))
   await search.press('Enter')
-  await expect(page.getByRole('button', { name: 'コンテスト選択Bは追加済み', exact: true })).toBeDisabled()
+  await expect(page.locator('.selected strong')).toHaveText(['コンテスト選択A', 'コンテスト選択B'])
   await page.locator(`#points-${first}`).fill('300')
   await page.getByRole('button', { name: 'コンテスト選択Bを上へ' }).click()
   await page.getByRole('button', { name: 'タイトル・説明', exact: true }).click()

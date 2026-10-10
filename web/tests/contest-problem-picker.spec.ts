@@ -16,8 +16,12 @@ test('contest problems are found by fuzzy title or UUID and added to the end of 
   const search = page.getByRole('searchbox', { name: '問題を検索' })
   const candidates = page.locator('#problem-candidates li')
   const selected = page.locator('.selected li')
-  await expect(page.getByRole('checkbox')).toHaveCount(0)
-  await expect(candidates).toHaveCount(3)
+  const onlyAddable = page.getByRole('checkbox', { name: '追加できる問題だけ表示', exact: true })
+  // By default, problems that cannot be added stay out of sight.
+  await expect(onlyAddable).toBeChecked()
+  await expect(candidates).toHaveCount(2)
+  await expect(page.getByText('2 件（追加済み・追加できない 1 件を非表示）', { exact: true })).toBeVisible()
+  await expect(page.getByText('難易度なしの問題', { exact: true })).toHaveCount(0)
   // Letters in order still match when other letters sit between them.
   await search.fill('最短数え')
   await expect(candidates).toHaveCount(1)
@@ -35,8 +39,11 @@ test('contest problems are found by fuzzy title or UUID and added to the end of 
   await expect(search).toHaveValue('')
   await expect(section).toHaveAttribute('aria-current', 'page')
   await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(selected.locator('strong')).toHaveText(['Range Sum Query'])
+  await expect(candidates).toHaveText([/最短経路の数え上げ/])
+  // Showing everything marks added problems, and problems the server would reject say why.
+  await onlyAddable.uncheck()
   await expect(page.getByRole('button', { name: 'Range Sum Queryは追加済み', exact: true })).toBeDisabled()
-  // Problems the server would reject say why and cannot be added.
   await search.fill('難易度')
   await expect(candidates).toContainText('難易度が設定されていません')
   await expect(page.getByRole('button', { name: '難易度なしの問題を追加', exact: true })).toBeDisabled()
@@ -51,6 +58,8 @@ test('contest problems are found by fuzzy title or UUID and added to the end of 
     await page.setViewportSize({ width, height: 900 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   }
+  await onlyAddable.check()
+  await expect(candidates).toHaveCount(0)
   await page.getByRole('button', { name: 'Range Sum Queryを外す', exact: true }).click()
   await expect(selected.locator('strong')).toHaveText(['最短経路の数え上げ'])
   await expect(page.getByRole('button', { name: 'Range Sum Queryを追加', exact: true })).toBeEnabled()

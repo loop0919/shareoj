@@ -24,9 +24,12 @@ const sidebarExpanded = ref(false)
 const form = ref<HTMLFormElement>()
 const totalPoints = computed(() => selected.value.reduce((total, p) => total + (Number(p.points) || 0), 0))
 const query = ref('')
-const candidates = computed(() => searchProblems(available.value, query.value))
+const onlyAddable = ref(true)
 const summaries = computed(() => new Map(available.value.map(p => [p.id, p])))
 const isSelected = (problemId: string) => selected.value.some(item => item.id === problemId)
+const addable = (problemId: string) => !isSelected(problemId) && !issues(problemId).length
+const matches = computed(() => searchProblems(available.value, query.value))
+const candidates = computed(() => onlyAddable.value ? matches.value.filter(p => addable(p.id)) : matches.value)
 const problemName = (title?: string) => title || '無題の問題'
 const {
   mode, workspace, splitPercent, resizing, setSplit, startResize, moveResize, stopResize, resizeWithKeyboard,
@@ -68,11 +71,11 @@ function issues(problemId: string) {
   return (summaries.value.get(problemId)?.readiness?.contest ?? []).filter(code => code !== 'in_contest')
 }
 function add(p: AccountSummary) {
-  if (!isSelected(p.id) && !issues(p.id).length) selected.value.push({ id: p.id, title: p.title, points: 100 })
+  if (addable(p.id)) selected.value.push({ id: p.id, title: p.title, points: 100 })
 }
 // Enter adds the best match, so a pasted UUID needs no pointer; it must not submit the form.
 function addFirstCandidate() {
-  const p = query.value.trim() ? candidates.value.find(c => !isSelected(c.id) && !issues(c.id).length) : undefined
+  const p = query.value.trim() ? candidates.value.find(c => addable(c.id)) : undefined
   if (p) { add(p); query.value = '' }
 }
 function remove(index: number) { selected.value.splice(index, 1) }
@@ -192,11 +195,12 @@ async function save() {
                 <template v-else>
                   <input v-model="query" class="problem-search" type="search" aria-label="問題を検索" placeholder="タイトルまたはUUIDで検索" autocomplete="off" aria-describedby="problem-search-hint" aria-controls="problem-candidates" @keydown.enter.prevent="addFirstCandidate">
                   <p id="problem-search-hint" class="muted search-hint">自分の未公開問題から探します。他のコンテストに登録済みの問題は出ません。Enterで先頭の候補を追加します。</p>
-                  <p class="muted search-count" role="status">{{ query.trim() ? `${candidates.length} 件が一致` : `${available.length} 件` }}</p>
+                  <label class="addable-filter"><input v-model="onlyAddable" type="checkbox"> 追加できる問題だけ表示</label>
+                  <p class="muted search-count" role="status">{{ candidates.length }} 件{{ query.trim() ? 'が一致' : '' }}{{ matches.length > candidates.length ? `（追加済み・追加できない ${matches.length - candidates.length} 件を非表示）` : '' }}</p>
                   <ul id="problem-candidates" class="candidates">
                     <li v-for="p in candidates" :key="p.id">
                       <div class="problem-entry"><span>{{ problemName(p.title) }}</span><code class="problem-uuid">{{ p.id }}</code><p v-if="issues(p.id).length" class="problem-issue">{{ issueMessage(issues(p.id)[0]!, 'contest') }}</p></div>
-                      <button class="editor-button" type="button" :disabled="isSelected(p.id) || !!issues(p.id).length" :aria-label="`${problemName(p.title)}${isSelected(p.id) ? 'は追加済み' : 'を追加'}`" @click="add(p)">{{ isSelected(p.id) ? '追加済み' : '追加' }}</button>
+                      <button class="editor-button" type="button" :disabled="!addable(p.id)" :aria-label="`${problemName(p.title)}${isSelected(p.id) ? 'は追加済み' : 'を追加'}`" @click="add(p)">{{ isSelected(p.id) ? '追加済み' : '追加' }}</button>
                     </li>
                   </ul>
                 </template>
@@ -252,8 +256,10 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .candidates button { flex-shrink: 0; min-width: 5.5em; }
 .problem-search { margin-bottom: 8px; }
 .search-hint, .search-count { margin-bottom: 8px; }
+.addable-filter { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin-bottom: 4px; cursor: pointer; }
+.addable-filter input { accent-color: var(--color-accent); }
 .selection-note { margin-top: 24px; }
-.management-content input { width: 100%; min-width: 0; min-height: 44px; padding: 8px 10px; font: inherit; border: 1px solid var(--color-line); border-radius: 4px; color: var(--color-ink); background: var(--color-paper); }
+.management-content input:not([type=checkbox]) { width: 100%; min-width: 0; min-height: 44px; padding: 8px 10px; font: inherit; border: 1px solid var(--color-line); border-radius: 4px; color: var(--color-ink); background: var(--color-paper); }
 .management-content input[type=number] { max-width: 128px; }
 .management-content .points-field input { width: 96px; }
 .management-content input:hover:not(:disabled) { border-color: var(--color-muted); }
