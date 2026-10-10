@@ -20,7 +20,8 @@ EC2の台の構成と切り替えは[EC2の採点台の運用と切り替え](..
 配送と結果反映を行うbridge Lambdaは予約同時実行5とし、コンテスト時の一斉提出でDB接続が急増しないようにする。
 [ジャッジ構築手順](../judge/README.md)に従って手動で構築し、IPv6通信と2 GB実機でのisolateの制限と計測を確認してから提出受付を有効にする。
 本番テストセットの取り込みとバンドル展開は未実装である。
-請求アラートはAWSアカウント全体の設定として、別フォルダ`~/aws-setting`へ分離している。
+請求アラート、リージョン制限、GuardDutyはAWSアカウント全体の設定として、別フォルダ`~/aws-setting`へ分離している。
+管理者が操作できるリージョンは東京と`us-east-1`に限られ、GitHubデプロイロールは`deploy-access/`で東京だけに限る。
 
 ## 開発環境
 
@@ -378,6 +379,7 @@ terraform -chdir=infra/deploy-access apply access.tfplan
 信頼関係はGitHubのAudienceとdev環境のsubjectに一致する場合だけを許可する。
 操作権限はアプリのstate・ロック、dev用パッケージバケット、Lambda、ログ、指定済みのGateway・Cognito、アプリのタグを持つネットワーク、指定名のRDSに限定する。
 IAM操作と`PassRole`の対象はAPI・フロントエンドの実行ロールだけにする。
+全体サービスのIAMとSTSを除き、東京以外のリージョンへの操作は拒否する。
 GitHubデプロイロール自身とそのstateの更新権限は付けない。
 GatewayやUser Poolの新設・置換は管理者が実施し、IDをこの構成へ反映してからCIを再開する。
 

@@ -215,6 +215,14 @@ resource "aws_iam_role_policy" "deploy" {
         NotAction = ["ec2:Describe*", "ec2:Get*"]
         Resource  = "*"
         Condition = { StringEquals = { "ec2:ResourceTag/Component" = "judge-worker" } }
+      },
+      {
+        # Deployments only touch the application region; IAM and STS are global services.
+        Sid       = "DenyOtherRegions"
+        Effect    = "Deny"
+        NotAction = ["iam:*", "sts:*"]
+        Resource  = "*"
+        Condition = { StringNotEquals = { "aws:RequestedRegion" = var.aws_region } }
       }
     ]
   })

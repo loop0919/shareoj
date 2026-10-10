@@ -102,6 +102,14 @@ run "deployment_boundary" {
     error_message = "The deploy role must not change judge hosts, their network or their hold tags."
   }
   assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_role_policy.deploy.policy).Statement : (
+      statement.Effect == "Deny" && statement.Resource == "*" &&
+      toset(statement.NotAction) == toset(["iam:*", "sts:*"]) &&
+      tomap(statement.Condition.StringNotEquals) == tomap({ "aws:RequestedRegion" = "ap-northeast-1" })
+    ) if try(statement.Sid, "") == "DenyOtherRegions"])
+    error_message = "The deploy role must not create resources outside the application region."
+  }
+  assert {
     condition     = length(aws_iam_role_policy.deploy.policy) <= 10240
     error_message = "Deployment permissions must fit the IAM role inline policy size limit."
   }
