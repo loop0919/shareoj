@@ -34,8 +34,7 @@ const error = computed(() => code.value && (!code.value.source.trim() || new Tex
 </script>
 
 <template>
-  <section class="checker-settings" aria-labelledby="checker-title">
-    <h1 id="checker-title">判定方法</h1>
+  <section class="checker-settings" aria-label="判定方法">
     <label for="judge-method">判定方法</label>
     <select id="judge-method" v-model="method" :disabled="disabled">
       <option value="normal">通常判定（空白区切りで比較）</option>
@@ -72,13 +71,11 @@ const error = computed(() => code.value && (!code.value.source.trim() || new Tex
 </template>
 
 <style scoped>
-.checker-settings { flex: 1; min-height: 0; overflow-y: auto; padding: 24px; }
-.checker-settings h1 { font-size: 1.25rem; }
-.checker-settings p { max-width: 1000px; font-size: .875rem; }
-label { display: block; margin-block: 16px 8px; }
-select { max-width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-paper); color: var(--color-ink); }
+.checker-settings p { max-width: 1000px; margin: 8px 0; font-size: .8125rem; }
+label { display: block; margin-block: 12px 4px; font-size: .75rem; }
+label:first-child { margin-top: 12px; }
+select { max-width: 100%; min-height: 36px; padding: 4px 8px; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-paper); color: var(--color-ink); }
 .checker-settings :deep(.source-code-editor) { max-width: 1000px; margin-block: 12px; }
 .checker-submission { max-width: 1000px; padding: 16px; border: 1px solid var(--color-line); border-radius: 4px; }
 .checker-submission :deep(h2:first-child) { margin-top: 0; }
-@media (max-width: 600px) { .checker-settings { padding: 16px 12px; } }
 </style>

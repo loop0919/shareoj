@@ -136,7 +136,7 @@ test.describe('small touch screens', () => {
     test(`can add and edit test cases at ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
       await page.setViewportSize(viewport)
       await page.goto('/problems/new')
-      for (const section of ['問題文', 'テストケース', '生成と検証', '判定方法', '解説']) {
+      for (const section of ['問題文', 'テストケース', '生成・検証・判定', '解説']) {
         await page.getByRole('button', { name: section, exact: true }).click()
         const save = (await page.getByRole('button', { name: '保存', exact: true }).boundingBox())!
         expect(viewport.width - save.x - save.width).toBeLessThanOrEqual(12)

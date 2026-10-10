@@ -1,11 +1,17 @@
+import type { Page } from '@playwright/test'
 import { test, expect } from './fixtures/account'
+
+async function openChecker(page: Page) {
+  await page.getByRole('button', { name: '生成・検証・判定', exact: true }).click()
+  await page.getByRole('group', { name: '生成・検証・判定の種類' }).getByRole('button', { name: '判定方法', exact: true }).click()
+}
 
 for (const [method, label] of [['special', '検証コード'], ['interactive', '対話用ジャッジ']] as const) {
   test(`${method} defaults to testlib for C++23 and preserves its saved protocol`, async ({ page }) => {
     await page.route('**/api/runtimes', route => route.fulfill({ json: { items: [{ id: 'cpp23-gcc', label: 'C++23' }, { id: 'python314', label: 'Python' }] } }))
     await Promise.all([page.waitForResponse('**/api/runtimes'), page.goto('/problems/new?fresh=1')])
     await page.getByLabel('問題のタイトル').fill('testlib形式の保存')
-    await page.getByRole('button', { name: '判定方法', exact: true }).click()
+    await openChecker(page)
     await page.getByRole('combobox', { name: '判定方法', exact: true }).selectOption(method)
     await expect(page.getByLabel(`${label}の言語`)).toHaveValue('cpp23-gcc')
     await expect(page.getByLabel('判定コードの形式')).toHaveValue('testlib')
@@ -13,7 +19,7 @@ for (const [method, label] of [['special', '検証コード'], ['interactive', '
     await page.getByRole('button', { name: '保存', exact: true }).click()
     await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
     await page.reload()
-    await page.getByRole('button', { name: '判定方法', exact: true }).click()
+    await openChecker(page)
     await expect(page.getByLabel('判定コードの形式')).toHaveValue('testlib')
     await page.getByLabel(`${label}の言語`).selectOption('python314')
     await expect(page.getByLabel('判定コードの形式')).toHaveValue('legacy')
@@ -27,7 +33,7 @@ for (const [method, label] of [['special', '検証コード'], ['interactive', '
     await page.route('**/api/runtimes', route => route.fulfill({ json: { items: [{ id: 'cpp17', label: 'C++17' }, { id: 'python314', label: 'Python' }] } }))
     await page.goto('/problems/new?fresh=1')
     await page.getByLabel('問題のタイトル').fill('判定方法の切り替え')
-    await page.getByRole('button', { name: '判定方法', exact: true }).click()
+    await openChecker(page)
     const selector = page.getByRole('combobox', { name: '判定方法', exact: true })
     await selector.selectOption(method)
     await page.getByLabel(`${label}の言語`).selectOption('python314')
@@ -42,7 +48,7 @@ for (const [method, label] of [['special', '検証コード'], ['interactive', '
       expect(body.draft.interactor).toBeNull()
       await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
       await page.getByRole('button', { name: '問題文', exact: true }).click()
-      await page.getByRole('button', { name: '判定方法', exact: true }).click()
+      await openChecker(page)
       await selector.selectOption(method)
       await expect(page.getByLabel(`${label}の言語`)).toHaveValue('python314')
       await expect(page.getByLabel(label, { exact: true })).toHaveText(source)
@@ -54,7 +60,7 @@ test('checker languages match submissions and settings survive saving and reload
   await page.route('**/api/runtimes', route => route.fulfill({ json: { items: [{ id: 'cpp17', label: 'C++17' }, { id: 'python314', label: 'Python' }] } }))
   await Promise.all([page.waitForResponse('**/api/runtimes'), page.goto('/problems/new')])
   await page.getByLabel('問題のタイトル').fill('構築問題')
-  await page.getByRole('button', { name: '判定方法', exact: true }).click()
+  await openChecker(page)
   await page.getByRole('combobox', { name: '判定方法', exact: true }).selectOption({ label: 'スペシャルジャッジ' })
   await expect(page.getByLabel('検証コードの言語').locator('option')).toHaveText(['C++17', 'Python'])
   await page.getByLabel('検証コードの言語').selectOption('python314')
@@ -64,7 +70,7 @@ test('checker languages match submissions and settings survive saving and reload
   const id = new URL(page.url()).searchParams.get('problem')!
   expect(id).toBeTruthy()
   await Promise.all([page.waitForResponse('**/api/runtimes'), page.reload()])
-  await page.getByRole('button', { name: '判定方法', exact: true }).click()
+  await openChecker(page)
   await expect(page.getByLabel('検証コードの言語')).toHaveValue('python314')
   await expect(page.getByLabel('検証コード', { exact: true })).toContainText('assert int(sys.stdin.read()) == 7')
   await expect(page.locator('#submission-language option')).toHaveText(['-- 未選択 --', 'C++17', 'Python'])
@@ -76,7 +82,7 @@ test('checker languages match submissions and settings survive saving and reload
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
   await page.reload()
-  await page.getByRole('button', { name: '判定方法', exact: true }).click()
+  await openChecker(page)
   await expect(page.getByLabel('検証コードの言語')).toHaveCount(0)
 })
 
@@ -84,7 +90,7 @@ test('interactive judging saves the selected language and mutually excludes spec
   await page.route('**/api/runtimes', route => route.fulfill({ json: { items: [{ id: 'cpp23-gcc', label: 'C++23' }, { id: 'python314', label: 'Python' }] } }))
   await Promise.all([page.waitForResponse('**/api/runtimes'), page.goto('/problems/new')])
   await page.getByLabel('問題のタイトル').fill('対話問題')
-  await page.getByRole('button', { name: '判定方法', exact: true }).click()
+  await openChecker(page)
   await page.getByRole('combobox', { name: '判定方法', exact: true }).selectOption('interactive')
   await expect(page.getByLabel('対話用ジャッジの言語').locator('option')).toHaveText(['C++23', 'Python'])
   await page.getByLabel('対話用ジャッジの言語').selectOption('python314')
@@ -92,7 +98,7 @@ test('interactive judging saves the selected language and mutually excludes spec
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
   await page.reload()
-  await page.getByRole('button', { name: '判定方法', exact: true }).click()
+  await openChecker(page)
   await expect(page.getByRole('combobox', { name: '判定方法', exact: true })).toHaveValue('interactive')
   await expect(page.getByLabel('対話用ジャッジ', { exact: true })).toContainText('assert int(input()) == 20')
   await expect(page.getByText('ジャッジ側は各ケースCPU 5秒・256 MiB', { exact: false })).toBeVisible()
@@ -102,7 +108,7 @@ test('interactive judging saves the selected language and mutually excludes spec
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
   await page.reload()
-  await page.getByRole('button', { name: '判定方法', exact: true }).click()
+  await openChecker(page)
   await expect(page.getByRole('combobox', { name: '判定方法', exact: true })).toHaveValue('special')
   await expect(page.getByLabel('検証コードの言語')).toHaveValue('python314')
 })

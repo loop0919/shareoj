@@ -52,6 +52,19 @@ test('management shows the saved status and opens the section that needs work', 
   await expect(page.getByRole('combobox', { name: '難易度（作成者設定）' })).toBeVisible()
 })
 
+test('checker issues open the judge tab of the generator workspace', async ({ page }) => {
+  const id = '66666666-6666-4666-8666-666666666666'
+  const draft = { title: '判定コードなし', markdown: '本文', editorial: '', difficulty: 3, timeLimitMs: '2000', memoryLimitMb: '512', testCases: [], checker: { runtime: 'cpp17', source: '', protocol: 'legacy' } }
+  const readiness = { publish: ['checker_source_missing'], contest: ['checker_source_missing'], featured: ['checker_source_missing'] }
+  await page.route(`**/api/my/problems/${id}`, route => route.fulfill({ json: { id, version: 1, updatedAt: '2026-09-10T00:00:00Z', draft, readiness } }))
+  await page.goto(`/problems/new?problem=${id}`)
+  await page.getByRole('button', { name: '問題管理', exact: true }).click()
+  await page.getByRole('region', { name: '状態' }).getByRole('button', { name: '判定方法を開く' }).click()
+  await expect(page.getByRole('button', { name: '生成・検証・判定', exact: true })).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByRole('group', { name: '生成・検証・判定の種類' }).getByRole('button', { pressed: true })).toHaveText('判定方法')
+  await expect(page.getByRole('combobox', { name: '判定方法', exact: true })).toHaveValue('special')
+})
+
 test('published problems explain where else they cannot go', async ({ page }) => {
   const id = '88888888-8888-4888-8888-888888888888'
   const draft = { title: '公開済み', markdown: '本文', editorial: '解説', difficulty: 3, timeLimitMs: '2000', memoryLimitMb: '512', testCases: [{ input: '1', output: '1' }] }

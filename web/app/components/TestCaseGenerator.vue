@@ -6,6 +6,7 @@ import { testCaseError, persistedDraft, type TestCase } from '~/utils/problem-dr
 const cases = defineModel<TestCase[]>({ required: true })
 const config = defineModel<Generators>('config', { required: true })
 const busy = defineModel<boolean>('busy', { required: true })
+const judging = defineModel<boolean>('judging', { default: false })
 const props = defineProps<{ disabled: boolean, problemId?: string, save: () => Promise<boolean> }>()
 const emit = defineEmits<{ 'show-cases': [] }>()
 const mode = ref<'input' | 'output' | 'validation'>('input')
@@ -24,6 +25,10 @@ watch([mode, start, count, () => JSON.stringify(program.value), () => JSON.strin
 let disposed = false
 onBeforeUnmount(() => { disposed = true })
 watch(mode, () => { start.value = 1; count.value = 1; failure.value = ''; message.value = '' })
+function selectMode(next: typeof mode.value) {
+  judging.value = false
+  mode.value = next
+}
 
 async function generate() {
   if (busy.value || props.disabled || !available.value.length) return
@@ -131,33 +136,37 @@ async function generate() {
 <template>
   <section class="generator" aria-labelledby="generator-title">
     <header class="generator-heading">
-      <div><h1 id="generator-title">生成と検証</h1><p>コードでテストケースの入出力を生成し、入力が制約を満たすか検証します。</p></div>
+      <div><h1 id="generator-title">生成・検証・判定</h1><p>コードでテストケースの入出力を生成・検証し、提出の判定方法を設定します。</p></div>
       <NuxtLink to="/blog/generator-guide" target="_blank" rel="noopener noreferrer">入出力生成と入力検証の使い方 ↗</NuxtLink>
     </header>
     <div class="generator-panel">
-      <div class="problem-menu" role="group" aria-label="生成と検証の種類">
-        <button type="button" :aria-pressed="mode === 'input'" :disabled="disabled || busy" @click="mode = 'input'">入力生成</button>
-        <button type="button" :aria-pressed="mode === 'output'" :disabled="disabled || busy" @click="mode = 'output'">出力生成</button>
-        <button type="button" :aria-pressed="mode === 'validation'" :disabled="disabled || busy" @click="mode = 'validation'">入力検証</button>
+      <div class="problem-menu" role="group" aria-label="生成・検証・判定の種類">
+        <button type="button" :aria-pressed="!judging && mode === 'input'" :disabled="disabled || (busy && mode !== 'input')" @click="selectMode('input')">入力生成</button>
+        <button type="button" :aria-pressed="!judging && mode === 'output'" :disabled="disabled || (busy && mode !== 'output')" @click="selectMode('output')">出力生成</button>
+        <button type="button" :aria-pressed="!judging && mode === 'validation'" :disabled="disabled || (busy && mode !== 'validation')" @click="selectMode('validation')">入力検証</button>
+        <button type="button" :aria-pressed="judging" :disabled="disabled" @click="judging = true">判定方法</button>
       </div>
-      <div class="generator-options">
-        <label>言語<select v-model="program.runtime" :disabled="disabled || busy"><option v-for="item in available" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
-        <label v-if="mode === 'input'">開始ケース番号<input v-model="start" type="number" step="1" :disabled="disabled || busy"></label>
-        <label v-if="mode === 'input'">生成件数<input v-model="count" type="number" min="1" max="100" step="1" :disabled="disabled || busy"></label>
+      <div v-show="judging"><slot name="checker" /></div>
+      <div v-show="!judging">
+        <div class="generator-options">
+          <label>言語<select v-model="program.runtime" :disabled="disabled || busy"><option v-for="item in available" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
+          <label v-if="mode === 'input'">開始ケース番号<input v-model="start" type="number" step="1" :disabled="disabled || busy"></label>
+          <label v-if="mode === 'input'">生成件数<input v-model="count" type="number" min="1" max="100" step="1" :disabled="disabled || busy"></label>
+        </div>
+        <p v-if="mode === 'input'">ケース番号を標準入力で受け取り、標準出力から新規ケースの入力を作成します。</p>
+        <p v-else-if="mode === 'output'">全{{ cases.length }}件のテストケースの入力を読み、標準出力で出力を置き換えます。</p>
+        <p v-else>全{{ cases.length }}件のテストケースの入力を標準入力で読み、終了コード0で合格、0以外で不合格とします。標準出力は保存せず、テストケースは変更しません。</p>
+        <p class="muted">コードは自動保存。各ファイル16 MiB、全体512 MiBまで。</p>
+        <SourceCodeEditor v-model="program.source" :runtime="program.runtime" :label="`${modeLabel}のコード`" :disabled="disabled || busy" :key="mode" />
+        <p v-if="failure" class="notice notice-error" role="alert">{{ failure }}</p>
+        <div class="generator-actions"><button type="button" class="editor-button primary" :disabled="disabled || busy || !available.length" @click="generate">{{ mode === 'validation' ? (busy ? '検証中…' : '検証する') : (busy ? '生成中…' : '生成する') }}</button><button type="button" class="editor-button" @click="emit('show-cases')">テストケースを確認</button></div>
+        <p v-if="message" role="status">{{ message }}</p>
+        <table v-if="validationResults.length" class="validation-results" aria-label="入力検証の結果">
+          <thead><tr><th>テストケース</th><th>検証結果</th></tr></thead>
+          <tbody><tr v-for="(item, index) in validationResults" :key="index"><td>{{ item.name }}</td><td>{{ item.verdict === 'AC' ? '合格' : item.verdict === 'RE' ? '不合格（終了コード・異常終了）' : `検証未完了（${item.verdict}）` }}</td></tr></tbody>
+        </table>
       </div>
-      <p v-if="mode === 'input'">ケース番号を標準入力で受け取り、標準出力から新規ケースの入力を作成します。</p>
-      <p v-else-if="mode === 'output'">全{{ cases.length }}件のテストケースの入力を読み、標準出力で出力を置き換えます。</p>
-      <p v-else>全{{ cases.length }}件のテストケースの入力を標準入力で読み、終了コード0で合格、0以外で不合格とします。標準出力は保存せず、テストケースは変更しません。</p>
-      <p class="muted">コードは自動保存。各ファイル16 MiB、全体512 MiBまで。</p>
-      <SourceCodeEditor v-model="program.source" :runtime="program.runtime" :label="`${modeLabel}のコード`" :disabled="disabled || busy" :key="mode" />
-      <p v-if="failure" class="notice notice-error" role="alert">{{ failure }}</p>
-      <div class="generator-actions"><button type="button" class="editor-button primary" :disabled="disabled || busy || !available.length" @click="generate">{{ mode === 'validation' ? (busy ? '検証中…' : '検証する') : (busy ? '生成中…' : '生成する') }}</button><button type="button" class="editor-button" @click="emit('show-cases')">テストケースを確認</button></div>
     </div>
-    <p v-if="message" role="status">{{ message }}</p>
-    <table v-if="validationResults.length" class="validation-results" aria-label="入力検証の結果">
-      <thead><tr><th>テストケース</th><th>検証結果</th></tr></thead>
-      <tbody><tr v-for="(item, index) in validationResults" :key="index"><td>{{ item.name }}</td><td>{{ item.verdict === 'AC' ? '合格' : item.verdict === 'RE' ? '不合格（終了コード・異常終了）' : `検証未完了（${item.verdict}）` }}</td></tr></tbody>
-    </table>
   </section>
 </template>
 
@@ -165,7 +174,7 @@ async function generate() {
 .validation-results { width: 100%; max-width: 1000px; border-collapse: collapse; font-size: .8125rem; overflow-wrap: anywhere; table-layout: fixed; }
 .validation-results th, .validation-results td { text-align: left; padding: 10px; border-bottom: 1px solid var(--color-line); }
 .generator { flex: 1; min-height: 0; min-width: 0; overflow-y: auto; padding: 24px; }
-.generator-heading { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 16px; padding-bottom: 20px; border-bottom: 1px solid var(--color-line); }
+.generator-heading { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 16px; }
 .generator-heading h1 { margin: 0; font-size: 1.25rem; }
 .generator-heading a { font-size: .8125rem; padding-block: 4px; }
 .generator-panel { max-width: 1000px; margin-top: 20px; }
