@@ -19,7 +19,7 @@ test('password changes and account deletion keep public work under an anonymous 
   const draft = randomUUID()
   expect((await page.request.put(`/api/my/posts/${draft}`, { headers: { origin }, data: { version: 0, title: '消える下書き', markdown: '非公開' } })).status()).toBe(200)
 
-  await page.locator('.site-header .account-nav').hover()
+  await page.locator('.site-header').getByRole('button', { name: 'アカウントメニュー', exact: true }).click()
   await page.getByRole('navigation', { name: 'アカウント', exact: true }).getByRole('link', { name: '設定', exact: true }).click()
   await expect(page).toHaveURL('/my/settings')
   await page.getByRole('button', { name: '認証設定', exact: true }).click()
@@ -36,8 +36,8 @@ test('password changes and account deletion keep public work under an anonymous 
   await expect(page.getByLabel('現在のパスワード')).toHaveValue('')
 
   // The new password signs in; the old one no longer does.
-  await page.goto('/my')
-  await page.locator('#main').getByRole('button', { name: 'ログアウト', exact: true }).click()
+  await page.locator('.site-header').getByRole('button', { name: 'アカウントメニュー', exact: true }).click()
+  await page.getByRole('navigation', { name: 'アカウント', exact: true }).getByRole('button', { name: 'ログアウト', exact: true }).click()
   await login(page, 'test-password')
   await expect(page.getByRole('alert')).toBeVisible()
   await login(page, 'New-password-123!')

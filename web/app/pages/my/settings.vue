@@ -27,7 +27,8 @@ const tab = computed<Tab>({
 </template>
 <style scoped src="../../assets/css/profile.css"></style>
 <style scoped>
-.settings-page { max-width: 40rem; margin: 48px auto 80px; }
+.settings-page { margin-block: 40px 80px; }
 .settings-page h1 { margin-top: 16px; }
-.settings-body { padding-top: 32px; }
+/* The page spans the usual width; forms keep a readable line length. */
+.settings-body { max-width: 40rem; padding-top: 32px; }
 </style>

@@ -10,7 +10,7 @@ test('settings split the profile into tabs reached from the account menu', async
     return route.fulfill({ json: { profile: { ...profile, version: saved ? 2 : 1 } } })
   })
   await page.goto('/problems')
-  await page.locator('.site-header .account-nav').hover()
+  await page.locator('.site-header').getByRole('button', { name: 'アカウントメニュー', exact: true }).click()
   await page.getByRole('navigation', { name: 'アカウント', exact: true }).getByRole('link', { name: '設定', exact: true }).click()
   await expect(page).toHaveURL('/my/settings')
   const tabs = page.getByRole('navigation', { name: '設定の項目', exact: true })

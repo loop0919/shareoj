@@ -1,6 +1,6 @@
 <script setup lang="ts">
 useSeoMeta({ title: 'マイページ | ShareOJ', robots: 'noindex, nofollow' })
-const { profile, logout } = useAccount()
+const { profile } = useAccount()
 const route = useRoute()
 const router = useRouter()
 const activeContent = computed({
@@ -31,7 +31,6 @@ const joined = computed(() => profile.value ? new Date(profile.value.createdAt).
     <ContestList v-if="activeContent === 'contests'" mine />
     <SubmissionHistory v-if="activeContent === 'submissions'" embedded />
     <EventHistory v-if="activeContent === 'events'" />
-    <div class="account-actions"><button class="editor-button" @click="logout">ログアウト</button></div>
   </section>
 </template>
 <style scoped src="../../assets/css/profile.css"></style>

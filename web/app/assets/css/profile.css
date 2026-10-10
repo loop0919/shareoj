@@ -3,7 +3,6 @@
 .content-menu { display: flex; flex-wrap: wrap; gap: 4px 16px; border-bottom: 1px solid var(--color-line); margin-top: 24px; }
 .content-menu button { white-space: nowrap; min-height: 44px; padding: 12px 4px; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--color-muted); font: inherit; cursor: pointer; text-decoration: none; }
 .content-menu button[aria-pressed="true"] { border-bottom-color: currentColor; color: var(--color-ink); font-weight: 600; }
-.account-actions { padding-block: 24px 40px; border-top: 1px solid var(--color-line); }
 .my-page { margin-top: 40px; }
 .profile-header { display: flex; align-items: center; gap: 24px; padding-bottom: 32px; border-bottom: 1px solid var(--color-line); }
 .profile-identity { flex: 1; min-width: 0; }
