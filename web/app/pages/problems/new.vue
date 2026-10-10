@@ -14,6 +14,8 @@ const statusInput = computed(() => ({ readiness: readiness.value, publishedVersi
 const testerLink = ref('')
 const testerLinkBusy = ref(false)
 const testerLinkMessage = ref('')
+const testerLinkCopied = ref(false)
+let copiedTimer: ReturnType<typeof setTimeout> | undefined
 async function createTesterLink() {
   if (testerLinkBusy.value) return
   testerLinkBusy.value = true; testerLinkMessage.value = ''
@@ -25,9 +27,15 @@ async function createTesterLink() {
   finally { testerLinkBusy.value = false }
 }
 async function copyTesterLink() {
-  try { await navigator.clipboard.writeText(testerLink.value); testerLinkMessage.value = 'リンクをコピーしました。' }
-  catch { testerLinkMessage.value = 'リンクを選択してコピーしてください。' }
+  try {
+    await navigator.clipboard.writeText(testerLink.value)
+    testerLinkMessage.value = ''
+    testerLinkCopied.value = true
+    clearTimeout(copiedTimer)
+    copiedTimer = setTimeout(() => { testerLinkCopied.value = false }, 2000)
+  } catch { testerLinkMessage.value = 'リンクを選択してコピーしてください。' }
 }
+onBeforeUnmount(() => clearTimeout(copiedTimer))
 const section = ref<'statement' | 'editorial' | 'tests' | 'generators' | 'management'>('statement')
 const judging = ref(false)
 function jump(target: EditorSection) {
@@ -195,11 +203,10 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
       <div class="management-content">
         <header><h1 id="management-title">問題管理</h1><p class="manage-problem-title">{{ draft.title.trim() || '無題の問題' }}</p><p class="muted">{{ saveLocation }}</p></header>
         <section class="management-row readiness-row" aria-labelledby="readiness-title"><div><h2 id="readiness-title">状態</h2><ProblemReadiness :problem="statusInput" :saved="!!cloudId" @jump="jump" /></div></section>
-        <section class="management-row"><div><h2>公開設定</h2><p>問題文・テストケース・判定方法は「公開内容を更新」を押すまで採点に反映されません。テストケースの入出力は公開ページには表示しません。</p><p v-if="publicationError" class="editor-error" role="alert">{{ publicationError }}</p><NuxtLink v-if="publishedVersion" :to="`/problems/${cloudId}`" target="_blank">公開ページを見る</NuxtLink></div><div class="publication-actions"><button v-if="publishedVersion" class="editor-button primary" :disabled="saving || publishing || generating" @click="publishProblem(true)">公開内容を更新</button><p v-else>未公開の問題は問題一覧の「投稿」から公開できます。</p><button v-if="publishedVersion" class="editor-button" :disabled="saving || publishing || generating" @click="publishProblem(false)">非公開に戻す</button></div></section>
-        <section class="management-row"><div><h2>テスターリンク</h2><p>リンクを受け取ったユーザーが「許可する」を押すと、テスターになります。テスターは問題の編集・公開・削除を含め、作者と同じ操作ができます。</p><template v-if="testerLink"><label for="tester-link">招待リンク</label><input id="tester-link" :value="testerLink" readonly @focus="($event.target as HTMLInputElement).select()"><button type="button" class="editor-button" @click="copyTesterLink">リンクをコピー</button></template><p v-if="testerLinkMessage" role="status">{{ testerLinkMessage }}</p></div><button type="button" class="editor-button" :disabled="!ready || saving || publishing || generating || testerLinkBusy" @click="createTesterLink">{{ testerLinkBusy ? '発行中…' : 'リンクを発行' }}</button></section>
-        <section class="management-row"><div><h2>リジャッジ</h2><p>テストケースや採点設定の変更後に、提出を再採点します。</p></div><button type="button" class="editor-button" disabled>リジャッジ（準備中）</button></section>
-        <section class="management-row"><div><h2>テストケースの一括削除</h2><p>この問題に登録したテストケースをまとめて削除します。</p></div><button type="button" class="editor-button" :disabled="!draft.testCases.length || publishing || generating" @click="clearTestCases">一括削除</button></section>
-        <section class="management-row"><div><h2>問題の削除</h2><p>問題を削除します。この操作は取り消せません。</p></div><button type="button" class="editor-button danger" :disabled="generating" @click="openDeleteConfirmation">問題を削除</button></section>
+        <section class="management-row"><div><h2>公開設定</h2><p v-if="publishedVersion">編集内容は「公開内容を更新」で採点に反映されます。</p><p v-else>問題一覧の「投稿」から公開できます。</p><p v-if="publicationError" class="editor-error" role="alert">{{ publicationError }}</p><NuxtLink v-if="publishedVersion" :to="`/problems/${cloudId}`" target="_blank">公開ページを見る</NuxtLink></div><div v-if="publishedVersion" class="publication-actions"><button class="editor-button primary" :disabled="saving || publishing || generating" @click="publishProblem(true)">公開内容を更新</button><button class="editor-button" :disabled="saving || publishing || generating" @click="publishProblem(false)">非公開に戻す</button></div></section>
+        <section class="management-row"><div class="tester-link-row"><h2>テスターリンク</h2><p>リンクから参加したユーザーは、作者と同じく編集・公開・削除ができます。</p><template v-if="testerLink"><label for="tester-link">招待リンク</label><div class="tester-link-field"><input id="tester-link" :value="testerLink" readonly @focus="($event.target as HTMLInputElement).select()"><button type="button" class="editor-button tester-link-copy" :aria-label="testerLinkCopied ? 'コピーしました' : 'リンクをコピー'" :title="testerLinkCopied ? 'コピーしました' : 'リンクをコピー'" @click="copyTesterLink"><svg v-if="testerLinkCopied" class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L19 8" /></svg><svg v-else class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V4H4v12h4" /></svg></button></div></template><p v-if="testerLinkMessage" role="status">{{ testerLinkMessage }}</p><span class="visually-hidden" role="status">{{ testerLinkCopied ? 'リンクをコピーしました。' : '' }}</span></div><button type="button" class="editor-button" :disabled="!ready || saving || publishing || generating || testerLinkBusy" @click="createTesterLink">{{ testerLinkBusy ? '発行中…' : 'リンクを発行' }}</button></section>
+        <section class="management-row"><div><h2>テストケースの一括削除</h2><p>登録したテストケースをすべて削除します。</p></div><button type="button" class="editor-button" :disabled="!draft.testCases.length || publishing || generating" @click="clearTestCases">一括削除</button></section>
+        <section class="management-row"><div><h2>問題の削除</h2><p>この操作は取り消せません。</p></div><button type="button" class="editor-button danger" :disabled="generating" @click="openDeleteConfirmation">問題を削除</button></section>
       </div>
     </section>
       </div>
@@ -209,7 +216,12 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
 </template>
 
 <style scoped>
-#tester-link { display: block; box-sizing: border-box; width: 100%; margin-block: 8px; padding: 8px; font: inherit; }
+.tester-link-row { flex: 1; min-width: 0; }
+.tester-link-row label { display: block; margin-top: 12px; font-size: .75rem; color: var(--color-muted); }
+.tester-link-field { display: flex; gap: 8px; margin-top: 4px; }
+#tester-link { flex: 1; min-width: 0; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-paper); color: var(--color-ink); font-family: var(--font-code); font-size: .8125rem; }
+.tester-link-copy { display: inline-flex; align-items: center; justify-content: center; width: 36px; padding: 0; flex-shrink: 0; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .problem-settings { --problem-setting-height: 43px; display: contents; }
 .problem-settings :deep(.difficulty-select > button), .problem-settings :deep(.limit-stepper) { min-height: var(--problem-setting-height); }
 .difficulty-heading { align-items: center; flex-wrap: nowrap; gap: 2px; }
