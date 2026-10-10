@@ -10,4 +10,5 @@
 .profile-identity h1 { overflow-wrap: anywhere; font-size: 2rem; margin: 0 0 4px; }
 .profile-identity p { margin: 0; }
 .eyebrow { font-size: .8rem; color: var(--color-muted); }
-@media(max-width: 600px) { .profile-header { flex-wrap: wrap; gap: 16px; } .profile-header > a { margin-left: auto; } }
+.profile-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media(max-width: 600px) { .profile-header { flex-wrap: wrap; gap: 16px; } .profile-actions { margin-left: auto; } }

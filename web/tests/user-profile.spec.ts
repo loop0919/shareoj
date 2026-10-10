@@ -39,6 +39,11 @@ test('own username leads to my page while other users keep their public links', 
   await author.click()
   await expect(page).toHaveURL(/\/my$/)
   await expect(page.getByRole('heading', { name: 'alice', exact: true })).toBeVisible()
+  // My page still offers the public page, so authors can check what others see.
+  await page.getByRole('link', { name: '公開ページを見る', exact: true }).click()
+  await expect(page).toHaveURL(/\/users\/alice$/)
+  await expect(page.getByText('ユーザーページ', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'alice', exact: true })).toBeVisible()
 })
 
 
