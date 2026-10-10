@@ -116,7 +116,65 @@ python3 judge/rollout.py finish --config judge/.build/rollout.json --run-dir "$J
   --report "$JUDGE_RELEASE_RUN/verify/report.json"
 ```
 
-以下の個別コマンドは、この統合処理を分けて実行したい場合や、障害調査時に使用する。
+## OS更新はローリング更新で配布する
+
+OSのセキュリティ更新は`judge/rollout.py rolling`で配布する。
+提出の受付は止めない。
+判断の経緯は[ADR 0014](../adr/0014-roll-out-os-updates-without-stopping-judging.md)に記録している。
+提出の形式、DBのスキーマ、bridgeとworkerの互換性を変える配布には使わず、`run`で全台を止めて配布する。
+
+設定は`run`と同じ`rollout.json`を使い、`pool`の指定を必須とする。
+`release`を指定すると、OS更新の後にその配布物を導入する。
+省略すると、導入済みの配布物のまま指紋だけを作り直す。
+`retire_nodes`は空にする。
+bridgeは`bridge_package`の内容に更新されるため、`run`と同じく本番のAPIと同じコミットからビルドする。
+
+開始前に全台のEBSスナップショットを作成し、`completed`になったことを確認する。
+スナップショットの作成と保持は`rolling`でも実行しない。
+
+```sh
+export JUDGE_RELEASE_RUN="judge/.build/rolling-$(date -u +%Y%m%dT%H%M%SZ)"
+nohup python3 judge/rollout.py rolling --config judge/.build/rollout.json \
+  --run-dir "$JUDGE_RELEASE_RUN" > "$JUDGE_RELEASE_RUN.log" 2>&1 < /dev/null &
+```
+
+完了条件は`run`と同じく、`state.json`の`status: passed`かつ`step: complete`である。
+t3.smallの3台では、smokeを2回含めて2時間程度かかる。
+実行中はポーリングせず、後で`state.json`の`step`を確認する。
+
+### 処理の順序
+
+1. 全台を起動して保守用の保持期限を6時間にし、全burstのワーカーを止めて無効にする。primaryは旧digestで採点を続ける。
+2. 名前順で最初のburstを更新する。APTを開始時刻のスナップショット（`aptSnapshot`）に固定して`full-upgrade`し、SSMの終了コード194で再起動する。配布物の導入または指紋の再作成の後、全言語のsmokeを通して新しいdigestを得る。
+3. 参加者のいるコンテストの期間（開始30分前から終了15分後）が`rolling_guard_hours`（既定4時間）以内に始まらないことを確かめる。
+4. bridgeの送り出しを一時停止（`JUDGE_DISPATCH_PAUSED`）し、処理中の提出が終わって要求キューが空になるのを待つ。primaryと残りのburstのワーカーを止める。
+5. bridgeの`JUDGE_RUNTIME_DIGEST`を新しい値、`JUDGE_PREVIOUS_RUNTIME_DIGEST`を直前の値にし、APIの`JUDGE_CPP_IMAGE`を新しい値にする。準備したburstへ`JudgeInstalledDigest`を付けてワーカーを起動し、送り出しを再開する。
+6. CI変数とTerraformの入力（`previous_runtime_digest`を含む）を同期し、準備したburstだけで本番APIテストを通す。
+7. primaryと残りのburstを同じスナップショットで更新する。パッケージ一覧が最初の台と違えば、再起動する前に止まる。指紋が切り替えたdigestと一致することを確かめ、smokeを通してから起動する。
+8. 全台の健全性と、2台の同時採点を含む本番APIテストを通す。Terraformを`refresh-only`で同期し、保持期限を15分に縮める。
+
+送り出しを止めている間も提出は受け付け、採点待ちとして溜まる。
+切り替え前のdigestで作られた未送出の提出は、新しい環境で公開中の言語に限ってbridgeが付け替える。
+それ以外のdigestの提出は、従来どおりJEにする。
+APTのスナップショットに届かない場合は、`rollout.json`に`"apt_snapshot": false`を指定する。
+その場合も、パッケージ一覧の一致とdigestの一致は確かめる。
+
+### 失敗時の操作
+
+失敗すると`state.json`に`status: failed`と失敗した`step`が残る。
+受付停止は使わないため、`admissionPaused`は変わらない。
+`dispatchPaused: true`のまま止まった場合は、送り出しが止まっている。
+送り出しの停止が6時間を超えると、採点待ちの提出は期限切れでJEになる。
+
+- 切り替え前の失敗（`step`が`pause-dispatch`より前）：primaryが旧digestで採点を続けている。原因を直して同じコマンドで再開する。OSを更新したburstは旧digestでは起動できないため、中止する場合は次の`rolling`か`run`で全台をそろえるまでburstを増設に使えない。
+- 排出待ちが45分で終わらない場合：旧digestのワーカーが動いたままなので、送り出しを自動で再開してから終了する。
+- 旧ワーカーの停止から準備したburstの起動まで（`stop-old-workers`から`start-first`）の失敗：採点が止まり、提出は溜まる。同じコマンドで再開する。旧環境へ戻す場合は、bridgeの`JUDGE_RUNTIME_DIGEST`とAPIの`JUDGE_CPP_IMAGE`を`previousDigest`へ戻し、primaryのワーカーを`systemctl enable --now judge-worker`で起動してから`JUDGE_DISPATCH_PAUSED`を外す。
+- 切り替え後の失敗（`switched: true`）：準備したburstが新しいdigestで採点を続けている。同じコマンドで再開する。
+
+ワーカーのアラームのアクションは`run`と同じく開始時に止め、完了時に元へ戻す。
+途中で失敗した場合は止めたままになるため、`state.json`の`alarm_actions`を見て戻す。
+
+以下の個別コマンドは、`run`の統合処理を分けて実行したい場合や、障害調査時に使用する。
 
 ## 配布前の条件
 

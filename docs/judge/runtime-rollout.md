@@ -232,6 +232,11 @@ sudo reboot
 
 再起動後は「配置と実機smoke test」からやり直し、新digestをAPI、bridge、worker、CI変数へ反映する。
 
+EC2の採点台では、2026年10月10日から`judge/rollout.py rolling`でOS更新を配布する（[ADR 0014](../adr/0014-roll-out-os-updates-without-stopping-judging.md)）。
+受付は止めず、burstで新しい環境を検証してから切り替える。
+上の手順の受付停止、更新、再起動、指紋の再作成、全smoke、digestの反映は、このサブコマンドがまとめて行う。
+手順は[配布と検証の定型コマンド](deployment-checks.md#os更新はローリング更新で配布する)にある。
+
 ## 2026年9月12日の実施記録
 
 workerを再構築し、再起動後のSSM Run CommandとSession Manager接続を確認した。
