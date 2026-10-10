@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { accountListSchema, type AccountSummary } from '~~/shared/types/account-problems'
-import type { Contest, ContestProblem } from '~~/shared/types/contest'
+import { problemLabel, type Contest, type ContestProblem } from '~~/shared/types/contest'
 import { accountError } from '~/utils/account-problems'
+import { issueMessage } from '~/utils/problem-readiness'
+import { searchProblems } from '~/utils/problem-search'
 const props = defineProps<{ contestId?: string }>()
 const ready = ref(false)
 const busy = ref(false)
@@ -21,6 +23,11 @@ const section = ref<'description' | 'problems' | 'settings'>('description')
 const sidebarExpanded = ref(false)
 const form = ref<HTMLFormElement>()
 const totalPoints = computed(() => selected.value.reduce((total, p) => total + (Number(p.points) || 0), 0))
+const query = ref('')
+const candidates = computed(() => searchProblems(available.value, query.value))
+const summaries = computed(() => new Map(available.value.map(p => [p.id, p])))
+const isSelected = (problemId: string) => selected.value.some(item => item.id === problemId)
+const problemName = (title?: string) => title || '無題の問題'
 const {
   mode, workspace, splitPercent, resizing, setSplit, startResize, moveResize, stopResize, resizeWithKeyboard,
   editor, syncSource, insertSnippet,
@@ -56,10 +63,19 @@ async function load() {
   } catch { message.value = '作成情報を読み込めませんでした。ログイン状態を確認して再読み込みしてください。' }
 }
 onMounted(() => { timezone.value = Intl.DateTimeFormat().resolvedOptions().timeZone; void load() })
-function choose(p: AccountSummary, checked: boolean) {
-  if (checked) selected.value.push({ id: p.id, title: p.title, points: 100 })
-  else selected.value = selected.value.filter(item => item.id !== p.id)
+// Why the server would reject this problem; candidates already exclude other contests, so in_contest means this one.
+function issues(problemId: string) {
+  return (summaries.value.get(problemId)?.readiness?.contest ?? []).filter(code => code !== 'in_contest')
 }
+function add(p: AccountSummary) {
+  if (!isSelected(p.id) && !issues(p.id).length) selected.value.push({ id: p.id, title: p.title, points: 100 })
+}
+// Enter adds the best match, so a pasted UUID needs no pointer; it must not submit the form.
+function addFirstCandidate() {
+  const p = query.value.trim() ? candidates.value.find(c => !isSelected(c.id) && !issues(c.id).length) : undefined
+  if (p) { add(p); query.value = '' }
+}
+function remove(index: number) { selected.value.splice(index, 1) }
 function move(index: number, delta: number) {
   const item = selected.value.splice(index, 1)[0]
   if (item) selected.value.splice(index + delta, 0, item)
@@ -153,14 +169,37 @@ async function save() {
         <section v-show="section === 'problems'" class="problem-management" data-section="problems" aria-labelledby="contest-problems-title">
           <div class="management-content">
             <header><h2 id="contest-problems-title">問題・配点</h2><p class="muted">自分の未公開問題から選び、出題順と配点を設定します。</p></header>
-            <fieldset :disabled="!ready || locked || busy" class="problem-columns">
-              <section aria-labelledby="available-problems-title"><h3 id="available-problems-title">問題を選択</h3><p class="muted">難易度とテストケースが必要です。他のコンテストに登録済みの問題は選べません。</p>
-                <p v-if="ready && !available.length"><NuxtLink to="/problems/new?fresh=1" target="_blank" rel="noopener noreferrer">問題を作成・保存 ↗</NuxtLink>してから、この画面を再読み込みしてください。</p>
-                <div class="problem-picker"><label v-for="p in available" :key="p.id"><input type="checkbox" :checked="selected.some(item => item.id === p.id)" @change="choose(p, ($event.target as HTMLInputElement).checked)"><span>{{ p.title || '無題の問題' }}</span></label></div>
-              </section>
+            <fieldset :disabled="!ready || locked || busy" class="problem-sections">
               <section aria-labelledby="selected-problems-title"><h3 id="selected-problems-title">出題順・配点 <span class="muted">{{ selected.length }} 問 · 合計 {{ totalPoints }} 点</span></h3>
-                <p v-if="!selected.length" class="muted">出題する問題を選択してください。</p>
-                <ol class="selected"><li v-for="(p, index) in selected" :key="p.id"><div class="selected-heading"><strong>{{ p.title }}</strong><div class="move-actions"><button class="editor-button" type="button" :disabled="index === 0" :aria-label="`${p.title}を上へ`" @click="move(index, -1)">↑</button><button class="editor-button" type="button" :disabled="index === selected.length - 1" :aria-label="`${p.title}を下へ`" @click="move(index, 1)">↓</button></div></div><label :for="`points-${p.id}`">配点 <input :id="`points-${p.id}`" v-model.number="p.points" type="number" min="1" max="1000000" step="1" required> 点</label></li></ol>
+                <p v-if="!selected.length" class="muted">下の「問題を追加」から出題する問題を選んでください。</p>
+                <ol class="selected">
+                  <li v-for="(p, index) in selected" :key="p.id">
+                    <span class="problem-label">{{ problemLabel(index) }}</span>
+                    <div class="problem-entry"><strong>{{ problemName(p.title) }}</strong><code class="problem-uuid">{{ p.id }}</code><p v-if="issues(p.id).length" class="problem-issue">{{ issueMessage(issues(p.id)[0]!, 'contest') }}</p></div>
+                    <div class="selected-controls">
+                      <label class="points-field" :for="`points-${p.id}`">配点 <input :id="`points-${p.id}`" v-model.number="p.points" type="number" min="1" max="1000000" step="1" required> 点</label>
+                      <div class="move-actions">
+                        <button class="editor-button" type="button" :disabled="index === 0" :aria-label="`${problemName(p.title)}を上へ`" title="上へ" @click="move(index, -1)">↑</button>
+                        <button class="editor-button" type="button" :disabled="index === selected.length - 1" :aria-label="`${problemName(p.title)}を下へ`" title="下へ" @click="move(index, 1)">↓</button>
+                        <button class="editor-button" type="button" :aria-label="`${problemName(p.title)}を外す`" title="外す" @click="remove(index)"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></button>
+                      </div>
+                    </div>
+                  </li>
+                </ol>
+              </section>
+              <section aria-labelledby="available-problems-title"><h3 id="available-problems-title">問題を追加</h3>
+                <p v-if="ready && !available.length"><NuxtLink to="/problems/new?fresh=1" target="_blank" rel="noopener noreferrer">問題を作成・保存 ↗</NuxtLink>してから、この画面を再読み込みしてください。</p>
+                <template v-else>
+                  <input v-model="query" class="problem-search" type="search" aria-label="問題を検索" placeholder="タイトルまたはUUIDで検索" autocomplete="off" aria-describedby="problem-search-hint" aria-controls="problem-candidates" @keydown.enter.prevent="addFirstCandidate">
+                  <p id="problem-search-hint" class="muted search-hint">自分の未公開問題から探します。他のコンテストに登録済みの問題は出ません。Enterで先頭の候補を追加します。</p>
+                  <p class="muted search-count" role="status">{{ query.trim() ? `${candidates.length} 件が一致` : `${available.length} 件` }}</p>
+                  <ul id="problem-candidates" class="candidates">
+                    <li v-for="p in candidates" :key="p.id">
+                      <div class="problem-entry"><span>{{ problemName(p.title) }}</span><code class="problem-uuid">{{ p.id }}</code><p v-if="issues(p.id).length" class="problem-issue">{{ issueMessage(issues(p.id)[0]!, 'contest') }}</p></div>
+                      <button class="editor-button" type="button" :disabled="isSelected(p.id) || !!issues(p.id).length" :aria-label="`${problemName(p.title)}${isSelected(p.id) ? 'は追加済み' : 'を追加'}`" @click="add(p)">{{ isSelected(p.id) ? '追加済み' : '追加' }}</button>
+                    </li>
+                  </ul>
+                </template>
               </section>
             </fieldset>
             <p class="selection-note muted">問題の保存内容は、開始後もコンテストに自動で反映されます。更新後の提出から新しい内容で採点し、受付済みの提出は再採点しません。</p>
@@ -195,24 +234,34 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .management-content h3 { font-size: 1rem; font-weight: 600; margin-bottom: 12px; }
 .management-content h3 span { display: block; font-size: .8125rem; font-weight: 400; margin-top: 4px; }
 .management-content p, .management-content label { font-size: .875rem; }
-.problem-columns { display: grid; gap: 32px; }
-.problem-picker label { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 10px 0; border-bottom: 1px solid var(--color-line); cursor: pointer; }
-.problem-picker label:hover { background: var(--color-surface); }
-.problem-picker input { flex-shrink: 0; accent-color: var(--color-accent); }
-.problem-picker span, .selected strong { overflow-wrap: anywhere; min-width: 0; }
-.selected { padding-left: 24px; margin: 0; }
-.selected li { padding: 12px 0; border-bottom: 1px solid var(--color-line); }
-.selected-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.problem-sections { display: grid; gap: 40px; }
+.selected, .candidates { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--color-line); }
+.selected li, .candidates li { padding: 12px 0; border-bottom: 1px solid var(--color-line); }
+.selected li { display: grid; grid-template-columns: 2rem minmax(0, 1fr); grid-template-areas: "label body" "controls controls"; align-items: center; gap: 8px 12px; }
+.candidates li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.problem-label { grid-area: label; align-self: start; color: var(--color-muted); font-family: var(--font-code); font-weight: 700; }
+.selected .problem-entry { grid-area: body; }
+.problem-entry { display: grid; min-width: 0; }
+.problem-entry > :first-child { overflow-wrap: anywhere; }
+.problem-uuid { color: var(--color-muted); font-size: .75rem; overflow-wrap: anywhere; }
+.problem-issue { margin: 4px 0 0; color: var(--color-error); }
+.selected-controls { grid-area: controls; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.points-field { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 .move-actions { display: flex; gap: 4px; }
-.move-actions button { width: 36px; min-height: 36px; }
+.move-actions button { width: 36px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; }
+.candidates button { flex-shrink: 0; min-width: 5.5em; }
+.problem-search { margin-bottom: 8px; }
+.search-hint, .search-count { margin-bottom: 8px; }
 .selection-note { margin-top: 24px; }
-.management-content input:not([type=checkbox]) { width: 100%; min-width: 0; min-height: 44px; padding: 8px 10px; font: inherit; border: 1px solid var(--color-line); border-radius: 4px; color: var(--color-ink); background: var(--color-paper); }
+.management-content input { width: 100%; min-width: 0; min-height: 44px; padding: 8px 10px; font: inherit; border: 1px solid var(--color-line); border-radius: 4px; color: var(--color-ink); background: var(--color-paper); }
 .management-content input[type=number] { max-width: 128px; }
+.management-content .points-field input { width: 96px; }
 .management-content input:hover:not(:disabled) { border-color: var(--color-muted); }
 .settings-section { padding-block: 24px; border-top: 1px solid var(--color-line); }
 .settings-section label { display: block; margin-bottom: 8px; }
 .dates { display: grid; gap: 20px; }
 .penalty-note { margin-top: 8px; }
-@media (min-width: 60rem) { .problem-columns, .dates { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 48rem) { .selected li { grid-template-columns: 2rem minmax(0, 1fr) auto; grid-template-areas: "label body controls"; } }
+@media (min-width: 60rem) { .dates { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (pointer: coarse) { .move-actions button { width: 44px; min-height: 44px; } }
 </style>

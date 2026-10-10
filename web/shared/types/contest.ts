@@ -16,3 +16,7 @@ export const contestStatus = { scheduled: '開催予定', running: '開催中', 
 export function contestDate(value: string) {
   return new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Tokyo' }).format(new Date(value))
 }
+// A, B, …, Z, AA, AB, … in contest order.
+export function problemLabel(index: number): string {
+  return index < 26 ? String.fromCharCode(65 + index) : problemLabel(Math.floor(index / 26) - 1) + problemLabel(index % 26)
+}

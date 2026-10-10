@@ -26,7 +26,7 @@ for (const kind of ['problems', 'contests', 'posts']) {
       await page.getByLabel('開始日時').fill('2099-10-01T12:00')
       await page.getByLabel('終了日時').fill('2099-10-01T14:00')
       await page.getByRole('button', { name: '問題・配点', exact: true }).click()
-      await page.getByRole('checkbox', { name: 'コンテスト用の問題', exact: true }).check()
+      await page.getByRole('button', { name: 'コンテスト用の問題を追加', exact: true }).click()
     }
     await page.getByRole('button', { name: kind === 'contests' ? 'コンテストを作成' : '保存', exact: true }).click()
     await expect(page.getByRole('alert')).toContainText('約120分後に1件分回復します。')

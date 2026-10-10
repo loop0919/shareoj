@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { submissionUsage } from '~/utils/submission-usage'
-import { contestDate, contestStatus, type Contest, type Standing } from '~~/shared/types/contest'
+import { contestDate, contestStatus, problemLabel, type Contest, type Standing } from '~~/shared/types/contest'
 import type { Submission } from '~~/shared/types/submission'
 definePageMeta({ key: route => route.path })
 useResponseHeader('Cache-Control').value = 'no-store'
@@ -41,9 +41,6 @@ watch(() => user.value?.id, () => { invalidateSubmissions(); submissions.value =
 watch([offset, activeView, canViewSubmissions], () => { void loadSubmissions() })
 onMounted(loadSubmissions)
 usePolling(update, 15000)
-function problemLabel(index: number): string {
-  return index < 26 ? String.fromCharCode(65 + index) : problemLabel(Math.floor(index / 26) - 1) + problemLabel(index % 26)
-}
 function elapsed(acceptedAt: string) { return duration(new Date(acceptedAt).getTime() - new Date(contest.value!.startsAt).getTime()) }
 const problemStats = computed(() => contest.value!.problems.map(problem => {
   let submitted = 0
