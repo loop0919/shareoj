@@ -18,7 +18,8 @@ for (const handle of ['alice', 'bob', 'reader', null]) {
     if (handle !== 'alice' && handle !== 'bob') {
       // Wait for account loading before asserting that the link stays hidden.
       await expect(page.getByRole('navigation', { name: 'メインナビゲーション' })).toBeVisible()
-      await expect(page.getByRole('link', { name: handle ? 'マイページ' : 'ログイン', exact: true }).first()).toBeVisible()
+      const header = page.locator('.site-header')
+      await expect(handle ? header.getByRole('button', { name: 'アカウントメニュー', exact: true }) : header.getByRole('link', { name: 'ログイン', exact: true })).toBeVisible()
       await expect(edit).toHaveCount(0)
       return
     }
