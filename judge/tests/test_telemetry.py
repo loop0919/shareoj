@@ -64,8 +64,8 @@ class TelemetryTests(unittest.TestCase):
             with self.assertRaisesRegex(telemetry.PlatformError, 'isolate_init_failed'):
                 sandbox.execute({'runtime': 'cpp17-isolate', 'source': 'test'}, True)
 
-    def process(self, judge_result=None, judge_error=None, s3_error=None, progress=None):
-        data = json.dumps(dict(submissionId='id', attemptId='attempt')).encode()
+    def process(self, judge_result=None, judge_error=None, s3_error=None, progress=None, digest='runtime'):
+        data = json.dumps(dict(submissionId='id', attemptId='attempt', runtimeDigest=digest)).encode()
         item = dict(submissionId='id', attemptId='attempt', key='key', versionId='v', sha256=hashlib.sha256(data).hexdigest())
         s3, sqs = Mock(), Mock()
         s3.get_object.return_value = {'Body': io.BytesIO(data)}
@@ -97,6 +97,17 @@ class TelemetryTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.process(judge_error=SystemExit(0), progress=progress)
         self.assertEqual(self.events()[-1]['reason'], 'request_release_failed')
+
+    def test_other_digest_is_released_and_stops_the_worker(self):
+        progress = Mock()
+        with self.assertRaises(telemetry.FatalPlatformError) as stopped:
+            self.process(progress=progress, digest='sha256:other')
+        self.assertEqual(stopped.exception.code, 'runtime_mismatch')
+        self.assertEqual([e['event'] for e in self.events()], ['job_received', 'failure'])
+        progress.change_message_visibility.assert_called_once_with(QueueUrl='requests', ReceiptHandle='receipt', VisibilityTimeout=0)
+        self.assertEqual(self.events()[-1]['reason'], 'runtime_mismatch')
+        unit = (Path(worker.__file__).parent / 'judge-worker.service').read_text()
+        self.assertIn('RestartPreventExitStatus=' + str(worker.MISMATCH_STATUS) + '\n', unit)
 
     def test_fatal_error_is_not_released(self):
         progress = Mock()

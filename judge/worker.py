@@ -12,6 +12,9 @@ import time
 from host import judge, prepare_cgroup, verify_assets, pointer, slot
 import pool
 
+# judge-worker.service does not restart this status; the operator must switch the digest.
+MISMATCH_STATUS = 78
+
 
 def read_test_file(s3, bucket, item):
     response = s3.get_object(Bucket=bucket, Key=item['key'], VersionId=item['versionId'])
@@ -88,6 +91,11 @@ def process_message(message, sqs, s3, progress_client, runtime, cgroup, bucket, 
                 job = json.loads(data)
                 if any(job[name] != item[name] for name in ('submissionId', 'attemptId')):
                     raise ValueError('job identity')
+            # Only a mis-ordered digest switch sends another environment's job (ADR 0014).
+            # Return it to a matching host and stop, rather than judging it as JE.
+            if job.get('runtimeDigest') != runtime:
+                release_message(progress_client, requests, message)
+                raise telemetry.FatalPlatformError('runtime_mismatch')
             def load_file(entry):
                 with telemetry.operation('test_file_fetch_failed'):
                     return read_test_file(s3, test_bucket, entry)
@@ -188,4 +196,5 @@ if __name__ == '__main__':
     except (Exception, telemetry.FatalPlatformError) as error:
         if not getattr(error, 'logged', False):
             telemetry.failure(error)
-        raise SystemExit(1) from None
+        mismatch = isinstance(error, telemetry.FatalPlatformError) and error.code == 'runtime_mismatch'
+        raise SystemExit(MISMATCH_STATUS if mismatch else 1) from None

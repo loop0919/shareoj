@@ -22,6 +22,8 @@ KillMode=control-group
 TimeoutStopSec=15
 Restart=on-failure
 RestartSec=10
+# worker.py exits with 78 after returning a job built for another runtime digest.
+RestartPreventExitStatus=78
 UMask=0077
 LimitCORE=0
 LimitNOFILE=256
