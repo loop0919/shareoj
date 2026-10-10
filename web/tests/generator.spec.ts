@@ -153,6 +153,13 @@ test('sidebar opens the generator workspace and links to its public guide', asyn
   await expect(page.getByLabel('出力生成のコード')).toBeHidden()
   await modes.getByRole('button', { name: '入力生成', exact: true }).click()
   await expect(page.getByLabel('入力生成のコード')).toContainText('int main(){}')
+  // The I/O spec starts collapsed and stays open across tabs once expanded.
+  await expect(page.getByText('ケース番号（整数1個）')).toBeHidden()
+  await page.getByText('入力生成の仕様', { exact: true }).click()
+  await expect(page.getByText('ケース番号（整数1個）')).toBeVisible()
+  await modes.getByRole('button', { name: '出力生成', exact: true }).click()
+  await expect(page.getByText('そのケースの出力を置き換えます')).toBeVisible()
+  await modes.getByRole('button', { name: '入力生成', exact: true }).click()
   for (const width of [375, 1280]) {
     await page.setViewportSize({ width, height: 900 })
     for (const button of await modes.getByRole('button').all()) await expect(button).toBeInViewport()

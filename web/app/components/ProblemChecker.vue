@@ -25,6 +25,7 @@ const protocol = computed({
 })
 watch(supportsTestlib, supported => { if (!supported && protocol.value === 'testlib') protocol.value = 'legacy' })
 const codeLabel = computed(() => interactor.value ? '対話用ジャッジ' : '検証コード')
+const specOpen = useState('code-spec-open', () => false)
 const opening = ref(false)
 const openError = ref('')
 // Submissions run on the problem page; saving first keeps the draft judge in sync with this editor.
@@ -71,20 +72,23 @@ const error = computed(() => code.value && (!code.value.source.trim() || new Tex
       </template>
     </div>
     <template v-if="code">
-      <dl class="code-spec" :aria-label="`${codeLabel}の仕様`">
-        <template v-if="interactor">
-          <div><dt>対話</dt><dd>標準入力で提出の発言を読み、標準出力で応答します。応答を待つ前に flush してください。</dd></div>
-          <div><dt>初期情報</dt><dd>テスト入力は自動で送りません。入力ファイルから読み、必要な情報を出力してください。</dd></div>
-        </template>
-        <div v-else-if="protocol === 'legacy'"><dt>標準入力</dt><dd>提出の出力</dd></div>
-        <div v-if="protocol === 'testlib'"><dt>初期化</dt><dd><code>testlib.h</code> を include し、<code>{{ interactor ? 'registerInteraction' : 'registerTestlibCmd' }}(argc, argv)</code> を呼びます。<NuxtLink to="/blog/language-guide#testlib" target="_blank" rel="noopener noreferrer">コード例 ↗</NuxtLink></dd></div>
-        <div v-if="protocol === 'legacy'"><dt>引数</dt><dd>入力・期待出力・提出ソース・スコアのファイルパス（この順）。期待出力は空でもよく、スコアは採点に使いません。</dd></div>
-        <div v-else-if="interactor"><dt>引数</dt><dd>入力・tout の書き込み先・正解のファイルパス（この順）。tout は通信に使わず、あとから判定もしません。</dd></div>
-        <div v-else><dt>引数</dt><dd>入力・提出出力（ouf）・正解（ans）のファイルパス（この順）</dd></div>
-        <div v-if="protocol === 'legacy'"><dt>結果</dt><dd>終了コード0で正解、それ以外（assert の失敗を含む）で不正解</dd></div>
-        <div v-else><dt>結果</dt><dd><code>quitf(_ok, …)</code> で正解、<code>_wa</code>・<code>_pe</code> で不正解、<code>_fail</code> でJE。部分点はありません。</dd></div>
-        <div><dt>制限</dt><dd>各ケースCPU 5秒・{{ interactor ? 256 : 512 }} MiB。超えるとJEになります。</dd></div>
-      </dl>
+      <details class="code-spec" :open="specOpen" @toggle="specOpen = ($event.target as HTMLDetailsElement).open">
+        <summary><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>{{ codeLabel }}の仕様</summary>
+        <dl>
+          <template v-if="interactor">
+            <div><dt>対話</dt><dd>標準入力で提出の発言を読み、標準出力で応答します。応答を待つ前に flush してください。</dd></div>
+            <div><dt>初期情報</dt><dd>テスト入力は自動で送りません。入力ファイルから読み、必要な情報を出力してください。</dd></div>
+          </template>
+          <div v-else-if="protocol === 'legacy'"><dt>標準入力</dt><dd>提出の出力</dd></div>
+          <div v-if="protocol === 'testlib'"><dt>初期化</dt><dd><code>testlib.h</code> を include し、<code>{{ interactor ? 'registerInteraction' : 'registerTestlibCmd' }}(argc, argv)</code> を呼びます。<NuxtLink to="/blog/language-guide#testlib" target="_blank" rel="noopener noreferrer">コード例 ↗</NuxtLink></dd></div>
+          <div v-if="protocol === 'legacy'"><dt>引数</dt><dd>入力・期待出力・提出ソース・スコアのファイルパス（この順）。期待出力は空でもよく、スコアは採点に使いません。</dd></div>
+          <div v-else-if="interactor"><dt>引数</dt><dd>入力・tout の書き込み先・正解のファイルパス（この順）。tout は通信に使わず、あとから判定もしません。</dd></div>
+          <div v-else><dt>引数</dt><dd>入力・提出出力（ouf）・正解（ans）のファイルパス（この順）</dd></div>
+          <div v-if="protocol === 'legacy'"><dt>結果</dt><dd>終了コード0で正解、それ以外（assert の失敗を含む）で不正解</dd></div>
+          <div v-else><dt>結果</dt><dd><code>quitf(_ok, …)</code> で正解、<code>_wa</code>・<code>_pe</code> で不正解、<code>_fail</code> でJE。部分点はありません。</dd></div>
+          <div><dt>制限</dt><dd>各ケースCPU 5秒・{{ interactor ? 256 : 512 }} MiB。超えるとJEになります。</dd></div>
+        </dl>
+      </details>
       <SourceCodeEditor v-model="code.source" :runtime="code.runtime" :label="codeLabel" :disabled="disabled" />
       <p v-if="error" class="editor-error" role="alert">{{ error }}</p>
     </template>

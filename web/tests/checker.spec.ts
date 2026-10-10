@@ -101,6 +101,8 @@ test('interactive judging saves the selected language and mutually excludes spec
   await openChecker(page)
   await expect(page.getByRole('combobox', { name: '判定方法', exact: true })).toHaveValue('interactive')
   await expect(page.getByLabel('対話用ジャッジ', { exact: true })).toContainText('assert int(input()) == 20')
+  await expect(page.getByText('各ケースCPU 5秒・256 MiB', { exact: false })).toBeHidden()
+  await page.getByText('対話用ジャッジの仕様', { exact: true }).click()
   await expect(page.getByText('各ケースCPU 5秒・256 MiB', { exact: false })).toBeVisible()
   await page.setViewportSize({ width: 375, height: 900 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)

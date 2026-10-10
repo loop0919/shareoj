@@ -19,6 +19,7 @@ const modeLabel = computed(() => ({ input: '入力生成', output: '出力生成
 const { data: catalog, error: catalogError, refresh: refreshCatalog } = useJudgeCatalog()
 const available = computed(() => catalogError.value || catalog.value?.maintenance ? [] : catalog.value?.items ?? [])
 const program = computed(() => config.value[mode.value])
+const specOpen = useState('code-spec-open', () => false)
 watch([mode, start, count, () => JSON.stringify(program.value), () => JSON.stringify(persistedDraft({ testCases: cases.value }))], () => {
   if (validationResults.value.length) { validationResults.value = []; message.value = '' }
 }, { flush: 'sync' })
@@ -153,21 +154,24 @@ async function generate() {
           <label v-if="mode === 'input'">開始ケース番号<input v-model="start" type="number" step="1" :disabled="disabled || busy"></label>
           <label v-if="mode === 'input'">生成件数<input v-model="count" type="number" min="1" max="100" step="1" :disabled="disabled || busy"></label>
         </div>
-        <dl class="code-spec" :aria-label="`${modeLabel}の仕様`">
-          <template v-if="mode === 'input'">
-            <div><dt>標準入力</dt><dd>ケース番号（整数1個）</dd></div>
-            <div><dt>標準出力</dt><dd>新しいテストケースの入力として追加します</dd></div>
-          </template>
-          <template v-else>
-            <div><dt>標準入力</dt><dd>各テストケースの入力（全{{ cases.length }}件）</dd></div>
-            <div v-if="mode === 'output'"><dt>標準出力</dt><dd>そのケースの出力を置き換えます</dd></div>
-            <template v-else>
-              <div><dt>標準出力</dt><dd>保存しません。テストケースは変更しません。</dd></div>
-              <div><dt>結果</dt><dd>終了コード0で合格、それ以外で不合格</dd></div>
+        <details class="code-spec" :open="specOpen" @toggle="specOpen = ($event.target as HTMLDetailsElement).open">
+          <summary><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>{{ modeLabel }}の仕様</summary>
+          <dl>
+            <template v-if="mode === 'input'">
+              <div><dt>標準入力</dt><dd>ケース番号（整数1個）</dd></div>
+              <div><dt>標準出力</dt><dd>新しいテストケースの入力として追加します</dd></div>
             </template>
-          </template>
-          <div v-if="mode !== 'validation'"><dt>制限</dt><dd>生成するファイルは各16 MiB、全体で512 MiBまで</dd></div>
-        </dl>
+            <template v-else>
+              <div><dt>標準入力</dt><dd>各テストケースの入力（全{{ cases.length }}件）</dd></div>
+              <div v-if="mode === 'output'"><dt>標準出力</dt><dd>そのケースの出力を置き換えます</dd></div>
+              <template v-else>
+                <div><dt>標準出力</dt><dd>保存しません。テストケースは変更しません。</dd></div>
+                <div><dt>結果</dt><dd>終了コード0で合格、それ以外で不合格</dd></div>
+              </template>
+            </template>
+            <div v-if="mode !== 'validation'"><dt>制限</dt><dd>生成するファイルは各16 MiB、全体で512 MiBまで</dd></div>
+          </dl>
+        </details>
         <SourceCodeEditor v-model="program.source" :runtime="program.runtime" :label="`${modeLabel}のコード`" :disabled="disabled || busy" :key="mode" />
         <p v-if="failure" class="notice notice-error" role="alert">{{ failure }}</p>
         <div class="generator-actions"><button type="button" class="editor-button primary" :disabled="disabled || busy || !available.length" @click="generate">{{ mode === 'validation' ? (busy ? '検証中…' : '検証する') : (busy ? '生成中…' : '生成する') }}</button><button type="button" class="editor-button" @click="emit('show-cases')">テストケースを確認</button></div>
