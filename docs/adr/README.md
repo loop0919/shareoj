@@ -24,3 +24,4 @@ Architecture Decision Record（ADR）は、採用した設計だけでなく、�
 | [0012](0012-run-judge-on-ec2-pool.md) | Accepted（配布は0014で一部変更） | EC2の常時稼働1台とコンテスト時の増設で採点する |
 | [0013](0013-assess-problem-readiness.md) | Accepted | 問題の準備状況をサーバーで判定し、公開とコンテストにも難易度を求める |
 | [0014](0014-roll-out-os-updates-without-stopping-judging.md) | Accepted（未実装） | 採点を止めずにOS更新を配布する |
+| [0015](0015-save-contests-as-drafts.md) | Accepted | コンテストを下書きとして保存し、公開時に検証する |

@@ -130,12 +130,20 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
 	return c, tx.Commit(ctx)
 }
 
-func (s *Store) Save(ctx context.Context, owner, id string, in Input, policy JudgePolicy) (err error) {
+func (s *Store) Save(ctx context.Context, owner, id string, in Input, policy JudgePolicy) error {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if err = save(ctx, tx, owner, id, in, policy, true); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// save writes a contest inside tx. Publishing a draft creates it without a quota, since the draft already used one.
+func save(ctx context.Context, tx pgx.Tx, owner, id string, in Input, policy JudgePolicy, quota bool) (err error) {
 	defer func() {
 		var pg *pgconn.PgError
 		if errors.As(err, &pg) && (pg.Code == "23505" || pg.Code == "23503") {
@@ -143,8 +151,10 @@ func (s *Store) Save(ctx context.Context, owner, id string, in Input, policy Jud
 		}
 	}()
 	if in.Version == 0 {
-		if err = database.ConsumeCreationQuota(ctx, tx, owner, "contest"); err != nil {
-			return err
+		if quota {
+			if err = database.ConsumeCreationQuota(ctx, tx, owner, "contest"); err != nil {
+				return err
+			}
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO contests(id,owner_id,title,description,starts_at,ends_at,penalty_minutes)
  SELECT $1,$2,$3,$4,$5,$6,$7 WHERE $5>clock_timestamp()`, id, owner, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes)
@@ -224,7 +234,7 @@ func (s *Store) Save(ctx context.Context, owner, id string, in Input, policy Jud
 	if !future {
 		return ErrConflict
 	}
-	return tx.Commit(ctx)
+	return nil
 }
 
 // Release materializes due publications from the periodic dispatcher and before API requests.

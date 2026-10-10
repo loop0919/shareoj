@@ -29,13 +29,9 @@ func (p contestHandler) contest(w http.ResponseWriter, r *http.Request, owner st
 	var err error
 	switch {
 	case id == "":
-		offset := 0
-		if raw := r.URL.Query().Get("offset"); raw != "" {
-			offset, err = strconv.Atoi(raw)
-			if err != nil || offset < 0 || offset > 1000000 {
-				authError(w, 400, "invalid_request")
-				return
-			}
+		offset, ok := contestOffset(w, r)
+		if !ok {
+			return
 		}
 		list, e := p.Contests.List(r.Context(), owner, offset)
 		err = e
@@ -88,13 +84,9 @@ func (p contestHandler) contest(w http.ResponseWriter, r *http.Request, owner st
 			}
 			result, err = p.Submissions.ContestGet(r.Context(), id, sid, owner)
 		} else {
-			offset := 0
-			if raw := r.URL.Query().Get("offset"); raw != "" {
-				offset, err = strconv.Atoi(raw)
-				if err != nil || offset < 0 || offset > 1000000 {
-					authError(w, 400, "invalid_request")
-					return
-				}
+			offset, ok := contestOffset(w, r)
+			if !ok {
+				return
 			}
 			if pid := r.PathValue("problem"); pid != "" {
 				if !problemID.MatchString(pid) {
@@ -114,18 +106,115 @@ func (p contestHandler) contest(w http.ResponseWriter, r *http.Request, owner st
 		result, err = p.Contests.Get(r.Context(), id, owner)
 	}
 	if err != nil {
-		switch {
-		case creationQuotaError(w, err):
-		case errors.Is(err, pgx.ErrNoRows):
-			authError(w, 404, "contest_not_found")
-		case errors.Is(err, contests.ErrParticipationUnavailable):
-			authError(w, 409, "contest_participation_unavailable")
-		case errors.Is(err, contests.ErrConflict):
-			authError(w, 409, "contest_conflict")
-		default:
-			authError(w, 503, "database_unavailable")
-		}
+		contestError(w, err)
 		return
 	}
 	writeAuthJSON(w, 200, result)
+}
+
+// contestDraft serves unpublished contests. They live in their own table, so contest routes never see them.
+func (p contestHandler) contestDraft(w http.ResponseWriter, r *http.Request, owner string) {
+	w.Header().Set("Cache-Control", "no-store")
+	if p.Contests == nil {
+		authError(w, 503, "database_unavailable")
+		return
+	}
+	policy := contests.JudgePolicy{KnownRuntimes: submissions.RuntimeIDs(), EnabledRuntimes: p.Judging.RuntimeIDs()}
+	id := r.PathValue("id")
+	if id == "" {
+		offset, ok := contestOffset(w, r)
+		if !ok {
+			return
+		}
+		list, err := p.Contests.Drafts(r.Context(), owner, offset)
+		if err != nil {
+			contestError(w, err)
+			return
+		}
+		more := len(list) > 50
+		if more {
+			list = list[:50]
+		}
+		writeAuthJSON(w, 200, offsetResponse[contests.DraftSummary]{Items: list, HasMore: more})
+		return
+	}
+	if !problemID.MatchString(id) {
+		authError(w, 404, "contest_not_found")
+		return
+	}
+	var result any
+	var err error
+	switch {
+	case strings.HasSuffix(r.URL.Path, "/publication"):
+		var in struct {
+			Version int64 `json:"version"`
+		}
+		if !contentJSON(w, r, &in) {
+			return
+		}
+		if in.Version <= 0 || in.Version > 9007199254740990 {
+			authError(w, 400, "invalid_version")
+			return
+		}
+		err = p.Contests.Publish(r.Context(), owner, id, in.Version, policy)
+		if err == nil {
+			result, err = p.Contests.Get(r.Context(), id, owner)
+		}
+	case r.Method == http.MethodPut:
+		var in contests.DraftInput
+		if !contentJSON(w, r, &in) {
+			return
+		}
+		if !contests.ValidDraft(in) {
+			authError(w, 400, "invalid_contest")
+			return
+		}
+		result, err = p.Contests.SaveDraft(r.Context(), owner, id, in, policy)
+	case r.Method == http.MethodDelete:
+		version, e := strconv.ParseInt(r.URL.Query().Get("version"), 10, 64)
+		if e != nil || version <= 0 {
+			authError(w, 400, "invalid_version")
+			return
+		}
+		if err = p.Contests.DeleteDraft(r.Context(), owner, id, version); err == nil {
+			w.WriteHeader(204)
+			return
+		}
+	default:
+		result, err = p.Contests.Draft(r.Context(), owner, id, policy)
+	}
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, result)
+}
+
+func contestOffset(w http.ResponseWriter, r *http.Request) (int, bool) {
+	raw := r.URL.Query().Get("offset")
+	if raw == "" {
+		return 0, true
+	}
+	offset, err := strconv.Atoi(raw)
+	if err != nil || offset < 0 || offset > 1000000 {
+		authError(w, 400, "invalid_request")
+		return 0, false
+	}
+	return offset, true
+}
+
+func contestError(w http.ResponseWriter, err error) {
+	switch {
+	case creationQuotaError(w, err):
+	case errors.Is(err, pgx.ErrNoRows):
+		authError(w, 404, "contest_not_found")
+	case errors.Is(err, contests.ErrParticipationUnavailable):
+		authError(w, 409, "contest_participation_unavailable")
+	case errors.Is(err, contests.ErrNotReady):
+		authError(w, 409, "contest_not_ready")
+	case errors.Is(err, contests.ErrConflict):
+		authError(w, 409, "contest_conflict")
+	default:
+		authError(w, 503, "database_unavailable")
+	}
 }

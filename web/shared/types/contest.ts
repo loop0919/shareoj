@@ -7,6 +7,13 @@ export type Contest = {
   problems: ContestProblem[],
 }
 export type ContestList = { items: Contest[], hasMore: boolean }
+// A contest before publication: any field may be missing until the server reports no issues.
+export type ContestDraft = {
+  title: string, description: string, startsAt: string | null, durationMinutes: number | null, penaltyMinutes: number | null,
+  problems: { id: string, points: number | null }[],
+}
+export type ContestDraftResult = { id: string, version: number, updatedAt: string, draft: ContestDraft, issues: string[] }
+export type ContestDraftList = { items: { id: string, title: string, startsAt: string | null, updatedAt: string }[], hasMore: boolean }
 export type Standing = {
   rank: number, handle: string, points: number, timeMs: number,
   problems: Record<string, { points: number, wrong: number, pending: number, acceptedAt?: string }>,

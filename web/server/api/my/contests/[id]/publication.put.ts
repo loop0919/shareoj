@@ -1,2 +1,2 @@
 import { privateContent } from '../../../../utils/private-content'
-export default privateContent('posts', 'publication')
+export default privateContent('contests', 'publication')

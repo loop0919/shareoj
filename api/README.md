@@ -444,6 +444,19 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 配布時はAPIを切り替える前に通常のDBマイグレーションを実行し、`018_difficulty_votes.sql`を適用してください。
 
 
+### コンテストの下書きと公開
+
+[ADR 0015](../docs/adr/0015-save-contests-as-drafts.md)に従い、新しいコンテストは下書きとして保存し、公開時に検証する。
+
+- `PUT /my/contests/{id}/draft`：`{"version":0,"draft":{...}}`で下書きを作成し、以降は返された`version`で更新します。`draft`は`title`、`description`、`startsAt`（null可）、`durationMinutes`（null可）、`penaltyMinutes`（null可）、`problems`（`id`と、null可の`points`）です。
+- 下書きは未入力や範囲外の値を含んでいても保存できます。拒否するのは、タイトル120文字・説明100,000文字・問題100件の上限超過、不正または重複した問題ID、絶対値が10億を超える数値だけです（400 `invalid_contest`）。
+- 応答は`id`、`version`、`updatedAt`、`draft`と、公開できない理由のコード一覧`issues`を返します。コードは`title_missing`、`start_missing`、`start_past`、`duration_invalid`、`penalty_invalid`、`problems_missing`、`points_invalid`、`problem_unavailable`（公開済み・削除済み・他のコンテストに登録済み）、`problem_incomplete`（コンテストの内容の条件を満たさない）です。
+- `GET`で取得、`DELETE ?version=N`で削除し、`GET /my/contests/drafts?offset=0`で自分の下書きを更新日時の降順に50件ずつ返します。
+- `PUT /my/contests/{id}/publication`に`{"version":N}`を送ると、保存済みの下書きを同じ`id`のコンテストとして公開し、コンテスト詳細を返します。終了日時は`startsAt`に`durationMinutes`を足した時刻です。`issues`が残っていれば409 `contest_not_ready`、古い`version`や問題の競合は409 `contest_conflict`です。
+- 下書きは`contests`とは別の`contest_drafts`に置くため、公開APIの一覧・詳細・順位表・参加登録からは見えません。他人の下書きは404です。
+- 新規作成枠は下書きの作成時に1件分消費し、公開では消費しません。公開済みで開始前のコンテストは、これまでどおり`PUT /my/contests/{id}`で検証してから保存します。
+- 配布時はAPIを切り替える前に通常のDBマイグレーションを実行し、`025_contest_drafts.sql`を適用してください。
+
 ### コンテストへの参加
 
 - `POST /my/contests/{id}/participation`：認証・プロフィール登録が必要。開始前または開催中に参加登録し、更新後のコンテスト詳細を返します。同じユーザーの再登録は重複しません。

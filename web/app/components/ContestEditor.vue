@@ -1,25 +1,35 @@
 <script setup lang="ts">
 import { accountListSchema, type AccountSummary } from '~~/shared/types/account-problems'
-import { problemLabel, type Contest, type ContestProblem } from '~~/shared/types/contest'
+import { problemLabel, type Contest, type ContestDraft, type ContestDraftResult } from '~~/shared/types/contest'
 import { accountError } from '~/utils/account-problems'
 import { issueMessage } from '~/utils/problem-readiness'
 import { searchProblems } from '~/utils/problem-search'
 const props = defineProps<{ contestId?: string }>()
+const route = useRoute()
+const router = useRouter()
 const ready = ref(false)
 const busy = ref(false)
 const message = ref('')
 const title = ref('')
 const description = ref('<!-- ここにコンテストの概要を記載 -->\n')
 const startsAt = ref('')
-const endsAt = ref('')
-const penaltyMinutes = ref(5)
+// Number inputs hold '' while empty; drafts save that as null.
+const durationMinutes = ref<number | string>(120)
+const penaltyMinutes = ref<number | string>(5)
 const version = ref(0)
 const available = ref<AccountSummary[]>([])
-const selected = ref<ContestProblem[]>([])
+const titles = new Map<string, string>()
+type EditorProblem = { id: string, title?: string, points: number | string | null }
+const selected = ref<EditorProblem[]>([])
 const id = ref(props.contestId ?? '')
 const locked = ref(false)
+// Until publication the contest is a draft: saving accepts anything, and the server lists what publishing still needs.
+const published = ref(false)
+const draftIssues = ref<string[]>([])
+const showIssues = ref(false)
 const timezone = ref('')
-const section = ref<'description' | 'problems' | 'settings'>('description')
+type Section = 'description' | 'problems' | 'settings'
+const section = ref<Section>('description')
 const sidebarExpanded = ref(false)
 const form = ref<HTMLFormElement>()
 const totalPoints = computed(() => selected.value.reduce((total, p) => total + (Number(p.points) || 0), 0))
@@ -31,6 +41,48 @@ const addable = (problemId: string) => !isSelected(problemId) && !issues(problem
 const matches = computed(() => searchProblems(available.value, query.value))
 const candidates = computed(() => onlyAddable.value ? matches.value.filter(p => addable(p.id)) : matches.value)
 const problemName = (title?: string) => title || '無題の問題'
+const maxDurationMinutes = 100_000_000
+const endsAt = computed(() => {
+  const start = new Date(startsAt.value), minutes = Number(durationMinutes.value)
+  return Number.isFinite(start.getTime()) && Number.isInteger(minutes) && minutes >= 1 && minutes <= maxDurationMinutes ? new Date(start.getTime() + minutes * 60000) : undefined
+})
+function durationText(minutes: number) {
+  const hours = Math.floor(minutes / 60), rest = minutes % 60
+  return hours && rest ? `${hours}時間${rest}分` : hours ? `${hours}時間` : `${rest}分`
+}
+const endLabel = computed(() => endsAt.value
+  ? `終了日時 ${new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short' }).format(endsAt.value)}（${durationText(Number(durationMinutes.value))}）`
+  : '開始日時とコンテスト時間を入力すると、終了日時を表示します。')
+const issueGuide: Record<string, [string, Section]> = {
+  title_missing: ['コンテストタイトルを入力してください', 'description'],
+  start_missing: ['開始日時を入力してください', 'settings'],
+  start_past: ['開始日時を現在より後にしてください', 'settings'],
+  duration_invalid: ['コンテスト時間を1分以上の整数で入力してください', 'settings'],
+  penalty_invalid: ['誤答ペナルティを0〜1440分の整数で入力してください', 'settings'],
+  problems_missing: ['問題を1問以上選んでください', 'problems'],
+  points_invalid: ['配点を1〜1,000,000点の整数で入力してください', 'problems'],
+  problem_unavailable: ['公開済み・削除済み・他のコンテストに登録済みの問題を外してください', 'problems'],
+  problem_incomplete: ['難易度やテストケースなど、コンテストの条件を満たしていない問題があります', 'problems'],
+}
+const issueText = (code: string) => issueGuide[code]?.[0] ?? `確認が必要な項目があります（${code}）`
+function openIssue(code: string) { section.value = issueGuide[code]?.[1] ?? section.value }
+const snapshot = () => JSON.stringify([title.value, description.value, startsAt.value, durationMinutes.value, penaltyMinutes.value, selected.value])
+const saved = ref('')
+let leaving = false
+const dirty = computed(() => ready.value && snapshot() !== saved.value)
+const status = computed(() => {
+  if (busy.value) return '保存中…'
+  if (locked.value) return '編集できません'
+  if (!ready.value) return '読み込み中…'
+  const summary = `${selected.value.length} 問 · 合計 ${totalPoints.value} 点`
+  if (published.value) return summary
+  const state = dirty.value ? '未保存の変更があります' : !version.value ? 'まだ保存していません' : draftIssues.value.length ? `公開まであと ${draftIssues.value.length} 項目` : '公開できます'
+  return `下書き · ${state} · ${summary}`
+})
+onBeforeRouteLeave(() => leaving || (!busy.value && (!dirty.value || locked.value || window.confirm('未保存の変更を破棄して移動しますか？'))))
+function beforeUnload(event: BeforeUnloadEvent) { if (dirty.value && !locked.value) { event.preventDefault(); event.returnValue = '' } }
+onMounted(() => window.addEventListener('beforeunload', beforeUnload))
+onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 const {
   mode, workspace, splitPercent, resizing, setSplit, startResize, moveResize, stopResize, resizeWithKeyboard,
   editor, syncSource, insertSnippet,
@@ -50,25 +102,52 @@ function localDate(value: string) {
 }
 async function load() {
   try {
-    if (props.contestId) {
-      const c = await $fetch<Contest>(`/api/my/contests/${props.contestId}`)
-      if (!c.canEdit) { locked.value = true; message.value = '開始後、または作成者以外は編集できません。'; return }
-      title.value = c.title; description.value = c.description; startsAt.value = localDate(c.startsAt); endsAt.value = localDate(c.endsAt)
-      penaltyMinutes.value = c.penaltyMinutes; version.value = c.version; selected.value = c.problems
-    } else id.value = crypto.randomUUID()
+    // A new contest keeps its id in the query after the first save, like new problems and posts.
+    const resume = props.contestId ?? (typeof route.query.contest === 'string' && /^[a-f0-9-]{36}$/.test(route.query.contest) ? route.query.contest : '')
+    id.value = resume || crypto.randomUUID()
     let cursor = ''
     do {
       const page = accountListSchema.parse(await $fetch('/api/my/problems', { query: { cursor } }))
+      for (const p of page.items) titles.set(p.id, p.title)
       available.value.push(...page.items.filter(p => !p.publishedVersion && (!p.contestId || p.contestId === id.value)))
       cursor = page.nextCursor
     } while (cursor)
+    if (resume) await open(resume)
+    if (locked.value) return
+    saved.value = snapshot()
     ready.value = true
   } catch { message.value = '作成情報を読み込めませんでした。ログイン状態を確認して再読み込みしてください。' }
+}
+// A draft and a published contest share the id, so try the draft first.
+async function open(contestId: string) {
+  try {
+    const result = await $fetch<ContestDraftResult>(`/api/my/contests/${contestId}/draft`)
+    const d = result.draft
+    version.value = result.version; draftIssues.value = result.issues
+    title.value = d.title; description.value = d.description; startsAt.value = d.startsAt ? localDate(d.startsAt) : ''
+    durationMinutes.value = d.durationMinutes ?? ''; penaltyMinutes.value = d.penaltyMinutes ?? ''
+    selected.value = d.problems.map(p => ({ id: p.id, title: titles.get(p.id) ?? '削除された問題', points: p.points }))
+    return
+  } catch (error) {
+    if ((error as { statusCode?: number }).statusCode !== 404) throw error
+  }
+  const c = await $fetch<Contest>(`/api/my/contests/${contestId}`)
+  published.value = true
+  if (!c.canEdit) { locked.value = true; message.value = '開始後、または作成者以外は編集できません。'; return }
+  title.value = c.title; description.value = c.description; startsAt.value = localDate(c.startsAt)
+  durationMinutes.value = Math.round((Date.parse(c.endsAt) - Date.parse(c.startsAt)) / 60000)
+  penaltyMinutes.value = c.penaltyMinutes; version.value = c.version; selected.value = c.problems
 }
 onMounted(() => { timezone.value = Intl.DateTimeFormat().resolvedOptions().timeZone; void load() })
 // Why the server would reject this problem; candidates already exclude other contests, so in_contest means this one.
 function issues(problemId: string) {
   return (summaries.value.get(problemId)?.readiness?.contest ?? []).filter(code => code !== 'in_contest')
+}
+// A selected problem missing from the candidates was published, deleted or registered elsewhere after the draft was saved.
+function problemIssue(problemId: string) {
+  if (!summaries.value.has(problemId)) return '公開済み・削除済み・他のコンテストに登録済みのため出題できません'
+  const code = issues(problemId)[0]
+  return code && issueMessage(code, 'contest')
 }
 function add(p: AccountSummary) {
   if (addable(p.id)) selected.value.push({ id: p.id, title: p.title, points: 100 })
@@ -147,31 +226,85 @@ async function moveWithKeyboard(event: KeyboardEvent, index: number) {
   list.value?.querySelector<HTMLElement>(`[data-id="${id}"] .drag-handle`)?.focus()
 }
 onBeforeUnmount(() => cancelAnimationFrame(scrollFrame))
+// Jumps to the first field the browser rejects. Only publication and published contests need valid fields.
+async function reportInvalid() {
+  const invalid = form.value?.querySelector<HTMLInputElement | HTMLTextAreaElement>('input:invalid, textarea:invalid')
+  if (!invalid) return true
+  section.value = invalid.closest<HTMLElement>('[data-section]')!.dataset.section as Section
+  if (section.value === 'description') mode.value = 'edit'
+  await nextTick()
+  invalid.reportValidity()
+  return false
+}
+const integer = (value: unknown) => typeof value === 'number' && Number.isInteger(value) && Math.abs(value) <= 1e9 ? value : null
+function draftBody(): ContestDraft {
+  const start = new Date(startsAt.value)
+  return {
+    title: title.value, description: description.value, startsAt: Number.isFinite(start.getTime()) ? start.toISOString() : null,
+    durationMinutes: integer(durationMinutes.value), penaltyMinutes: integer(penaltyMinutes.value),
+    problems: selected.value.map(p => ({ id: p.id, points: integer(p.points) })),
+  }
+}
+function failure(error: unknown) {
+  if ((error as { data?: { data?: { code?: string } } }).data?.data?.code === 'creation_quota_exceeded') return accountError(error)
+  const status = (error as { statusCode?: number }).statusCode
+  return status === 409 ? '別の画面で更新されたか、すでに公開されています。入力内容をコピーしてから再読み込みしてください。' : status === 401 ? 'ログインし直してから保存してください。' : status === 400 ? '入力内容を確認してください。' : '保存を確認できませんでした。入力内容を残したまま、もう一度お試しください。'
+}
+async function saveDraft() {
+  if (busy.value || !ready.value || locked.value) return false
+  busy.value = true; message.value = ''
+  try {
+    const current = snapshot()
+    const result = await $fetch<ContestDraftResult>(`/api/my/contests/${id.value}/draft`, { method: 'PUT', body: { version: version.value, draft: draftBody() } })
+    version.value = result.version; draftIssues.value = result.issues; saved.value = current
+    if (!props.contestId && route.query.contest !== id.value) await router.replace({ path: '/my/contests/new', query: { contest: id.value } })
+    return true
+  } catch (error) { message.value = failure(error); return false }
+  finally { busy.value = false }
+}
+async function publish() {
+  if (busy.value || !ready.value || locked.value || !await reportInvalid() || !await saveDraft()) return
+  if (draftIssues.value.length) { showIssues.value = true; openIssue(draftIssues.value[0]!); return }
+  if (!window.confirm('コンテストを公開しますか？コンテスト一覧に表示され、参加登録を受け付けます。開始前なら内容を変更できます。')) return
+  busy.value = true
+  try {
+    await $fetch(`/api/my/contests/${id.value}/publication`, { method: 'PUT', body: { version: version.value } })
+    leaving = true
+    await navigateTo(`/contests/${id.value}`)
+  } catch (error) {
+    const code = (error as { data?: { data?: { code?: string } } }).data?.data?.code
+    message.value = code === 'contest_not_ready' ? '公開の条件を満たしていません。再読み込みして内容を確認してください。' : (error as { statusCode?: number }).statusCode === 409 ? '公開できませんでした。問題が別のコンテストに登録されたか、別の画面で更新されています。再読み込みしてください。' : failure(error)
+  } finally { busy.value = false }
+}
+async function removeDraft() {
+  if (!version.value || !window.confirm('このコンテストの下書きを削除します。この操作は取り消せません。削除しますか？')) return
+  busy.value = true
+  try {
+    await $fetch(`/api/my/contests/${id.value}/draft`, { method: 'DELETE', query: { version: version.value } })
+    leaving = true; busy.value = false
+    await navigateTo('/my?tab=contests')
+  } catch (error) { message.value = failure(error) }
+  finally { busy.value = false }
+}
 async function save() {
+  if (!published.value) return saveDraft()
   if (busy.value || !ready.value || locked.value) return
   message.value = ''
-  const invalid = form.value?.querySelector<HTMLInputElement | HTMLTextAreaElement>('input:invalid, textarea:invalid')
-  if (invalid) {
-    section.value = invalid.closest<HTMLElement>('[data-section]')!.dataset.section as typeof section.value
-    if (section.value === 'description') mode.value = 'edit'
-    await nextTick()
-    invalid.reportValidity()
-    return
-  }
+  if (!await reportInvalid()) return
   if (!title.value.trim()) { section.value = 'description'; message.value = 'コンテストタイトルを入力してください。'; return }
   if (!selected.value.length || selected.value.length > 100) {
     section.value = 'problems'; message.value = '問題を1〜100問選んでください。'; return
   }
-  const start = new Date(startsAt.value), end = new Date(endsAt.value)
-  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || start.getTime() <= Date.now() || end <= start) {
-    section.value = 'settings'; message.value = '未来の開始日時と、それより後の終了日時を指定してください。'; return
+  const start = new Date(startsAt.value), end = endsAt.value
+  if (!Number.isFinite(start.getTime()) || start.getTime() <= Date.now() || !end) {
+    section.value = 'settings'; message.value = '未来の開始日時と、1分以上のコンテスト時間を指定してください。'; return
   }
   busy.value = true; message.value = ''
   try {
     await $fetch(`/api/my/contests/${id.value}`, { method: 'PUT', body: { title: title.value, description: description.value, startsAt: start.toISOString(), endsAt: end.toISOString(), penaltyMinutes: penaltyMinutes.value, version: version.value, problems: selected.value.map(({ id, points }) => ({ id, points })) } })
+    leaving = true
     await navigateTo(`/contests/${id.value}`)
   } catch (error) {
-    if ((error as { data?: { data?: { code?: string } } }).data?.data?.code === 'creation_quota_exceeded') { message.value = accountError(error); return }
     const status = (error as { statusCode?: number }).statusCode
     message.value = status === 409 ? '保存できませんでした。問題の公開状態・他コンテストへの登録・テストケースを確認してください。開催開始や別画面での更新があった場合は再読み込みが必要です。' : status === 400 ? '入力内容を確認してください。' : '保存を確認できませんでした。作成したコンテスト一覧を確認してから再度お試しください。'
   } finally { busy.value = false }
@@ -188,9 +321,10 @@ async function save() {
         <button type="button" class="editor-button" :aria-pressed="mode === 'preview'" aria-label="プレビュー" title="プレビュー" @click="mode = 'preview'"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg></button>
       </div>
       <div class="author-actions">
-        <button type="submit" form="contest-form" class="editor-button primary save-button" :disabled="!ready || locked || busy" :aria-busy="busy" :aria-label="busy ? '保存中' : contestId ? '変更を保存' : 'コンテストを作成'" title="保存（Ctrl+S / ⌘S）" aria-keyshortcuts="Control+s Meta+s">
-          <span :class="{ 'save-label-hidden': busy }">{{ contestId ? '保存' : '作成' }}</span><span v-if="busy" class="save-spinner" aria-hidden="true" />
+        <button type="submit" form="contest-form" class="editor-button save-button" :class="{ primary: published }" :disabled="!ready || locked || busy" :aria-busy="busy" :aria-label="busy ? '保存中' : published ? '変更を保存' : '下書きを保存'" title="保存（Ctrl+S / ⌘S）" aria-keyshortcuts="Control+s Meta+s">
+          <span :class="{ 'save-label-hidden': busy }">保存</span><span v-if="busy" class="save-spinner" aria-hidden="true" />
         </button>
+        <button v-if="!published" type="button" class="editor-button primary" :disabled="!ready || locked || busy" aria-label="コンテストを公開" title="検証して公開" @click="publish">公開</button>
       </div>
     </header>
     <div class="author-body" :data-sidebar-expanded="sidebarExpanded">
@@ -205,7 +339,8 @@ async function save() {
         </nav>
       </aside>
       <form id="contest-form" ref="form" class="editor-main" novalidate @submit.prevent="save">
-        <div class="editor-notices"><p v-if="message" class="editor-error" role="alert">{{ message }}</p><noscript><p class="editor-error">編集と保存には JavaScript を有効にしてください。</p></noscript></div>
+        <div class="editor-notices"><p v-if="message" class="editor-error" role="alert">{{ message }}</p>
+          <div v-if="showIssues && draftIssues.length" class="editor-error publish-issues" role="alert"><p>公開するには、次の項目を直して保存してください。</p><ul><li v-for="code in draftIssues" :key="code"><button type="button" @click="openIssue(code)">{{ issueText(code) }}</button></li></ul></div><noscript><p class="editor-error">編集と保存には JavaScript を有効にしてください。</p></noscript></div>
         <div v-show="section === 'description'" class="author-edit-content" data-section="description">
           <div class="author-fields"><div class="title-field"><div class="field-heading"><label for="contest-title">コンテストタイトル</label></div><input id="contest-title" v-model="title" required maxlength="120" placeholder="コンテストのタイトル" :disabled="!ready || locked || busy"></div></div>
     <div ref="workspace" class="author-workspace" :class="{ 'is-resizing': resizing }" :data-mode="mode" :style="{ '--editor-left': `${splitPercent}fr`, '--editor-right': `${100 - splitPercent}fr` }">
@@ -244,7 +379,7 @@ async function save() {
                   <li v-for="(p, index) in selected" :key="p.id" :data-id="p.id" :class="{ dragging: drag?.from === index }" :style="rowStyle(index)">
                     <button type="button" class="drag-handle" :aria-label="`${problemName(p.title)}を並べ替え`" aria-describedby="reorder-hint" title="ドラッグで並べ替え" @pointerdown="startDrag($event, index)" @pointermove="updateDrag($event.clientY)" @pointerup="endDrag(true)" @pointercancel="endDrag(false)" @lostpointercapture="endDrag(false)" @keydown="moveWithKeyboard($event, index)"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" /><circle cx="9" cy="12" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="9" cy="18" r="1" /><circle cx="15" cy="18" r="1" /></svg></button>
                     <span class="problem-label">{{ problemLabel(slot(index)) }}</span>
-                    <div class="problem-entry"><strong>{{ problemName(p.title) }}</strong><code class="problem-uuid">{{ p.id }}</code><p v-if="issues(p.id).length" class="problem-issue">{{ issueMessage(issues(p.id)[0]!, 'contest') }}</p></div>
+                    <div class="problem-entry"><strong>{{ problemName(p.title) }}</strong><code class="problem-uuid">{{ p.id }}</code><p v-if="problemIssue(p.id)" class="problem-issue">{{ problemIssue(p.id) }}</p></div>
                     <div class="selected-controls">
                       <label class="points-field" :for="`points-${p.id}`">配点 <input :id="`points-${p.id}`" v-model.number="p.points" type="number" min="1" max="1000000" step="1" required> 点</label>
                       <button class="editor-button remove-button" type="button" :aria-label="`${problemName(p.title)}を外す`" title="外す" @click="remove(index)"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></button>
@@ -262,7 +397,7 @@ async function save() {
                   <p class="muted search-count" role="status">{{ candidates.length }} 件{{ query.trim() ? 'が一致' : '' }}{{ matches.length > candidates.length ? `（追加済み・追加できない ${matches.length - candidates.length} 件を非表示）` : '' }}</p>
                   <ul id="problem-candidates" class="candidates">
                     <li v-for="p in candidates" :key="p.id">
-                      <div class="problem-entry"><span>{{ problemName(p.title) }}</span><code class="problem-uuid">{{ p.id }}</code><p v-if="issues(p.id).length" class="problem-issue">{{ issueMessage(issues(p.id)[0]!, 'contest') }}</p></div>
+                      <div class="problem-entry"><span>{{ problemName(p.title) }}</span><code class="problem-uuid">{{ p.id }}</code><p v-if="problemIssue(p.id)" class="problem-issue">{{ problemIssue(p.id) }}</p></div>
                       <button class="editor-button" type="button" :disabled="!addable(p.id)" :aria-label="`${problemName(p.title)}${isSelected(p.id) ? 'は追加済み' : 'を追加'}`" @click="add(p)">{{ isSelected(p.id) ? '追加済み' : '追加' }}</button>
                     </li>
                   </ul>
@@ -277,16 +412,19 @@ async function save() {
             <header><h2 id="contest-settings-title">コンテスト設定</h2><p class="muted">開催時間と誤答ペナルティを設定します。</p></header>
             <fieldset :disabled="!ready || locked || busy">
               <section class="settings-section"><h3>開催時間</h3><p class="muted">日時は {{ timezone || '端末のタイムゾーン' }} で入力します。公開ページでは日本時間で表示します。</p>
-                <div class="dates"><div><label for="contest-start">開始日時</label><input id="contest-start" v-model="startsAt" type="datetime-local" required></div><div><label for="contest-end">終了日時</label><input id="contest-end" v-model="endsAt" type="datetime-local" required></div></div>
+                <div class="dates"><div><label for="contest-start">開始日時</label><input id="contest-start" v-model="startsAt" type="datetime-local" required></div><div><label for="contest-duration">コンテスト時間（分）</label><input id="contest-duration" v-model.number="durationMinutes" type="number" required min="1" :max="maxDurationMinutes" step="1"></div></div>
+                <p class="muted end-time">{{ endLabel }}</p>
               </section>
               <section class="settings-section"><h3>誤答ペナルティ</h3><p class="muted">正解した問題の、初回正解前の誤答だけに加算します。コンパイルエラーは対象外です。</p><label for="contest-penalty">誤答ペナルティ（分）</label><input id="contest-penalty" v-model.number="penaltyMinutes" type="number" required min="0" max="1440" step="1"><p class="muted penalty-note">0分でペナルティなしにできます。</p></section>
+              <section v-if="!published && version" class="settings-section"><h3>下書きの削除</h3><p class="muted">この下書きを削除します。この操作は取り消せません。</p><button type="button" class="editor-button danger" @click="removeDraft">下書きを削除</button></section>
             </fieldset>
+            <p v-if="!published" class="muted draft-note">公開するまで、このコンテストは自分だけが見られる下書きです。内容が揃っていなくても保存でき、「公開」で条件を確かめてからコンテスト一覧に載せます。</p>
             <p class="muted">開始後は問題セット・配点・開催期間・ペナルティを変更できません。問題と解説は終了後に自動公開されます。</p>
           </div>
         </section>
       </form>
     </div>
-    <footer class="draft-status"><span role="status">{{ busy ? '保存中…' : locked ? '編集できません' : ready ? `${selected.length} 問 · 合計 ${totalPoints} 点` : '読み込み中…' }}</span><NuxtLink to="/my?tab=contests">自分のコンテスト</NuxtLink></footer>
+    <footer class="draft-status"><span role="status">{{ status }}</span><NuxtLink to="/my?tab=contests">自分のコンテスト</NuxtLink></footer>
   </div>
 </template>
 <style scoped>
@@ -339,7 +477,11 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .settings-section { padding-block: 24px; border-top: 1px solid var(--color-line); }
 .settings-section label { display: block; margin-bottom: 8px; }
 .dates { display: grid; gap: 20px; }
-.penalty-note { margin-top: 8px; }
+.penalty-note, .end-time { margin-top: 8px; }
+.draft-note { margin-bottom: 8px; }
+.publish-issues p { margin: 0 0 4px; }
+.publish-issues ul { margin: 0; padding-left: 20px; }
+.publish-issues button { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 @media (min-width: 48rem) { .selected li { grid-template-columns: var(--handle-size) 1.5rem minmax(0, 1fr) auto; grid-template-areas: "handle label body controls"; } }
 @media (prefers-reduced-motion: reduce) { .selected[data-dragging] li { transition: none; } }
 @media (min-width: 60rem) { .dates { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
