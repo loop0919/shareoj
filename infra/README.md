@@ -20,7 +20,7 @@ EC2の台の構成と切り替えは[EC2の採点台の運用と切り替え](..
 配送と結果反映を行うbridge Lambdaは予約同時実行5とし、コンテスト時の一斉提出でDB接続が急増しないようにする。
 [ジャッジ構築手順](../judge/README.md)に従って手動で構築し、IPv6通信と2 GB実機でのisolateの制限と計測を確認してから提出受付を有効にする。
 本番テストセットの取り込みとバンドル展開は未実装である。
-請求アラート、リージョン制限、GuardDuty、CloudTrailのtrailはAWSアカウント全体の設定であり、このリポジトリの管理対象外である。
+請求アラート、リージョン制限、GuardDuty、IAM Access Analyzer、CloudTrailのtrailはAWSアカウント全体の設定であり、このリポジトリの管理対象外である。
 別フォルダ`~/aws-setting`のTerraformで管理者が手動で適用し、このリポジトリのTerraform構成やCI/CDには含めない。
 その設定により、管理者が操作できるリージョンは東京と`us-east-1`に限られる。
 GitHubデプロイロールは、このリポジトリの`deploy-access/`で東京だけに限る。
