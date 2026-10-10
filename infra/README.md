@@ -20,8 +20,10 @@ EC2の台の構成と切り替えは[EC2の採点台の運用と切り替え](..
 配送と結果反映を行うbridge Lambdaは予約同時実行5とし、コンテスト時の一斉提出でDB接続が急増しないようにする。
 [ジャッジ構築手順](../judge/README.md)に従って手動で構築し、IPv6通信と2 GB実機でのisolateの制限と計測を確認してから提出受付を有効にする。
 本番テストセットの取り込みとバンドル展開は未実装である。
-請求アラート、リージョン制限、GuardDuty、CloudTrailのtrailはAWSアカウント全体の設定として、別フォルダ`~/aws-setting`へ分離している。
-管理者が操作できるリージョンは東京と`us-east-1`に限られ、GitHubデプロイロールは`deploy-access/`で東京だけに限る。
+請求アラート、リージョン制限、GuardDuty、CloudTrailのtrailはAWSアカウント全体の設定であり、このリポジトリの管理対象外である。
+別フォルダ`~/aws-setting`のTerraformで管理者が手動で適用し、このリポジトリのTerraform構成やCI/CDには含めない。
+その設定により、管理者が操作できるリージョンは東京と`us-east-1`に限られる。
+GitHubデプロイロールは、このリポジトリの`deploy-access/`で東京だけに限る。
 
 ## 開発環境
 
@@ -107,7 +109,7 @@ planの確認後はzipを再ビルドせず、そのまま保存したplanをapp
 
 API用のbackend設定例は`infra/api/backend.tfbackend.example`にある。
 ファイルで管理する場合は`backend.tfbackend`へコピーし、バケット名を設定して`terraform -chdir=infra/api init -backend-config=backend.tfbackend`で読み込む。
-APIのkeyは`judge/dev/api.tfstate`とし、請求アラートの`judge/billing-alerts.tfstate`とは分ける。
+APIのkeyは`judge/dev/api.tfstate`とし、`~/aws-setting`が同じバケットに置く`judge/billing-alerts.tfstate`と`account/security.tfstate`とは分ける。
 ディレクトリが異なっていても、同じバケットとkeyを指定すると同じstateを参照する。
 
 誤って別の構成のstateを参照した場合は、backend設定を修正し、`terraform -chdir=infra/api init -reconfigure -backend-config=backend.tfbackend`で接続先を切り替える。

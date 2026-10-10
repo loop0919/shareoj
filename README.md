@@ -162,7 +162,7 @@ npmは`web`の本番依存を`npm audit`で調べ、highとcriticalがあれば�
 見直し日を過ぎると再び失敗する。
 `judge/go-deps`と`judge/addition-deps`は提出コードに提供するライブラリで、提出コードは元から任意のコードとして隔離して実行するため対象外とする。
 
-AWSアカウント全体の請求アラートは、別フォルダ`~/aws-setting`で管理する。
-このリポジトリのCI/CDではデプロイしない。
+AWSアカウント全体の設定（請求アラート、リージョン制限、GuardDuty、CloudTrailのtrail）は、このリポジトリの管理対象外である。
+別フォルダ`~/aws-setting`で管理し、このリポジトリのCI/CDではデプロイしない。
 
 </details>
