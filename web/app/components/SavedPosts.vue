@@ -20,7 +20,7 @@ onMounted(() => { void load() })
     <header class="draft-library-heading"><h2>作成した記事</h2><NuxtLink class="editor-button primary" to="/blog/new">新規記事</NuxtLink></header>
     <p v-if="error" role="alert">{{ error }}</p><button v-if="error" class="editor-button" @click="load()">再試行</button>
     <p v-if="loading" role="status">記事を読み込んでいます…</p>
-    <p v-else-if="!posts.length && !error" class="muted">保存した記事はまだありません。</p>
+    <EmptyState v-else-if="!posts.length && !error" kind="post" title="保存した記事はまだありません。" description="「新規記事」から作成すると、ここに表示されます。" />
     <div v-if="posts.length" class="content-table-scroll">
       <table class="content-table" aria-label="作成した記事">
         <thead><tr><th scope="col">タイトル</th><th scope="col">公開状態</th><th scope="col">更新日時</th><th scope="col">操作</th></tr></thead>

@@ -61,7 +61,8 @@ onMounted(() => { void loadAccount() })
     <p v-if="accountLoading" role="status">問題を読み込んでいます…</p>
     <p v-else-if="!user"><NuxtLink to="/login?next=/my%3Ftab%3Dproblems">ログイン</NuxtLink>すると、問題を表示できます。</p>
     <template v-else>
-      <p v-if="!accountEntries.length && !accountMessage">{{ testing ? 'テスト中の問題はまだありません。テスターリンクから参加すると、ここに表示されます。' : '保存した問題はまだありません。' }}</p>
+      <EmptyState v-if="!accountEntries.length && !accountMessage && testing" kind="testing" title="テスト中の問題はまだありません。" description="テスターリンクから参加すると、ここに表示されます。" />
+      <EmptyState v-else-if="!accountEntries.length && !accountMessage" kind="problem" title="保存した問題はまだありません。" description="「新規問題」から作成すると、ここに表示されます。" />
       <div v-if="accountEntries.length" class="content-table-scroll">
         <table class="content-table" :aria-label="heading">
           <thead><tr><th scope="col">タイトル</th><th scope="col">状態</th><th scope="col">更新日時</th><th scope="col">操作</th></tr></thead>

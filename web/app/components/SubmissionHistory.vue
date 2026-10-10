@@ -25,7 +25,7 @@ usePolling(load, 2000, () => !message.value && (items.value.some(item => item.st
     </div>
     <p v-if="message" role="alert">{{ message }}</p>
     <p v-if="loading && !items.length" role="status">読み込み中…</p>
-    <p v-else-if="!items.length && !message">提出はまだありません。</p>
+    <EmptyState v-else-if="!items.length && !message" kind="submission" title="提出はまだありません。" description="問題に解答を提出すると、ここに表示されます。" />
     <div v-if="items.length" class="submission-table-scroll" role="region" aria-labelledby="submission-history-title" tabindex="0">
       <table aria-label="提出履歴">
         <thead><tr><th scope="col">提出日時</th><th scope="col">問題</th><th scope="col">言語</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th scope="col">結果</th><th scope="col">詳細</th></tr></thead>

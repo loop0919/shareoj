@@ -16,7 +16,7 @@ useSharePreview({ type: 'website', title: '記事', path: '/blog', description }
 <template>
   <div class="catalogue">
     <header class="catalogue-heading"><h1>記事</h1><NuxtLink v-if="user" class="editor-button primary" to="/blog/new">新規記事</NuxtLink></header>
-    <p v-if="!current.items.length" class="muted">公開された記事はまだありません。</p>
+    <EmptyState v-if="!current.items.length" kind="post" title="公開された記事はまだありません。" />
     <div v-else class="content-table-scroll" tabindex="0" role="region" aria-label="記事一覧" :aria-busy="loading">
       <table class="content-table">
         <thead><tr><th scope="col">タイトル</th><th scope="col">投稿者</th><th scope="col">公開日</th></tr></thead>
@@ -28,7 +28,7 @@ useSharePreview({ type: 'website', title: '記事', path: '/blog', description }
       </table>
     </div>
     <p v-if="message" role="alert">{{ message }}</p>
-    <ContentPagination :index="index" :has-next="!!current.nextCursor" :loading="loading" @move="move" />
+    <ContentPagination v-if="current.items.length || index" :index="index" :has-next="!!current.nextCursor" :loading="loading" @move="move" />
     <p><NuxtLink to="/blog/difficulty-guide">難易度の目安</NuxtLink></p>
     <p><NuxtLink to="/blog/contest-rules">コンテストのルール</NuxtLink></p>
     <p><NuxtLink to="/blog/language-guide">使える言語と実行環境の仕様</NuxtLink></p>

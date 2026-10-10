@@ -37,7 +37,7 @@ useSharePreview({ type: 'website', title: '問題', path: '/problems', descripti
   <div class="catalogue">
     <ProblemPostDialog ref="postDialog" />
     <header class="catalogue-heading"><h1>問題</h1><button type="button" class="editor-button primary" @click="postDialog?.open()">問題投稿</button></header>
-    <p v-if="!current.items.length" class="muted">公開された問題はまだありません。</p>
+    <EmptyState v-if="!current.items.length" kind="problem" title="公開された問題はまだありません。" />
     <div v-else class="content-table-scroll" tabindex="0" role="region" aria-label="問題一覧" :aria-busy="loading">
       <table class="content-table">
         <thead><tr><th scope="col">タイトル</th><th scope="col">作成者</th><th scope="col"><abbr title="実行時間制限 / メモリ制限">TL / ML</abbr></th><th scope="col">正解者数</th><th scope="col"><abbr title="お気に入り数">Fav</abbr></th><th scope="col">難易度</th></tr></thead>
@@ -50,7 +50,7 @@ useSharePreview({ type: 'website', title: '問題', path: '/problems', descripti
     </div>
     <p v-if="solvedMessage" role="status">{{ solvedMessage }} <button type="button" class="editor-button" @click="loadSolved">再試行</button></p>
     <p v-if="message" role="alert">{{ message }}</p>
-    <ContentPagination :index="index" :has-next="!!current.nextCursor" :loading="loading" @move="move" />
+    <ContentPagination v-if="current.items.length || index" :index="index" :has-next="!!current.nextCursor" :loading="loading" @move="move" />
   </div>
 </template>
 

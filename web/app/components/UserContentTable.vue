@@ -9,7 +9,7 @@ const { current, index, loading, message, move } = useContentPages(props.initial
 const label = props.kind === 'problems' ? '問題' : '記事'
 </script>
 <template>
-  <p v-if="!current.items.length" class="muted">公開された{{ label }}はまだありません。</p>
+  <EmptyState v-if="!current.items.length" :kind="kind === 'problems' ? 'problem' : 'post'" :title="`公開された${label}はまだありません。`" />
   <div v-else class="content-table-scroll" role="region" :aria-label="`公開済みの${label}`" tabindex="0" :aria-busy="loading">
     <table class="content-table">
       <thead><tr>
@@ -29,5 +29,5 @@ const label = props.kind === 'problems' ? '問題' : '記事'
     </table>
   </div>
   <p v-if="message" role="alert">{{ message }}</p>
-  <ContentPagination :index="index" :has-next="!!current.nextCursor" :loading="loading" @move="move" />
+  <ContentPagination v-if="current.items.length || index" :index="index" :has-next="!!current.nextCursor" :loading="loading" @move="move" />
 </template>
