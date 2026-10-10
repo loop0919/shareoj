@@ -7,7 +7,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"os"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -35,7 +36,7 @@ func (b bridge) dispatch(ctx context.Context) (err error) {
 	if err := (&contests.Store{Pool: b.db}).Release(ctx); err != nil {
 		return err
 	}
-	if err := problems.New(b.db).ReleaseFeatured(ctx, submissions.RuntimeIDs(), (submissions.Config{JudgeImage: b.runtime, JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: os.Getenv("JUDGE_ENABLED_RUNTIMES")}).RuntimeIDs()); err != nil {
+	if err := problems.New(b.db).ReleaseFeatured(ctx, submissions.RuntimeIDs(), b.publishedRuntimes()); err != nil {
 		return err
 	}
 	// Bounded expiry covers queue retries too; it does not rejudge a finalized submission.
@@ -46,6 +47,11 @@ func (b bridge) dispatch(ctx context.Context) (err error) {
 	}
 	if expired.RowsAffected() > 0 {
 		observe("failure", "platform", "submission_expired", "", "", "count", expired.RowsAffected())
+	}
+	// The API invokes dispatch per submission, so pausing the schedule alone would not hold requests.
+	if b.paused {
+		observe("dispatch_paused", "", "", "", "")
+		return nil
 	}
 	for range 20 {
 		tx, err := b.db.Begin(ctx)
@@ -65,6 +71,10 @@ func (b bridge) dispatch(ctx context.Context) (err error) {
 		}
 	}
 	return nil
+}
+
+func (b bridge) publishedRuntimes() []string {
+	return (submissions.Config{JudgeImage: b.runtime, JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: b.enabled}).RuntimeIDs()
 }
 
 func (b bridge) dispatchOne(ctx context.Context, tx pgx.Tx) (err error) {
@@ -89,6 +99,16 @@ func (b bridge) dispatchOne(ctx context.Context, tx pgx.Tx) (err error) {
 	stage = "test_files_resolve"
 	if err = (&submissions.Store{Pool: b.db}).ResolveTestFiles(ctx, &job); err != nil {
 		return err
+	}
+	if job.Image != b.runtime && b.previous != "" && job.Image == b.previous &&
+		slices.Contains(b.publishedRuntimes(), strings.TrimSuffix(runtime, "-isolate")) {
+		// Never executed, so it can move to the environment that replaced its own.
+		stage = "runtime_rebind"
+		if _, err = tx.Exec(ctx, `UPDATE submissions SET job=jsonb_set(job,'{image}',to_jsonb($2::text)) WHERE id=$1`, id, b.runtime); err != nil {
+			return err
+		}
+		job.Image = b.runtime
+		observe("runtime_rebound", "", "", id, attempt)
 	}
 	if job.Image != b.runtime || job.MemoryLimitMB < 64 || job.MemoryLimitMB > 512 {
 		observe("failure", "platform", "runtime_mismatch", id, attempt)

@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"judge/api/internal/database"
 
 	"judge/api/internal/problems"
@@ -169,7 +170,9 @@ func TestOutboxAndResultIdempotency(t *testing.T) {
 	}
 }
 
-func checkOutboxAndResultIdempotency(t *testing.T, runtime string, memory int) {
+// migratedDB returns a pool on a fresh schema that is dropped when the test ends.
+func migratedDB(t *testing.T) *pgxpool.Pool {
+	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("TEST_DATABASE_URL required")
@@ -179,20 +182,18 @@ func checkOutboxAndResultIdempotency(t *testing.T, runtime string, memory int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
-		if err := admin.Close(ctx); err != nil {
-			t.Error(err)
-		}
-	}()
 	schema := fmt.Sprintf("test_bridge_%d", time.Now().UnixNano())
 	if _, err = admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
+	t.Cleanup(func() {
 		if _, err := admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE"); err != nil {
 			t.Error(err)
 		}
-	}()
+		if err := admin.Close(ctx); err != nil {
+			t.Error(err)
+		}
+	})
 	u, _ := url.Parse(dsn)
 	q := u.Query()
 	q.Set("search_path", schema)
@@ -201,10 +202,17 @@ func checkOutboxAndResultIdempotency(t *testing.T, runtime string, memory int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	t.Cleanup(db.Close)
 	if err = database.Migrate(ctx, db); err != nil {
 		t.Fatal(err)
 	}
+	return db
+}
+
+func checkOutboxAndResultIdempotency(t *testing.T, runtime string, memory int) {
+	ctx := context.Background()
+	db := migratedDB(t)
+	var err error
 	const id = "11111111-1111-4111-8111-111111111111"
 	const attempt = "22222222-2222-4222-8222-222222222222"
 	digest := "sha256:" + strings.Repeat("a", 64)
@@ -408,6 +416,111 @@ func TestProgressValidation(t *testing.T) {
 		response := (bridge{}).results(context.Background(), events.SQSEvent{Records: []events.SQSMessage{{MessageId: "bad", Body: body}}})
 		if len(response.BatchItemFailures) != 1 {
 			t.Fatal(response)
+		}
+	}
+}
+
+func TestRollingUpdateHoldsAndRebindsUndispatchedSubmissions(t *testing.T) {
+	ctx := context.Background()
+	db := migratedDB(t)
+	old, current, other := "sha256:"+strings.Repeat("a", 64), "sha256:"+strings.Repeat("b", 64), "sha256:"+strings.Repeat("c", 64)
+	if _, err := db.Exec(ctx, `INSERT INTO user_profiles(owner_id,handle) VALUES ('alice','alice')`); err != nil {
+		t.Fatal(err)
+	}
+	submissionsByName := map[string]string{}
+	for i, s := range []struct{ name, runtime, image string }{
+		{"rebound", "python314-isolate", old},
+		{"unpublished", "java24-isolate", old},
+		{"unknown", "python314-isolate", other},
+		{"current", "python314-isolate", current},
+	} {
+		id := fmt.Sprintf("%08d-1111-4111-8111-111111111111", i)
+		submissionsByName[s.name] = id
+		raw, _ := json.Marshal(submissions.Job{Image: s.image, TimeLimitMS: 1000, MemoryLimitMB: 256, Cases: []submissions.Case{{Input: "1", Output: "1"}}})
+		_, err := db.Exec(ctx, `INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,judge_attempt,created_at)
+ VALUES ($1,'alice',$1,1,'test',$2,'source',$3,$1,clock_timestamp()+make_interval(secs=>$4))`, id, s.runtime, raw, i)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Only a contest with participants blocks a rollout; a finished one never does.
+	contest := func(id string, starts, ends time.Duration, participant bool) {
+		t.Helper()
+		_, err := db.Exec(ctx, `INSERT INTO contests(id,owner_id,title,description,starts_at,ends_at) VALUES ($1,'alice','c','d',clock_timestamp()+$2::interval,clock_timestamp()+$3::interval)`,
+			id, starts.String(), ends.String())
+		if err == nil && participant {
+			_, err = db.Exec(ctx, `INSERT INTO contest_participants(contest_id,owner_id) VALUES ($1,'alice')`, id)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	contest("44444444-4444-4444-8444-444444444441", time.Hour, 2*time.Hour, false)
+	contest("44444444-4444-4444-8444-444444444442", -3*time.Hour, -time.Hour, true)
+	contest("44444444-4444-4444-8444-444444444443", 3*time.Hour, 5*time.Hour, true)
+	var jobs [][]byte
+	sent := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "PUT" {
+			data, _ := io.ReadAll(r.Body)
+			jobs = append(jobs, data)
+			w.Header().Set("x-amz-version-id", "version")
+			return
+		}
+		sent++
+		w.Header().Set("Content-Type", "application/x-amz-json-1.0")
+		_, _ = fmt.Fprint(w, `{"MessageId":"test"}`)
+	}))
+	defer server.Close()
+	cfg := aws.Config{Region: "ap-northeast-1", Credentials: credentials.NewStaticCredentialsProvider("test", "test", "")}
+	b := bridge{
+		db: db, bucket: "bucket", queueURL: server.URL + "/queue", runtime: current, previous: old, enabled: "python314", paused: true,
+		objects: s3.NewFromConfig(cfg, func(o *s3.Options) { o.BaseEndpoint = aws.String(server.URL); o.UsePathStyle = true }),
+		queue:   sqs.NewFromConfig(cfg, func(o *sqs.Options) { o.BaseEndpoint = aws.String(server.URL) }),
+	}
+	status := func() map[string]any {
+		t.Helper()
+		value, err := b.handle(ctx, json.RawMessage(`{"operation":"deployment-status"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, _ := json.Marshal(value)
+		var got map[string]any
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	if err := b.dispatch(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got := status()
+	if sent != 0 || got["undispatched"] != 4.0 || got["dispatchPaused"] != true || got["previousRuntimeDigest"] != old {
+		t.Fatalf("paused dispatch sent requests: sent=%d status=%v", sent, got)
+	}
+	window, err := time.Parse(time.RFC3339Nano, got["nextContestWindowAt"].(string))
+	if err != nil || time.Until(window) < 2*time.Hour || time.Until(window) > 3*time.Hour {
+		t.Fatalf("contest window: %v %v", got["nextContestWindowAt"], err)
+	}
+	b.paused = false
+	if err := b.dispatch(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if sent != 2 || len(jobs) != 2 {
+		t.Fatalf("expected the rebound and current submissions only: sent=%d", sent)
+	}
+	for _, job := range jobs {
+		if !bytes.Contains(job, []byte(`"runtimeDigest":"`+current+`"`)) {
+			t.Fatalf("dispatched with a stale digest: %s", job)
+		}
+	}
+	for name, want := range map[string]string{"rebound": "QUEUED/" + current, "unpublished": "DONE/" + old, "unknown": "DONE/" + other, "current": "QUEUED/" + current} {
+		var state, image string
+		if err := db.QueryRow(ctx, `SELECT status, job->>'image' FROM submissions WHERE id=$1`, submissionsByName[name]).Scan(&state, &image); err != nil {
+			t.Fatal(err)
+		}
+		if state+"/"+image != want {
+			t.Fatalf("%s: got %s/%s, want %s", name, state, image, want)
 		}
 	}
 }

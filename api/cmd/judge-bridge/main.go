@@ -28,7 +28,8 @@ func main() {
 	if err != nil {
 		panic("AWS configuration unavailable")
 	}
-	b := bridge{db: db, objects: s3.NewFromConfig(sdk), queue: sqs.NewFromConfig(sdk), bucket: os.Getenv("JUDGE_JOB_BUCKET"), queueURL: os.Getenv("JUDGE_REQUEST_QUEUE_URL"), runtime: os.Getenv("JUDGE_RUNTIME_DIGEST")}
+	b := bridge{db: db, objects: s3.NewFromConfig(sdk), queue: sqs.NewFromConfig(sdk), bucket: os.Getenv("JUDGE_JOB_BUCKET"), queueURL: os.Getenv("JUDGE_REQUEST_QUEUE_URL"), runtime: os.Getenv("JUDGE_RUNTIME_DIGEST"),
+		previous: os.Getenv("JUDGE_PREVIOUS_RUNTIME_DIGEST"), enabled: os.Getenv("JUDGE_ENABLED_RUNTIMES"), paused: os.Getenv("JUDGE_DISPATCH_PAUSED") == "true"}
 	if os.Getenv("JUDGE_CAPACITY_ENABLED") == "true" {
 		minimum, err := strconv.Atoi(os.Getenv("JUDGE_BURST_MIN_PARTICIPANTS"))
 		if err != nil || minimum < 1 || os.Getenv("JUDGE_POOL") == "" {

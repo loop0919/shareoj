@@ -50,17 +50,18 @@ resource "aws_lambda_function" "bridge" {
   }
   environment {
     variables = {
-      DATABASE_HOST                = var.database.host
-      DATABASE_NAME                = var.database.name
-      DATABASE_SECRET_ARN          = var.database.secret_arn
-      AWS_USE_DUALSTACK_ENDPOINT   = "true"
-      JUDGE_JOB_BUCKET             = aws_s3_bucket.jobs.id
-      JUDGE_REQUEST_QUEUE_URL      = aws_sqs_queue.queue["requests"].url
-      JUDGE_RUNTIME_DIGEST         = var.runtime_digest
-      JUDGE_ENABLED_RUNTIMES       = join(",", var.enabled_runtimes)
-      JUDGE_CAPACITY_ENABLED       = tostring(var.capacity_enabled)
-      JUDGE_POOL                   = local.name
-      JUDGE_BURST_MIN_PARTICIPANTS = tostring(var.burst_min_participants)
+      DATABASE_HOST                 = var.database.host
+      DATABASE_NAME                 = var.database.name
+      DATABASE_SECRET_ARN           = var.database.secret_arn
+      AWS_USE_DUALSTACK_ENDPOINT    = "true"
+      JUDGE_JOB_BUCKET              = aws_s3_bucket.jobs.id
+      JUDGE_REQUEST_QUEUE_URL       = aws_sqs_queue.queue["requests"].url
+      JUDGE_RUNTIME_DIGEST          = var.runtime_digest
+      JUDGE_PREVIOUS_RUNTIME_DIGEST = var.previous_runtime_digest
+      JUDGE_ENABLED_RUNTIMES        = join(",", var.enabled_runtimes)
+      JUDGE_CAPACITY_ENABLED        = tostring(var.capacity_enabled)
+      JUDGE_POOL                    = local.name
+      JUDGE_BURST_MIN_PARTICIPANTS  = tostring(var.burst_min_participants)
     }
   }
   lifecycle {

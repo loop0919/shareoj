@@ -111,6 +111,15 @@ variable "runtime_digest" {
     error_message = "runtime_digest must be sha256 followed by 64 hex characters."
   }
 }
+variable "previous_runtime_digest" {
+  description = "Digest replaced by the last rolling OS update. The bridge rebinds undispatched submissions created with it (ADR 0014)."
+  type        = string
+  default     = ""
+  validation {
+    condition     = var.previous_runtime_digest == "" || can(regex("^sha256:[a-f0-9]{64}$", var.previous_runtime_digest))
+    error_message = "previous_runtime_digest must be sha256 followed by 64 hex characters."
+  }
+}
 variable "database" {
   description = "infra/api judge_bridge_database output. Used only by the bridge Lambda."
   type = object({

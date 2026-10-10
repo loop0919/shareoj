@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -20,7 +21,10 @@ type bridge struct {
 	objects                   *s3.Client
 	queue                     *sqs.Client
 	bucket, queueURL, runtime string
-	capacity                  *capacity // nil until the EC2 pool is enabled
+	// A rolling OS update rebinds undispatched submissions from the digest it replaced (ADR 0014).
+	previous, enabled string
+	paused            bool      // rollout holds requests while the hosts switch digests
+	capacity          *capacity // nil until the EC2 pool is enabled
 }
 
 type envelope struct {
@@ -35,13 +39,21 @@ var identity = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]
 // Invoked only through the IAM-protected Lambda API, never through the public API.
 func (b bridge) deploymentStatus(ctx context.Context) (any, error) {
 	status := struct {
-		Kind          string `json:"kind"`
-		Pending       int64  `json:"pending"`
-		Undispatched  int64  `json:"undispatched"`
-		RuntimeDigest string `json:"runtimeDigest"`
-	}{Kind: "judge-deployment-status", RuntimeDigest: b.runtime}
-	err := b.db.QueryRow(ctx, `SELECT COUNT(*), COUNT(*) FILTER (WHERE dispatched_at IS NULL)
-      FROM submissions WHERE runtime LIKE '%-isolate' AND status <> 'DONE'`).Scan(&status.Pending, &status.Undispatched)
+		Kind                  string `json:"kind"`
+		Pending               int64  `json:"pending"`
+		Undispatched          int64  `json:"undispatched"`
+		RuntimeDigest         string `json:"runtimeDigest"`
+		PreviousRuntimeDigest string `json:"previousRuntimeDigest"`
+		DispatchPaused        bool   `json:"dispatchPaused"`
+		// A rolling update must not change the environment within a contest (ADR 0014).
+		// The window matches the burst hold: 30 minutes before the start to 15 minutes after the end.
+		NextContestWindowAt *time.Time `json:"nextContestWindowAt"`
+	}{Kind: "judge-deployment-status", RuntimeDigest: b.runtime, PreviousRuntimeDigest: b.previous, DispatchPaused: b.paused}
+	err := b.db.QueryRow(ctx, `SELECT COUNT(*), COUNT(*) FILTER (WHERE dispatched_at IS NULL),
+      (SELECT MIN(c.starts_at-interval '30 minutes') FROM contests c
+        WHERE c.ends_at+interval '15 minutes' > statement_timestamp()
+          AND EXISTS (SELECT 1 FROM contest_participants p WHERE p.contest_id=c.id))
+      FROM submissions WHERE runtime LIKE '%-isolate' AND status <> 'DONE'`).Scan(&status.Pending, &status.Undispatched, &status.NextContestWindowAt)
 	if err != nil {
 		return nil, errors.New("deployment status unavailable")
 	}
