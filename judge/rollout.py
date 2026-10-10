@@ -436,22 +436,17 @@ def finish(config, directory, state, report_path):
 
 # A rolling update takes about two hours: one smoke on the first burst, the switch, and one smoke on the rest.
 ROLLING_HOLD = 6 * 3600
-SNAPSHOT_ID = re.compile(r'[0-9]{8}T[0-9]{6}Z')
 PACKAGE_LIST = "dpkg-query -W -f='${Package}=${Version}\\n'"
 
 
-def os_update_command(run_id, snapshot, expected_packages=None):
-    """Upgrade from a pinned archive snapshot, reboot through SSM (exit 194), then confirm the new kernel."""
-    if snapshot is not None and not SNAPSHOT_ID.fullmatch(snapshot):
-        raise ValueError('invalid APT snapshot ID')
+def os_update_command(run_id, expected_packages=None):
+    """Upgrade all packages, reboot through SSM (exit 194), then confirm the new kernel.
+
+    snapshot.ubuntu.com has no IPv6 address, so the IPv6-only hosts cannot pin an archive snapshot.
+    Hosts updated after the first must end with the same package list, checked before they reboot.
+    """
     if expected_packages is not None and not re.fullmatch('[a-f0-9]{64}', expected_packages):
         raise ValueError('invalid package list digest')
-    # A retry without a snapshot must not inherit the pin from an earlier attempt.
-    pin = '  rm -f /etc/apt/apt.conf.d/99judge-snapshot\n'
-    if snapshot is not None:
-        pin = '''  # install.sh also runs apt; it stays on this snapshot until the rollout removes the pin.
-  printf 'APT::Snapshot "%s";\\n' ''' + snapshot + ''' > /etc/apt/apt.conf.d/99judge-snapshot
-'''
     compare = ''
     if expected_packages is not None:
         compare = '''  if [ "$packages" != ''' + expected_packages + ''' ]; then
@@ -466,10 +461,13 @@ if [ ! -e "$state/boot-id" ]; then
   if systemctl is-active --quiet judge-worker.service || systemctl is-enabled --quiet judge-worker.service; then
     echo 'Stop and disable the worker before the OS update' >&2; exit 1
   fi
-''' + pin + '''  export DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1
+  # The first attempt on 2026-10-10 left a pin to the unreachable snapshot server.
+  rm -f /etc/apt/apt.conf.d/99judge-snapshot
+  export DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1
   # SSM keeps only the first 24,000 characters of output; the last line must report the package list.
+  # Without --error-on=any, apt-get update only warns on failed fetches and the upgrade sees stale indexes.
   # Phased updates depend on the machine ID; every host must select the same versions.
-  if ! { apt-get update && apt-get -y -o APT::Get::Never-Include-Phased-Updates=true \\
+  if ! { apt-get update --error-on=any && apt-get -y -o APT::Get::Never-Include-Phased-Updates=true \\
       -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold full-upgrade; } > "$state/apt.log" 2>&1; then
     tail -n 40 "$state/apt.log" >&2; exit 1
   fi
@@ -490,11 +488,10 @@ echo "packages=$(sha256sum < "$state/packages.txt" | cut -d ' ' -f1) kernel=$(un
 
 
 def seal_command(expected_digest=None):
-    """Drop the snapshot pin and print the fingerprinted digest, failing if it differs from the switched one."""
+    """Print the fingerprinted digest, failing if it differs from the switched one."""
     if expected_digest is not None and not re.fullmatch('sha256:[a-f0-9]{64}', expected_digest):
         raise ValueError('invalid runtime digest')
     return '''set -eu
-rm -f /etc/apt/apt.conf.d/99judge-snapshot
 PYTHONPATH=/opt/judge python3 - ''' + (expected_digest or '') + ''' <<'PY'
 import sys
 from host import verify_assets
@@ -588,7 +585,7 @@ def prepare_hosts(config, directory, state, nodes, label, expected_digest=None):
     """Update the OS on hosts with stopped workers, install or fingerprint, then smoke-test them."""
     first = expected_digest is None
     receipt = ssm_step(directory, 'os-' + label, config, nodes,
-                       lambda run_id: os_update_command(run_id, state['aptSnapshot'], None if first else state['packages']))
+                       lambda run_id: os_update_command(run_id, None if first else state['packages']))
     if first and 'packages' not in state:
         lines = command_output(receipt, nodes[0]).strip().splitlines()
         match = re.fullmatch(r'packages=([a-f0-9]{64}) kernel=(\S+)', lines[-1] if lines else '')
@@ -699,8 +696,7 @@ def rolling(config, directory, state):
             if bridge['JUDGE_RUNTIME_DIGEST'] != api.get('JUDGE_CPP_IMAGE') or \
                     sorted(api.get('JUDGE_ENABLED_RUNTIMES', '').split(',')) != sorted(config['runtimes']):
                 raise ValueError('API and bridge must publish the same digest and the approved runtimes before a rolling update')
-            snapshot = None if config.get('apt_snapshot') is False else time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
-            checkpoint(directory, state, 'hold-bursts', previousDigest=bridge['JUDGE_RUNTIME_DIGEST'], aptSnapshot=snapshot)
+            checkpoint(directory, state, 'hold-bursts', previousDigest=bridge['JUDGE_RUNTIME_DIGEST'])
         if 'alarm_actions' not in state:
             alarms = aws(region, 'cloudwatch', 'describe-alarms', '--alarm-names', *config['worker_alarms'])['MetricAlarms']
             state['alarm_actions'] = {a['AlarmName']: a['ActionsEnabled'] for a in alarms}

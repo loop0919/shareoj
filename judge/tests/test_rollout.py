@@ -385,7 +385,6 @@ class RollingTests(unittest.TestCase):
         self.assertEqual(state['step'], 'complete')
         self.assertEqual(state['previousDigest'], self.old)
         self.assertEqual(state['runtimeDigest'], self.new)
-        self.assertTrue(rollout.SNAPSHOT_ID.fullmatch(state['aptSnapshot']))
         self.assertIn(('ssm', 'hold-bursts', (self.first, self.other)), events)
         self.assertIn(('prepare', 'first', (self.first,), None), events)
         self.assertIn(('ssm', 'switch-stop', rest), events)
@@ -423,7 +422,7 @@ class RollingTests(unittest.TestCase):
         ssm.assert_not_called()
 
     def test_resumed_switch_does_not_pause_again(self):
-        state = dict(firstHost=self.first, previousDigest=self.old, aptSnapshot='20261010T000000Z', runtimeDigest=self.new,
+        state = dict(firstHost=self.first, previousDigest=self.old, runtimeDigest=self.new,
                      packages='c' * 64, alarm_actions={'alarm': False}, digestSwitched=True, dispatchPaused=True)
         state, events = self.run_rolling(state)
         self.assertEqual([e[1] for e in events if e[0] == 'dispatch'], [False])
@@ -443,20 +442,21 @@ class RollingTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         rollout.contest_guard({})
 
-    def test_host_scripts_parse_and_pin_one_snapshot(self):
-        script = rollout.os_update_command('a' * 32, '20261010T093000Z', 'c' * 64)
+    def test_host_scripts_parse_and_fail_on_stale_indexes(self):
+        script = rollout.os_update_command('a' * 32, 'c' * 64)
         subprocess.run(['bash', '-n'], input=script, text=True, check=True)
-        self.assertIn('APT::Snapshot "%s";\\n\' 20261010T093000Z', script)
+        # A failed index fetch is only a warning by default and would upgrade nothing.
+        self.assertIn('apt-get update --error-on=any &&', script)
         self.assertIn('Never-Include-Phased-Updates=true', script)
+        self.assertIn('rm -f /etc/apt/apt.conf.d/99judge-snapshot', script)
+        self.assertNotIn('APT::Snapshot', script)
         self.assertIn('exit 194', script)
         self.assertIn('c' * 64, script)
-        unpinned = rollout.os_update_command('a' * 32, None)
-        subprocess.run(['bash', '-n'], input=unpinned, text=True, check=True)
-        self.assertNotIn('APT::Snapshot', unpinned)
-        self.assertIn('rm -f /etc/apt/apt.conf.d/99judge-snapshot', unpinned)
-        for bad in ('20261010', '$(reboot)'):
-            with self.assertRaises(ValueError):
-                rollout.os_update_command('a' * 32, bad)
+        first = rollout.os_update_command('a' * 32)
+        subprocess.run(['bash', '-n'], input=first, text=True, check=True)
+        self.assertNotIn('packages differ', first)
+        with self.assertRaises(ValueError):
+            rollout.os_update_command('a' * 32, '$(reboot)')
         seal = rollout.seal_command(self.new)
         subprocess.run(['bash', '-n'], input=seal, text=True, check=True)
         compile(seal.split("<<'PY'\n", 1)[1].rsplit('\nPY\n', 1)[0], '<seal>', 'exec')
@@ -482,7 +482,7 @@ class RollingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as name, patch.object(rollout, 'ssm_step', side_effect=ssm_step), \
                 patch.object(rollout, 'run', side_effect=command), \
                 patch.object(rollout, 'command_output', return_value='apt output\npackages=' + 'c' * 64 + ' kernel=7.0.0-1014-aws\n'):
-            directory, state = Path(name), dict(aptSnapshot='20261010T093000Z', releaseSHA256='d' * 64)
+            directory, state = Path(name), dict(releaseSHA256='d' * 64)
             config = dict(region='test', bucket='bucket', release='worker.tar.gz', runtimes=['python314'])
             report_digest = self.new
             rollout.prepare_hosts(config, directory, state, [self.first], 'first')

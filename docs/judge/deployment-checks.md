@@ -132,9 +132,13 @@ bridgeは`bridge_package`の内容に更新されるため、`run`と同じく�
 開始前に全台のEBSスナップショットを作成し、`completed`になったことを確認する。
 スナップショットの作成と保持は`rolling`でも実行しない。
 
+事前確認の`terraform plan`は、CIと同じTerraform 1.16系でないと変数の検証で失敗する。
+リポジトリの開発環境（direnvまたは`nix develop`）の中で実行する。
+2026-10-10の初回は開発環境の外の古いTerraformを使い、事前確認で止まった。
+
 ```sh
 export JUDGE_RELEASE_RUN="judge/.build/rolling-$(date -u +%Y%m%dT%H%M%SZ)"
-nohup python3 judge/rollout.py rolling --config judge/.build/rollout.json \
+nohup nix develop . --command python3 judge/rollout.py rolling --config judge/.build/rollout.json \
   --run-dir "$JUDGE_RELEASE_RUN" > "$JUDGE_RELEASE_RUN.log" 2>&1 < /dev/null &
 ```
 
@@ -145,19 +149,22 @@ t3.smallの3台では、smokeを2回含めて2時間程度かかる。
 ### 処理の順序
 
 1. 全台を起動して保守用の保持期限を6時間にし、全burstのワーカーを止めて無効にする。primaryは旧digestで採点を続ける。
-2. 名前順で最初のburstを更新する。APTを開始時刻のスナップショット（`aptSnapshot`）に固定して`full-upgrade`し、SSMの終了コード194で再起動する。配布物の導入または指紋の再作成の後、全言語のsmokeを通して新しいdigestを得る。
+2. 名前順で最初のburstを更新する。`apt-get update --error-on=any`の後に`full-upgrade`し、SSMの終了コード194で再起動する。配布物の導入または指紋の再作成の後、全言語のsmokeを通して新しいdigestを得る。
 3. 参加者のいるコンテストの期間（開始30分前から終了15分後）が`rolling_guard_hours`（既定4時間）以内に始まらないことを確かめる。
 4. bridgeの送り出しを一時停止（`JUDGE_DISPATCH_PAUSED`）し、処理中の提出が終わって要求キューが空になるのを待つ。primaryと残りのburstのワーカーを止める。
 5. bridgeの`JUDGE_RUNTIME_DIGEST`を新しい値、`JUDGE_PREVIOUS_RUNTIME_DIGEST`を直前の値にし、APIの`JUDGE_CPP_IMAGE`を新しい値にする。準備したburstへ`JudgeInstalledDigest`を付けてワーカーを起動し、送り出しを再開する。
 6. CI変数とTerraformの入力（`previous_runtime_digest`を含む）を同期し、準備したburstだけで本番APIテストを通す。
-7. primaryと残りのburstを同じスナップショットで更新する。パッケージ一覧が最初の台と違えば、再起動する前に止まる。指紋が切り替えたdigestと一致することを確かめ、smokeを通してから起動する。
+7. primaryと残りのburstを同じ手順で更新する。パッケージ一覧が最初の台と違えば、再起動する前に止まる。指紋が切り替えたdigestと一致することを確かめ、smokeを通してから起動する。
 8. 全台の健全性と、2台の同時採点を含む本番APIテストを通す。Terraformを`refresh-only`で同期し、保持期限を15分に縮める。
 
 送り出しを止めている間も提出は受け付け、採点待ちとして溜まる。
 切り替え前のdigestで作られた未送出の提出は、新しい環境で公開中の言語に限ってbridgeが付け替える。
 それ以外のdigestの提出は、従来どおりJEにする。
-APTのスナップショットに届かない場合は、`rollout.json`に`"apt_snapshot": false`を指定する。
-その場合も、パッケージ一覧の一致とdigestの一致は確かめる。
+採点台はIPv6専用で、IPv6のアドレスを持たないsnapshot.ubuntu.comには届かない。
+そのためAPTのスナップショットで時点を固定せず、後の台のパッケージ一覧が最初の台と一致することで版をそろえる。
+`apt-get update`は一覧の取得に失敗しても警告だけで成功を返し、古い一覧のまま何も更新しないため、`--error-on=any`で失敗として扱う。
+最初の台と残りの台の更新の間（1時間程度）にパッケージが公開されると一致しない。
+その場合は再起動前に止まるので、準備したburstが採点を続けている間に原因を確かめ、全台をそろえる配布をやり直す。
 
 ### 失敗時の操作
 
