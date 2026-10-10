@@ -453,6 +453,7 @@ class RollingTests(unittest.TestCase):
         unpinned = rollout.os_update_command('a' * 32, None)
         subprocess.run(['bash', '-n'], input=unpinned, text=True, check=True)
         self.assertNotIn('APT::Snapshot', unpinned)
+        self.assertIn('rm -f /etc/apt/apt.conf.d/99judge-snapshot', unpinned)
         for bad in ('20261010', '$(reboot)'):
             with self.assertRaises(ValueError):
                 rollout.os_update_command('a' * 32, bad)
@@ -497,3 +498,17 @@ class RollingTests(unittest.TestCase):
             host['runtimeDigest'] = report_digest
             with self.assertRaises(ValueError):
                 rollout.prepare_hosts(config, directory, state, [self.primary, self.other], 'again', expected_digest=self.new)
+
+    def test_api_smoke_requires_concurrency_only_with_several_hosts(self):
+        calls = []
+        def command(*args):
+            calls.append(args)
+            Path(args[args.index('--report') + 1]).write_text('{"status":"passed"}')
+            return ''
+        config = dict(region='test', api='api', api_url='https://test.invalid', smoke_runtime='python314', runtimes=['python314'])
+        for nodes in ([self.first], [self.first, self.primary]):
+            catalog = io.BytesIO(b'{"maintenance":false,"items":[{"id":"python314"}]}')
+            with tempfile.TemporaryDirectory() as name, patch.object(rollout, 'run', side_effect=command), \
+                    patch.object(rollout.urllib.request, 'urlopen', return_value=catalog):
+                rollout.api_smoke(config, Path(name), nodes)
+        self.assertEqual([[a[i + 1] for i, arg in enumerate(a) if arg == '--instance'] for a in calls], [[], [self.first, self.primary]])

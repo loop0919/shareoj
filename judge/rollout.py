@@ -446,7 +446,8 @@ def os_update_command(run_id, snapshot, expected_packages=None):
         raise ValueError('invalid APT snapshot ID')
     if expected_packages is not None and not re.fullmatch('[a-f0-9]{64}', expected_packages):
         raise ValueError('invalid package list digest')
-    pin = ''
+    # A retry without a snapshot must not inherit the pin from an earlier attempt.
+    pin = '  rm -f /etc/apt/apt.conf.d/99judge-snapshot\n'
     if snapshot is not None:
         pin = '''  # install.sh also runs apt; it stays on this snapshot until the rollout removes the pin.
   printf 'APT::Snapshot "%s";\\n' ''' + snapshot + ''' > /etc/apt/apt.conf.d/99judge-snapshot
@@ -466,10 +467,12 @@ if [ ! -e "$state/boot-id" ]; then
     echo 'Stop and disable the worker before the OS update' >&2; exit 1
   fi
 ''' + pin + '''  export DEBIAN_FRONTEND=noninteractive NEEDRESTART_SUSPEND=1
-  apt-get update
+  # SSM keeps only the first 24,000 characters of output; the last line must report the package list.
   # Phased updates depend on the machine ID; every host must select the same versions.
-  apt-get -y -o APT::Get::Never-Include-Phased-Updates=true \\
-    -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold full-upgrade
+  if ! { apt-get update && apt-get -y -o APT::Get::Never-Include-Phased-Updates=true \\
+      -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold full-upgrade; } > "$state/apt.log" 2>&1; then
+    tail -n 40 "$state/apt.log" >&2; exit 1
+  fi
   LC_ALL=C ''' + PACKAGE_LIST + ''' > "$state/packages.txt"
   packages=$(sha256sum < "$state/packages.txt" | cut -d ' ' -f1)
 ''' + compare + '''  cat /proc/sys/kernel/random/boot_id > "$state/boot-id"
@@ -624,6 +627,7 @@ def start_workers(verification):
 
 
 def api_smoke(config, directory, nodes):
+    """Judge through the public API; with two or more hosts, also require concurrent judging."""
     with urllib.request.urlopen(config['api_url'].rstrip('/') + '/runtimes', timeout=30) as response:
         catalog = json.load(response)
     if catalog['maintenance'] or sorted(item['id'] for item in catalog['items']) != sorted(config['runtimes']):
@@ -631,7 +635,7 @@ def api_smoke(config, directory, nodes):
     report = directory / ('api-' + str(time.time_ns()) + '.json')
     run(sys.executable, 'judge/smoke-api.py', '--function', config['api'], '--api-url', config['api_url'],
         '--region', config['region'], '--runtime', config['smoke_runtime'], '--report', str(report),
-        *[option for node in nodes for option in ('--instance', node)])
+        *[option for node in nodes if len(nodes) > 1 for option in ('--instance', node)])
     if json.loads(report.read_text())['status'] != 'passed':
         raise ValueError('API smoke did not pass')
     return report
