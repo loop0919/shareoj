@@ -49,6 +49,7 @@ defineProps<{ kind: 'problem' | 'testcase' | 'testing' | 'post' | 'contest' | 's
     </svg>
     <p class="empty-state-title">{{ title }}</p>
     <p v-if="description" class="empty-state-description">{{ description }}</p>
+    <div v-if="$slots.default" class="empty-state-actions"><slot /></div>
   </div>
 </template>
 
@@ -67,4 +68,5 @@ svg { width: 120px; height: 120px; margin-bottom: 16px; overflow: visible; }
 @media (max-height: 32rem) { .empty-state { padding-block: 16px 24px; } svg { width: 72px; height: 72px; margin-bottom: 8px; } }
 .empty-state-title { margin: 0; color: var(--color-ink); font-weight: 600; }
 .empty-state-description { max-width: 36rem; margin: 4px 0 0; color: var(--color-muted); font-size: .8125rem; line-height: 1.7; }
+.empty-state-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 20px; }
 </style>
