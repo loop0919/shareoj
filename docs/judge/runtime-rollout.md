@@ -237,6 +237,25 @@ EC2の採点台では、2026年10月10日から`judge/rollout.py rolling`でOS�
 上の手順の受付停止、更新、再起動、指紋の再作成、全smoke、digestの反映は、このサブコマンドがまとめて行う。
 手順は[配布と検証の定型コマンド](deployment-checks.md#os更新はローリング更新で配布する)にある。
 
+### 2026年10月10日のローリング更新
+
+初回の`rolling`で、OSのセキュリティ更新と、digestの違う提出を戻して止まるworkerを3台へ配布した。
+提出の受付は止めず、採点が止まったのは旧workerの停止から準備したburstの起動までの約5分だった。
+
+| 項目 | 値 |
+| --- | --- |
+| 実行ディレクトリ | `judge/.build/rolling-20261010T075443Z` |
+| カーネル | `7.0.0-1013-aws` → `7.0.0-1014-aws` |
+| runtime digest | `sha256:4485aef2…` → `sha256:de2388f5f5c815c8e23df1fa7d5994ff0ba0325e1b92a369f1df28c3131b1026` |
+| 配布物SHA-256 | `544431144986c58d6e3155c2cd64f274a680f6d3150d992e473edbc697a9a324` |
+| 開始前のEBSスナップショット | primary `snap-0cf6b109df7f90bb1`、burst-1 `snap-0baab857f48df4ba0`、burst-2 `snap-0457c87c24a166e6c` |
+
+最初の実行（`rolling-20261010T074154Z`）は切り替えの前に中止した。
+APTをsnapshot.ubuntu.comに固定したが、IPv6のアドレスがなく一覧を取得できなかった。
+`apt-get update`が警告だけで成功を返したため、`full-upgrade`は何も更新せずに次の段階へ進んでいた。
+これを受けて、スナップショットの固定をやめ、`--error-on=any`で取得の失敗を止めるようにした。
+2回目の実行では、残りの台の更新中にSSOの認証が切れて回収が止まり、再ログインの後に同じ実行ディレクトリで再開した。
+
 ## 2026年9月12日の実施記録
 
 workerを再構築し、再起動後のSSM Run CommandとSession Manager接続を確認した。
