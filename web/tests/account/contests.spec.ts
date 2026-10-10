@@ -38,7 +38,7 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   await expect(page.locator('.contest-preview')).toContainText('開催案内')
   // Publishing from another section reveals the missing field instead of focusing a hidden input.
   await page.getByRole('button', { name: 'コンテストを公開', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'コンテスト設定', exact: true })).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByRole('button', { name: '期間・ペナルティ', exact: true })).toHaveAttribute('aria-current', 'page')
   await expect(page.getByLabel('開始日時')).toBeFocused()
   await expect(page.getByLabel('誤答ペナルティ（分）')).toHaveValue('5')
   await page.getByLabel('開始日時').fill(localDate(Date.now() + 86400000))
@@ -62,7 +62,7 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   await page.screenshot({ path: testInfo.outputPath('contest-editor-desktop.png'), fullPage: true })
   for (const width of [320, 375, 414, 768]) {
     await page.setViewportSize({ width, height: 900 })
-    for (const name of ['タイトル・説明', '問題・配点', 'コンテスト設定']) {
+    for (const name of ['タイトル・説明', '問題・配点', '期間・ペナルティ', 'コンテスト管理']) {
       await page.getByRole('button', { name, exact: true }).click()
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
       if (width === 375) await page.screenshot({ path: testInfo.outputPath(`contest-${name}-mobile.png`), fullPage: true })
@@ -143,7 +143,7 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight)).toBe(true)
     await page.screenshot({ path: testInfo.outputPath(`contest-edit-navigation-${width}.png`), fullPage: true })
   }
-  await page.getByRole('button', { name: 'コンテスト設定', exact: true }).click()
+  await page.getByRole('button', { name: '期間・ペナルティ', exact: true }).click()
   await page.getByLabel('誤答ペナルティ（分）').fill('0')
   await page.getByRole('button', { name: '変更を保存' }).click()
   await expect(page.getByText('誤答ペナルティ 0 分 · 部分点なし')).toBeVisible()
@@ -213,19 +213,24 @@ test('an incomplete contest saves as a private draft and publishes once the serv
   const guest = await browser.newContext({ baseURL: origin })
   expect((await guest.request.get(`/api/contests/${id}`)).status()).toBe(404)
   expect(await (await guest.request.get('/api/contests')).text()).not.toContain(id)
-  // Publication reports what the server still needs and opens the section to fix it.
-  await page.getByRole('button', { name: 'コンテスト設定', exact: true }).click()
+  // Publication lists what the server still needs in コンテスト管理, each with a way to its section.
+  await page.getByRole('button', { name: '期間・ペナルティ', exact: true }).click()
   await page.getByLabel('開始日時').fill(localDate(Date.now() + 86400000))
   await page.getByLabel('コンテスト時間（分）').fill('90')
   await expect(page.getByText(/^終了日時 .+（1時間30分）$/)).toBeVisible()
   await page.getByRole('button', { name: 'コンテストを公開', exact: true }).click()
-  await expect(page.getByRole('alert')).toContainText('問題を1問以上選んでください')
+  await expect(page.getByRole('button', { name: 'コンテスト管理', exact: true })).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByRole('alert')).toHaveText('公開するには、次の項目を直して保存してください。')
+  const missing = page.getByRole('list', { name: '足りない項目', exact: true })
+  await expect(missing.getByRole('listitem')).toHaveText([/問題を1問以上選んでください/])
+  await expect(page.getByText('×公開できません（1 項目）', { exact: true })).toBeVisible()
+  await missing.getByRole('button', { name: '問題・配点を開く', exact: true }).click()
   await expect(page.getByRole('button', { name: '問題・配点', exact: true })).toHaveAttribute('aria-current', 'page')
   expect((await guest.request.get(`/api/contests/${id}`)).status()).toBe(404)
   // The saved draft survives a reload and appears only in the author's list.
   await page.reload()
   await expect(title).toHaveValue('作成途中のコンテスト')
-  await page.getByRole('button', { name: 'コンテスト設定', exact: true }).click()
+  await page.getByRole('button', { name: '期間・ペナルティ', exact: true }).click()
   await expect(page.getByLabel('コンテスト時間（分）')).toHaveValue('90')
   await page.goto('/my?tab=contests')
   const drafts = page.getByRole('region', { name: 'コンテストの下書き', exact: true })
@@ -243,6 +248,17 @@ test('an incomplete contest saves as a private draft and publishes once the serv
   expect((await page.request.get(`/api/my/contests/${id}/draft`)).status()).toBe(404)
   await page.goto('/my?tab=contests')
   await expect(page.getByRole('link', { name: '作成途中のコンテスト', exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'コンテストの下書き', exact: true })).toHaveCount(0)
+  // コンテスト管理 shows a saved draft's state and deletes it.
+  await page.goto('/my/contests/new')
+  await title.fill('消す下書き')
+  await page.getByRole('button', { name: '下書きを保存', exact: true }).click()
+  await expect(page).toHaveURL(/\?contest=/)
+  await page.getByRole('button', { name: 'コンテスト管理', exact: true }).click()
+  await expect(page.getByRole('list', { name: '足りない項目', exact: true }).getByRole('listitem')).toHaveText([/開始日時を入力してください/, /問題を1問以上選んでください/])
+  page.once('dialog', dialog => dialog.accept())
+  await page.getByRole('button', { name: '下書きを削除', exact: true }).click()
+  await expect(page).toHaveURL('/my?tab=contests')
   await expect(page.getByRole('region', { name: 'コンテストの下書き', exact: true })).toHaveCount(0)
   await guest.close()
 })

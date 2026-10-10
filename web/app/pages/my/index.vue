@@ -14,7 +14,7 @@ const joined = computed(() => profile.value ? new Date(profile.value.createdAt).
     <header class="profile-header">
       <UserAvatar :handle="profile.handle" :avatar="profile.avatar" :size="88" />
       <div class="profile-identity"><p class="eyebrow">マイページ</p><h1>{{ profile.handle }}</h1><p class="muted">{{ joined }}に登録</p></div>
-      <div class="profile-actions"><NuxtLink class="editor-button" :to="`/users/${encodeURIComponent(profile.handle)}`" title="ほかのユーザーから見えるページ">公開ページを見る</NuxtLink><NuxtLink class="editor-button" to="/my/settings">プロフィールを編集</NuxtLink></div>
+      <div class="profile-actions"><NuxtLink class="editor-button" :to="`/users/${encodeURIComponent(profile.handle)}`" title="ほかのユーザーから見えるページ">公開ページを見る</NuxtLink></div>
     </header>
     <ProfileAccounts :accounts="profile.accounts" />
     <nav class="content-menu" aria-label="マイページのコンテンツ">

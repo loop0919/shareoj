@@ -28,7 +28,7 @@ const published = ref(false)
 const draftIssues = ref<string[]>([])
 const showIssues = ref(false)
 const timezone = ref('')
-type Section = 'description' | 'problems' | 'settings'
+type Section = 'description' | 'problems' | 'schedule' | 'manage'
 const section = ref<Section>('description')
 const sidebarExpanded = ref(false)
 const form = ref<HTMLFormElement>()
@@ -55,17 +55,18 @@ const endLabel = computed(() => endsAt.value
   : '開始日時とコンテスト時間を入力すると、終了日時を表示します。')
 const issueGuide: Record<string, [string, Section]> = {
   title_missing: ['コンテストタイトルを入力してください', 'description'],
-  start_missing: ['開始日時を入力してください', 'settings'],
-  start_past: ['開始日時を現在より後にしてください', 'settings'],
-  duration_invalid: ['コンテスト時間を1分以上の整数で入力してください', 'settings'],
-  penalty_invalid: ['誤答ペナルティを0〜1440分の整数で入力してください', 'settings'],
+  start_missing: ['開始日時を入力してください', 'schedule'],
+  start_past: ['開始日時を現在より後にしてください', 'schedule'],
+  duration_invalid: ['コンテスト時間を1分以上の整数で入力してください', 'schedule'],
+  penalty_invalid: ['誤答ペナルティを0〜1440分の整数で入力してください', 'schedule'],
   problems_missing: ['問題を1問以上選んでください', 'problems'],
   points_invalid: ['配点を1〜1,000,000点の整数で入力してください', 'problems'],
   problem_unavailable: ['公開済み・削除済み・他のコンテストに登録済みの問題を外してください', 'problems'],
   problem_incomplete: ['難易度やテストケースなど、コンテストの条件を満たしていない問題があります', 'problems'],
 }
 const issueText = (code: string) => issueGuide[code]?.[0] ?? `確認が必要な項目があります（${code}）`
-function openIssue(code: string) { section.value = issueGuide[code]?.[1] ?? section.value }
+const sectionNames: Record<Section, string> = { description: 'タイトル・説明', problems: '問題・配点', schedule: '期間・ペナルティ', manage: 'コンテスト管理' }
+const issueSection = (code: string): Section => issueGuide[code]?.[1] ?? 'manage'
 const snapshot = () => JSON.stringify([title.value, description.value, startsAt.value, durationMinutes.value, penaltyMinutes.value, selected.value])
 const saved = ref('')
 let leaving = false
@@ -264,7 +265,8 @@ async function saveDraft() {
 }
 async function publish() {
   if (busy.value || !ready.value || locked.value || !await reportInvalid() || !await saveDraft()) return
-  if (draftIssues.value.length) { showIssues.value = true; openIssue(draftIssues.value[0]!); return }
+  // The management section lists every missing item next to a button that opens its section.
+  if (draftIssues.value.length) { showIssues.value = true; section.value = 'manage'; return }
   if (!window.confirm('コンテストを公開しますか？コンテスト一覧に表示され、参加登録を受け付けます。開始前なら内容を変更できます。')) return
   busy.value = true
   try {
@@ -297,7 +299,7 @@ async function save() {
   }
   const start = new Date(startsAt.value), end = endsAt.value
   if (!Number.isFinite(start.getTime()) || start.getTime() <= Date.now() || !end) {
-    section.value = 'settings'; message.value = '未来の開始日時と、1分以上のコンテスト時間を指定してください。'; return
+    section.value = 'schedule'; message.value = '未来の開始日時と、1分以上のコンテスト時間を指定してください。'; return
   }
   busy.value = true; message.value = ''
   try {
@@ -335,12 +337,12 @@ async function save() {
         <nav id="contest-section-nav" class="editor-section-nav" aria-label="コンテスト作成メニュー">
           <button type="button" class="editor-button editor-sidebar-item" :aria-current="section === 'description' ? 'page' : undefined" aria-label="タイトル・説明" title="タイトル・説明" @click="section = 'description'"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H5v20h14V7Zm0 0v5h5M8 12h8M8 16h6" /></svg><span class="editor-sidebar-label">タイトル・説明</span></button>
           <button type="button" class="editor-button editor-sidebar-item" :aria-current="section === 'problems' ? 'page' : undefined" aria-label="問題・配点" title="問題・配点" @click="section = 'problems'"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 6 2 2 3-4m-5 9 2 2 3-4m-5 9 2 2 3-4M12 6h9M12 13h9M12 20h9" /></svg><span class="editor-sidebar-label">問題・配点</span></button>
-          <button type="button" class="editor-button editor-sidebar-item" :aria-current="section === 'settings' ? 'page' : undefined" aria-label="コンテスト設定" title="コンテスト設定" @click="section = 'settings'"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg><span class="editor-sidebar-label">コンテスト設定</span></button>
+          <button type="button" class="editor-button editor-sidebar-item" :aria-current="section === 'schedule' ? 'page' : undefined" aria-label="期間・ペナルティ" title="期間・ペナルティ" @click="section = 'schedule'"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg><span class="editor-sidebar-label">期間・ペナルティ</span></button>
+          <button type="button" class="editor-button editor-sidebar-item" :aria-current="section === 'manage' ? 'page' : undefined" aria-label="コンテスト管理" title="コンテスト管理" @click="section = 'manage'"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3 .6-2h4.8l.6 2 2 1.2 2.1-.5 2.4 4.2-1.5 1.5v2.3l1.5 1.5-2.4 4.2-2.1-.5-2 1.2-.6 2H9l-.6-2-2-1.2-2.1.5-2.4-4.2 1.5-1.5V9.4L1.9 7.9l2.4-4.2 2.1.5Z" transform="translate(0 1)" /><circle cx="12" cy="12" r="3" /></svg><span class="editor-sidebar-label">コンテスト管理</span></button>
         </nav>
       </aside>
       <form id="contest-form" ref="form" class="editor-main" novalidate @submit.prevent="save">
-        <div class="editor-notices"><p v-if="message" class="editor-error" role="alert">{{ message }}</p>
-          <div v-if="showIssues && draftIssues.length" class="editor-error publish-issues" role="alert"><p>公開するには、次の項目を直して保存してください。</p><ul><li v-for="code in draftIssues" :key="code"><button type="button" @click="openIssue(code)">{{ issueText(code) }}</button></li></ul></div><noscript><p class="editor-error">編集と保存には JavaScript を有効にしてください。</p></noscript></div>
+        <div class="editor-notices"><p v-if="message" class="editor-error" role="alert">{{ message }}</p><noscript><p class="editor-error">編集と保存には JavaScript を有効にしてください。</p></noscript></div>
         <div v-show="section === 'description'" class="author-edit-content" data-section="description">
           <div class="author-fields"><div class="title-field"><div class="field-heading"><label for="contest-title">コンテストタイトル</label></div><input id="contest-title" v-model="title" required maxlength="120" placeholder="コンテストのタイトル" :disabled="!ready || locked || busy"></div></div>
     <div ref="workspace" class="author-workspace" :class="{ 'is-resizing': resizing }" :data-mode="mode" :style="{ '--editor-left': `${splitPercent}fr`, '--editor-right': `${100 - splitPercent}fr` }">
@@ -407,19 +409,37 @@ async function save() {
             <p class="selection-note muted">問題の保存内容は、開始後もコンテストに自動で反映されます。更新後の提出から新しい内容で採点し、受付済みの提出は再採点しません。</p>
           </div>
         </section>
-        <section v-show="section === 'settings'" class="problem-management" data-section="settings" aria-labelledby="contest-settings-title">
+        <section v-show="section === 'schedule'" class="problem-management" data-section="schedule" aria-labelledby="contest-schedule-title">
           <div class="management-content">
-            <header><h2 id="contest-settings-title">コンテスト設定</h2><p class="muted">開催時間と誤答ペナルティを設定します。</p></header>
+            <header><h2 id="contest-schedule-title">期間・ペナルティ</h2><p class="muted">開催時間と誤答ペナルティを設定します。</p></header>
             <fieldset :disabled="!ready || locked || busy">
               <section class="settings-section"><h3>開催時間</h3><p class="muted">日時は {{ timezone || '端末のタイムゾーン' }} で入力します。公開ページでは日本時間で表示します。</p>
                 <div class="dates"><div><label for="contest-start">開始日時</label><input id="contest-start" v-model="startsAt" type="datetime-local" required></div><div><label for="contest-duration">コンテスト時間（分）</label><input id="contest-duration" v-model.number="durationMinutes" type="number" required min="1" :max="maxDurationMinutes" step="1"></div></div>
                 <p class="muted end-time">{{ endLabel }}</p>
               </section>
               <section class="settings-section"><h3>誤答ペナルティ</h3><p class="muted">正解した問題の、初回正解前の誤答だけに加算します。コンパイルエラーは対象外です。</p><label for="contest-penalty">誤答ペナルティ（分）</label><input id="contest-penalty" v-model.number="penaltyMinutes" type="number" required min="0" max="1440" step="1"><p class="muted penalty-note">0分でペナルティなしにできます。</p></section>
-              <section v-if="!published && version" class="settings-section"><h3>下書きの削除</h3><p class="muted">この下書きを削除します。この操作は取り消せません。</p><button type="button" class="editor-button danger" @click="removeDraft">下書きを削除</button></section>
             </fieldset>
-            <p v-if="!published" class="muted draft-note">公開するまで、このコンテストは自分だけが見られる下書きです。内容が揃っていなくても保存でき、「公開」で条件を確かめてからコンテスト一覧に載せます。</p>
             <p class="muted">開始後は問題セット・配点・開催期間・ペナルティを変更できません。問題と解説は終了後に自動公開されます。</p>
+          </div>
+        </section>
+        <section v-show="section === 'manage'" class="problem-management" data-section="manage" aria-labelledby="contest-manage-title">
+          <div class="management-content">
+            <header><h2 id="contest-manage-title">コンテスト管理</h2><p class="manage-problem-title">{{ title.trim() || '無題のコンテスト' }}</p><p class="muted">{{ published ? '公開済み（開催予定）' : '下書き（未公開）' }}</p></header>
+            <section class="management-row readiness-row" aria-labelledby="contest-readiness-title"><div>
+              <h3 id="contest-readiness-title">状態</h3>
+              <p v-if="published">公開済みです。開始前なら内容を変更でき、保存すると公開ページに反映されます。</p>
+              <p v-else-if="!version">保存すると、公開できるかを確認できます。</p>
+              <template v-else>
+                <p v-if="showIssues && draftIssues.length" class="editor-error" role="alert">公開するには、次の項目を直して保存してください。</p>
+                <div class="readiness-heading"><span class="readiness-badge" :data-ready="!draftIssues.length">{{ draftIssues.length ? `×公開できません（${draftIssues.length} 項目）` : '✅公開できます' }}</span><span>{{ dirty ? '保存済みの内容で判定しています。未保存の変更は含みません' : '保存済みの内容で判定しています' }}</span></div>
+                <ul v-if="draftIssues.length" class="readiness-issues" aria-label="足りない項目">
+                  <li v-for="code in draftIssues" :key="code"><span>{{ issueText(code) }}</span><button type="button" class="editor-button" @click="section = issueSection(code)">{{ sectionNames[issueSection(code)] }}を開く</button></li>
+                </ul>
+              </template>
+            </div></section>
+            <section v-if="!published" class="management-row"><div><h3>公開</h3><p>公開するまで、このコンテストは自分だけが見られる下書きです。公開すると、保存した内容で条件を確かめてからコンテスト一覧に載せ、参加登録を受け付けます。</p></div><button type="button" class="editor-button primary" :disabled="!ready || locked || busy" @click="publish">公開する</button></section>
+            <section v-else class="management-row"><div><h3>公開ページ</h3><p>参加者に見える内容を確認できます。</p><NuxtLink :to="`/contests/${id}`" target="_blank">公開ページを見る</NuxtLink></div></section>
+            <section v-if="!published && version" class="management-row"><div><h3>下書きの削除</h3><p>この下書きを削除します。この操作は取り消せません。</p></div><button type="button" class="editor-button danger" :disabled="busy" @click="removeDraft">下書きを削除</button></section>
           </div>
         </section>
       </form>
@@ -478,10 +498,16 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .settings-section label { display: block; margin-bottom: 8px; }
 .dates { display: grid; gap: 20px; }
 .penalty-note, .end-time { margin-top: 8px; }
-.draft-note { margin-bottom: 8px; }
-.publish-issues p { margin: 0 0 4px; }
-.publish-issues ul { margin: 0; padding-left: 20px; }
-.publish-issues button { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.management-row h3 { margin: 0 0 4px; }
+.readiness-row > div { display: grid; flex: 1; gap: 8px; min-width: 0; }
+.readiness-row .editor-error { margin: 0; color: var(--color-ink); }
+.readiness-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.readiness-heading > span:last-child { color: var(--color-muted); font-size: .8125rem; }
+.readiness-badge { padding: 2px 8px; border: 1px solid currentColor; border-radius: 4px; color: var(--color-error); font-size: .8125rem; font-weight: 600; }
+.readiness-badge[data-ready="true"] { color: var(--color-accent); }
+.readiness-issues { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.readiness-issues li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; border: 1px solid var(--color-line); border-radius: 4px; font-size: .875rem; }
+.readiness-issues li > span { min-width: 0; overflow-wrap: anywhere; }
 @media (min-width: 48rem) { .selected li { grid-template-columns: var(--handle-size) 1.5rem minmax(0, 1fr) auto; grid-template-areas: "handle label body controls"; } }
 @media (prefers-reduced-motion: reduce) { .selected[data-dragging] li { transition: none; } }
 @media (min-width: 60rem) { .dates { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

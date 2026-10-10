@@ -42,7 +42,9 @@ test('new users must choose an ID, upload an icon, and can edit their persisted 
   expect(stored.profile.avatar).toMatch(/^data:image\/png;base64,/)
   expect((await page.request.put('/api/my/profile', { headers: { origin: 'https://attacker.example' }, data: { handle: 'attacker', version: 1, avatar: '' } })).status()).toBe(403)
   await page.setViewportSize({ width: 320, height: 740 })
-  await page.getByRole('link', { name: 'プロフィールを編集' }).click()
+  await expect(page.getByRole('link', { name: 'プロフィールを編集' })).toHaveCount(0)
+  await page.locator('.site-header').getByRole('button', { name: 'アカウントメニュー', exact: true }).click()
+  await page.getByRole('navigation', { name: 'アカウント', exact: true }).getByRole('link', { name: '設定', exact: true }).click()
   await page.screenshot({ path: testInfo.outputPath('profile-settings-mobile.png'), fullPage: true })
   // Settings keep each part on its own tab and stay on the page after saving.
   await expect(page).toHaveURL('/my/settings')
