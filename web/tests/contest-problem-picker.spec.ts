@@ -54,6 +54,23 @@ test('contest problems are found by fuzzy title or UUID and added to the end of 
   await expect(selected.locator('.problem-label')).toHaveText(['A', 'B'])
   await expect(selected.locator('strong')).toHaveText(['Range Sum Query', '最短経路の数え上げ'])
   await expect(page.getByRole('heading', { name: /出題順・配点/ })).toContainText('2 問 · 合計 200 点')
+  // The handle moves a row with the arrow keys and keeps focus on the moved row.
+  const titles = selected.locator('strong')
+  await page.getByRole('button', { name: '最短経路の数え上げを並べ替え', exact: true }).press('ArrowUp')
+  await expect(titles).toHaveText(['最短経路の数え上げ', 'Range Sum Query'])
+  await expect(page.getByRole('button', { name: '最短経路の数え上げを並べ替え', exact: true })).toBeFocused()
+  await expect(page.getByText('最短経路の数え上げをAに移動しました', { exact: true })).toBeAttached()
+  // Dragging the handle carries the row; the order changes only when it is dropped.
+  const handle = (await page.getByRole('button', { name: 'Range Sum Queryを並べ替え', exact: true }).boundingBox())!
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(handle.x + handle.width / 2, handle.y - 120, { steps: 6 })
+  await expect(page.locator('.selected li.dragging')).toContainText('Range Sum Query')
+  await expect(selected.locator('.problem-label')).toHaveText(['B', 'A'])
+  await expect(titles).toHaveText(['最短経路の数え上げ', 'Range Sum Query'])
+  await page.mouse.up()
+  await expect(page.locator('.selected li.dragging')).toHaveCount(0)
+  await expect(titles).toHaveText(['Range Sum Query', '最短経路の数え上げ'])
   for (const width of [320, 375, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)

@@ -79,10 +79,74 @@ function addFirstCandidate() {
   if (p) { add(p); query.value = '' }
 }
 function remove(index: number) { selected.value.splice(index, 1) }
-function move(index: number, delta: number) {
-  const item = selected.value.splice(index, 1)[0]
-  if (item) selected.value.splice(index + delta, 0, item)
+function move(from: number, to: number) {
+  const item = selected.value.splice(from, 1)[0]
+  if (!item) return
+  selected.value.splice(to, 0, item)
+  reorderStatus.value = `${problemName(item.title)}を${problemLabel(to)}に移動しました`
 }
+// Rows keep their layout while dragging: the others slide by the dragged row's height, and the order changes on drop.
+const list = ref<HTMLOListElement>()
+const reorderStatus = ref('')
+const drag = ref<{ from: number, to: number, startY: number, y: number, clientY: number, height: number, mids: number[] } | null>(null)
+let scrollFrame = 0
+const listY = (clientY: number) => clientY - list.value!.getBoundingClientRect().top
+function startDrag(event: PointerEvent, index: number) {
+  const handle = event.currentTarget as HTMLElement
+  if (event.button !== 0 || handle.matches(':disabled') || !list.value) return
+  event.preventDefault()
+  handle.setPointerCapture(event.pointerId)
+  const rows = [...list.value.children] as HTMLElement[], y = listY(event.clientY)
+  drag.value = { from: index, to: index, startY: y, y, clientY: event.clientY, height: rows[index]!.offsetHeight, mids: rows.map(row => row.offsetTop + row.offsetHeight / 2) }
+  scrollFrame = requestAnimationFrame(autoScroll)
+}
+function updateDrag(clientY: number) {
+  const d = drag.value
+  if (!d) return
+  d.clientY = clientY
+  d.y = listY(clientY)
+  const center = d.mids[d.from]! + d.y - d.startY
+  d.to = d.mids.filter((mid, i) => i !== d.from && mid < center).length
+}
+function endDrag(commit: boolean) {
+  const d = drag.value
+  if (!d) return
+  cancelAnimationFrame(scrollFrame)
+  drag.value = null
+  if (commit && d.to !== d.from) move(d.from, d.to)
+}
+// Holding a row near the pane's edge scrolls it, so a long list can be reordered in one drag.
+function autoScroll() {
+  const d = drag.value, pane = list.value?.closest<HTMLElement>('.problem-management')
+  if (!d || !pane) return
+  const box = pane.getBoundingClientRect(), edge = 48
+  const over = d.clientY < box.top + edge ? d.clientY - box.top - edge : d.clientY > box.bottom - edge ? d.clientY - box.bottom + edge : 0
+  if (over) { pane.scrollTop += over / 4; updateDrag(d.clientY) }
+  scrollFrame = requestAnimationFrame(autoScroll)
+}
+// Where the row lands if dropped now, so the letters already show the new order.
+function slot(index: number) {
+  const d = drag.value
+  if (!d) return index
+  return index === d.from ? d.to : d.from < index && index <= d.to ? index - 1 : d.to <= index && index < d.from ? index + 1 : index
+}
+function rowStyle(index: number) {
+  const d = drag.value
+  if (!d) return undefined
+  const shift = index === d.from ? d.y - d.startY : (slot(index) - index) * d.height
+  return shift ? { transform: `translateY(${shift}px)` } : undefined
+}
+async function moveWithKeyboard(event: KeyboardEvent, index: number) {
+  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+  event.preventDefault()
+  const to = index + (event.key === 'ArrowUp' ? -1 : 1)
+  if (drag.value || to < 0 || to >= selected.value.length) return
+  const id = selected.value[index]!.id
+  move(index, to)
+  await nextTick()
+  list.value?.querySelector<HTMLElement>(`[data-id="${id}"] .drag-handle`)?.focus()
+}
+onBeforeUnmount(() => cancelAnimationFrame(scrollFrame))
 async function save() {
   if (busy.value || !ready.value || locked.value) return
   message.value = ''
@@ -175,20 +239,19 @@ async function save() {
             <fieldset :disabled="!ready || locked || busy" class="problem-sections">
               <section aria-labelledby="selected-problems-title"><h3 id="selected-problems-title">出題順・配点 <span class="muted">{{ selected.length }} 問 · 合計 {{ totalPoints }} 点</span></h3>
                 <p v-if="!selected.length" class="muted">下の「問題を追加」から出題する問題を選んでください。</p>
-                <ol class="selected">
-                  <li v-for="(p, index) in selected" :key="p.id">
-                    <span class="problem-label">{{ problemLabel(index) }}</span>
+                <p v-if="selected.length > 1" id="reorder-hint" class="muted reorder-hint">左端のつまみをドラッグして並べ替えます。キーボードでは、つまみを選んで↑↓キーで動かします。</p>
+                <ol ref="list" class="selected" :data-dragging="drag ? '' : undefined">
+                  <li v-for="(p, index) in selected" :key="p.id" :data-id="p.id" :class="{ dragging: drag?.from === index }" :style="rowStyle(index)">
+                    <button type="button" class="drag-handle" :aria-label="`${problemName(p.title)}を並べ替え`" aria-describedby="reorder-hint" title="ドラッグで並べ替え" @pointerdown="startDrag($event, index)" @pointermove="updateDrag($event.clientY)" @pointerup="endDrag(true)" @pointercancel="endDrag(false)" @lostpointercapture="endDrag(false)" @keydown="moveWithKeyboard($event, index)"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" /><circle cx="9" cy="12" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="9" cy="18" r="1" /><circle cx="15" cy="18" r="1" /></svg></button>
+                    <span class="problem-label">{{ problemLabel(slot(index)) }}</span>
                     <div class="problem-entry"><strong>{{ problemName(p.title) }}</strong><code class="problem-uuid">{{ p.id }}</code><p v-if="issues(p.id).length" class="problem-issue">{{ issueMessage(issues(p.id)[0]!, 'contest') }}</p></div>
                     <div class="selected-controls">
                       <label class="points-field" :for="`points-${p.id}`">配点 <input :id="`points-${p.id}`" v-model.number="p.points" type="number" min="1" max="1000000" step="1" required> 点</label>
-                      <div class="move-actions">
-                        <button class="editor-button" type="button" :disabled="index === 0" :aria-label="`${problemName(p.title)}を上へ`" title="上へ" @click="move(index, -1)">↑</button>
-                        <button class="editor-button" type="button" :disabled="index === selected.length - 1" :aria-label="`${problemName(p.title)}を下へ`" title="下へ" @click="move(index, 1)">↓</button>
-                        <button class="editor-button" type="button" :aria-label="`${problemName(p.title)}を外す`" title="外す" @click="remove(index)"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></button>
-                      </div>
+                      <button class="editor-button remove-button" type="button" :aria-label="`${problemName(p.title)}を外す`" title="外す" @click="remove(index)"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></button>
                     </div>
                   </li>
                 </ol>
+                <p class="visually-hidden" aria-live="polite">{{ reorderStatus }}</p>
               </section>
               <section aria-labelledby="available-problems-title"><h3 id="available-problems-title">問題を追加</h3>
                 <p v-if="ready && !available.length"><NuxtLink to="/problems/new?fresh=1" target="_blank" rel="noopener noreferrer">問題を作成・保存 ↗</NuxtLink>してから、この画面を再読み込みしてください。</p>
@@ -241,7 +304,18 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .problem-sections { display: grid; gap: 40px; }
 .selected, .candidates { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--color-line); }
 .selected li, .candidates li { padding: 12px 0; border-bottom: 1px solid var(--color-line); }
-.selected li { display: grid; grid-template-columns: 2rem minmax(0, 1fr); grid-template-areas: "label body" "controls controls"; align-items: center; gap: 8px 12px; }
+.selected { position: relative; }
+.selected li { --handle-size: 32px; display: grid; grid-template-columns: var(--handle-size) 1.5rem minmax(0, 1fr); grid-template-areas: "handle label body" "controls controls controls"; align-items: center; gap: 8px; background: var(--color-paper); }
+.selected[data-dragging] { user-select: none; }
+.selected[data-dragging] li { transition: transform .15s ease; }
+.selected li.dragging { position: relative; z-index: 1; transition: none; box-shadow: 0 6px 20px rgb(0 0 0 / .18); }
+.drag-handle { grid-area: handle; align-self: start; display: inline-flex; align-items: center; justify-content: center; width: var(--handle-size); height: var(--handle-size); padding: 0; border: 0; border-radius: 4px; background: none; color: var(--color-muted); cursor: grab; touch-action: none; }
+.drag-handle:hover:not(:disabled) { background: var(--color-surface); color: var(--color-ink); }
+.drag-handle:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 0; }
+.drag-handle:disabled { cursor: default; }
+.drag-handle circle { fill: currentColor; }
+.dragging .drag-handle { cursor: grabbing; }
+.reorder-hint { margin-bottom: 8px; }
 .candidates li { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .problem-label { grid-area: label; align-self: start; color: var(--color-muted); font-family: var(--font-code); font-weight: 700; }
 .selected .problem-entry { grid-area: body; }
@@ -251,8 +325,7 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .problem-issue { margin: 4px 0 0; color: var(--color-error); }
 .selected-controls { grid-area: controls; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
 .points-field { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
-.move-actions { display: flex; gap: 4px; }
-.move-actions button { width: 36px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; }
+.remove-button { width: 36px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; }
 .candidates button { flex-shrink: 0; min-width: 5.5em; }
 .problem-search { margin-bottom: 8px; }
 .search-hint, .search-count { margin-bottom: 8px; }
@@ -267,7 +340,8 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .settings-section label { display: block; margin-bottom: 8px; }
 .dates { display: grid; gap: 20px; }
 .penalty-note { margin-top: 8px; }
-@media (min-width: 48rem) { .selected li { grid-template-columns: 2rem minmax(0, 1fr) auto; grid-template-areas: "label body controls"; } }
+@media (min-width: 48rem) { .selected li { grid-template-columns: var(--handle-size) 1.5rem minmax(0, 1fr) auto; grid-template-areas: "handle label body controls"; } }
+@media (prefers-reduced-motion: reduce) { .selected[data-dragging] li { transition: none; } }
 @media (min-width: 60rem) { .dates { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (pointer: coarse) { .move-actions button { width: 44px; min-height: 44px; } }
+@media (pointer: coarse) { .remove-button { width: 44px; min-height: 44px; } .selected li { --handle-size: 44px; } }
 </style>

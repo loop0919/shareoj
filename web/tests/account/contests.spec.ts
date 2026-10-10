@@ -51,7 +51,12 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   await search.press('Enter')
   await expect(page.locator('.selected strong')).toHaveText(['コンテスト選択A', 'コンテスト選択B'])
   await page.locator(`#points-${first}`).fill('300')
-  await page.getByRole('button', { name: 'コンテスト選択Bを上へ' }).click()
+  const handle = (await page.getByRole('button', { name: 'コンテスト選択Bを並べ替え' }).boundingBox())!
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(handle.x + handle.width / 2, handle.y - 120, { steps: 6 })
+  await page.mouse.up()
+  await expect(page.locator('.selected strong')).toHaveText(['コンテスト選択B', 'コンテスト選択A'])
   await page.getByRole('button', { name: 'タイトル・説明', exact: true }).click()
   await expect(page.getByLabel('説明（Markdown）')).toHaveText('## 開催案内\nどなたでも参加できます。', { useInnerText: true })
   await page.screenshot({ path: testInfo.outputPath('contest-editor-desktop.png'), fullPage: true })
