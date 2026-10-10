@@ -1,0 +1,50 @@
+import { expect, test } from './fixtures/account'
+
+test('hovering the avatar offers my page and logout', async ({ page }) => {
+  let loggedOut = false
+  await page.route('**/api/auth/logout', route => { loggedOut = true; return route.fulfill({ status: 204 }) })
+  await page.goto('/problems')
+  const header = page.locator('.site-header')
+  const avatar = header.locator('.account-nav')
+  const menu = header.getByRole('navigation', { name: 'アカウント', exact: true })
+  await expect(menu).toBeHidden()
+  await avatar.hover()
+  await expect(menu).toBeVisible()
+  await expect(menu).toContainText('ui_test')
+  // Moving from the avatar into the menu keeps it open; leaving both closes it.
+  await menu.getByRole('link', { name: 'マイページ', exact: true }).hover()
+  await expect(menu).toBeVisible()
+  await page.mouse.move(10, 600)
+  await expect(menu).toBeHidden()
+  // Keyboard users reach the menu with Tab, and Escape returns them to the avatar.
+  await avatar.focus()
+  await page.keyboard.press('Shift+Tab')
+  await page.keyboard.press('Tab')
+  await expect(avatar).toBeFocused()
+  await expect(menu).toBeVisible()
+  await page.keyboard.press('Tab')
+  await expect(menu.getByRole('link', { name: 'マイページ', exact: true })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(menu).toBeHidden()
+  await expect(avatar).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(menu).toBeHidden()
+  await avatar.hover()
+  await menu.getByRole('link', { name: 'マイページ', exact: true }).click()
+  await expect(page).toHaveURL(/\/my$/)
+  await expect(menu).toBeHidden()
+  await avatar.hover()
+  await menu.getByRole('button', { name: 'ログアウト', exact: true }).click()
+  await expect(page).toHaveURL(/\/login$/)
+  expect(loggedOut).toBe(true)
+})
+
+test.describe('touch', () => {
+  test.use({ hasTouch: true, viewport: { width: 375, height: 800 } })
+  test('a tap on the avatar still opens my page directly', async ({ page }) => {
+    await page.goto('/problems')
+    await page.locator('.site-header .account-nav').tap()
+    await expect(page).toHaveURL(/\/my$/)
+    await expect(page.getByRole('navigation', { name: 'アカウント', exact: true })).toBeHidden()
+  })
+})

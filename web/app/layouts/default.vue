@@ -20,7 +20,7 @@ function onOutsideClick(event: MouseEvent) {
 onMounted(() => document.addEventListener('click', onOutsideClick))
 onBeforeUnmount(() => document.removeEventListener('click', onOutsideClick))
 watch(() => route.fullPath, closeCreateMenu)
-const { user, profile, refreshAccount, refreshProfile } = useAccount()
+const { user, refreshAccount, refreshProfile } = useAccount()
 onMounted(() => { void refreshAccount().then(account => { if (account) return refreshProfile() }).catch(() => {}) })
 </script>
 
@@ -50,7 +50,7 @@ onMounted(() => { void refreshAccount().then(account => { if (account) return re
       <div class="header-tools">
         <ThemeSelect />
         <NotificationBell v-if="user" />
-        <NuxtLink v-if="user" to="/my" class="account-nav" aria-label="マイページ" title="マイページ"><UserAvatar :handle="profile?.handle ?? ''" :avatar="profile?.avatar" :size="32" /></NuxtLink>
+        <AccountMenu v-if="user" />
         <NuxtLink v-else to="/login">ログイン</NuxtLink>
       </div>
     </header>
@@ -69,7 +69,6 @@ onMounted(() => { void refreshAccount().then(account => { if (account) return re
 /* Hallmark · component: two-row mobile header · existing green theme
  * pre-emit critique: P4 H5 E4 S5 R5 V4 */
 .judge-banner { flex-shrink: 0; padding: 12px 16px; background: var(--color-surface); color: var(--color-ink); border-bottom: 2px solid var(--color-accent); font-size: .875rem; overflow-wrap: anywhere; }
-.account-nav { min-width: 44px; min-height: 44px; justify-content: center; }
 .site-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; }
 .site-header nav { position: relative; width: auto; justify-content: flex-end; }
 .header-tools { position: relative; display: flex; align-items: center; gap: 4px; }
