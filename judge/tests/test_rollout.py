@@ -1,4 +1,5 @@
 import base64
+import datetime
 import hashlib
 import io
 import json
@@ -283,7 +284,7 @@ class RolloutTests(unittest.TestCase):
     def test_release_cleanup_error_keeps_successful_rollout(self):
         with tempfile.TemporaryDirectory() as name:
             directory = Path(name)
-            state = dict(status='passed', step='complete')
+            state = dict(status='passed', step='complete', releaseSHA256='a' * 64)
             with patch.object(rollout, 'prune_worker_releases', side_effect=RuntimeError('temporary AWS error')):
                 rollout.cleanup_after_success({}, directory, state)
             saved = json.loads((directory / 'state.json').read_text())
@@ -322,3 +323,177 @@ class RolloutTests(unittest.TestCase):
             script = submit.call_args.args[-1]
             subprocess.run(['bash', '-n'], input=script, text=True, check=True)
             compile(script.split("<<'PY'\n", 1)[1].rsplit('\nPY\n', 1)[0], '<worker health>', 'exec')
+
+
+class RollingTests(unittest.TestCase):
+    first, primary, other = 'i-0123456789abcdef1', 'i-0123456789abcdef0', 'i-0123456789abcdef2'
+    old, new = 'sha256:' + 'a' * 64, 'sha256:' + 'b' * 64
+
+    def run_rolling(self, state=None, drain=None, **config):
+        events = []
+        config = dict(region='test', api='api', bridge='bridge', pool='judge-dev', nodes=[self.primary, self.first, self.other],
+                      worker_alarms=['alarm'], runtimes=['python314'], queues=['requests'], **config)
+        state = {} if state is None else state
+
+        def aws(region, service, operation, *args):
+            if operation == 'get-function-configuration':
+                variables = dict(JUDGE_RUNTIME_DIGEST=self.old, JUDGE_CPP_IMAGE=self.old, JUDGE_ENABLED_RUNTIMES='python314')
+                return dict(Environment=dict(Variables=variables), Timeout=0)
+            if operation == 'describe-alarms':
+                return dict(MetricAlarms=[dict(AlarmName='alarm', ActionsEnabled=True)])
+            events.append((operation, *args))
+            return {}
+
+        def prepare_hosts(config, directory, state, nodes, label, expected_digest=None):
+            events.append(('prepare', label, tuple(nodes), expected_digest))
+            verification = directory / ('verify-' + label)
+            verification.mkdir(exist_ok=True)
+            (verification / 'report.json').write_text(json.dumps(dict(runtimeDigest=self.new)))
+            state.setdefault('packages', 'c' * 64)
+            return verification
+
+        def status():
+            paused = events and any(e[0] == 'dispatch' for e in events) and [e for e in events if e[0] == 'dispatch'][-1][1]
+            switched = any(e[:2] == ('env', 'bridge') for e in events)
+            return dict(runtimeDigest=self.new if switched else self.old, previousRuntimeDigest=self.old if switched else '',
+                        dispatchPaused=bool(paused), pending=0, undispatched=0)
+
+        with tempfile.TemporaryDirectory() as name, patch.object(rollout, 'preflight'), \
+                patch.object(rollout, 'pool_bursts', return_value=[self.first, self.other]), \
+                patch.object(rollout, 'deploy_bridge', side_effect=lambda *a, **k: events.append(('bridge-code',))), \
+                patch.object(rollout, 'contest_guard', side_effect=lambda c: events.append(('contest',))), \
+                patch.object(rollout, 'aws', side_effect=aws), patch.object(rollout.time, 'sleep'), \
+                patch.object(rollout, 'ssm_step', side_effect=lambda d, step, c, nodes, script: events.append(('ssm', step, tuple(nodes)))), \
+                patch.object(rollout, 'prepare_hosts', side_effect=prepare_hosts), \
+                patch.object(rollout, 'set_dispatch', side_effect=lambda c, d, s, paused: events.append(('dispatch', paused)) or s.update(dispatchPaused=paused)), \
+                patch.object(rollout, 'wait_requests_idle', side_effect=drain or (lambda c: events.append(('drain',)))), \
+                patch.object(rollout, 'update_env', side_effect=lambda region, function, changes, remove=(): events.append(('env', function, changes))), \
+                patch.object(rollout, 'database_status', side_effect=lambda c: status()), \
+                patch.object(rollout, 'start_workers', side_effect=lambda v: events.append(('start', v.name))), \
+                patch.object(rollout, 'sync_settings', side_effect=lambda *a, **k: events.append(('sync', k.get('previous')))), \
+                patch.object(rollout, 'api_smoke', side_effect=lambda c, d, nodes: events.append(('api', tuple(nodes))) or d / 'api.json'), \
+                patch.object(rollout, 'healthy_workers', side_effect=lambda c, d, digest: events.append(('healthy', digest))), \
+                patch.object(rollout, 'run', side_effect=lambda *a: events.append(('cmd',) + a[:3])):
+            rollout.rolling(config, Path(name), state)
+        return state, events
+
+    def test_rolling_prepares_a_burst_then_switches_with_dispatch_paused(self):
+        state, events = self.run_rolling()
+        names = [e[0] if e[0] not in ('ssm', 'prepare', 'start', 'env') else e[:2] for e in events]
+        rest = (self.primary, self.other)
+        self.assertEqual(state['status'], 'passed')
+        self.assertEqual(state['step'], 'complete')
+        self.assertEqual(state['previousDigest'], self.old)
+        self.assertEqual(state['runtimeDigest'], self.new)
+        self.assertTrue(rollout.SNAPSHOT_ID.fullmatch(state['aptSnapshot']))
+        self.assertIn(('ssm', 'hold-bursts', (self.first, self.other)), events)
+        self.assertIn(('prepare', 'first', (self.first,), None), events)
+        self.assertIn(('ssm', 'switch-stop', rest), events)
+        self.assertIn(('prepare', 'rest', rest, self.new), events)
+        order = [('ssm', 'hold-bursts'), ('prepare', 'first'), 'dispatch', 'drain', ('ssm', 'switch-stop'),
+                 ('env', 'bridge'), ('env', 'api'), ('start', 'verify-first'), 'sync', 'api', ('prepare', 'rest'),
+                 ('start', 'verify-rest'), 'healthy']
+        positions = [names.index(item) for item in order]
+        self.assertEqual(positions, sorted(positions))
+        self.assertEqual([e[1] for e in events if e[0] == 'dispatch'], [True, False])
+        self.assertIn(('env', 'bridge', dict(JUDGE_RUNTIME_DIGEST=self.new, JUDGE_PREVIOUS_RUNTIME_DIGEST=self.old)), events)
+        self.assertIn(('env', 'api', dict(JUDGE_CPP_IMAGE=self.new)), events)
+        self.assertEqual([e[1] for e in events if e[0] == 'api'], [(self.first,), (self.primary, self.first, self.other)])
+        self.assertIn(('sync', self.old), events)
+        tags = [e for e in events if e[0] == 'create-tags' and 'JudgeInstalledDigest' in e[-1]]
+        self.assertEqual([t[2:-2] for t in tags], [(self.first,), rest])
+        # Admission is never paused by a rolling update.
+        self.assertFalse(any(e[0] == 'env' and e[1] == 'api' and 'JUDGE_ENABLED_RUNTIMES' in e[2] for e in events))
+
+    def test_drain_timeout_before_switch_resumes_dispatch(self):
+        def drain(config):
+            raise TimeoutError('busy')
+        with self.assertRaises(TimeoutError):
+            self.run_rolling(drain=drain)
+        # run_rolling raised before returning; check through a fresh run that records events.
+        events = []
+        with tempfile.TemporaryDirectory() as name, \
+                patch.object(rollout, 'contest_guard'), patch.object(rollout, 'aws', return_value=dict(Timeout=0)), \
+                patch.object(rollout.time, 'sleep'), \
+                patch.object(rollout, 'set_dispatch', side_effect=lambda c, d, s, paused: events.append(paused) or s.update(dispatchPaused=paused)), \
+                patch.object(rollout, 'wait_requests_idle', side_effect=drain), patch.object(rollout, 'ssm_step') as ssm:
+            with self.assertRaises(TimeoutError):
+                rollout.switch(dict(region='test', bridge='bridge'), Path(name), dict(runtimeDigest=self.new), self.first, [self.primary], Path(name))
+        self.assertEqual(events, [True, False])
+        ssm.assert_not_called()
+
+    def test_resumed_switch_does_not_pause_again(self):
+        state = dict(firstHost=self.first, previousDigest=self.old, aptSnapshot='20261010T000000Z', runtimeDigest=self.new,
+                     packages='c' * 64, alarm_actions={'alarm': False}, digestSwitched=True, dispatchPaused=True)
+        state, events = self.run_rolling(state)
+        self.assertEqual([e[1] for e in events if e[0] == 'dispatch'], [False])
+        self.assertFalse(any(e[0] in ('drain', 'env') for e in events))
+        self.assertEqual(state['status'], 'passed')
+
+    def test_contest_window_and_old_bridge_block_rolling(self):
+        soon = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)).isoformat()
+        later = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=6)).isoformat().replace('+00:00', 'Z')
+        base = dict(pending=0, undispatched=0, dispatchPaused=False)
+        for status, allowed in [({**base, 'nextContestWindowAt': None}, True), ({**base, 'nextContestWindowAt': later}, True),
+                                ({**base, 'nextContestWindowAt': soon}, False), (dict(pending=0, undispatched=0), False)]:
+            with patch.object(rollout, 'database_status', return_value=status):
+                if allowed:
+                    rollout.contest_guard({})
+                else:
+                    with self.assertRaises(ValueError):
+                        rollout.contest_guard({})
+
+    def test_host_scripts_parse_and_pin_one_snapshot(self):
+        script = rollout.os_update_command('a' * 32, '20261010T093000Z', 'c' * 64)
+        subprocess.run(['bash', '-n'], input=script, text=True, check=True)
+        self.assertIn('APT::Snapshot "%s";\\n\' 20261010T093000Z', script)
+        self.assertIn('Never-Include-Phased-Updates=true', script)
+        self.assertIn('exit 194', script)
+        self.assertIn('c' * 64, script)
+        unpinned = rollout.os_update_command('a' * 32, None)
+        subprocess.run(['bash', '-n'], input=unpinned, text=True, check=True)
+        self.assertNotIn('APT::Snapshot', unpinned)
+        for bad in ('20261010', '$(reboot)'):
+            with self.assertRaises(ValueError):
+                rollout.os_update_command('a' * 32, bad)
+        seal = rollout.seal_command(self.new)
+        subprocess.run(['bash', '-n'], input=seal, text=True, check=True)
+        compile(seal.split("<<'PY'\n", 1)[1].rsplit('\nPY\n', 1)[0], '<seal>', 'exec')
+        with self.assertRaises(ValueError):
+            rollout.seal_command('sha256:$(id)')
+
+    def test_rest_of_pool_must_match_the_first_package_list_and_digest(self):
+        scripts, commands = {}, []
+        host = dict(runtimeDigest=self.new, passedRuntimes=['python314-isolate'], failedRuntimes=[])
+
+        def ssm_step(directory, step, config, nodes, script):
+            scripts[step] = script('a' * 32) if callable(script) else script
+            return dict(region='test', commands={node: 'command' for node in nodes})
+
+        def command(*args):
+            commands.append(args)
+            if 'submit' in args:
+                directory = Path(args[args.index('--run-dir') + 1])
+                directory.mkdir()
+                nodes = [args[i + 1] for i, arg in enumerate(args) if arg == '--instance']
+                (directory / 'report.json').write_text(json.dumps(dict(runtimeDigest=report_digest, hosts=dict.fromkeys(nodes, host))))
+            return ''
+        with tempfile.TemporaryDirectory() as name, patch.object(rollout, 'ssm_step', side_effect=ssm_step), \
+                patch.object(rollout, 'run', side_effect=command), \
+                patch.object(rollout, 'command_output', return_value='apt output\npackages=' + 'c' * 64 + ' kernel=7.0.0-1014-aws\n'):
+            directory, state = Path(name), dict(aptSnapshot='20261010T093000Z', releaseSHA256='d' * 64)
+            config = dict(region='test', bucket='bucket', release='worker.tar.gz', runtimes=['python314'])
+            report_digest = self.new
+            rollout.prepare_hosts(config, directory, state, [self.first], 'first')
+            self.assertEqual(state['packages'], 'c' * 64)
+            self.assertNotIn('c' * 64, scripts['os-first'])
+            rollout.prepare_hosts(config, directory, state, [self.primary, self.other], 'rest', expected_digest=self.new)
+            self.assertIn('if [ "$packages" != ' + 'c' * 64, scripts['os-rest'])
+            self.assertIn(self.new, scripts['seal-rest'])
+            installs = [args for args in commands if 'judge/deploy-ssm.py' in args]
+            self.assertEqual([a[a.index('--instance') + 1] for a in installs], [self.first, self.primary, self.other])
+            self.assertTrue(all(a[a.index('--expected-sha256') + 1] == 'd' * 64 for a in installs))
+            report_digest = 'sha256:' + 'e' * 64
+            host['runtimeDigest'] = report_digest
+            with self.assertRaises(ValueError):
+                rollout.prepare_hosts(config, directory, state, [self.primary, self.other], 'again', expected_digest=self.new)
