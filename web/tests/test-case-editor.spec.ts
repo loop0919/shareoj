@@ -126,7 +126,7 @@ for (const width of [320, 375, 414, 768, 1280]) {
     await expect(page.getByLabel('出力', { exact: true })).toHaveText('8')
     await page.getByRole('button', { name: 'ケース1を削除' }).click()
     await expect(page.locator('.test-data-editor .cm-editor')).toHaveCount(0)
-    await expect(page.getByText('テストケースを追加して、入力と出力を登録してください。')).toBeVisible()
+    await expect(page.getByText('テストケースはまだありません。')).toBeVisible()
   })
 }
 

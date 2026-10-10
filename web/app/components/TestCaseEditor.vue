@@ -147,7 +147,6 @@ function add() {
             </button>
           </li>
         </ul>
-        <p v-if="!cases.length" class="empty-list muted">ファイルはありません</p>
       </nav>
       <div v-if="current" class="case-detail">
         <div class="case-name">
@@ -161,7 +160,7 @@ function add() {
           <TestDataEditor :id="`case-output-${selected}`" v-model="current.output" label="出力" :disabled="locked" :stored-bytes="current.outputFile?.size" :loading="loading.output" :error="loadError.output" @update:model-value="current._outputDirty = true" />
         </div>
       </div>
-      <div v-else class="empty-editor"><p>テストケースを追加して、入力と出力を登録してください。</p><p class="muted">空の入力や出力も登録できます。</p></div>
+      <div v-else class="empty-editor"><EmptyState kind="testcase" title="テストケースはまだありません。" description="「追加」から入力と出力を登録してください。空の入力や出力も登録できます。" /></div>
     </div>
   </section>
 </template>
@@ -212,8 +211,9 @@ function add() {
 .case-delete:disabled, .case-add:disabled { opacity: .5; cursor: not-allowed; }
 @media (pointer: coarse) { .case-delete, .case-add { min-height: 44px; } }
 .case-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 1; min-height: 0; }
-.empty-list, .empty-editor { padding: 16px; font-size: .875rem; }
-.empty-editor { overflow-y: auto; }
+.empty-editor { display: flex; flex-direction: column; padding: 16px; overflow-y: auto; }
+.empty-editor > * { margin-block: auto; }
+@media (max-height: 32rem) { .empty-editor > * { margin-block: 0 auto; } }
 @media (max-width: 900px) { .case-workspace { grid-template-columns: 160px minmax(0, 1fr); } .file-list-heading { padding: 8px; } .case-name { flex-wrap: wrap; gap: 6px; } .case-name label { width: 100%; } }
 @media (max-width: 600px), (max-height: 32rem) {
   .test-case-editor { display: block; overflow-y: auto; }

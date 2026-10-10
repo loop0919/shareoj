@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{ kind: 'problem' | 'testing' | 'post' | 'contest' | 'submission' | 'event', title: string, description?: string }>()
+defineProps<{ kind: 'problem' | 'testcase' | 'testing' | 'post' | 'contest' | 'submission' | 'event', title: string, description?: string }>()
 </script>
 
 <template>
@@ -9,6 +9,12 @@ defineProps<{ kind: 'problem' | 'testing' | 'post' | 'contest' | 'submission' | 
       <template v-if="kind === 'problem'">
         <path class="figure" d="M30 18H56L70 32V76A4 4 0 0 1 66 80H30A4 4 0 0 1 26 76V22A4 4 0 0 1 30 18Z" />
         <path class="detail" d="M56 18V28A4 4 0 0 0 60 32H70M41 50L35 56L41 62M55 50L61 56L55 62M50 47L46 65" />
+      </template>
+      <template v-else-if="kind === 'testcase'">
+        <rect class="figure" x="19" y="18" width="36" height="46" rx="4" />
+        <path class="detail" d="M27 30H47M27 38H41M27 46H44" />
+        <rect class="figure" x="41" y="34" width="36" height="46" rx="4" />
+        <path class="detail" d="M49 46H69M49 54H63M49 62H66" />
       </template>
       <template v-else-if="kind === 'testing'">
         <rect class="figure" x="27" y="22" width="42" height="58" rx="5" />
@@ -47,7 +53,7 @@ defineProps<{ kind: 'problem' | 'testing' | 'post' | 'contest' | 'submission' | 
 </template>
 
 <style scoped>
-.empty-state { display: flex; flex-direction: column; align-items: center; padding-block: 32px 48px; text-align: center; }
+.empty-state { display: flex; flex-direction: column; align-items: center; padding-block: 32px 48px; text-align: center; word-break: auto-phrase; }
 svg { width: 120px; height: 120px; margin-bottom: 16px; overflow: visible; }
 .backdrop { fill: var(--color-accent-soft); }
 .figure, .detail { stroke: var(--color-accent); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
@@ -58,6 +64,7 @@ svg { width: 120px; height: 120px; margin-bottom: 16px; overflow: visible; }
 .twinkle.late { animation-delay: -1.6s; }
 @keyframes twinkle { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.7); } }
 @media (prefers-reduced-motion: reduce) { .twinkle { animation: none; } }
+@media (max-height: 32rem) { .empty-state { padding-block: 16px 24px; } svg { width: 72px; height: 72px; margin-bottom: 8px; } }
 .empty-state-title { margin: 0; color: var(--color-ink); font-weight: 600; }
 .empty-state-description { max-width: 36rem; margin: 4px 0 0; color: var(--color-muted); font-size: .8125rem; line-height: 1.7; }
 </style>
