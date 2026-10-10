@@ -1,0 +1,49 @@
+name: Vulnerabilities
+
+# Kept out of CI so an advisory published without a fix does not block deploys.
+# The daily run reports advisories published after the last push.
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  schedule:
+    - cron: '17 21 * * *' # 06:17 JST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go (${{ matrix.module }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [api, cli]
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-go@v7.0.0
+        with:
+          # Builds read the same file, so this scans the standard library that ships.
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      - name: Check reachable vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
+  npm:
+    name: npm (web)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check high and critical advisories
+        run: node scripts/audit-npm.mjs web web/npm-audit-allowlist.json

@@ -1,0 +1,38 @@
+[
+  {
+    "id": "GHSA-v5rq-49vh-5v5c",
+    "package": "@simple-git/argv-parser",
+    "until": "2027-01-10",
+    "reason": "@nuxt/devtoolsがnuxt devでだけ使い、本番のLambdaバンドルに含まれない。修正版はnuxt 4.6.1の依存範囲外"
+  },
+  {
+    "id": "GHSA-x6jw-m9v5-85vh",
+    "package": "simple-git",
+    "until": "2027-01-10",
+    "reason": "@nuxt/devtoolsがnuxt devでだけ使い、本番のLambdaバンドルに含まれない。修正版4.xはnuxt 4.6.1の依存範囲外"
+  },
+  {
+    "id": "GHSA-g4wm-2vf7-vfgr",
+    "package": "simple-git",
+    "until": "2027-01-10",
+    "reason": "@nuxt/devtoolsがnuxt devでだけ使い、本番のLambdaバンドルに含まれない。修正版4.xはnuxt 4.6.1の依存範囲外"
+  },
+  {
+    "id": "GHSA-858h-whjf-mvg5",
+    "package": "simple-git",
+    "until": "2027-01-10",
+    "reason": "@nuxt/devtoolsがnuxt devでだけ使い、本番のLambdaバンドルに含まれない。修正版4.xはnuxt 4.6.1の依存範囲外"
+  },
+  {
+    "id": "GHSA-vfj7-8cjw-p6xm",
+    "package": "braces",
+    "until": "2027-01-10",
+    "reason": "ビルド時のファイル検索だけで使い、入力は自分のリポジトリのパス。本番のLambdaバンドルに含まれない。修正版なし"
+  },
+  {
+    "id": "GHSA-86w9-cpqp-85rv",
+    "package": "node-forge",
+    "until": "2027-01-10",
+    "reason": "listhenが開発サーバーの自己署名証明書に使い、本番のLambdaバンドルに含まれない。修正版なし"
+  }
+]

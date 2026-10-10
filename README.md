@@ -153,6 +153,15 @@ set +a
 - [設計文書](docs/README.md)
 - [ローカルでC++を提出する](docs/judge/local-cpp.md)
 
+依存パッケージの既知の脆弱性は[Vulnerabilities](.github/workflows/vulnerabilities.yml)ワークフローで調べる。
+mainへのpush、プルリクエスト、毎日6時17分（日本時間）に実行する。
+修正版のない脆弱性でデプロイを止めないよう、CIとは別にしている。
+Goは`api`と`cli`を、ビルドと同じGoのバージョンで`govulncheck`にかけ、コードから呼ばれる脆弱性があれば失敗する。
+npmは`web`の本番依存を`npm audit`で調べ、highとcriticalがあれば失敗する。
+修正版がないものや本番のLambdaバンドルに含まれないものは、理由と見直し日を付けて[web/npm-audit-allowlist.json](web/npm-audit-allowlist.json)に載せる。
+見直し日を過ぎると再び失敗する。
+`judge/go-deps`と`judge/addition-deps`は提出コードに提供するライブラリで、提出コードは元から任意のコードとして隔離して実行するため対象外とする。
+
 AWSアカウント全体の請求アラートは、別フォルダ`~/aws-setting`で管理する。
 このリポジトリのCI/CDではデプロイしない。
 
