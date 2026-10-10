@@ -47,7 +47,8 @@ test('tester invitation requires consent, resumes after login, and grants shared
     await page.goto('/my')
     const bell = page.getByLabel('通知（未読1件）', { exact: true })
     await expect(bell).toBeVisible()
-    await bell.click()
+    // The bell shows zero unread immediately; wait for the server to record the read state.
+    await Promise.all([page.waitForResponse(response => response.url().endsWith('/api/my/notifications/read') && response.ok()), bell.click()])
     await expect(page.getByText('bobがテスターに参加しました', { exact: true })).toBeVisible()
     await expect(page.getByLabel('通知（未読0件）', { exact: true })).toBeVisible()
     expect((await (await page.request.get('/api/my/notifications')).json()).notifications).toHaveLength(0)
