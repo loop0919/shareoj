@@ -19,7 +19,7 @@ const { data: drafts, status: draftStatus } = await useFetch<ContestDraftList>('
         <h3 class="contest-list-heading">下書き（未公開）</h3>
         <div class="content-table-scroll" role="region" aria-label="コンテストの下書き" tabindex="0" :aria-busy="draftStatus === 'pending'">
           <table class="content-table"><thead><tr><th scope="col">下書き</th><th scope="col">開始予定（日本時間）</th><th scope="col">更新（日本時間）</th><th scope="col">操作</th></tr></thead>
-            <tbody><tr v-for="d in drafts.items" :key="d.id"><th scope="row"><NuxtLink :to="`/my/contests/${d.id}`">{{ d.title.trim() || '無題のコンテスト' }}</NuxtLink></th><td>{{ d.startsAt ? contestDate(d.startsAt) : '未設定' }}</td><td>{{ contestDate(d.updatedAt) }}</td><td><NuxtLink class="editor-button" :to="`/my/contests/${d.id}`">編集</NuxtLink></td></tr></tbody>
+            <tbody><tr v-for="d in drafts.items" :key="d.id"><th scope="row"><NuxtLink :to="`/my/contests/${d.id}`">{{ d.title.trim() || '無題のコンテスト' }}</NuxtLink></th><td>{{ d.startsAt ? contestDate(d.startsAt) : '未設定' }}</td><td>{{ contestDate(d.updatedAt) }}</td><td><NuxtLink class="editor-button edit-link" :to="`/my/contests/${d.id}`" :aria-label="`${d.title.trim() || '無題のコンテスト'}を編集`" title="編集"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6Z" /><path d="m13 6 5 5" /></svg></NuxtLink></td></tr></tbody>
           </table>
         </div>
         <ContentPagination v-if="drafts.hasMore || draftOffset" :index="draftOffset / 50" :has-next="drafts.hasMore" :loading="draftStatus === 'pending'" @move="direction => draftOffset += direction * 50" />
@@ -29,7 +29,7 @@ const { data: drafts, status: draftStatus } = await useFetch<ContestDraftList>('
       <EmptyState v-else-if="!data.items.length" kind="contest" title="コンテストはまだありません。" :description="mine ? '「新規コンテスト」から作成すると、ここに表示されます。' : ''" />
       <div v-else class="content-table-scroll" role="region" aria-label="コンテスト一覧" tabindex="0" :aria-busy="status === 'pending'">
         <table class="content-table"><thead><tr><th scope="col">コンテスト</th><th scope="col">状態</th><th scope="col">開始（日本時間）</th><th scope="col">終了（日本時間）</th><th scope="col">作成者</th><th v-if="mine" scope="col">操作</th></tr></thead>
-          <tbody><tr v-for="c in data.items" :key="c.id"><th scope="row"><NuxtLink :to="`/contests/${c.id}`">{{ c.title }}</NuxtLink></th><td>{{ contestStatus[c.status] }}</td><td>{{ contestDate(c.startsAt) }}</td><td>{{ contestDate(c.endsAt) }}</td><td><UserLink :handle="c.author" /></td><td v-if="mine"><NuxtLink v-if="c.status === 'scheduled'" class="editor-button" :to="`/my/contests/${c.id}`">編集</NuxtLink><span v-else class="muted">—</span></td></tr></tbody>
+          <tbody><tr v-for="c in data.items" :key="c.id"><th scope="row"><NuxtLink :to="`/contests/${c.id}`">{{ c.title }}</NuxtLink></th><td>{{ contestStatus[c.status] }}</td><td>{{ contestDate(c.startsAt) }}</td><td>{{ contestDate(c.endsAt) }}</td><td><UserLink :handle="c.author" /></td><td v-if="mine"><NuxtLink v-if="c.status === 'scheduled'" class="editor-button edit-link" :to="`/my/contests/${c.id}`" :aria-label="`${c.title}を編集`" title="編集"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6Z" /><path d="m13 6 5 5" /></svg></NuxtLink><span v-else class="muted">—</span></td></tr></tbody>
         </table>
       </div>
       <ContentPagination v-if="data.items.length || offset" :index="offset / 50" :has-next="data.hasMore" :loading="status === 'pending'" @move="direction => offset += direction * 50" />
@@ -39,4 +39,5 @@ const { data: drafts, status: draftStatus } = await useFetch<ContestDraftList>('
 <style scoped>
 .contest-list-heading { font-size: 1rem; margin: 0 0 12px; }
 .content-table-scroll ~ .contest-list-heading { margin-top: 32px; }
+.edit-link { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; }
 </style>
