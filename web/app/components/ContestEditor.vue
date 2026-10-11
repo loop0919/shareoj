@@ -86,7 +86,7 @@ onMounted(() => window.addEventListener('beforeunload', beforeUnload))
 onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 const {
   mode, workspace, splitPercent, resizing, setSplit, startResize, moveResize, stopResize, resizeWithKeyboard,
-  editor, syncSource, insertSnippet,
+  editor, syncSource, insertSnippet, preview, editorScrolled, previewScrolled,
 } = useMarkdownEditor()
 const mathSnippet = '\n$$\na^2 + b^2 = c^2\n$$\n'
 function saveWithShortcut(event: KeyboardEvent) {
@@ -357,14 +357,14 @@ async function save() {
           <button type="button" :disabled="!ready || busy || editor?.uploading" :aria-expanded="editor?.showImages ?? false" @click="editor?.toggleImages()" aria-label="画像" title="画像"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8" cy="8" r="1.5" /><path d="m21 15-5-5L5 21M3 16l4-4 4 4" /></svg></button>
           <EditorSettings kind="markdown" />
         </div>
-        <MarkdownSourceEditor id="contest-description" ref="editor" v-model="description" label-id="contest-description-label" :disabled="!ready || busy" />
+        <MarkdownSourceEditor id="contest-description" ref="editor" v-model="description" label-id="contest-description-label" :disabled="!ready || busy" @scroll="editorScrolled" />
       </section>
       <div class="split-handle" role="separator" tabindex="0" aria-label="編集欄とプレビューの幅を調整" aria-orientation="vertical" aria-controls="source-pane preview-pane" :aria-valuenow="Math.round(splitPercent)" :aria-valuetext="`編集欄 ${Math.round(splitPercent)}%、プレビュー ${100 - Math.round(splitPercent)}%`" :aria-valuemin="30" :aria-valuemax="70" title="ドラッグで幅を調整・ダブルクリックで均等に戻す" @pointerdown="startResize" @pointermove="moveResize" @pointerup="stopResize" @pointercancel="stopResize" @lostpointercapture="resizing = false" @keydown="resizeWithKeyboard" @dblclick="setSplit(50)" />
       <section id="preview-pane" class="preview-pane" aria-label="コンテストのプレビュー">
         <div class="pane-heading"><h2>プレビュー</h2></div>
-        <div class="preview-document contest-preview">
+        <div ref="preview" class="preview-document contest-preview" @scroll="previewScrolled">
           <p class="preview-title">{{ title || 'コンテストタイトル' }}</p>
-          <ProblemMarkdown v-if="description.trim()" :source="description" />
+          <ProblemMarkdown v-if="description.trim()" :source="description" source-lines />
           <p v-else class="muted">説明を書くと、ここにプレビューが表示されます。</p>
         </div>
       </section>

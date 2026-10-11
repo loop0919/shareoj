@@ -52,7 +52,7 @@ const memoryLimitPresets = [64, 128, 256, 512]
 const memoryLimitOptions = computed(() => [...new Set([...memoryLimitPresets, Number(draft.memoryLimitMb)])].filter(value => value >= 64 && value <= 512).sort((a, b) => a - b))
 const {
   mode, workspace, splitPercent, resizing, setSplit, startResize, moveResize, stopResize, resizeWithKeyboard,
-  editor, syncSource, insertSnippet,
+  editor, syncSource, insertSnippet, preview, editorScrolled, previewScrolled,
 } = useMarkdownEditor()
 
 const managing = computed(() => section.value === 'management')
@@ -181,15 +181,15 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
           <button type="button" :disabled="!ready || publishing || editor?.uploading" :aria-expanded="editor?.showImages ?? false" @click="editor?.toggleImages()" aria-label="画像" title="画像"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8" cy="8" r="1.5" /><path d="m21 15-5-5L5 21M3 16l4-4 4 4" /></svg></button>
           <EditorSettings kind="markdown" />
         </div>
-        <MarkdownSourceEditor id="problem-source" ref="editor" v-model="activeMarkdown" label-id="problem-source-label" :disabled="!ready || publishing" :key="section === 'editorial' ? 'editorial' : 'statement'" :invalid="section === 'statement' && (showErrors || touched.markdown) && !!errors.markdown" :describedby="section === 'statement' ? 'source-error' : undefined" @blur="section === 'statement' && (touched.markdown = true)" />
+        <MarkdownSourceEditor id="problem-source" ref="editor" v-model="activeMarkdown" label-id="problem-source-label" :disabled="!ready || publishing" :key="section === 'editorial' ? 'editorial' : 'statement'" :invalid="section === 'statement' && (showErrors || touched.markdown) && !!errors.markdown" :describedby="section === 'statement' ? 'source-error' : undefined" @blur="section === 'statement' && (touched.markdown = true)" @scroll="editorScrolled" />
       </section>
       <div class="split-handle" role="separator" tabindex="0" aria-label="編集欄とプレビューの幅を調整" aria-orientation="vertical" aria-controls="source-pane preview-pane" :aria-valuenow="Math.round(splitPercent)" :aria-valuetext="`編集欄 ${Math.round(splitPercent)}%、プレビュー ${100 - Math.round(splitPercent)}%`" :aria-valuemin="30" :aria-valuemax="70" title="ドラッグで幅を調整・ダブルクリックで均等に戻す" @pointerdown="startResize" @pointermove="moveResize" @pointerup="stopResize" @pointercancel="stopResize" @lostpointercapture="resizing = false" @keydown="resizeWithKeyboard" @dblclick="setSplit(50)" />
       <section id="preview-pane" class="preview-pane" :aria-label="section === 'editorial' ? '解説のプレビュー' : '問題のプレビュー'">
         <div class="pane-heading"><h2>プレビュー</h2></div>
-        <div class="preview-document">
+        <div ref="preview" class="preview-document" @scroll="previewScrolled">
           <p v-if="section === 'statement'" class="preview-title">{{ draft.title || '無題の問題' }}</p>
           <p v-if="section === 'statement'" class="preview-limits">実行時間 {{ draft.timeLimitMs || '—' }} ms ／ メモリ {{ draft.memoryLimitMb || '—' }} MiB</p>
-          <ProblemMarkdown v-if="renderedSource.trim()" :source="renderedSource" />
+          <ProblemMarkdown v-if="renderedSource.trim()" :source="renderedSource" source-lines />
           <p v-else class="muted">{{ section === 'editorial' ? '解説' : '本文' }}を書くと、ここにプレビューが表示されます。</p>
         </div>
       </section>

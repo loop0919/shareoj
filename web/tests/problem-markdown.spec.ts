@@ -11,6 +11,18 @@ test('copy controls are available for code fences but not input or math', () => 
   }
 })
 
+test('editor previews mark each block with its source lines', () => {
+  const source = '# 見出し\n\n段落\n\n```cpp\nint x;\n```\n\n$$\nx^2\n$$\n\n```input\n$N$\n```\n\n:::details 詳細\n- 項目\n:::\n\n```math\ny\n```'
+  const html = renderProblemMarkdown(source, { sourceLines: true })
+  for (const [tag, start, end] of [
+    ['h1', 0, 1], ['p', 2, 3], ['div', 4, 7], ['p', 8, 11], ['div', 12, 15], ['details', 16, 18], ['ul', 17, 18], ['li', 17, 18], ['p', 20, 23],
+  ] as const) {
+    expect(html).toMatch(new RegExp(`<${tag} data-source-line="${start}" data-source-end="${end}"[ >]`))
+  }
+  expect(html.match(/data-source-line=/g)).toHaveLength(9)
+  expect(renderProblemMarkdown(source)).not.toContain('data-source-')
+})
+
 test('copy buttons copy only code text and report clipboard failures', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.goto('/blog/markdown-guide')

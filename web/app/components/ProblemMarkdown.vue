@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { renderProblemMarkdown } from '~/utils/problem-markdown'
 
-const props = defineProps<{ source: string }>()
-const html = computed(() => renderProblemMarkdown(props.source))
+const props = defineProps<{ source: string, sourceLines?: boolean }>()
+const html = computed(() => renderProblemMarkdown(props.source, { sourceLines: props.sourceLines }))
 const copyMessage = ref('')
 let messageTimer: ReturnType<typeof setTimeout> | undefined
 onBeforeUnmount(() => clearTimeout(messageTimer))

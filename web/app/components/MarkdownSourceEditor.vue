@@ -10,7 +10,7 @@ import { contentImageError, prepareContentImage } from '~/utils/content-image'
 defineOptions({ inheritAttrs: false })
 const source = defineModel<string>({ required: true })
 const props = defineProps<{ id: string, labelId: string, disabled?: boolean, invalid?: boolean, describedby?: string }>()
-const emit = defineEmits<{ blur: [] }>()
+const emit = defineEmits<{ blur: [], scroll: [] }>()
 const container = ref<HTMLDivElement>()
 const fileInput = ref<HTMLInputElement>()
 const uploading = ref(false)
@@ -97,6 +97,7 @@ onMounted(() => {
       }),
     ],
   })
+  editor.scrollDOM.addEventListener('scroll', () => emit('scroll'), { passive: true })
 })
 watch(() => [props.disabled, props.invalid, props.describedby], () => editor?.dispatch({ effects: editable.reconfigure(editing()) }))
 watch(() => [settings.value.style, settings.value.width], () => editor?.dispatch({ effects: indentConfig.reconfigure(indentExtensions()) }))
@@ -140,12 +141,37 @@ function chooseImages(event: Event) {
   input.value = ''
 }
 
+// Scroll sync measures heights from the top of the scrolled content and lines as fractional 0-based numbers.
+function contentTop(view: EditorView) {
+  return view.documentTop - view.scrollDOM.getBoundingClientRect().top + view.scrollDOM.scrollTop
+}
+function blockLines(view: EditorView, block: { from: number, to: number }) {
+  return [view.state.doc.lineAt(block.from).number - 1, view.state.doc.lineAt(block.to).number] as const
+}
+function lineAtHeight(height: number) {
+  if (!editor) return 0
+  const offset = height - contentTop(editor)
+  const block = editor.lineBlockAtHeight(offset)
+  const [first, last] = blockLines(editor, block)
+  return first + (last - first) * Math.min(1, Math.max(0, (offset - block.top) / (block.height || 1)))
+}
+function heightAtLine(line: number) {
+  if (!editor) return 0
+  const doc = editor.state.doc
+  const block = editor.lineBlockAt(doc.line(Math.min(doc.lines, Math.max(1, Math.floor(line) + 1))).from)
+  const [first, last] = blockLines(editor, block)
+  return contentTop(editor) + block.top + block.height * Math.min(1, Math.max(0, (line - first) / (last - first)))
+}
+
 function insertSnippet(snippet: string) {
   if (!editor || props.disabled) return
   editor.dispatch(editor.state.replaceSelection(snippet), { scrollIntoView: true, userEvent: 'input' })
   editor.focus()
 }
-defineExpose({ insertSnippet, showImages, uploading, toggleImages: () => { showImages.value = !showImages.value }, requestMeasure: () => editor?.requestMeasure(), focus: () => editor?.focus() })
+defineExpose({
+  insertSnippet, showImages, uploading, toggleImages: () => { showImages.value = !showImages.value }, requestMeasure: () => editor?.requestMeasure(), focus: () => editor?.focus(),
+  scroller: () => editor?.scrollDOM, lineCount: () => editor?.state.doc.lines ?? 0, lineAtHeight, heightAtLine,
+})
 </script>
 
 <template>

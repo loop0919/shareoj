@@ -1,4 +1,4 @@
-import MarkdownIt from 'markdown-it'
+import MarkdownIt, { type Token } from 'markdown-it'
 import container from 'markdown-it-container'
 import { katex } from '@mdit/plugin-katex'
 import hljs from 'highlight.js/lib/core'
@@ -65,6 +65,23 @@ markdown.core.ruler.before('inline', 'heading_ids', (state) => {
     content.content = content.content.slice(0, anchor.index)
   }
 })
+
+// The editor preview marks blocks with their source lines so it can scroll with the editor.
+// Renderers that ignore token attributes add the marks to their first tag instead.
+type RenderEnv = { sourceLines?: boolean }
+const selfMarked = new Set(['inline', 'fence', 'math_block'])
+markdown.core.ruler.push('source_lines', (state) => {
+  if (!(state.env as RenderEnv).sourceLines) return
+  for (const token of state.tokens) {
+    if (!token.map || token.nesting < 0 || selfMarked.has(token.type)) continue
+    token.attrSet('data-source-line', String(token.map[0]))
+    token.attrSet('data-source-end', String(token.map[1]))
+  }
+})
+function markSourceLines(html: string, token: Token, env: unknown) {
+  if (!(env as RenderEnv | undefined)?.sourceLines || !token.map) return html
+  return html.replace(/^<[a-z][a-z0-9]*/i, tag => `${tag} data-source-line="${token.map![0]}" data-source-end="${token.map![1]}"`)
+}
 
 // Discard comments without allowing general HTML; code rules keep literal examples intact.
 markdown.block.ruler.before('html_block', 'html_comment', (state, startLine, endLine, silent) => {
@@ -133,14 +150,18 @@ markdown.renderer.rules.judge_status = (tokens, index) => {
   return `<span class="verdict-badge"${verdict === 'WJ' ? '' : ` data-verdict="${verdict}"`}>${verdict}</span>`
 }
 
-markdown.renderer.rules.container_details_open = (tokens, index) => {
+markdown.renderer.rules.container_details_open = (tokens, index, options, env) => {
   const title = tokens[index]!.info.trim().slice('details'.length).trim() || '詳細'
-  return `<details><summary>${markdown.utils.escapeHtml(title)}</summary>\n`
+  return markSourceLines(`<details><summary>${markdown.utils.escapeHtml(title)}</summary>\n`, tokens[index]!, env)
 }
 markdown.renderer.rules.container_details_close = () => '</details>\n'
 
+const defaultMathBlock = markdown.renderer.rules.math_block!
+markdown.renderer.rules.math_block = (tokens, index, options, env, renderer) =>
+  markSourceLines(defaultMathBlock(tokens, index, options, env, renderer), tokens[index]!, env)
+
 const defaultFence = markdown.renderer.rules.fence!
-markdown.renderer.rules.fence = (tokens, index, options, env, renderer) => {
+const renderFence: typeof defaultFence = (tokens, index, options, env, renderer) => {
   const token = tokens[index]!
   const language = token.info.trim().split(/\s+/, 1)[0]!.toLowerCase()
   if (language !== 'input') {
@@ -161,10 +182,12 @@ markdown.renderer.rules.fence = (tokens, index, options, env, renderer) => {
   }).join('')
   return `<div class="input-format">${content}</div>\n`
 }
+markdown.renderer.rules.fence = (tokens, index, options, env, renderer) =>
+  markSourceLines(renderFence(tokens, index, options, env, renderer), tokens[index]!, env)
 
 // User-authored markup cannot supply general HTML or executable link protocols.
 // Each render gets fresh state; macros must not leak between documents.
-export function renderProblemMarkdown(source: string): string {
+export function renderProblemMarkdown(source: string, { sourceLines = false } = {}): string {
   if (source.length > 100_000) return '<p>本文は100,000文字以内で入力してください。</p>'
-  return markdown.render(source, {})
+  return markdown.render(source, { sourceLines } satisfies RenderEnv)
 }

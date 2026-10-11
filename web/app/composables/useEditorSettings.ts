@@ -1,11 +1,12 @@
 export function useEditorSettings(kind: 'code' | 'markdown', language: MaybeRefOrGetter<string> = 'cpp') {
-  type Settings = { style: 'space' | 'tab', width: number }
+  type Settings = { style: 'space' | 'tab', width: number, scrollSync: boolean }
   const scope = computed(() => kind === 'markdown' ? 'markdown' : `code.${toValue(language)}`)
   const allSettings = useState<Record<string, Settings>>('editor-settings-by-language', () => ({}))
   const loaded = useState<Record<string, boolean>>('editor-settings-loaded', () => ({}))
   const settings = computed(() => allSettings.value[scope.value] ??= {
     style: kind === 'code' && toValue(language) === 'go' ? 'tab' : 'space',
     width: kind === 'markdown' || ['javascript', 'typescript', 'ruby', 'nim', 'haskell'].includes(toValue(language)) ? 2 : 4,
+    scrollSync: true,
   })
   function loadSettings() {
     if (loaded.value[scope.value]) return
@@ -15,7 +16,7 @@ export function useEditorSettings(kind: 'code' | 'markdown', language: MaybeRefO
         ? localStorage.getItem('openoj.editor-settings.code') ?? localStorage.getItem('openoj.editor-settings') : null
       const saved = JSON.parse(localStorage.getItem(`openoj.editor-settings.${scope.value}`) ?? legacy ?? 'null')
       if (saved && ['space', 'tab'].includes(saved.style) && Number.isInteger(saved.width) && saved.width >= 1 && saved.width <= 8) {
-        allSettings.value[scope.value] = { style: saved.style, width: saved.width }
+        allSettings.value[scope.value] = { style: saved.style, width: saved.width, scrollSync: saved.scrollSync !== false }
       }
     } catch { /* Keep editing available without browser storage. */ }
   }
