@@ -26,7 +26,7 @@ worker_availability_zones = ["ap-northeast-1a", "ap-northeast-1d"] # confirm t3.
 worker_volume_size        = 60
 pool_alerts_enabled       = false # enable after the pool serves traffic
 capacity_enabled          = false # enable after the pool serves traffic
-burst_min_participants    = 10
+burst_min_participants    = 5
 
 # Optional Discord alerts: store the webhook outside Terraform.
 discord_webhook_secret_arn = ""

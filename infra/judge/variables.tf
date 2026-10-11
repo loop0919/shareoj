@@ -67,7 +67,7 @@ variable "capacity_enabled" {
 variable "burst_min_participants" {
   description = "Registered participants a contest needs before burst hosts start for it."
   type        = number
-  default     = 10
+  default     = 5
   validation {
     condition     = var.burst_min_participants >= 1 && floor(var.burst_min_participants) == var.burst_min_participants
     error_message = "burst_min_participants must be a positive integer."

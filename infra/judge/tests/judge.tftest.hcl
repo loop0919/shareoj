@@ -288,7 +288,7 @@ run "pool_hosts" {
     condition = (
       aws_lambda_function.bridge.environment[0].variables.JUDGE_CAPACITY_ENABLED == "false" &&
       aws_lambda_function.bridge.environment[0].variables.JUDGE_POOL == "judge-dev" &&
-      aws_lambda_function.bridge.environment[0].variables.JUDGE_BURST_MIN_PARTICIPANTS == "10" &&
+      aws_lambda_function.bridge.environment[0].variables.JUDGE_BURST_MIN_PARTICIPANTS == "5" &&
       aws_lambda_function.bridge.environment[0].variables.JUDGE_ENABLED_RUNTIMES == "cpp17,python314"
     )
     error_message = "Capacity control is opt-in, and the published runtimes survive a Terraform apply."

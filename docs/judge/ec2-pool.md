@@ -39,7 +39,7 @@ bridgeは毎分のEventBridge実行のたびに、あるべき稼働状態を計
 提出ごとの即時dispatchと`deployment-status`の呼び出しでは、EC2を操作しない。
 burstを起動するのは次の場合である。
 
-- **コンテスト**：参加登録が`burst_min_participants`人（既定10人）以上のコンテストについて、開始30分前から`min(終了, 開始+3時間)+15分`まで、全burstを動かす。対象期間の合計は24時間で8時間までとし、超えた分は`capacity_capped`を記録して起動しない。
+- **コンテスト**：参加登録が`burst_min_participants`人（既定5人）以上のコンテストについて、開始30分前から`min(終了, 開始+3時間)+15分`まで、全burstを動かす。対象期間の合計は24時間で8時間までとし、超えた分は`capacity_capped`を記録して起動しない。
 - **primaryの停止**：primaryが止まっていて採点待ちがあれば、burstを1台、30分の保持期限で起動する。
 - **採点待ちの滞留**：SQSへ送った提出が2分以上受け取られていなければ、burstをもう1台、30分の保持期限で起動する。
 
@@ -204,7 +204,7 @@ t3.smallでの全ランタイムのsmokeは、3台並列で約28分、1台あた
 `capacity_enabled = true`と`pool_alerts_enabled = true`にしてapplyする。
 試験のため、一時的に`burst_min_participants = 1`にし、運営者のアカウントで参加登録した試験コンテストを35分後に開始する設定で作る。
 開始30分前にbridgeのログに`capacity_start`が出てburstが起動すること、対象期間の後に10分で`idle_stop`が出て停止することを確かめる。
-確認後に`burst_min_participants`を10へ戻す。
+確認後に`burst_min_participants`を5へ戻す。
 
 ### 6. 安定期間の後に片付ける
 
