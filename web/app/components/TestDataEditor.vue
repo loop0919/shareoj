@@ -87,7 +87,7 @@ onBeforeUnmount(() => editor?.destroy())
 <template>
   <div class="test-data-editor">
     <div class="pane-heading"><label :id="`${id}-label`" :for="id">{{ label }}</label><span>{{ bytes.toLocaleString('en-US') }} / 16,777,216 bytes</span><button type="button" class="editor-button" :disabled="disabled || loading" @click="file?.click()">ファイルを選択</button><input ref="file" hidden type="file" accept=".txt,text/plain" :disabled="disabled || loading" @change="selectFile"></div>
-    <p v-if="loading" class="file-status" role="status">読み込んでいます…</p>
+    <p v-if="loading" class="file-status"><LoadingSpinner inline label="ファイルを読み込み中" /></p>
     <p v-else-if="error || fileError" class="file-status field-error" role="alert">{{ error || fileError }}</p>
     <div ref="container" class="code-surface" />
   </div>

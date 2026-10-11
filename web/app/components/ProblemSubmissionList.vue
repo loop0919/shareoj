@@ -38,7 +38,7 @@ usePolling(load, 15000)
     <p v-if="mine && !user" class="notice"><NuxtLink :to="{ path: '/login', query: { next: route.fullPath } }">ログイン</NuxtLink>すると、この問題への自分の提出を確認できます。</p>
     <template v-else>
       <p v-if="message" class="notice notice-error" role="alert">{{ message }}</p>
-      <p v-if="loading && !data" class="muted" role="status">読み込み中…</p>
+      <LoadingSpinner v-if="loading && !data" label="提出一覧を読み込み中" />
       <template v-if="data">
         <p v-if="!data.items.length" class="muted">提出はまだありません。</p>
         <div v-else class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0" :aria-busy="loading">

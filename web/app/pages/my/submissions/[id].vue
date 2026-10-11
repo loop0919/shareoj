@@ -22,6 +22,6 @@ usePolling(load, 2000, () => !message.value && (!!item.value && item.value.statu
     <nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink v-if="item && (route.query.from === 'problem' || route.query.from === 'contest-problem')" :to="`${route.query.from === 'contest-problem' && item.contestId ? `/contests/${item.contestId}/problems` : '/problems'}/${item.problemId}?view=my-submissions`">この問題の自分の提出</NuxtLink><NuxtLink v-else to="/my/submissions">提出履歴</NuxtLink><span aria-hidden="true">/</span><span>提出結果</span></nav>
     <p v-if="message" class="notice notice-error" role="alert">{{ message }} <button class="editor-button" @click="load">再取得</button></p>
     <SubmissionDetail v-if="item" :item="item" />
-    <p v-else-if="!message" class="muted" role="status">読み込み中…</p>
+    <LoadingSpinner v-else-if="!message" label="提出結果を読み込み中" />
   </div>
 </template>

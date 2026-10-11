@@ -41,11 +41,12 @@ onBeforeUnmount(() => { requestVersion++ })
   <div class="favorite-control">
     <button v-if="user" class="editor-button" :disabled="loading || !ready" :aria-pressed="favorited" @click="toggle"><span aria-hidden="true">{{ favorited ? '★' : '☆' }}</span> お気に入り {{ count }}</button>
     <NuxtLink v-else class="editor-button" :to="{ path: '/login', query: { next: `/problems/${problemId}` } }"><span aria-hidden="true">☆</span> お気に入り {{ count }}</NuxtLink>
-    <span v-if="loading" role="status">読み込み中…</span>
+    <LoadingSpinner v-if="loading" inline class="favorite-loading" />
     <p v-if="message" role="alert">{{ message }} <button v-if="!ready" class="editor-button" :disabled="loading" @click="load">再試行</button></p>
   </div>
 </template>
 <style scoped>
 .favorite-control { text-align: right; margin-block: 16px; font-size: .875rem; }
 .favorite-control button[aria-pressed="true"] { color: var(--color-accent); background: var(--color-accent-soft); }
+.favorite-loading { margin-inline-start: 8px; }
 </style>

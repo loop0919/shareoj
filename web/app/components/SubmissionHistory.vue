@@ -24,7 +24,7 @@ usePolling(load, 2000, () => !message.value && (items.value.some(item => item.st
       <button class="editor-button" :disabled="loading" @click="load">{{ loading ? '更新中…' : '更新' }}</button>
     </div>
     <p v-if="message" role="alert">{{ message }}</p>
-    <p v-if="loading && !items.length" role="status">読み込み中…</p>
+    <LoadingSpinner v-if="loading && !items.length" />
     <EmptyState v-else-if="!items.length && !message" kind="submission" title="提出はまだありません。" description="問題に解答を提出すると、ここに表示されます。" />
     <div v-if="items.length" class="submission-table-scroll" role="region" aria-labelledby="submission-history-title" tabindex="0">
       <table aria-label="提出履歴">

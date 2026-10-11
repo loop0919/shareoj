@@ -211,7 +211,7 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
     </section>
       </div>
     </div>
-    <div class="draft-status"><span role="status" :data-save-state="saveState">{{ status }}</span><span>{{ saveLocation }}</span></div>
+    <div class="draft-status"><LoadingSpinner v-if="saveState === 'loading'" inline label="問題を読み込み中" /><span v-else role="status" :data-save-state="saveState">{{ status }}</span><span>{{ saveLocation }}</span></div>
   </div>
 </template>
 

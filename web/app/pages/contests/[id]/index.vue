@@ -145,7 +145,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <p v-if="!canViewSubmissions" class="notice">提出一覧と提出コードはコンテスト終了後に公開されます。終了前はコンテストセッターとテスターが閲覧できます。</p>
       <template v-else><p class="muted">提出コードを閲覧できます。練習提出も掲載します。</p>
       <p v-if="submissionsError" class="notice notice-error" role="alert">{{ submissionsError }}</p>
-      <p v-if="!submissions && !submissionsError" class="muted" role="status">提出一覧を読み込み中…</p>
+      <LoadingSpinner v-if="!submissions && !submissionsError" label="提出一覧を読み込み中" />
       <template v-if="submissions"><p v-if="!submissions.items.length" class="contest-empty muted">提出はまだありません。</p><div v-else class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0"><table class="content-table"><thead><tr><th scope="col">問題</th><th scope="col">ユーザー</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th scope="col">結果</th><th scope="col">提出日時（日本時間）</th></tr></thead><tbody><tr v-for="s in submissions.items" :key="s.id"><th scope="row"><NuxtLink :to="`/contests/${contest.id}/submissions/${s.id}`">{{ s.problemTitle }}</NuxtLink></th><td><UserLink :handle="s.author" /></td><td class="submission-usage">{{ s.sourceBytes == null ? '—' : `${s.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage">{{ submissionUsage(s.result) }}</td><td><SubmissionStatus :item="s" /></td><td>{{ contestDate(s.createdAt) }}<span v-if="new Date(s.createdAt) >= new Date(contest.endsAt)"> · 練習</span></td></tr></tbody></table></div><ContentPagination :index="offset / 50" :has-next="submissions.hasMore" :loading="updating" @move="direction => offset += direction * 50" /></template>
       </template>
     </section>
@@ -153,7 +153,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <h2 id="editorials-title">解説一覧</h2>
       <p v-if="contest.status !== 'ended'" class="notice">解説はコンテスト終了後に公開されます。終了前はコンテストセッターと各問題のテスターが閲覧できます。</p>
       <p v-if="userEditorialsError" class="notice notice-error" role="alert">{{ userEditorialsError }}</p>
-      <p v-else-if="contest.status === 'ended' && !userEditorials" class="muted" role="status">ユーザー解説を読み込み中…</p>
+      <LoadingSpinner v-else-if="contest.status === 'ended' && !userEditorials" label="ユーザー解説を読み込み中" />
       <div v-if="contest.problems.length" class="content-table-scroll" role="region" aria-label="解説一覧のスクロール領域" tabindex="0">
         <table class="content-table contest-editorials"><thead><tr><th scope="col">#</th><th scope="col">解説</th><th v-if="contest.status === 'ended'" scope="col">ユーザー解説</th></tr></thead><tbody><tr v-for="(p, index) in contest.problems" :key="p.id || index"><td>{{ problemLabel(index) }}</td><th scope="row"><NuxtLink v-if="p.hasEditorial" :to="{ path: `/contests/${contest.id}/problems/${p.id}`, query: { view: 'editorial' } }">{{ p.title }}</NuxtLink><template v-else><span>{{ p.title || '???' }}</span><span class="editorial-state muted">{{ p.hasEditorial === false ? '未登録' : contest.status === 'ended' ? '公開待ち' : '終了後に公開' }}</span></template></th><td v-if="contest.status === 'ended'"><ul v-if="editorialsByProblem[p.id]?.length" class="contest-user-editorials"><li v-for="item in editorialsByProblem[p.id]" :key="item.id"><NuxtLink :to="`/blog/${item.id}`">{{ item.title }}</NuxtLink> <span class="muted">{{ item.author }}</span></li></ul><span v-else class="muted">—</span></td></tr></tbody></table>
       </div>

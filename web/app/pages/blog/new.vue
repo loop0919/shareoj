@@ -28,7 +28,7 @@ const {
 } = useMarkdownEditor()
 
 const error = ref('')
-const status = ref('記事を読み込んでいます…')
+const status = ref('')
 let owner = ''
 let saved = ''
 let leaving = false
@@ -220,7 +220,7 @@ onBeforeUnmount(() => {
     </section>
       </div>
     </div>
-    <div class="draft-status"><span role="status">{{ status }}</span><span>{{ saveLocation }}</span></div>
+    <div class="draft-status"><LoadingSpinner v-if="!ready && !error" inline label="記事を読み込み中" /><span v-else role="status">{{ status }}</span><span>{{ saveLocation }}</span></div>
   </div>
 </template>
 

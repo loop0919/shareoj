@@ -97,7 +97,7 @@ onBeforeUnmount(() => { requestVersion++ })
         <template v-if="user">
           <label for="difficulty-vote-level">あなたの評価</label>
           <DifficultySelect :key="selectionKey" id="difficulty-vote-level" v-model="selected" label="あなたの評価" :disabled="loading || !ready" />
-          <p v-if="loading" role="status">読み込み中…</p>
+          <LoadingSpinner v-if="loading" inline class="vote-loading" />
           <p v-if="error" role="alert">{{ error }} <button v-if="!ready" class="editor-button" :disabled="loading" @click="load">再試行</button></p>
           <footer>
             <button v-if="voted !== null" class="editor-button withdraw" :disabled="loading || !ready" @click="save(true)">投票を取り消す</button>
@@ -138,6 +138,7 @@ label { display: block; margin-bottom: 8px; font-size: .875rem; font-weight: 600
 .distribution-track { height: 8px; border-radius: 2px; background: var(--color-surface); overflow: hidden; }
 .distribution-track > span { display: block; height: 100%; background: var(--color-accent); border-radius: inherit; }
 .distribution-count { min-width: 3ch; text-align: right; font-variant-numeric: tabular-nums; }
+.vote-loading { margin-top: 12px; }
 footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--color-line); }
 .withdraw { margin-right: auto; }
 </style>

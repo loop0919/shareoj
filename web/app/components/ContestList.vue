@@ -13,7 +13,7 @@ const { data: drafts, status: draftStatus } = await useFetch<ContestDraftList>('
     <header v-if="mine" class="draft-library-heading"><h2>作成したコンテスト</h2><NuxtLink class="editor-button primary" to="/my/contests/new">新規コンテスト</NuxtLink></header>
     <header v-else class="catalogue-heading"><h1>コンテスト</h1><NuxtLink class="editor-button primary" to="/my/contests/new">新規コンテスト</NuxtLink></header>
     <p v-if="error" role="alert">コンテストを取得できませんでした。ページを再読み込みしてください。</p>
-    <p v-else-if="!data" role="status">読み込み中…</p>
+    <LoadingSpinner v-else-if="!data" label="コンテストを読み込み中" />
     <template v-else>
       <template v-if="mine && drafts && (drafts.items.length || draftOffset)">
         <h3 class="contest-list-heading">下書き（未公開）</h3>

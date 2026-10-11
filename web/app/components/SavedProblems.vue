@@ -58,7 +58,7 @@ onMounted(() => { void loadAccount() })
       <NuxtLink v-if="!testing" class="editor-button primary" to="/problems/new?fresh=1">新規問題</NuxtLink>
     </header>
     <p v-if="accountMessage" role="alert" class="editor-error">{{ accountMessage }}</p>
-    <p v-if="accountLoading" role="status">問題を読み込んでいます…</p>
+    <LoadingSpinner v-if="accountLoading" label="問題を読み込み中" />
     <p v-else-if="!user"><NuxtLink to="/login?next=/my%3Ftab%3Dproblems">ログイン</NuxtLink>すると、問題を表示できます。</p>
     <template v-else>
       <EmptyState v-if="!accountEntries.length && !accountMessage && testing" kind="testing" title="テスト中の問題はまだありません。" description="テスターリンクから参加すると、ここに表示されます。" />

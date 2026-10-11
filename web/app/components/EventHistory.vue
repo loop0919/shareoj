@@ -20,7 +20,7 @@ onMounted(load)
 <template>
   <section class="draft-library" aria-labelledby="events-heading">
     <h2 id="events-heading">イベント</h2>
-    <p v-if="loading" role="status">イベントを読み込んでいます…</p>
+    <LoadingSpinner v-if="loading" label="イベントを読み込み中" />
     <p v-else-if="error" role="alert">{{ error }} <button class="editor-button" @click="load">再試行</button></p>
     <EmptyState v-else-if="!items.length" kind="event" title="イベントはまだありません。" description="自分の問題がお気に入りに追加されたり、初めて正解されたり、ユーザー解説が書かれたりすると、ここに表示されます。" />
     <ul v-else class="event-list">

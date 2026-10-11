@@ -74,7 +74,7 @@ const dirty = computed(() => ready.value && snapshot() !== saved.value)
 const status = computed(() => {
   if (busy.value) return '保存中…'
   if (locked.value) return '編集できません'
-  if (!ready.value) return '読み込み中…'
+  if (!ready.value) return ''
   const summary = `${selected.value.length} 問 · 合計 ${totalPoints.value} 点`
   if (published.value) return summary
   const state = dirty.value ? '未保存の変更があります' : !version.value ? 'まだ保存していません' : draftIssues.value.length ? `公開まであと ${draftIssues.value.length} 項目` : '公開できます'
@@ -444,7 +444,7 @@ async function save() {
         </section>
       </form>
     </div>
-    <footer class="draft-status"><span role="status">{{ status }}</span><NuxtLink to="/my?tab=contests">自分のコンテスト</NuxtLink></footer>
+    <footer class="draft-status"><LoadingSpinner v-if="!ready && !message" inline label="コンテストを読み込み中" /><span v-else role="status">{{ status }}</span><NuxtLink to="/my?tab=contests">自分のコンテスト</NuxtLink></footer>
   </div>
 </template>
 <style scoped>

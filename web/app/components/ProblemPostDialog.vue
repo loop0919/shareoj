@@ -60,7 +60,7 @@ async function post() {
     <dialog ref="dialog" class="problem-post-dialog" aria-labelledby="post-title" :aria-describedby="featured ? undefined : 'post-description'" @cancel="busy && $event.preventDefault()">
       <header><h2 id="post-title">{{ featured ? '定期便に応募' : '問題を投稿' }}</h2><button type="button" class="editor-button close-button" aria-label="閉じる" :disabled="busy" @click="dialog?.close()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></header>
       <p v-if="!featured" id="post-description">未公開の問題を選んで投稿します。コンテストに登録した問題は選べません。</p>
-      <p v-if="loading" role="status">問題を読み込んでいます…</p>
+      <LoadingSpinner v-if="loading" label="問題を読み込み中" />
       <p v-if="message" role="alert" class="editor-error">{{ message }}</p>
       <button v-if="message" class="editor-button" :disabled="loading || busy" @click="load">再読み込み</button>
       <p v-if="!loading && !signedIn && !message"><NuxtLink :to="featured ? '/login?next=/featured' : '/login?next=/problems?post=1'">ログインして投稿する</NuxtLink></p>

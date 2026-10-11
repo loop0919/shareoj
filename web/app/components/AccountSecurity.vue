@@ -36,7 +36,7 @@ async function change() {
     <section aria-labelledby="sign-in-title">
       <h2 id="sign-in-title">ログイン方法</h2>
       <p v-if="loadError" class="editor-error" role="alert">{{ loadError }}</p>
-      <p v-else-if="!account" role="status">読み込み中…</p>
+      <LoadingSpinner v-else-if="!account" />
       <dl v-else class="sign-in">
         <div><dt>方法</dt><dd>{{ providerName }}</dd></div>
         <div><dt>メールアドレス</dt><dd>{{ account.email || '—' }}</dd></div>
