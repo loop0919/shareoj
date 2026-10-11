@@ -46,7 +46,8 @@ useSharePreview({ type: 'website', title: heading, path, description })
   <div class="catalogue">
     <ProblemPostDialog ref="postDialog" />
     <header class="catalogue-heading"><h1>問題</h1><button type="button" class="editor-button primary" @click="postDialog?.open()">問題投稿</button></header>
-    <TagFilter kind="problem" :tag="tag" to="/problems" />
+    <!-- Viewers who hide problem tags get no tag search, unless a link opened a filtered list. -->
+    <TagFilter v-if="showTags || tag" kind="problem" :tag="tag" to="/problems" />
     <EmptyState v-if="!current.items.length" kind="problem" :title="tag ? `「${tag}」のタグが付いた問題はまだありません。` : '公開された問題はまだありません。'" />
     <div v-else class="content-table-scroll" tabindex="0" role="region" aria-label="問題一覧" :aria-busy="loading">
       <table class="content-table">

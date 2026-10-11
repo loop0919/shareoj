@@ -7,7 +7,7 @@ const tagsLoaded = (page: import('@playwright/test').Page) => page.waitForRespon
 // Problem tags are hidden by default; these tests turn them on as the settings do.
 const showProblemTags = (page: import('@playwright/test').Page) => page.context().addCookies([{ name: 'openoj-problem-tags', value: 'show', url: 'http://127.0.0.1:13000' }])
 
-test('problem tags link to the problems that carry them', async ({ page }) => {
+test('problem tags link to the problems that carry them', async ({ page }, testInfo) => {
   await showProblemTags(page)
   await page.goto(`/problems/${problemId}`)
   const tags = page.locator('.problem-meta').getByRole('list', { name: 'タグ' })
@@ -15,16 +15,20 @@ test('problem tags link to the problems that carry them', async ({ page }) => {
   await tags.getByRole('link', { name: 'DP', exact: true }).click()
   await expect(page).toHaveURL('/problems?tag=DP')
   await expect(page).toHaveTitle('タグ「DP」の問題 | ShareOJ')
-  await expect(page.getByText('タグ「DP」で絞り込んでいます。')).toBeVisible()
+  // The search box shows the tag in use, with a button beside it to clear the filter.
+  const search = page.getByRole('combobox', { name: 'タグで絞り込む' })
+  await expect(search).toHaveValue('DP')
   const table = page.getByRole('table')
   await expect(table.getByRole('link', { name: 'A + B', exact: true })).toBeVisible()
   await expect(table.getByRole('list', { name: 'タグ' }).getByRole('link')).toHaveText(['DP', 'グラフ'])
+  await page.screenshot({ path: testInfo.outputPath('problems-filtered.png') })
   await page.getByRole('link', { name: '絞り込みを解除' }).click()
   await expect(page).toHaveURL('/problems')
-  await expect(page.getByText('で絞り込んでいます。')).toHaveCount(0)
+  await expect(search).toHaveValue('')
+  await expect(page.getByRole('link', { name: '絞り込みを解除' })).toHaveCount(0)
 })
 
-test('problem tags stay hidden until the viewer turns them on', async ({ page }) => {
+test('problem tags stay hidden until the viewer turns them on', async ({ page }, testInfo) => {
   await page.goto(`/problems/${problemId}`)
   await expect(page.getByRole('heading', { name: 'A + B', level: 1 })).toBeVisible()
   await expect(page.getByRole('list', { name: 'タグ' })).toHaveCount(0)
@@ -42,6 +46,7 @@ test('problem tags stay hidden until the viewer turns them on', async ({ page })
   await expect(toggle).toHaveAttribute('aria-checked', 'false')
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-checked', 'true')
+  await page.screenshot({ path: testInfo.outputPath('display-settings.png') })
   await page.reload()
   await expect(toggle).toHaveAttribute('aria-checked', 'true')
   await page.goto(`/problems/${problemId}`)
@@ -74,15 +79,39 @@ test('post tags link to the posts that carry them', async ({ page }) => {
   await expect(page.getByText('「Go」のタグが付いた記事はまだありません。')).toBeVisible()
 })
 
-test('the tag filter reuses the spelling in use', async ({ page }) => {
+test('the tag filter reuses the spelling in use', async ({ page }, testInfo) => {
+  await showProblemTags(page)
   const loaded = tagsLoaded(page)
   await page.goto('/problems')
   await loaded
   await expect(page.locator('#problem-tag-filter-options option')).toHaveCount(3)
-  await page.getByRole('combobox', { name: 'タグで絞り込む' }).fill('ｄｐ')
+  const search = page.getByRole('combobox', { name: 'タグで絞り込む' })
+  await search.fill('ｄｐ')
   await page.getByRole('button', { name: '絞り込む', exact: true }).click()
   await expect(page).toHaveURL('/problems?tag=DP')
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.getByRole('search').screenshot({ path: testInfo.outputPath('tag-filter-dark.png') })
+  await page.emulateMedia({ colorScheme: 'light' })
+  // Emptying the box and pressing Enter clears the filter too.
+  await search.fill('')
+  await search.press('Enter')
+  await expect(page).toHaveURL('/problems')
   expect((await page.goto('/problems?tag=a,b'))?.status()).toBe(404)
+})
+
+test('viewers who hide problem tags get no problem tag search', async ({ page }) => {
+  await page.goto('/problems')
+  await expect(page.getByRole('table').getByRole('link', { name: 'A + B', exact: true })).toBeVisible()
+  await expect(page.getByRole('search')).toHaveCount(0)
+  // A link to a filtered list still shows the tag and a way to clear it.
+  await page.goto('/problems?tag=DP')
+  await expect(page.getByRole('combobox', { name: 'タグで絞り込む' })).toHaveValue('DP')
+  await page.getByRole('link', { name: '絞り込みを解除' }).click()
+  await expect(page).toHaveURL('/problems')
+  await expect(page.getByRole('search')).toHaveCount(0)
+  // Post tags are not spoilers, so the post list keeps its search.
+  await page.goto('/blog')
+  await expect(page.getByRole('search', { name: '記事をタグで絞り込む' })).toBeVisible()
 })
 
 test('post editor suggests the tags in use', async ({ page }, testInfo) => {

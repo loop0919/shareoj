@@ -2,12 +2,11 @@
 const showProblemTags = useProblemTags()
 </script>
 <template>
-  <section class="display-settings" aria-labelledby="problem-tags-title">
-    <h2 id="problem-tags-title">問題のタグ</h2>
+  <section class="display-settings" aria-labelledby="problem-tags-label">
     <div class="switch-setting">
       <div>
         <p id="problem-tags-label" class="switch-label">問題のタグを表示する</p>
-        <p id="problem-tags-help" class="hint">オンにすると、問題ページと問題一覧にタグを表示します。タグは解法のヒントになるため、初期設定では表示しません。定期便の開催中の問題とコンテストの問題には、この設定に関係なく表示しません。設定はこのブラウザに保存します。</p>
+        <p id="problem-tags-help" class="hint">解法のヒントになることがあります。</p>
       </div>
       <span class="switch-control">
         <span class="switch-state" aria-hidden="true">{{ showProblemTags ? 'ON' : 'OFF' }}</span>
@@ -17,7 +16,6 @@ const showProblemTags = useProblemTags()
   </section>
 </template>
 <style scoped>
-h2 { font-size: 1.125rem; margin-bottom: 16px; }
 .switch-setting { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
 .switch-label { margin: 0 0 4px; font-weight: 600; }
 .hint { margin: 0; color: var(--color-muted); font-size: .85rem; }
