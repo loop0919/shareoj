@@ -1,5 +1,6 @@
 /.codex/
 /.agents/skills/hallmark/
+/.claude/skills/hallmark
 /.agents/skills/archify/
 /.agents/skills/archify-review/
 /graphify-out/
