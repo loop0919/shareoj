@@ -5,8 +5,14 @@ const route = useRoute()
 const router = useRouter()
 const activeContent = computed({
   get: () => ['problems', 'testing', 'posts', 'contests', 'submissions', 'events'].includes(String(route.query.tab)) ? String(route.query.tab) : 'problems',
-  set: tab => { void router.replace({ query: { ...route.query, tab } }) },
+  set: tab => { void router.replace({ query: { ...route.query, tab, status: undefined } }) },
 })
+// One status filter in the URL; only the shown tab reads it, and switching tabs clears it.
+const statusFilter = computed({
+  get: () => typeof route.query.status === 'string' ? route.query.status : '',
+  set: status => { void router.replace({ query: { ...route.query, status: status || undefined } }) },
+})
+const tabStatus = (tab: string) => activeContent.value === tab ? statusFilter.value : ''
 const joined = computed(() => profile.value ? new Date(profile.value.createdAt).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long' }) : '')
 </script>
 <template>
@@ -25,10 +31,10 @@ const joined = computed(() => profile.value ? new Date(profile.value.createdAt).
       <button :aria-pressed="activeContent === 'submissions'" @click="activeContent = 'submissions'">提出履歴</button>
       <button :aria-pressed="activeContent === 'events'" @click="activeContent = 'events'">イベント</button>
     </nav>
-    <SavedProblems v-show="activeContent === 'problems'" />
-    <SavedProblems v-if="activeContent === 'testing'" testing />
-    <SavedPosts v-show="activeContent === 'posts'" />
-    <ContestList v-if="activeContent === 'contests'" mine />
+    <SavedProblems v-show="activeContent === 'problems'" :status="tabStatus('problems')" @update:status="statusFilter = $event" />
+    <SavedProblems v-if="activeContent === 'testing'" v-model:status="statusFilter" testing />
+    <SavedPosts v-show="activeContent === 'posts'" :status="tabStatus('posts')" @update:status="statusFilter = $event" />
+    <ContestList v-if="activeContent === 'contests'" v-model:status="statusFilter" mine />
     <SubmissionHistory v-if="activeContent === 'submissions'" embedded />
     <EventHistory v-if="activeContent === 'events'" />
   </section>
