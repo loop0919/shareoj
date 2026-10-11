@@ -168,7 +168,7 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
           <LimitStepper id="memory-limit" v-model="draft.memoryLimitMb" :options="memoryLimitOptions" :default-value="512" label="メモリ制限" labelledby="memory-limit-label" :disabled="!ready || publishing" />
         </div>
         <div class="tag-field">
-          <div class="field-heading"><label for="problem-tags">タグ <span>任意 · {{ maxTags }}個まで · 定期便やコンテストの開催中は表示されません</span></label></div>
+          <div class="field-heading"><label for="problem-tags">タグ <span>任意 · {{ maxTags }}個まで</span></label></div>
           <TagInput id="problem-tags" v-model="draft.tags" label="タグ" :disabled="!ready || publishing" />
         </div>
       </div>
@@ -244,5 +244,10 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
 }
 @media (min-width: 60rem) {
   .editor-main .author-fields { grid-template-columns: minmax(0, 1fr) 160px 140px 140px; }
+}
+/* Wide screens fit the tags beside the title, so the editor below keeps its height. */
+@media (min-width: 75rem) {
+  .editor-main .author-fields { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) 160px 140px 140px; }
+  .tag-field { grid-column: 2; grid-row: 1; }
 }
 </style>

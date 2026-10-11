@@ -232,6 +232,11 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .author-fields.post-fields { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 60rem) {
+  .author-fields.post-fields { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+  .post-fields .post-problems-field { grid-column: 1 / -1; }
+  .post-fields .post-tags-field { grid-column: 2; grid-row: 1; }
+}
 .post-problems-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
 .post-problem-list { display: flex; flex-wrap: wrap; gap: 6px 8px; margin: 0; padding: 0; list-style: none; }
 .post-problem-list li { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; min-height: 32px; padding: 0 2px 0 10px; border: 1px solid var(--color-line); border-radius: 999px; font-size: .8125rem; overflow-wrap: anywhere; }

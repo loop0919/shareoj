@@ -7,7 +7,7 @@ const showProblemTags = useProblemTags()
     <div class="switch-setting">
       <div>
         <p id="problem-tags-label" class="switch-label">問題のタグを表示する</p>
-        <p id="problem-tags-help" class="hint">タグは解法のヒントになることがあります。オフにすると、問題ページと問題一覧にタグを表示しません。定期便の開催中やコンテスト中の問題には、この設定に関係なく表示しません。設定はこのブラウザに保存します。</p>
+        <p id="problem-tags-help" class="hint">オンにすると、問題ページと問題一覧にタグを表示します。タグは解法のヒントになるため、初期設定では表示しません。定期便の開催中の問題とコンテストの問題には、この設定に関係なく表示しません。設定はこのブラウザに保存します。</p>
       </div>
       <span class="switch-control">
         <span class="switch-state" aria-hidden="true">{{ showProblemTags ? 'ON' : 'OFF' }}</span>

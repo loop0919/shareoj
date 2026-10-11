@@ -6,6 +6,7 @@ import { canonicalTag, searchTags, tagUsage } from '~/utils/tag-search'
 const model = defineModel<string[]>({ required: true })
 const props = defineProps<{ id: string, label: string, disabled?: boolean }>()
 const root = ref<HTMLElement>()
+const input = ref<HTMLInputElement>()
 const known = ref<Tag[]>([])
 const text = ref('')
 const message = ref('')
@@ -99,12 +100,13 @@ watch(() => props.disabled, value => { if (value) dismissed.value = true })
 </script>
 <template>
   <div ref="root" class="tag-input">
-    <ul v-if="model.length" class="tag-chips" :aria-label="label">
-      <li v-for="(tag, index) in model" :key="tag"><span>{{ tag }}</span><button type="button" :aria-label="`${tag}を外す`" title="外す" :disabled="disabled" @click="remove(index)"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></button></li>
-    </ul>
-    <div class="tag-combobox">
+    <!-- One input-sized box holds the chips and the text, so the field stays a single line. -->
+    <div class="tag-box" @click.self="input?.focus()">
+      <ul v-if="model.length" class="tag-chips" :aria-label="label">
+        <li v-for="(tag, index) in model" :key="tag"><span>{{ tag }}</span><button type="button" :aria-label="`${tag}を外す`" title="外す" :disabled="disabled" @click="remove(index)"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></button></li>
+      </ul>
       <input
-        :id="id" v-model="text" role="combobox" aria-autocomplete="list" autocomplete="off" enterkeyhint="done" placeholder="入力してEnterで追加"
+        :id="id" ref="input" v-model="text" class="tag-text" role="combobox" aria-autocomplete="list" autocomplete="off" enterkeyhint="done" :placeholder="model.length ? '' : '入力してEnterで追加'"
         :aria-expanded="open" :aria-controls="`${id}-options`" :aria-activedescendant="open && active >= 0 ? `${id}-option-${active}` : undefined"
         :aria-describedby="message ? `${id}-message` : undefined" :disabled="disabled"
         @input="split" @compositionend="split()" @keydown="keydown" @focus="focused = true; dismissed = false" @blur="blur"
@@ -119,17 +121,21 @@ watch(() => props.disabled, value => { if (value) dismissed.value = true })
   </div>
 </template>
 <style scoped>
-.tag-input { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
-.tag-chips { display: flex; flex-wrap: wrap; gap: 6px 8px; margin: 0; padding: 0; list-style: none; }
-.tag-chips li { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; min-height: 32px; padding: 0 2px 0 10px; border: 1px solid var(--color-line); border-radius: 999px; background: var(--color-surface); font-size: .8125rem; overflow-wrap: anywhere; }
-.tag-chips button { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; border-radius: 999px; background: none; color: var(--color-muted); cursor: pointer; }
+/* The text keeps the title input's padding, so both fields are the same height until chips wrap. */
+.tag-box { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 0 4px; min-height: 36px; padding: 0 4px; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-paper); cursor: text; }
+.tag-box:hover { border-color: var(--color-muted); }
+.tag-box:focus-within { outline: 3px solid var(--color-accent); outline-offset: 3px; }
+.tag-chips { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; margin: 0; padding: 4px 0; list-style: none; }
+.tag-chips li { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; min-height: 26px; padding: 0 0 0 8px; border: 1px solid var(--color-line); border-radius: 999px; background: var(--color-surface); font-size: .75rem; overflow-wrap: anywhere; cursor: default; }
+.tag-chips button { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 0; border-radius: 999px; background: none; color: var(--color-muted); cursor: pointer; }
 .tag-chips button:hover:not(:disabled) { color: var(--color-ink); background: var(--color-paper); }
-.tag-chips .editor-icon { width: 14px; height: 14px; }
-.tag-combobox { position: relative; flex: 1 1 14rem; min-width: 0; }
-.tag-options { position: absolute; top: calc(100% + 4px); inset-inline: 0; z-index: 30; max-height: min(20rem, 45dvh); overflow-y: auto; margin: 0; padding: 4px; list-style: none; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-paper); font-size: .875rem; }
+.tag-chips .editor-icon { width: 12px; height: 12px; }
+.tag-box .tag-text { flex: 1 1 6rem; width: auto; min-width: 6rem; min-height: 0; padding: 6px 4px; border: 0; background: transparent; font-size: .875rem; }
+.tag-box .tag-text:focus-visible { outline: none; }
+.tag-options { position: absolute; top: calc(100% + 4px); inset-inline: 0; z-index: 30; max-height: min(20rem, 45dvh); overflow-y: auto; margin: 0; padding: 4px; list-style: none; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-paper); font-size: .875rem; cursor: default; }
 .tag-options [role="option"] { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-height: 36px; padding: 8px; cursor: pointer; overflow-wrap: anywhere; }
 .tag-options [role="option"]:hover, .tag-options [aria-selected="true"] { background: var(--color-surface); }
 .tag-option-note { flex-shrink: 0; font-size: .75rem; color: var(--color-muted); }
-.field-error { flex-basis: 100%; }
 @media (pointer: coarse) { .tag-options [role="option"] { min-height: 44px; } }
+@media (max-width: 39.999rem) { .tag-box .tag-text { font-size: 1rem; } }
 </style>
