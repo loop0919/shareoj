@@ -10,6 +10,7 @@ import (
 
 	"judge/api/internal/problems"
 	"judge/api/internal/submissions"
+	"judge/api/internal/tags"
 )
 
 func contentJSON(w http.ResponseWriter, r *http.Request, target any) bool {
@@ -38,6 +39,21 @@ func contentCursor(w http.ResponseWriter, r *http.Request) (*problems.Cursor, bo
 	return &c, true
 }
 
+// catalogueFilter reads the author and tag that narrow a public list.
+func catalogueFilter(w http.ResponseWriter, r *http.Request) (author, tag string, ok bool) {
+	author = r.URL.Query().Get("author")
+	if author != "" && !userHandle.MatchString(author) {
+		authError(w, 400, "invalid_author")
+		return "", "", false
+	}
+	tag = r.URL.Query().Get("tag")
+	if tag != "" && !tags.Valid([]string{tag}) {
+		authError(w, 400, "invalid_tag")
+		return "", "", false
+	}
+	return author, tag, true
+}
+
 func nextContentCursor(id string, date time.Time) string {
 	data, _ := json.Marshal(problems.Cursor{ID: id, UpdatedAt: date})
 	return base64.RawURLEncoding.EncodeToString(data)
@@ -52,9 +68,8 @@ func (p problemHandler) publishedProblems(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	id := r.PathValue("id")
-	author := r.URL.Query().Get("author")
-	if author != "" && !userHandle.MatchString(author) {
-		authError(w, 400, "invalid_author")
+	author, tag, ok := catalogueFilter(w, r)
+	if !ok {
 		return
 	}
 	if id != "" && !problemID.MatchString(id) {
@@ -82,20 +97,7 @@ func (p problemHandler) publishedProblems(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	var list []problems.PublicProblem
-	var err error
-	if author == "" {
-		list, err = store.PublicList(ctx, cursor)
-	} else {
-		filtered, ok := store.(interface {
-			PublicListByHandle(context.Context, *problems.Cursor, string) ([]problems.PublicProblem, error)
-		})
-		if !ok {
-			authError(w, 503, "database_unavailable")
-			return
-		}
-		list, err = filtered.PublicListByHandle(ctx, cursor, author)
-	}
+	list, err := store.PublicList(ctx, cursor, problems.ListFilter{Author: author, Tag: tag})
 	if err != nil {
 		problemError(w, err)
 		return

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { accountError } from '~/utils/account-problems'
 import type { EditorSection } from '~/utils/problem-readiness'
+import { maxTags } from '~~/shared/types/tag'
 
 definePageMeta({ editorLayout: true })
 useSeoMeta({ title: '問題を作成 | ShareOJ', robots: 'noindex, nofollow' })
@@ -154,7 +155,7 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
         <input id="problem-title" v-model="draft.title" maxlength="120" placeholder="例：A + B" :disabled="!ready || publishing" :aria-invalid="(showErrors || touched.title) && !!errors.title" aria-describedby="title-error" @blur="touched.title = true">
       </div>
       <button type="button" class="editor-button problem-settings-toggle" aria-label="問題設定" :aria-expanded="problemSettingsExpanded" aria-controls="problem-settings" @click="problemSettingsExpanded = !problemSettingsExpanded">
-        <span>問題設定 <span aria-hidden="true">{{ problemSettingsExpanded ? '▴' : '▾' }}</span></span><span>{{ draft.timeLimitMs }} ms / {{ draft.memoryLimitMb }} MiB</span>
+        <span>問題設定 <span aria-hidden="true">{{ problemSettingsExpanded ? '▴' : '▾' }}</span></span><span>{{ draft.timeLimitMs }} ms / {{ draft.memoryLimitMb }} MiB<template v-if="draft.tags.length"> / タグ {{ draft.tags.length }}</template></span>
       </button>
       <div id="problem-settings" class="problem-settings" :data-expanded="problemSettingsExpanded">
         <div class="field"><div class="field-heading difficulty-heading"><label for="problem-difficulty">難易度（作成者設定）</label><NuxtLink class="source-guide-link" to="/blog/difficulty-guide" target="_blank" rel="noopener noreferrer" aria-label="難易度の目安" title="難易度の目安"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 2-2.5 3.5M12 16h.01" /></svg></NuxtLink></div><DifficultySelect id="problem-difficulty" v-model="draft.difficulty" label="難易度（作成者設定）" :disabled="!ready || publishing" /></div>
@@ -165,6 +166,10 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
         <div>
           <div class="field-heading"><span class="limit-field-label" id="memory-limit-label">メモリ制限 <span>MiB</span></span></div>
           <LimitStepper id="memory-limit" v-model="draft.memoryLimitMb" :options="memoryLimitOptions" :default-value="512" label="メモリ制限" labelledby="memory-limit-label" :disabled="!ready || publishing" />
+        </div>
+        <div class="tag-field">
+          <div class="field-heading"><label for="problem-tags">タグ <span>任意 · {{ maxTags }}個まで · 定期便やコンテストの開催中は表示されません</span></label></div>
+          <TagInput id="problem-tags" v-model="draft.tags" label="タグ" :disabled="!ready || publishing" />
         </div>
       </div>
     </div>
@@ -227,6 +232,7 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
 .readiness-row > div { flex: 1; min-width: 0; }
 .difficulty-heading .source-guide-link { width: 18px; height: 18px; flex-shrink: 0; }
 .problem-settings-toggle { display: none; }
+.tag-field { grid-column: 1 / -1; }
 @media (pointer: coarse) {
   .problem-settings { --problem-setting-height: 67px; }
 }

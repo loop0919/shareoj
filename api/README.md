@@ -445,6 +445,20 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 - `GET /problems/{id}/editorials`: 問題を解説する公開記事。公開日時の昇順。
 - `GET /contests/{id}/editorials`: 終了したコンテストの各問題を解説する公開記事。`problemId`で問題を示す。
 
+問題と記事は、同じタグを最大5個まで持てます（[ADR 0018](../docs/adr/0018-tag-problems-and-posts.md)）。
+問題は下書きの`draft.tags`、記事は`PUT /my/posts/{id}`の`tags`で指定します。記事の`tags`を省略すると現在の一覧を保ちます。
+各タグはNFKCで正規化し、前後の空白を除いて連続する空白を1つにした30文字以内の文字列です。
+正規化されていない値、カンマや制御文字、大文字と小文字だけが違う重複を含むと、問題は`400 invalid_draft`、記事は`400 invalid_post`を返します。
+タグは公開時に公開版へ写ります。
+
+- `GET /tags`: 公開中の問題と記事のタグを、使われている数の多い順に最大1000件返す。`problemCount`と`postCount`を含む。
+- `GET /problems?tag=`、`GET /posts?tag=`: タグの完全一致で絞り込む。`author`と併用できる。不正なタグは`400 invalid_tag`。
+- `GET /problems/{id}`、`GET /problems`、`GET /posts/{id}`、`GET /posts`の`tags`: 公開版のタグ。
+
+定期便の回に含まれる問題は、新作・復刻を問わず、その回の解説公開までタグを返しません。
+タグでの絞り込みと`GET /tags`の件数からも除きます。作問者とテスターには返します。
+コンテストの問題APIはタグを返しません。
+
 ## 問題のテストケース
 
 下書きの`draft.testCases`へ`[{"input":"3 5\n","output":"8\n"}]`の形式で保存する。

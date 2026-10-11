@@ -2,7 +2,7 @@ import { expect, test } from './fixtures/account'
 
 for (const [path, api, label] of [['/problems', 'problems', '問題'], ['/blog', 'posts', '記事']] as const) {
   test(`${label} table replaces pages, retains data on failure, and goes back`, async ({ page }, testInfo) => {
-    const item = (id: string, title: string) => ({ id, title, author: 'alice', publishedAt: '2026-09-10T00:00:00Z', updatedAt: '2026-09-10T00:00:00Z', publishedVersion: 1, isOperator: true, timeLimitMs: 2000, memoryLimitMb: 256, difficulty: 10, favoriteCount: 3, solverCount: 12 })
+    const item = (id: string, title: string) => ({ id, title, author: 'alice', publishedAt: '2026-09-10T00:00:00Z', updatedAt: '2026-09-10T00:00:00Z', publishedVersion: 1, isOperator: true, timeLimitMs: 2000, memoryLimitMb: 256, difficulty: 10, favoriteCount: 3, solverCount: 12, tags: [] })
     await page.route('**/api/my/solved-problems', route => route.fulfill({ json: { items: ['22222222-2222-4222-8222-222222222222'] } }))
     let fail = true
     await page.route(`**/api/${api}*`, route => {

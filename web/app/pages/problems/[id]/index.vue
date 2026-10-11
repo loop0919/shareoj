@@ -9,6 +9,8 @@ const { data: problem, error, refresh } = await useFetch(() => `/api/problems/${
 if (error.value || !problem.value) throw createError({ statusCode: error.value?.statusCode === 404 ? 404 : 502, statusMessage: error.value?.statusCode === 404 ? 'Problem not found' : 'Problem service unavailable', fatal: true })
 usePolling(() => problem.value?.editorialHidden ? refresh() : Promise.resolve(), 60000)
 const { user, profile } = useAccount()
+// The API leaves tags out during a 定期便 round; the viewer may also hide them as spoilers.
+const showTags = useProblemTags()
 const canEdit = computed(() => problem.value?.isPrivate || (!!user.value && !!profile.value && (
   profile.value.handle === problem.value?.author || problem.value?.testers.includes(profile.value.handle)
 )))
@@ -42,6 +44,7 @@ useSharePreview({ title: () => problem.value!.title, path: () => `/problems/${pr
           <p>作成者 <UserLink :handle="problem.author" /></p><p v-if="problem.testers?.length">テスター <template v-for="(tester, index) in problem.testers" :key="tester"><span v-if="index">、</span><UserLink :handle="tester" /></template></p>
           <p>難易度（作成者設定） <DifficultyBadge :level="problem.difficulty" /></p>
           <p v-if="!problem.isPrivate">難易度（投票） <strong>{{ votes.average === null ? '未投票' : `Lv.${votes.average.toFixed(1)}` }}</strong> <span>（{{ votes.count }}票）</span></p>
+          <div v-if="showTags && problem.tags.length" class="problem-tags"><span>タグ</span><TagLinks :tags="problem.tags" to="/problems" /></div>
         </div>
         <div v-if="!problem.isPrivate" class="problem-actions">
           <ProblemFavorite :problem-id="problem.id" :count="problem.favoriteCount" />
@@ -73,6 +76,7 @@ useSharePreview({ title: () => problem.value!.title, path: () => `/problems/${pr
 <style scoped>
 .problem-summary { align-items: flex-start; flex-wrap: nowrap; }
 .problem-meta { flex: 1; padding-top: 8px; }
+.problem-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 4px; }
 .problem-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; max-width: 100%; margin-left: auto; }
 .problem-actions :deep(.favorite-control) { margin: 0; max-width: 100%; overflow-wrap: anywhere; }
 @media (max-width: 600px) { .problem-summary { flex-wrap: wrap; } .problem-meta { flex-basis: 100%; } }

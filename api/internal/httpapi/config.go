@@ -26,6 +26,7 @@ import (
 	"judge/api/internal/problems"
 	"judge/api/internal/profiles"
 	"judge/api/internal/submissions"
+	"judge/api/internal/tags"
 	"judge/api/internal/testfiles"
 )
 
@@ -108,6 +109,7 @@ func configuredStorage(getenv func(string) string, auth AuthConfig, region strin
 		private.Profiles = profiles.New(pool)
 		private.Accounts = &accounts.Store{Pool: pool}
 		private.Posts = posts.New(pool)
+		private.Tags = &tags.Store{Pool: pool}
 		private.Submissions = &submissions.Store{Pool: pool}
 		auth.Registrations = database.RegistrationQuota{Pool: pool}
 		private.JudgeImage = getenv("JUDGE_CPP_IMAGE")

@@ -4,8 +4,18 @@ const problem = {
   timeLimitMs: 2000, memoryLimitMb: 256, hasSamples: true,
   markdown: '2 つの整数 $A$ と $B$ の和を求めてください。\n\n## 制約\n\n$1 \\le A,B \\le 10^9$\n\n## 入出力例\n\n```\n3 5\n```\n\n```\n8\n```\n\n最大の答えは 2000000000 です。',
   editorial: '## 解説\n\n$A+B$ を計算します。',
+  tags: ['DP', 'グラフ'],
 }
-const featuredProblem = { ...problem, id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', title: '定期便の新作', difficulty: 9, editorial: '', editorialHidden: true, editorialRevealAt: '2099-09-29T13:00:00Z' }
+// The API leaves out the tags of a problem in a 定期便 round.
+const featuredProblem = { ...problem, id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', title: '定期便の新作', difficulty: 9, editorial: '', tags: [], editorialHidden: true, editorialRevealAt: '2099-09-29T13:00:00Z' }
+const tags = [
+  { name: 'DP', problemCount: 3, postCount: 1 }, { name: 'セグメント木', problemCount: 2, postCount: 0 },
+  { name: 'Rust', problemCount: 0, postCount: 2 }, { name: 'グラフ', problemCount: 1, postCount: 0 },
+]
+const publicPost = {
+  id: '77777777-7777-4777-8777-777777777777', title: '公開記事', author: 'alice', publishedVersion: 1,
+  updatedAt: '2026-09-10T00:00:00Z', publishedAt: '2026-09-10T00:00:00Z', isOperator: false, tags: ['DP', 'Rust'],
+}
 const featured = {
   nextNumber: 13, nextAt: '2099-10-01T14:00:00Z', hasMore: false,
   current: null, waiting: { easy: 3, hard: 2 },
@@ -92,7 +102,13 @@ createServer(async (req, res) => {
   }
   else if (path === '/featured') res.end(JSON.stringify(featured))
   else if (path === `/problems/${featuredProblem.id}`) res.end(JSON.stringify(featuredProblem))
-  else if (path === '/problems') res.end(JSON.stringify({ items: !new URL(req.url, 'http://localhost').searchParams.get('author') || new URL(req.url, 'http://localhost').searchParams.get('author') === 'alice' ? [problem] : [], nextCursor: '' }))
+  else if (path === '/tags') res.end(JSON.stringify({ items: tags }))
+  else if (path === '/problems') {
+    const query = new URL(req.url, 'http://localhost').searchParams
+    if (query.get('tag')?.includes(',')) return res.writeHead(400).end(JSON.stringify({ error: 'invalid_tag' }))
+    const matches = (!query.get('author') || query.get('author') === 'alice') && (!query.get('tag') || problem.tags.includes(query.get('tag')))
+    res.end(JSON.stringify({ items: matches ? [problem] : [], nextCursor: '' }))
+  }
   else if (path === `/problems/${problem.id}`) res.end(JSON.stringify(problem))
   else if (path === `/problems/${problem.id}/editorials`) res.end(JSON.stringify({ items: [{ problemId: problem.id, id: '77777777-7777-4777-8777-777777777777', title: '日本語 & #記事 + 共有', author: 'alice', publishedAt: '2026-09-10T00:00:00Z', isOperator: false }] }))
   else if (path === `/problems/${problem.id}/samples`) res.end(JSON.stringify({ items: [
@@ -103,11 +119,12 @@ createServer(async (req, res) => {
   else if (path === `/problems/${problem.id}/submissions`) res.end(JSON.stringify({ items: [submission], hasMore: false }))
   else if (path === `/problems/${problem.id}/submissions/${submission.id}`) res.end(JSON.stringify(submission))
   else if (path === `/contests/88888888-8888-4888-8888-888888888888/submissions/${submission.id}`) res.end(JSON.stringify({ ...submission, contestId: '88888888-8888-4888-8888-888888888888' }))
-  else if (path === '/posts') res.end(JSON.stringify({ items: new URL(req.url, 'http://localhost').searchParams.get('author') === 'alice' ? [{
-    id: '77777777-7777-4777-8777-777777777777', title: '公開記事', author: 'alice', publishedVersion: 1,
-    updatedAt: '2026-09-10T00:00:00Z', publishedAt: '2026-09-10T00:00:00Z', isOperator: false,
-  }] : [], nextCursor: '' }))
-  else if (path === '/posts/77777777-7777-4777-8777-777777777777') res.end(JSON.stringify({ id: '77777777-7777-4777-8777-777777777777', title: '日本語 & #記事 + 共有', author: 'alice', markdown: '共有する記事です。', publishedVersion: 1, updatedAt: '2026-09-10T00:00:00Z', isOperator: false, publishedAt: '2026-09-10T00:00:00Z', problems: [{ id: problem.id, title: problem.title }] }))
+  else if (path === '/posts') {
+    const query = new URL(req.url, 'http://localhost').searchParams
+    const matches = query.get('author') === 'alice' || (query.get('tag') && publicPost.tags.includes(query.get('tag')))
+    res.end(JSON.stringify({ items: matches ? [publicPost] : [], nextCursor: '' }))
+  }
+  else if (path === '/posts/77777777-7777-4777-8777-777777777777') res.end(JSON.stringify({ id: '77777777-7777-4777-8777-777777777777', title: '日本語 & #記事 + 共有', author: 'alice', markdown: '共有する記事です。', publishedVersion: 1, updatedAt: '2026-09-10T00:00:00Z', isOperator: false, publishedAt: '2026-09-10T00:00:00Z', problems: [{ id: problem.id, title: problem.title }], tags: publicPost.tags }))
   else if (/^\/contests\/(88888888-8888-4888-8888-888888888888|99999999-9999-4999-8999-999999999999)$/.test(path)) res.end(JSON.stringify({
     id: path.split('/').pop(), title: '共有コンテスト', author: 'alice', description: '共有するコンテストです。',
     startsAt: '2026-09-10T00:00:00Z', endsAt: '2026-09-10T02:00:00Z', penaltyMinutes: 5,

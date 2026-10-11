@@ -10,15 +10,15 @@ import (
 	"unicode/utf8"
 
 	"judge/api/internal/posts"
+	"judge/api/internal/tags"
 )
 
 func (p postHandler) publicPosts(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	id := r.PathValue("id")
-	author := r.URL.Query().Get("author")
-	if author != "" && !userHandle.MatchString(author) {
-		authError(w, 400, "invalid_author")
+	author, tag, ok := catalogueFilter(w, r)
+	if !ok {
 		return
 	}
 	if id != "" && !problemID.MatchString(id) {
@@ -46,13 +46,7 @@ func (p postHandler) publicPosts(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var list []posts.Post
-	var err error
-	if author == "" {
-		list, err = p.Posts.PublicList(ctx, cursor)
-	} else {
-		list, err = p.Posts.PublicListByHandle(ctx, cursor, author)
-	}
+	list, err := p.Posts.PublicList(ctx, cursor, author, tag)
 	if err != nil {
 		problemError(w, err)
 		return
@@ -186,19 +180,23 @@ func (p postHandler) privatePost(w http.ResponseWriter, r *http.Request, owner s
 			Title      string    `json:"title"`
 			Markdown   string    `json:"markdown"`
 			ProblemIDs *[]string `json:"problemIds"`
+			Tags       *[]string `json:"tags"`
 		}
 		if !contentJSON(w, r, &in) {
 			return
 		}
-		if in.Version < 0 || in.Version > 9007199254740990 || utf8.RuneCountInString(in.Title) > 120 || utf8.RuneCountInString(in.Markdown) > 100000 || strings.ContainsRune(in.Title+in.Markdown, '\x00') || !validPostProblems(in.ProblemIDs) {
+		if in.Version < 0 || in.Version > 9007199254740990 || utf8.RuneCountInString(in.Title) > 120 || utf8.RuneCountInString(in.Markdown) > 100000 || strings.ContainsRune(in.Title+in.Markdown, '\x00') || !validPostProblems(in.ProblemIDs) || (in.Tags != nil && !tags.Valid(*in.Tags)) {
 			authError(w, 400, "invalid_post")
 			return
 		}
-		var problemIDs []string
+		var problemIDs, tagList []string
 		if in.ProblemIDs != nil {
 			problemIDs = append([]string{}, *in.ProblemIDs...)
 		}
-		result, err := p.Posts.Save(r.Context(), owner, id, in.Title, in.Markdown, problemIDs, in.Version)
+		if in.Tags != nil {
+			tagList = append([]string{}, *in.Tags...)
+		}
+		result, err := p.Posts.Save(r.Context(), owner, id, in.Title, in.Markdown, problemIDs, tagList, in.Version)
 		if errors.Is(err, posts.ErrUnavailableProblem) {
 			authError(w, 400, "editorial_problem_unavailable")
 			return

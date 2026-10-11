@@ -47,6 +47,7 @@ type Draft struct {
 	Title         string      `json:"title"`
 	Markdown      string      `json:"markdown"`
 	Editorial     string      `json:"editorial,omitempty"`
+	Tags          []string    `json:"tags,omitempty"`
 	TimeLimitMS   string      `json:"timeLimitMs"`
 	MemoryLimitMB string      `json:"memoryLimitMb"`
 	TestCases     []TestCase  `json:"testCases,omitempty"`

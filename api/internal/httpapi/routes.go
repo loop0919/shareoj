@@ -13,6 +13,7 @@ import (
 	"judge/api/internal/problems"
 	"judge/api/internal/profiles"
 	"judge/api/internal/submissions"
+	"judge/api/internal/tags"
 	"judge/api/internal/testfiles"
 )
 
@@ -35,6 +36,7 @@ type handlerDependencies struct {
 	Submissions          *submissions.Store
 	JudgeImage           string
 	Posts                *posts.Store
+	Tags                 *tags.Store
 	Operators            map[string]bool
 	Store                problems.Repository
 	Profiles             profiles.Repository
@@ -64,6 +66,7 @@ type (
 type (
 	imageHandler        struct{ Store *images.Store }
 	notificationHandler struct{ Store *notifications.Store }
+	tagHandler          struct{ Store *tags.Store }
 )
 
 // releaseBefore keeps local and end-of-contest reads current without coupling unrelated APIs to release.
@@ -103,6 +106,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	contests := contestHandler{Contests: d.Contests, Submissions: d.Submissions, Judging: judging}
 	images := imageHandler{Store: d.Images}
 	notifications := notificationHandler{Store: d.Notifications}
+	tagList := tagHandler{Store: d.Tags}
 	auth := authentication{Verifier: d.Verifier, Profiles: d.Profiles}
 	public := func(pattern string, handler http.HandlerFunc, release bool, doc publicOperation) {
 		documentPublicRoute(docs, pattern, doc)
@@ -143,6 +147,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	public("GET /problems/{id}/submissions", submissions.publicProblemSubmissions, true, publicOperation{Summary: "公開問題の提出一覧", Description: "提出日時の降順。下書き・サンプル実行・開催中コンテストの提出は非公開です。ソースコードとケース別結果は含みません。mine=1は公開APIでは利用できません。", Response: publicSubmissionPage{}, Parameters: offsetParameters()})
 	public("GET /problems/{id}/submissions/{submission}", submissions.publicProblemSubmissions, true, publicOperation{Summary: "公開提出詳細", Description: "ソースコードと公開採点結果。非公開テストの入出力やチェッカー診断は返しません。", Response: publicSubmissionResponse{}})
 	public("GET /posts", posts.publicPosts, false, publicOperation{Summary: "公開記事一覧", Description: "公開日時の降順。本文は詳細APIで取得します。", Response: publicPostPage{}, Parameters: catalogueParameters()})
+	public("GET /tags", tagList.list, true, publicOperation{Summary: "使われているタグ", Description: "公開中の問題と記事に付いたタグを、使われている数の多い順に最大1000件返します。定期便の新作のタグは解説の公開まで数えません。", Response: publicTagList{}})
 	public("GET /posts/{id}", posts.publicPosts, false, publicOperation{Summary: "公開記事詳細", Description: "problemsは記事が解説する問題です。公式解説を誰でも読める問題だけを返します。", Response: publicPostResponse{}})
 	registerDocumentation(mux, docs)
 	private("GET /my/images", images.contentImage, false)

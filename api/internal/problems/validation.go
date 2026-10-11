@@ -7,6 +7,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"judge/api/internal/tags"
 )
 
 var (
@@ -19,7 +21,7 @@ func ValidDraft(d Draft, knownRuntimes []string) bool {
 	if d.Difficulty != nil && (*d.Difficulty < 1 || *d.Difficulty > 10) {
 		return false
 	}
-	if d.Checker != nil && d.Interactor != nil {
+	if (d.Checker != nil && d.Interactor != nil) || !tags.Valid(d.Tags) {
 		return false
 	}
 	for _, code := range []*Generator{d.Checker, d.Interactor} {

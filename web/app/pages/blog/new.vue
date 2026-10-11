@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { postSchema, type PostProblem } from '~~/shared/types/post'
+import { maxTags } from '~~/shared/types/tag'
 import { accountError } from '~/utils/account-problems'
 useSeoMeta({ title: '記事を書く | ShareOJ', robots: 'noindex, nofollow' })
 const route = useRoute()
@@ -16,6 +17,7 @@ const problemInput = ref('')
 const problemMessage = ref('')
 const addingProblem = ref(false)
 const maxProblems = 30
+const tags = ref<string[]>([])
 const ready = ref(false)
 const busy = ref(false)
 definePageMeta({ editorLayout: true })
@@ -32,7 +34,7 @@ const status = ref('')
 let owner = ''
 let saved = ''
 let leaving = false
-const snapshot = () => JSON.stringify({ title: title.value, markdown: markdown.value, problems: problems.value.map(problem => problem.id) })
+const snapshot = () => JSON.stringify({ title: title.value, markdown: markdown.value, problems: problems.value.map(problem => problem.id), tags: tags.value })
 function failure(e: unknown) {
   const reason = (e as { data?: { data?: { code?: string } } }).data?.data?.code
   if (reason === 'creation_quota_exceeded') return accountError(e)
@@ -48,7 +50,7 @@ onMounted(async () => {
     if (typeof route.query.post === 'string') {
       const post = postSchema.parse(await $fetch(`/api/my/posts/${encodeURIComponent(route.query.post)}`))
       id.value = post.id; version.value = post.version; publishedVersion.value = post.publishedVersion
-      title.value = post.title; markdown.value = post.markdown; problems.value = post.problems
+      title.value = post.title; markdown.value = post.markdown; problems.value = post.problems; tags.value = post.tags
     }
     saved = snapshot(); ready.value = true; status.value = id.value ? '保存済み' : '記事を書き始められます'
     // "Write a user editorial" on a problem page opens a new post for that problem.
@@ -62,8 +64,8 @@ async function save(): Promise<boolean> {
     const account = await refreshAccount()
     if (!account || account.id !== owner) throw { statusCode: 401 }
     id.value ||= crypto.randomUUID()
-    const post = postSchema.parse(await $fetch(`/api/my/posts/${id.value}`, { method: 'PUT', body: { version: version.value, title: title.value, markdown: markdown.value, problemIds: problems.value.map(problem => problem.id) } }))
-    version.value = post.version; publishedVersion.value = post.publishedVersion; problems.value = post.problems; saved = snapshot(); status.value = '保存済み'
+    const post = postSchema.parse(await $fetch(`/api/my/posts/${id.value}`, { method: 'PUT', body: { version: version.value, title: title.value, markdown: markdown.value, problemIds: problems.value.map(problem => problem.id), tags: tags.value } }))
+    version.value = post.version; publishedVersion.value = post.publishedVersion; problems.value = post.problems; tags.value = post.tags; saved = snapshot(); status.value = '保存済み'
     if (route.query.post !== id.value) await router.replace({ path: '/blog/new', query: { post: id.value } })
     return true
   } catch (e) { error.value = failure(e); return false }
@@ -108,7 +110,7 @@ async function remove() {
   } catch (e) { error.value = failure(e) }
   finally { busy.value = false }
 }
-watch([title, markdown, problems], () => { if (ready.value && snapshot() !== saved) status.value = '未保存の変更があります' }, { deep: true })
+watch([title, markdown, problems, tags], () => { if (ready.value && snapshot() !== saved) status.value = '未保存の変更があります' }, { deep: true })
 onBeforeRouteLeave(() => leaving || (!busy.value && (!ready.value || snapshot() === saved || window.confirm('未保存の変更を破棄して移動しますか？'))))
 function beforeUnload(event: BeforeUnloadEvent) { if (ready.value && snapshot() !== saved) { event.preventDefault(); event.returnValue = '' } }
 onMounted(() => window.addEventListener('beforeunload', beforeUnload))
@@ -183,6 +185,10 @@ onBeforeUnmount(() => {
           </form>
         </div>
         <p id="post-problem-message" class="field-error" role="alert">{{ problemMessage }}</p>
+      </div>
+      <div class="post-tags-field">
+        <div class="field-heading"><label for="post-tags">タグ <span>任意 · {{ maxTags }}個まで</span></label></div>
+        <TagInput id="post-tags" v-model="tags" label="タグ" :disabled="!ready || busy" />
       </div>
     </div>
     <div ref="workspace" class="author-workspace" :class="{ 'is-resizing': resizing }" :data-mode="mode" :style="{ '--editor-left': `${splitPercent}fr`, '--editor-right': `${100 - splitPercent}fr` }">

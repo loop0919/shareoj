@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -16,6 +17,7 @@ type PublicProblem struct {
 	DifficultyAverage      *float64   `json:"difficultyAverage"`
 	DifficultyVoteCount    int64      `json:"difficultyVoteCount"`
 	Testers                []string   `json:"testers,omitempty"`
+	Tags                   []string   `json:"tags,omitempty"`
 	Difficulty             *int       `json:"difficulty"`
 	SolverCount            int64      `json:"solverCount"`
 	FavoriteCount          int64      `json:"favoriteCount"`
@@ -34,7 +36,13 @@ type PublicProblem struct {
 type Publications interface {
 	Publish(context.Context, string, string, int64, bool) (Problem, error)
 	PublicGet(context.Context, string, string) (PublicProblem, error)
-	PublicList(context.Context, *Cursor) ([]PublicProblem, error)
+	PublicList(context.Context, *Cursor, ListFilter) ([]PublicProblem, error)
+}
+
+// ListFilter narrows the public problem list. Empty fields match every problem.
+type ListFilter struct {
+	Author string
+	Tag    string
 }
 
 func (s *Store) Publish(ctx context.Context, owner, id string, version int64, publish bool) (Problem, error) {
@@ -83,10 +91,11 @@ const publicAcceptedSubmission = `s.status='DONE' AND s.result->>'verdict'='AC'
 const publicSolverCount = `(SELECT count(DISTINCT s.owner_id) FROM submissions s WHERE s.problem_id=d.id AND ` + publicAcceptedSubmission + `)`
 
 // PublicGet keeps editorialHidden as the public embargo, but the author and testers still receive the editorial.
+// Tags hint at the solution, so they are also hidden while a 定期便 round features the problem.
 func (s *Store) PublicGet(ctx context.Context, id, viewer string) (PublicProblem, error) {
 	var p PublicProblem
 	var data []byte
-	err := s.pool.QueryRow(ctx, `SELECT d.id,CASE WHEN statement_timestamp()<featured_reveal_at(d.id) AND NOT can_manage_problem(d.id,$2) THEN d.published_draft-'editorial' ELSE d.published_draft END,u.handle,d.published_at,featured_reveal_at(d.id),COALESCE(statement_timestamp()<featured_reveal_at(d.id),false),(SELECT count(*) FROM problem_favorites f WHERE f.problem_id=d.id),`+publicSolverCount+`,(SELECT avg(difficulty)::float8 FROM problem_difficulty_votes WHERE problem_id=d.id),(SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id),ARRAY(SELECT (SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id AND difficulty=level) FROM generate_series(1,10) level ORDER BY level) FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id WHERE d.id=$1 AND d.published_draft IS NOT NULL`, id, viewer).Scan(&p.ID, &data, &p.Author, &p.PublishedAt, &p.EditorialRevealAt, &p.EditorialHidden, &p.FavoriteCount, &p.SolverCount, &p.DifficultyAverage, &p.DifficultyVoteCount, &p.DifficultyDistribution)
+	err := s.pool.QueryRow(ctx, `SELECT d.id,CASE WHEN can_manage_problem(d.id,$2) THEN d.published_draft WHEN statement_timestamp()<featured_reveal_at(d.id) THEN d.published_draft-ARRAY['editorial','tags'] WHEN problem_tags_hidden(d.id) THEN d.published_draft-'tags' ELSE d.published_draft END,u.handle,d.published_at,featured_reveal_at(d.id),COALESCE(statement_timestamp()<featured_reveal_at(d.id),false),(SELECT count(*) FROM problem_favorites f WHERE f.problem_id=d.id),`+publicSolverCount+`,(SELECT avg(difficulty)::float8 FROM problem_difficulty_votes WHERE problem_id=d.id),(SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id),ARRAY(SELECT (SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id AND difficulty=level) FROM generate_series(1,10) level ORDER BY level) FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id WHERE d.id=$1 AND d.published_draft IS NOT NULL`, id, viewer).Scan(&p.ID, &data, &p.Author, &p.PublishedAt, &p.EditorialRevealAt, &p.EditorialHidden, &p.FavoriteCount, &p.SolverCount, &p.DifficultyAverage, &p.DifficultyVoteCount, &p.DifficultyDistribution)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return p, ErrNotFound
@@ -101,6 +110,7 @@ func (s *Store) PublicGet(ctx context.Context, id, viewer string) (PublicProblem
 	p.Difficulty = d.Difficulty
 	p.Markdown = d.Markdown
 	p.Editorial = d.Editorial
+	p.Tags = d.Tags
 	p.TimeLimitMS = d.TimeLimitMS
 	p.MemoryLimitMB = d.MemoryLimitMB
 	p.SpecialJudge = d.Checker != nil
@@ -110,16 +120,17 @@ func (s *Store) PublicGet(ctx context.Context, id, viewer string) (PublicProblem
 	return p, err
 }
 
-func (s *Store) PublicList(ctx context.Context, cursor *Cursor) ([]PublicProblem, error) {
-	return s.PublicListByHandle(ctx, cursor, "")
-}
-
-func (s *Store) PublicListByHandle(ctx context.Context, cursor *Cursor, handle string) ([]PublicProblem, error) {
-	query := `SELECT d.id,d.published_draft->>'title',(d.published_draft->>'difficulty')::integer,d.published_draft->>'timeLimitMs',d.published_draft->>'memoryLimitMb',u.handle,d.published_at,(SELECT count(*) FROM problem_favorites f WHERE f.problem_id=d.id),` + publicSolverCount + `,(SELECT avg(difficulty)::float8 FROM problem_difficulty_votes WHERE problem_id=d.id),(SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id) FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id WHERE d.published_draft IS NOT NULL AND ($1='' OR u.handle=$1)`
-	args := []any{handle}
+// PublicList returns at most 51 problems, newest first. A tag matches only while the problem's tags are public.
+func (s *Store) PublicList(ctx context.Context, cursor *Cursor, filter ListFilter) ([]PublicProblem, error) {
+	query := `SELECT d.id,d.published_draft->>'title',(d.published_draft->>'difficulty')::integer,d.published_draft->>'timeLimitMs',d.published_draft->>'memoryLimitMb',u.handle,d.published_at,(SELECT count(*) FROM problem_favorites f WHERE f.problem_id=d.id),` + publicSolverCount + `,(SELECT avg(difficulty)::float8 FROM problem_difficulty_votes WHERE problem_id=d.id),(SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id),CASE WHEN problem_tags_hidden(d.id) THEN '[]' ELSE COALESCE(d.published_draft->'tags','[]') END FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id WHERE d.published_draft IS NOT NULL AND ($1='' OR u.handle=$1)`
+	args := []any{filter.Author}
+	if filter.Tag != "" {
+		args = append(args, filter.Tag)
+		query += fmt.Sprintf(` AND d.published_draft->'tags' @> jsonb_build_array($%d::text) AND NOT problem_tags_hidden(d.id)`, len(args))
+	}
 	if cursor != nil {
-		query += ` AND (d.published_at,d.id)<($2,$3::uuid)`
 		args = append(args, cursor.UpdatedAt, cursor.ID)
+		query += fmt.Sprintf(` AND (d.published_at,d.id)<($%d,$%d::uuid)`, len(args)-1, len(args))
 	}
 	rows, err := s.pool.Query(ctx, query+` ORDER BY d.published_at DESC,d.id DESC LIMIT 51`, args...)
 	if err != nil {
@@ -127,7 +138,7 @@ func (s *Store) PublicListByHandle(ctx context.Context, cursor *Cursor, handle s
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (PublicProblem, error) {
 		var p PublicProblem
-		err := row.Scan(&p.ID, &p.Title, &p.Difficulty, &p.TimeLimitMS, &p.MemoryLimitMB, &p.Author, &p.PublishedAt, &p.FavoriteCount, &p.SolverCount, &p.DifficultyAverage, &p.DifficultyVoteCount)
+		err := row.Scan(&p.ID, &p.Title, &p.Difficulty, &p.TimeLimitMS, &p.MemoryLimitMB, &p.Author, &p.PublishedAt, &p.FavoriteCount, &p.SolverCount, &p.DifficultyAverage, &p.DifficultyVoteCount, &p.Tags)
 		return p, err
 	})
 }

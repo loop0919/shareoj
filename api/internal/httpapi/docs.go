@@ -14,6 +14,7 @@ import (
 	"judge/api/internal/problems"
 	"judge/api/internal/profiles"
 	"judge/api/internal/submissions"
+	"judge/api/internal/tags"
 )
 
 // Aliases keep the original response types available beside route-local handlers.
@@ -23,6 +24,7 @@ type (
 	publicPostResponse       = posts.Post
 	publicPostPage           = cursorResponse[posts.Post]
 	publicEditorialList      = itemsResponse[posts.Editorial]
+	publicTagList            = itemsResponse[tags.Tag]
 	publicContestResponse    = contests.Contest
 	publicContestPage        = offsetResponse[contests.Contest]
 	publicStandingsResponse  = []contests.Standing
@@ -78,6 +80,7 @@ func catalogueParameters() []*huma.Param {
 	return []*huma.Param{
 		{Name: "cursor", In: "query", Description: "前の応答のnextCursor。省略すると先頭から最大50件。", Schema: &huma.Schema{Type: "string", MaxLength: intPointer(512)}},
 		{Name: "author", In: "query", Description: "作者のユーザーIDで絞り込み。", Schema: &huma.Schema{Type: "string", Pattern: userHandle.String()}},
+		{Name: "tag", In: "query", Description: "タグで絞り込み。表記は完全一致です。GET /tagsのnameを指定してください。", Schema: &huma.Schema{Type: "string", MaxLength: intPointer(tags.MaxLength)}},
 	}
 }
 

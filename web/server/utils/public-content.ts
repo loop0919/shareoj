@@ -10,7 +10,7 @@ export async function publicContent(event: H3Event, path: string) {
 export function publicCursor(event: H3Event) {
   const query = getQuery(event)
   const params = new URLSearchParams()
-  for (const key of ['cursor', 'author']) {
+  for (const key of ['cursor', 'author', 'tag']) {
     if (typeof query[key] === 'string') params.set(key, query[key])
   }
   return params.size ? `?${params}` : ''
