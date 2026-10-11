@@ -94,6 +94,7 @@ createServer(async (req, res) => {
   else if (path === `/problems/${featuredProblem.id}`) res.end(JSON.stringify(featuredProblem))
   else if (path === '/problems') res.end(JSON.stringify({ items: !new URL(req.url, 'http://localhost').searchParams.get('author') || new URL(req.url, 'http://localhost').searchParams.get('author') === 'alice' ? [problem] : [], nextCursor: '' }))
   else if (path === `/problems/${problem.id}`) res.end(JSON.stringify(problem))
+  else if (path === `/problems/${problem.id}/editorials`) res.end(JSON.stringify({ items: [{ problemId: problem.id, id: '77777777-7777-4777-8777-777777777777', title: '日本語 & #記事 + 共有', author: 'alice', publishedAt: '2026-09-10T00:00:00Z', isOperator: false }] }))
   else if (path === `/problems/${problem.id}/samples`) res.end(JSON.stringify({ items: [
     { name: 'sample_1', input: ' 3 5\n\n', output: '8\n' },
     { name: 'empty', input: '', output: '' },
@@ -106,7 +107,7 @@ createServer(async (req, res) => {
     id: '77777777-7777-4777-8777-777777777777', title: '公開記事', author: 'alice', publishedVersion: 1,
     updatedAt: '2026-09-10T00:00:00Z', publishedAt: '2026-09-10T00:00:00Z', isOperator: false,
   }] : [], nextCursor: '' }))
-  else if (path === '/posts/77777777-7777-4777-8777-777777777777') res.end(JSON.stringify({ id: '77777777-7777-4777-8777-777777777777', title: '日本語 & #記事 + 共有', author: 'alice', markdown: '共有する記事です。', publishedVersion: 1, updatedAt: '2026-09-10T00:00:00Z', isOperator: false, publishedAt: '2026-09-10T00:00:00Z' }))
+  else if (path === '/posts/77777777-7777-4777-8777-777777777777') res.end(JSON.stringify({ id: '77777777-7777-4777-8777-777777777777', title: '日本語 & #記事 + 共有', author: 'alice', markdown: '共有する記事です。', publishedVersion: 1, updatedAt: '2026-09-10T00:00:00Z', isOperator: false, publishedAt: '2026-09-10T00:00:00Z', problems: [{ id: problem.id, title: problem.title }] }))
   else if (/^\/contests\/(88888888-8888-4888-8888-888888888888|99999999-9999-4999-8999-999999999999)$/.test(path)) res.end(JSON.stringify({
     id: path.split('/').pop(), title: '共有コンテスト', author: 'alice', description: '共有するコンテストです。',
     startsAt: '2026-09-10T00:00:00Z', endsAt: '2026-09-10T02:00:00Z', penaltyMinutes: 5,

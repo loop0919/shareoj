@@ -6,7 +6,7 @@ export default defineEventHandler(async event => {
   privateHeaders(event)
   const path = getRouterParam(event, 'path') ?? ''
   const uuid = '[a-f0-9-]{36}'
-  if (!new RegExp(`^${uuid}(?:/(?:standings|problems/${uuid}(?:/submissions)?|submissions(?:/${uuid})?))?$`).test(path)) throw createError({ statusCode: 404 })
+  if (!new RegExp(`^${uuid}(?:/(?:standings|editorials|problems/${uuid}(?:/submissions)?|submissions(?:/${uuid})?))?$`).test(path)) throw createError({ statusCode: 404 })
   const query = getQuery(event)
   if (query.mine === '1' && !hasSession(event)) throw createError({ statusCode: 401 })
   const search = new URLSearchParams({ offset: typeof query.offset === 'string' ? query.offset : '0', mine: typeof query.mine === 'string' ? query.mine : '0' })

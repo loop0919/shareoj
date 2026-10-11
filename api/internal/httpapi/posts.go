@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -68,6 +69,58 @@ func (p postHandler) publicPosts(w http.ResponseWriter, r *http.Request) {
 	writeAuthJSON(w, 200, cursorResponse[posts.Post]{Items: list, NextCursor: next})
 }
 
+// maxPostProblems covers a whole contest in one post.
+const maxPostProblems = 30
+
+func validPostProblems(ids *[]string) bool {
+	if ids == nil {
+		return true
+	}
+	if len(*ids) > maxPostProblems {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, id := range *ids {
+		if !problemID.MatchString(id) || seen[id] {
+			return false
+		}
+		seen[id] = true
+	}
+	return true
+}
+
+// editorials lists the user editorials of a public problem or an ended contest.
+func (p postHandler) editorials(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	id := r.PathValue("id")
+	if !problemID.MatchString(id) {
+		authError(w, 404, "not_found")
+		return
+	}
+	if p.Posts == nil {
+		authError(w, 503, "database_unavailable")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	var list []posts.Editorial
+	var err error
+	if strings.HasPrefix(r.URL.Path, "/contests/") {
+		list, err = p.Posts.ContestEditorials(ctx, id)
+	} else {
+		list, err = p.Posts.Editorials(ctx, id)
+	}
+	if err != nil {
+		problemError(w, err)
+		return
+	}
+	for i := range list {
+		list[i].Operator = p.Operators[list[i].Owner]
+	}
+	writeAuthJSON(w, 200, itemsResponse[posts.Editorial]{Items: list})
+}
+
 func (p postHandler) privatePost(w http.ResponseWriter, r *http.Request, owner string) {
 	if p.Posts == nil {
 		authError(w, 503, "database_unavailable")
@@ -129,18 +182,27 @@ func (p postHandler) privatePost(w http.ResponseWriter, r *http.Request, owner s
 		writeAuthJSON(w, 200, result)
 	case http.MethodPut:
 		var in struct {
-			Version  int64  `json:"version"`
-			Title    string `json:"title"`
-			Markdown string `json:"markdown"`
+			Version    int64     `json:"version"`
+			Title      string    `json:"title"`
+			Markdown   string    `json:"markdown"`
+			ProblemIDs *[]string `json:"problemIds"`
 		}
 		if !contentJSON(w, r, &in) {
 			return
 		}
-		if in.Version < 0 || in.Version > 9007199254740990 || utf8.RuneCountInString(in.Title) > 120 || utf8.RuneCountInString(in.Markdown) > 100000 || strings.ContainsRune(in.Title+in.Markdown, '\x00') {
+		if in.Version < 0 || in.Version > 9007199254740990 || utf8.RuneCountInString(in.Title) > 120 || utf8.RuneCountInString(in.Markdown) > 100000 || strings.ContainsRune(in.Title+in.Markdown, '\x00') || !validPostProblems(in.ProblemIDs) {
 			authError(w, 400, "invalid_post")
 			return
 		}
-		result, err := p.Posts.Save(r.Context(), owner, id, in.Title, in.Markdown, in.Version)
+		var problemIDs []string
+		if in.ProblemIDs != nil {
+			problemIDs = append([]string{}, *in.ProblemIDs...)
+		}
+		result, err := p.Posts.Save(r.Context(), owner, id, in.Title, in.Markdown, problemIDs, in.Version)
+		if errors.Is(err, posts.ErrUnavailableProblem) {
+			authError(w, 400, "editorial_problem_unavailable")
+			return
+		}
 		if err != nil {
 			problemError(w, err)
 			return

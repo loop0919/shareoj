@@ -30,7 +30,7 @@ useSharePreview({ title: () => problem.value!.title, path: problemPath, descript
       <ProblemSubmissionList v-else :key="String(route.query.view)" :problem-id="problem.id" :contest-id="contest.id" :mine="route.query.view === 'my-submissions'" />
     </template>
     <article v-else class="problem-body">
-      <template v-if="showingEditorial"><ProblemMarkdown v-if="problem.editorial" :source="problem.editorial" /><p v-else class="muted">解説は終了後に公開されます。終了後も表示されない場合は未登録です。</p></template>
+      <template v-if="showingEditorial"><ProblemMarkdown v-if="problem.editorial" :source="problem.editorial" /><p v-else class="muted">解説は終了後に公開されます。終了後も表示されない場合は未登録です。</p><UserEditorials v-if="contest.status === 'ended'" :problem-id="problem.id" /></template>
       <template v-else><ProblemMarkdown :source="problem.markdown" /><p v-if="problem.interactive" class="muted">インタラクティブ問題：応答を待つ前に出力をflushしてください。</p><p v-if="problem.specialJudge" class="muted">スペシャルジャッジ問題です。</p><ContestParticipation :contest="contest" @joined="value => contest = value" /><SubmissionForm v-if="contest.status === 'ended' || (user && (!contest.official || contest.participating))" :has-samples="problem.hasSamples" :problem-id="problem.id" :contest-id="contest.id" /></template>
     </article>
   </div>

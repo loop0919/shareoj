@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { notificationMessages, type Notification } from '~~/shared/types/notification'
+import { notificationLink, notificationMessages, type Notification } from '~~/shared/types/notification'
 const { user } = useAccount()
 const route = useRoute()
 const menu = ref<HTMLDetailsElement>()
@@ -68,7 +68,7 @@ usePolling(refresh, 30_000, () => !!user.value)
       <p v-else-if="!opening && !items.length">未読の通知はありません。</p>
       <ul v-if="items.length">
         <li v-for="item in items" :key="item.id">
-          <NuxtLink :to="`/problems/${item.problemId}`" @click="close">
+          <NuxtLink :to="notificationLink(item)" @click="close">
             <span class="notification-title">{{ item.title }}</span>
             <span>{{ item.actor }}{{ notificationMessages[item.kind] }}</span>
             <time :datetime="item.createdAt">{{ new Date(item.createdAt).toLocaleString('ja-JP') }}</time>

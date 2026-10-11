@@ -26,3 +26,4 @@ Architecture Decision Record（ADR）は、採用した設計だけでなく、�
 | [0014](0014-roll-out-os-updates-without-stopping-judging.md) | Accepted（未実装） | 採点を止めずにOS更新を配布する |
 | [0015](0015-save-contests-as-drafts.md) | Accepted | コンテストを下書きとして保存し、公開時に検証する |
 | [0016](0016-anonymize-deleted-accounts.md) | Accepted | アカウント削除では公開物を残し、作者を匿名にする |
+| [0017](0017-link-posts-as-user-editorials.md) | Accepted | 記事をユーザー解説として問題に紐付ける |

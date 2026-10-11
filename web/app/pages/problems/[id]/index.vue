@@ -58,6 +58,7 @@ useSharePreview({ title: () => problem.value!.title, path: () => `/problems/${pr
         <ProblemMarkdown v-if="problem.editorial" :source="problem.editorial" />
         <p v-else-if="problem.editorialHidden" class="muted">解説は公開待ちです。</p>
         <p v-else class="muted">解説はまだありません。</p>
+        <UserEditorials v-if="!problem.isPrivate && !problem.editorialHidden" :problem-id="problem.id" />
       </template>
       <template v-else>
         <ProblemMarkdown :source="problem.markdown" />

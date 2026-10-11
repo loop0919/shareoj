@@ -31,7 +31,7 @@ var cleanup = []string{
 	`UPDATE problem_drafts SET draft=published_draft WHERE owner_id=$1 AND published_draft IS NOT NULL AND draft<>published_draft`,
 	`DELETE FROM problem_tester_invitations i USING problem_drafts d WHERE d.id=i.problem_id AND d.owner_id=$1`,
 	`DELETE FROM blog_posts WHERE owner_id=$1 AND published_title IS NULL`,
-	`UPDATE blog_posts SET title=published_title,markdown=published_markdown WHERE owner_id=$1 AND published_title IS NOT NULL`,
+	`UPDATE blog_posts SET title=published_title,markdown=published_markdown,problem_ids=published_problem_ids WHERE owner_id=$1 AND published_title IS NOT NULL`,
 	`DELETE FROM contest_drafts WHERE owner_id=$1`,
 	`DELETE FROM problem_favorites WHERE owner_id=$1`,
 	`DELETE FROM notifications WHERE owner_id=$1`,

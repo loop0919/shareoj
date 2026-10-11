@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { notificationMessages, type Notification } from '~~/shared/types/notification'
+import { notificationLink, notificationMessages, type Notification } from '~~/shared/types/notification'
 const { user } = useAccount()
 const items = ref<Notification[]>([])
 const loading = ref(true)
@@ -22,10 +22,10 @@ onMounted(load)
     <h2 id="events-heading">イベント</h2>
     <p v-if="loading" role="status">イベントを読み込んでいます…</p>
     <p v-else-if="error" role="alert">{{ error }} <button class="editor-button" @click="load">再試行</button></p>
-    <EmptyState v-else-if="!items.length" kind="event" title="イベントはまだありません。" description="自分の問題がお気に入りに追加されたり、初めて正解されたりすると、ここに表示されます。" />
+    <EmptyState v-else-if="!items.length" kind="event" title="イベントはまだありません。" description="自分の問題がお気に入りに追加されたり、初めて正解されたり、ユーザー解説が書かれたりすると、ここに表示されます。" />
     <ul v-else class="event-list">
       <li v-for="item in items" :key="item.id">
-        <NuxtLink :to="`/problems/${item.problemId}`">{{ item.title }}</NuxtLink>
+        <NuxtLink :to="notificationLink(item)">{{ item.title }}</NuxtLink>
         <p>{{ item.actor }}{{ notificationMessages[item.kind] }}</p>
         <time :datetime="item.createdAt">{{ new Date(item.createdAt).toLocaleString('ja-JP') }}</time>
       </li>

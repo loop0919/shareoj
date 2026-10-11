@@ -436,6 +436,15 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 記事には登録済みユーザー ID を表示します。運営の記事には API 環境変数 `OPERATOR_SUBJECTS` にカンマ区切りで指定した Cognito `sub` の投稿だけ「運営」を表示します。
 一般ユーザーは運営フラグを設定できません。運営も通常のログイン・記事作成画面を使います。
 
+記事は、解説する問題を最大30問まで持てます（[ADR 0017](../docs/adr/0017-link-posts-as-user-editorials.md)）。
+`PUT /my/posts/{id}`の`problemIds`で指定し、省略すると現在の一覧を保ちます。
+公式解説を誰でも読める問題以外を含むと`400 editorial_problem_unavailable`を返します。
+一覧は記事の公開時に公開版へ写り、公開APIでは次の形で返します。
+
+- `GET /posts/{id}`の`problems`: 記事が解説する問題の`id`と`title`。
+- `GET /problems/{id}/editorials`: 問題を解説する公開記事。公開日時の昇順。
+- `GET /contests/{id}/editorials`: 終了したコンテストの各問題を解説する公開記事。`problemId`で問題を示す。
+
 ## 問題のテストケース
 
 下書きの`draft.testCases`へ`[{"input":"3 5\n","output":"8\n"}]`の形式で保存する。

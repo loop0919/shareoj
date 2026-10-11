@@ -2,6 +2,7 @@
 import { submissionUsage } from '~/utils/submission-usage'
 import { contestDate, contestStatus, problemLabel, type Contest, type Standing } from '~~/shared/types/contest'
 import type { Submission } from '~~/shared/types/submission'
+import type { UserEditorial } from '~~/shared/types/post'
 definePageMeta({ key: route => route.path })
 useResponseHeader('Cache-Control').value = 'no-store'
 useResponseHeader('Vary').value = 'Cookie'
@@ -30,16 +31,33 @@ function loadSubmissions() {
     result => { submissions.value = result; submissionsError.value = '' },
     () => { submissionsError.value = '提出一覧を取得できませんでした。' })
 }
+// User editorials exist only after the end, when the problems become public.
+const userEditorials = ref<UserEditorial[] | null>(null)
+const userEditorialsError = ref('')
+const { run: requestEditorials, invalidate: invalidateEditorials } = useLatestRequest()
+function loadEditorials() {
+  if (activeView.value !== 'editorials' || contest.value?.status !== 'ended') { invalidateEditorials(); userEditorials.value = null; return Promise.resolve() }
+  return requestEditorials(base,
+    () => $fetch<{ items: UserEditorial[] }>(`${base}/editorials`),
+    result => { userEditorials.value = result.items; userEditorialsError.value = '' },
+    () => { userEditorialsError.value = 'ユーザー解説を取得できませんでした。' })
+}
+const editorialsByProblem = computed(() => {
+  const groups: Record<string, UserEditorial[]> = {}
+  for (const item of userEditorials.value ?? []) (groups[item.problemId] ??= []).push(item)
+  return groups
+})
 const updating = ref(false)
 async function update() {
   if (updating.value) return
   updating.value = true
-  try { await Promise.all([refresh(), refreshStandings()]); await loadSubmissions() }
+  try { await Promise.all([refresh(), refreshStandings()]); await Promise.all([loadSubmissions(), loadEditorials()]) }
   finally { updating.value = false }
 }
 watch(() => user.value?.id, () => { invalidateSubmissions(); submissions.value = null; void update() })
 watch([offset, activeView, canViewSubmissions], () => { void loadSubmissions() })
-onMounted(loadSubmissions)
+watch([activeView, () => contest.value?.status], () => { void loadEditorials() })
+onMounted(() => { void loadSubmissions(); void loadEditorials() })
 usePolling(update, 15000)
 function elapsed(acceptedAt: string) { return duration(new Date(acceptedAt).getTime() - new Date(contest.value!.startsAt).getTime()) }
 const problemStats = computed(() => contest.value!.problems.map(problem => {
@@ -134,8 +152,10 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
     <section v-if="activeView === 'editorials'" id="editorials" class="contest-section" aria-labelledby="editorials-title">
       <h2 id="editorials-title">解説一覧</h2>
       <p v-if="contest.status !== 'ended'" class="notice">解説はコンテスト終了後に公開されます。終了前はコンテストセッターと各問題のテスターが閲覧できます。</p>
+      <p v-if="userEditorialsError" class="notice notice-error" role="alert">{{ userEditorialsError }}</p>
+      <p v-else-if="contest.status === 'ended' && !userEditorials" class="muted" role="status">ユーザー解説を読み込み中…</p>
       <div v-if="contest.problems.length" class="content-table-scroll" role="region" aria-label="解説一覧のスクロール領域" tabindex="0">
-        <table class="content-table contest-editorials"><thead><tr><th scope="col">#</th><th scope="col">解説</th></tr></thead><tbody><tr v-for="(p, index) in contest.problems" :key="p.id || index"><td>{{ problemLabel(index) }}</td><th scope="row"><NuxtLink v-if="p.hasEditorial" :to="{ path: `/contests/${contest.id}/problems/${p.id}`, query: { view: 'editorial' } }">{{ p.title }}</NuxtLink><template v-else><span>{{ p.title || '???' }}</span><span class="editorial-state muted">{{ p.hasEditorial === false ? '未登録' : contest.status === 'ended' ? '公開待ち' : '終了後に公開' }}</span></template></th></tr></tbody></table>
+        <table class="content-table contest-editorials"><thead><tr><th scope="col">#</th><th scope="col">解説</th><th v-if="contest.status === 'ended'" scope="col">ユーザー解説</th></tr></thead><tbody><tr v-for="(p, index) in contest.problems" :key="p.id || index"><td>{{ problemLabel(index) }}</td><th scope="row"><NuxtLink v-if="p.hasEditorial" :to="{ path: `/contests/${contest.id}/problems/${p.id}`, query: { view: 'editorial' } }">{{ p.title }}</NuxtLink><template v-else><span>{{ p.title || '???' }}</span><span class="editorial-state muted">{{ p.hasEditorial === false ? '未登録' : contest.status === 'ended' ? '公開待ち' : '終了後に公開' }}</span></template></th><td v-if="contest.status === 'ended'"><ul v-if="editorialsByProblem[p.id]?.length" class="contest-user-editorials"><li v-for="item in editorialsByProblem[p.id]" :key="item.id"><NuxtLink :to="`/blog/${item.id}`">{{ item.title }}</NuxtLink> <span class="muted">{{ item.author }}</span></li></ul><span v-else class="muted">—</span></td></tr></tbody></table>
       </div>
     </section>
   </div>
@@ -166,6 +186,8 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 .contest-problems .problem-limits { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .contest-problems td:first-child, .contest-editorials td:first-child { width: 3rem; color: var(--color-muted); }
 .editorial-state { margin-left: 12px; font-weight: 400; }
+.contest-user-editorials { margin: 0; padding: 0; list-style: none; }
+.contest-user-editorials li + li { margin-top: 6px; }
 .contest-problems thead th:last-child, .contest-problems td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
 .contest-empty { margin: 0; padding-block: 24px; border-top: 1px solid var(--color-line); }
 .standings-table th, .standings-table td { padding: 8px 12px; border: 1px solid var(--color-line); text-align: center; font-variant-numeric: tabular-nums; }

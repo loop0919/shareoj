@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { postSchema } from '~~/shared/types/post'
+import { postSchema, type PostProblem } from '~~/shared/types/post'
 import { accountError } from '~/utils/account-problems'
 useSeoMeta({ title: '記事を書く | ShareOJ', robots: 'noindex, nofollow' })
 const route = useRoute()
@@ -10,6 +10,12 @@ const markdown = ref('<!-- ここに記事を記載 -->\n')
 const id = ref('')
 const version = ref(0)
 const publishedVersion = ref(0)
+// Problems this post explains as a user editorial.
+const problems = ref<PostProblem[]>([])
+const problemInput = ref('')
+const problemMessage = ref('')
+const addingProblem = ref(false)
+const maxProblems = 30
 const ready = ref(false)
 const busy = ref(false)
 definePageMeta({ editorLayout: true })
@@ -26,23 +32,27 @@ const status = ref('記事を読み込んでいます…')
 let owner = ''
 let saved = ''
 let leaving = false
-const snapshot = () => JSON.stringify({ title: title.value, markdown: markdown.value })
+const snapshot = () => JSON.stringify({ title: title.value, markdown: markdown.value, problems: problems.value.map(problem => problem.id) })
 function failure(e: unknown) {
-  if ((e as { data?: { data?: { code?: string } } }).data?.data?.code === 'creation_quota_exceeded') return accountError(e)
+  const reason = (e as { data?: { data?: { code?: string } } }).data?.data?.code
+  if (reason === 'creation_quota_exceeded') return accountError(e)
+  if (reason === 'editorial_problem_unavailable') return '解説する問題に、公式解説がまだ公開されていない問題が含まれています。その問題を外してから保存してください。'
   const code = (e as { statusCode?: number }).statusCode
   return code === 409 ? '別の画面で更新されています。入力内容をコピーしてから再読み込みしてください。' : code === 401 ? 'ログインし直してから保存してください。' : '処理に失敗しました。入力内容を残したまま、もう一度お試しください。'
 }
 onMounted(async () => {
   try {
     const account = await refreshAccount()
-    if (!account) { await navigateTo('/login?next=/blog/new'); return }
+    if (!account) { await navigateTo({ path: '/login', query: { next: route.fullPath } }); return }
     owner = account.id
     if (typeof route.query.post === 'string') {
       const post = postSchema.parse(await $fetch(`/api/my/posts/${encodeURIComponent(route.query.post)}`))
       id.value = post.id; version.value = post.version; publishedVersion.value = post.publishedVersion
-      title.value = post.title; markdown.value = post.markdown
+      title.value = post.title; markdown.value = post.markdown; problems.value = post.problems
     }
     saved = snapshot(); ready.value = true; status.value = id.value ? '保存済み' : '記事を書き始められます'
+    // "Write a user editorial" on a problem page opens a new post for that problem.
+    if (!id.value && typeof route.query.problem === 'string') { problemInput.value = route.query.problem; await addProblem() }
   } catch { error.value = '記事を読み込めませんでした。アクセス権と接続を確認してください。' }
 })
 async function save(): Promise<boolean> {
@@ -52,12 +62,31 @@ async function save(): Promise<boolean> {
     const account = await refreshAccount()
     if (!account || account.id !== owner) throw { statusCode: 401 }
     id.value ||= crypto.randomUUID()
-    const post = postSchema.parse(await $fetch(`/api/my/posts/${id.value}`, { method: 'PUT', body: { version: version.value, title: title.value, markdown: markdown.value } }))
-    version.value = post.version; publishedVersion.value = post.publishedVersion; saved = snapshot(); status.value = '保存済み'
+    const post = postSchema.parse(await $fetch(`/api/my/posts/${id.value}`, { method: 'PUT', body: { version: version.value, title: title.value, markdown: markdown.value, problemIds: problems.value.map(problem => problem.id) } }))
+    version.value = post.version; publishedVersion.value = post.publishedVersion; problems.value = post.problems; saved = snapshot(); status.value = '保存済み'
     if (route.query.post !== id.value) await router.replace({ path: '/blog/new', query: { post: id.value } })
     return true
   } catch (e) { error.value = failure(e); return false }
   finally { busy.value = false }
+}
+// Accepts a problem page URL (including a contest problem) or a bare problem ID.
+async function addProblem() {
+  if (addingProblem.value) return
+  const text = problemInput.value.trim().toLowerCase()
+  const id = text.match(/\/problems\/([0-9a-f-]{36})/)?.[1] ?? (/^[0-9a-f-]{36}$/.test(text) ? text : '')
+  problemMessage.value = ''
+  if (!id) { problemMessage.value = '問題ページのURLか問題IDを入力してください。'; return }
+  if (problems.value.some(problem => problem.id === id)) { problemMessage.value = 'この問題はすでに追加されています。'; return }
+  if (problems.value.length >= maxProblems) { problemMessage.value = `解説する問題は${maxProblems}問までです。`; return }
+  addingProblem.value = true
+  try {
+    const problem = await $fetch(`/api/problems/${id}`)
+    if (problem.isPrivate) problemMessage.value = '公開されている問題だけ追加できます。'
+    else if (problem.editorialHidden) problemMessage.value = 'この問題は公式解説の公開後に追加できます。'
+    else { problems.value.push({ id, title: problem.title }); problemInput.value = '' }
+  } catch (e) {
+    problemMessage.value = (e as { statusCode?: number }).statusCode === 404 ? '公開されている問題が見つかりません。コンテストの問題は終了後に追加できます。' : '問題を確認できませんでした。もう一度お試しください。'
+  } finally { addingProblem.value = false }
 }
 async function publish(value: boolean) {
   if (value && (!title.value.trim() || !markdown.value.trim())) { error.value = '公開するにはタイトルと本文を入力してください。'; return }
@@ -79,7 +108,7 @@ async function remove() {
   } catch (e) { error.value = failure(e) }
   finally { busy.value = false }
 }
-watch([title, markdown], () => { if (ready.value && snapshot() !== saved) status.value = '未保存の変更があります' })
+watch([title, markdown, problems], () => { if (ready.value && snapshot() !== saved) status.value = '未保存の変更があります' }, { deep: true })
 onBeforeRouteLeave(() => leaving || (!busy.value && (!ready.value || snapshot() === saved || window.confirm('未保存の変更を破棄して移動しますか？'))))
 function beforeUnload(event: BeforeUnloadEvent) { if (ready.value && snapshot() !== saved) { event.preventDefault(); event.returnValue = '' } }
 onMounted(() => window.addEventListener('beforeunload', beforeUnload))
@@ -142,6 +171,19 @@ onBeforeUnmount(() => {
         <div class="field-heading"><label for="post-title">タイトル</label></div>
         <input id="post-title" v-model="title" maxlength="120" placeholder="記事のタイトル" :disabled="!ready || busy">
       </div>
+      <div class="post-problems-field">
+        <div class="field-heading"><label for="post-problem">解説する問題 <span>任意 · 問題ページに載ります</span></label></div>
+        <div class="post-problems-row">
+          <ul v-if="problems.length" class="post-problem-list" aria-label="解説する問題">
+            <li v-for="(problem, index) in problems" :key="problem.id"><span :class="{ muted: !problem.title }">{{ problem.title || '公開されていない問題' }}</span><button type="button" :aria-label="`${problem.title || '公開されていない問題'}を外す`" title="外す" :disabled="!ready || busy" @click="problems.splice(index, 1)"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></button></li>
+          </ul>
+          <form class="post-problem-add" @submit.prevent="addProblem">
+            <input id="post-problem" v-model="problemInput" placeholder="問題のURLまたはID" :disabled="!ready || busy || addingProblem" :aria-describedby="problemMessage ? 'post-problem-message' : undefined">
+            <button type="submit" class="editor-button" :disabled="!ready || busy || addingProblem || !problemInput.trim()">追加</button>
+          </form>
+        </div>
+        <p id="post-problem-message" class="field-error" role="alert">{{ problemMessage }}</p>
+      </div>
     </div>
     <div ref="workspace" class="author-workspace" :class="{ 'is-resizing': resizing }" :data-mode="mode" :style="{ '--editor-left': `${splitPercent}fr`, '--editor-right': `${100 - splitPercent}fr` }">
       <section id="source-pane" class="source-pane" aria-label="Markdown 編集">
@@ -184,4 +226,12 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .author-fields.post-fields { grid-template-columns: minmax(0, 1fr); }
+.post-problems-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.post-problem-list { display: flex; flex-wrap: wrap; gap: 6px 8px; margin: 0; padding: 0; list-style: none; }
+.post-problem-list li { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; min-height: 32px; padding: 0 2px 0 10px; border: 1px solid var(--color-line); border-radius: 999px; font-size: .8125rem; overflow-wrap: anywhere; }
+.post-problem-list button { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; border-radius: 999px; background: none; color: var(--color-muted); cursor: pointer; }
+.post-problem-list button:hover:not(:disabled) { color: var(--color-ink); background: var(--color-surface); }
+.post-problem-list .editor-icon { width: 14px; height: 14px; }
+.post-problem-add { display: flex; flex: 1 1 18rem; gap: 6px; min-width: 0; }
+.post-problem-add input { flex: 1; }
 </style>

@@ -45,7 +45,7 @@ func TestPublicDocumentation(t *testing.T) {
 		if err := json.Unmarshal(w.Body.Bytes(), &doc); err != nil {
 			t.Fatal(err)
 		}
-		if doc.OpenAPI != "3.1.0" || len(doc.Paths) != 20 {
+		if doc.OpenAPI != "3.1.0" || len(doc.Paths) != 22 {
 			t.Fatalf("unexpected public operations: %s %d", doc.OpenAPI, len(doc.Paths))
 		}
 		seen := map[string]bool{}
@@ -72,7 +72,7 @@ func TestPublicDocumentation(t *testing.T) {
 				t.Fatalf("undocumented/mismatched route: %s = %s", path, pattern)
 			}
 		}
-		for _, name := range []string{"PublicSample", "PublicProblem", "Download", "Submission"} {
+		for _, name := range []string{"PublicSample", "PublicProblem", "Download", "Submission", "Editorial", "ProblemRef"} {
 			if len(doc.Components.Schemas[name].Properties) == 0 {
 				t.Fatal("missing generated model", name)
 			}

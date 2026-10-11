@@ -35,6 +35,7 @@ for (const status of ['running', 'ended'] as const) {
     await page.route(`**/api/contests/${id}**`, route => {
       const path = new URL(route.request().url()).pathname
       if (path.endsWith('/standings')) return route.fulfill({ json: [] })
+      if (path.endsWith('/editorials')) return route.fulfill({ json: { items: [{ problemId: a, id: '44444444-4444-4444-8444-444444444444', title: '別解の記事', author: 'bob', publishedAt: '2026-09-15T15:00:00Z', isOperator: false }] } })
       if (path.includes('/problems/')) return route.fulfill({ json: { id: a, title: 'A + B', author: 'setter', testers: [], markdown: '足し算', editorial: '## 解説\n\n足すだけです。', timeLimitMs: '2000', memoryLimitMb: '512' } })
       return route.fulfill({ json: contest })
     })
@@ -46,10 +47,13 @@ for (const status of ['running', 'ended'] as const) {
     await expect(page).toHaveURL(`/contests/${id}?view=editorials`)
     await expect(page.getByText('解説はコンテスト終了後に公開されます。', { exact: false })).toBeVisible({ visible: status === 'running' })
     const list = page.getByRole('region', { name: '解説一覧のスクロール領域' })
-    await expect(list.getByRole('link')).toHaveText(['A + B'])
+    // User editorials appear once the problems become public at the end.
+    await expect(list.getByRole('link')).toHaveText(status === 'ended' ? ['A + B', '別解の記事'] : ['A + B'])
+    await expect(list.getByRole('columnheader', { name: 'ユーザー解説' })).toHaveCount(status === 'ended' ? 1 : 0)
     await expect(list.getByRole('rowheader', { name: /A - B/ })).toContainText(status === 'ended' ? '未登録' : '終了後に公開')
     await list.getByRole('link', { name: 'A + B', exact: true }).click()
     await expect(page).toHaveURL(`/contests/${id}/problems/${a}?view=editorial`)
     await expect(page.getByText('足すだけです。')).toBeVisible()
+    await expect(page.getByRole('region', { name: 'ユーザー解説' })).toHaveCount(status === 'ended' ? 1 : 0)
   })
 }

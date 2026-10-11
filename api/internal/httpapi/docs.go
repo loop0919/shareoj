@@ -22,6 +22,7 @@ type (
 	publicProblemPage        = cursorResponse[problems.PublicProblem]
 	publicPostResponse       = posts.Post
 	publicPostPage           = cursorResponse[posts.Post]
+	publicEditorialList      = itemsResponse[posts.Editorial]
 	publicContestResponse    = contests.Contest
 	publicContestPage        = offsetResponse[contests.Contest]
 	publicStandingsResponse  = []contests.Standing
