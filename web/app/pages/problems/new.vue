@@ -189,7 +189,7 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
         <div ref="preview" class="preview-document" @scroll="previewScrolled">
           <p v-if="section === 'statement'" class="preview-title">{{ draft.title || '無題の問題' }}</p>
           <p v-if="section === 'statement'" class="preview-limits">実行時間 {{ draft.timeLimitMs || '—' }} ms ／ メモリ {{ draft.memoryLimitMb || '—' }} MiB</p>
-          <ProblemMarkdown v-if="renderedSource.trim()" :source="renderedSource" source-lines />
+          <ProblemMarkdown v-if="renderedSource.trim()" :key="section === 'editorial' ? 'editorial' : 'statement'" :source="renderedSource" live />
           <p v-else class="muted">{{ section === 'editorial' ? '解説' : '本文' }}を書くと、ここにプレビューが表示されます。</p>
         </div>
       </section>

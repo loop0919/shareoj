@@ -364,7 +364,7 @@ async function save() {
         <div class="pane-heading"><h2>プレビュー</h2></div>
         <div ref="preview" class="preview-document contest-preview" @scroll="previewScrolled">
           <p class="preview-title">{{ title || 'コンテストタイトル' }}</p>
-          <ProblemMarkdown v-if="description.trim()" :source="description" source-lines />
+          <ProblemMarkdown v-if="description.trim()" :source="description" live />
           <p v-else class="muted">説明を書くと、ここにプレビューが表示されます。</p>
         </div>
       </section>

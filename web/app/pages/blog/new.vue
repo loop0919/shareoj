@@ -204,7 +204,7 @@ onBeforeUnmount(() => {
         <div class="pane-heading"><h2>プレビュー</h2></div>
         <div ref="preview" class="preview-document post-preview" @scroll="previewScrolled">
           <p class="preview-title">{{ title || '無題の記事' }}</p>
-          <ProblemMarkdown v-if="markdown.trim()" :source="markdown" source-lines />
+          <ProblemMarkdown v-if="markdown.trim()" :source="markdown" live />
           <p v-else class="muted">本文を書くと、ここにプレビューが表示されます。</p>
         </div>
       </section>
