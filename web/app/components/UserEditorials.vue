@@ -11,7 +11,7 @@ const { data, error } = await useFetch<{ items: UserEditorial[] }>(() => `/api/p
       <NuxtLink class="editor-button" :to="{ path: '/blog/new', query: { problem: problemId } }">ユーザー解説を書く</NuxtLink>
     </header>
     <p v-if="error" class="notice notice-error" role="alert">ユーザー解説を取得できませんでした。</p>
-    <p v-else-if="!data?.items.length" class="muted">ユーザー解説はまだありません。記事を書いてこの問題を指定すると、ここに載ります。</p>
+    <p v-else-if="!data?.items.length" class="muted">ユーザー解説はまだありません。</p>
     <ul v-else class="user-editorial-list">
       <li v-for="item in data.items" :key="item.id">
         <NuxtLink :to="`/blog/${item.id}`">{{ item.title }}</NuxtLink>
