@@ -361,7 +361,7 @@ async function save() {
       </section>
       <div class="split-handle" role="separator" tabindex="0" aria-label="編集欄とプレビューの幅を調整" aria-orientation="vertical" aria-controls="source-pane preview-pane" :aria-valuenow="Math.round(splitPercent)" :aria-valuetext="`編集欄 ${Math.round(splitPercent)}%、プレビュー ${100 - Math.round(splitPercent)}%`" :aria-valuemin="30" :aria-valuemax="70" title="ドラッグで幅を調整・ダブルクリックで均等に戻す" @pointerdown="startResize" @pointermove="moveResize" @pointerup="stopResize" @pointercancel="stopResize" @lostpointercapture="resizing = false" @keydown="resizeWithKeyboard" @dblclick="setSplit(50)" />
       <section id="preview-pane" class="preview-pane" aria-label="コンテストのプレビュー">
-        <div class="pane-heading"><h2>プレビュー</h2><span>表示を確認</span></div>
+        <div class="pane-heading"><h2>プレビュー</h2></div>
         <div class="preview-document contest-preview">
           <p class="preview-title">{{ title || 'コンテストタイトル' }}</p>
           <ProblemMarkdown v-if="description.trim()" :source="description" />
