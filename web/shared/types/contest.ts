@@ -1,5 +1,6 @@
 import type { PublicProblem } from './problem'
-export type ContestProblem = { id: string, points: number, title?: string, timeLimitMs?: string, memoryLimitMb?: string, solved?: boolean }
+// hasEditorial is present only when the viewer may read the editorial now. False means none is registered.
+export type ContestProblem = { id: string, points: number, title?: string, timeLimitMs?: string, memoryLimitMb?: string, solved?: boolean, hasEditorial?: boolean }
 export type Contest = {
   id: string, author: string, problemAuthors: string[], testers: string[], title: string, description: string,
   startsAt: string, endsAt: string, penaltyMinutes: number, version: number,

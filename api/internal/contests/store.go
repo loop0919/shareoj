@@ -18,7 +18,9 @@ import (
 var ErrConflict = errors.New("contest is locked or problems are unavailable")
 
 type Problem struct {
-	Solved        bool   `json:"solved,omitempty"`
+	Solved bool `json:"solved,omitempty"`
+	// HasEditorial is set only when the viewer may read the editorial now. False means none is registered.
+	HasEditorial  *bool  `json:"hasEditorial,omitempty"`
 	ID            string `json:"id"`
 	Points        int    `json:"points"`
 	Title         string `json:"title,omitempty"`
@@ -109,18 +111,20 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
   AND NOT COALESCE((s.job->>'generate')::boolean,false)
   AND NOT COALESCE((s.job->>'validate')::boolean,false)
   AND s.created_at>=$4),
- ($2 OR $3=$5 OR d.owner_id=$3 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3))
+ ($2 OR $3=$5 OR d.owner_id=$3 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3)),
+ CASE WHEN ($6 OR $3=$5 OR d.owner_id=$3 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3))
+  AND NOT COALESCE(statement_timestamp()<featured_reveal_at(d.id),false) THEN COALESCE(cp.draft->>'editorial','')<>'' END
  FROM contest_problems cp JOIN problem_drafts d ON d.id=cp.problem_id
- WHERE cp.contest_id=$1 ORDER BY cp.position`, id, c.Status != "scheduled", viewer, c.StartsAt, c.Owner)
+ WHERE cp.contest_id=$1 ORDER BY cp.position`, id, c.Status != "scheduled", viewer, c.StartsAt, c.Owner, c.Status == "ended")
 	if err != nil {
 		return c, err
 	}
 	c.Problems, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (Problem, error) {
 		var p Problem
 		var visible bool
-		e := row.Scan(&p.ID, &p.Points, &p.Title, &p.TimeLimitMS, &p.MemoryLimitMB, &p.Solved, &visible)
+		e := row.Scan(&p.ID, &p.Points, &p.Title, &p.TimeLimitMS, &p.MemoryLimitMB, &p.Solved, &visible, &p.HasEditorial)
 		if !visible {
-			p.ID, p.Title, p.TimeLimitMS, p.MemoryLimitMB, p.Solved = "", "", "", "", false
+			p.ID, p.Title, p.TimeLimitMS, p.MemoryLimitMB, p.Solved, p.HasEditorial = "", "", "", "", false, nil
 		}
 		return p, e
 	})

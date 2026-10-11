@@ -6,10 +6,10 @@ definePageMeta({ key: route => route.path })
 useResponseHeader('Cache-Control').value = 'no-store'
 useResponseHeader('Vary').value = 'Cookie'
 const route = useRoute()
-const views = { overview: '概要', problems: '問題', standings: '順位表', submissions: '提出一覧' }
+const views = { overview: '概要', problems: '問題', standings: '順位表', submissions: '提出一覧', editorials: '解説一覧' }
 const activeView = computed(() => {
   const view = route.query.view
-  return view === 'problems' || view === 'standings' || view === 'submissions' ? view : 'overview'
+  return view === 'problems' || view === 'standings' || view === 'submissions' || view === 'editorials' ? view : 'overview'
 })
 const { user } = useAccount()
 const base = `/api/contests/${encodeURIComponent(String(route.params.id))}`
@@ -131,6 +131,13 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <template v-if="submissions"><p v-if="!submissions.items.length" class="contest-empty muted">提出はまだありません。</p><div v-else class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0"><table class="content-table"><thead><tr><th scope="col">問題</th><th scope="col">ユーザー</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th scope="col">結果</th><th scope="col">提出日時（日本時間）</th></tr></thead><tbody><tr v-for="s in submissions.items" :key="s.id"><th scope="row"><NuxtLink :to="`/contests/${contest.id}/submissions/${s.id}`">{{ s.problemTitle }}</NuxtLink></th><td><UserLink :handle="s.author" /></td><td class="submission-usage">{{ s.sourceBytes == null ? '—' : `${s.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage">{{ submissionUsage(s.result) }}</td><td><SubmissionStatus :item="s" /></td><td>{{ contestDate(s.createdAt) }}<span v-if="new Date(s.createdAt) >= new Date(contest.endsAt)"> · 練習</span></td></tr></tbody></table></div><ContentPagination :index="offset / 50" :has-next="submissions.hasMore" :loading="updating" @move="direction => offset += direction * 50" /></template>
       </template>
     </section>
+    <section v-if="activeView === 'editorials'" id="editorials" class="contest-section" aria-labelledby="editorials-title">
+      <h2 id="editorials-title">解説一覧</h2>
+      <p v-if="contest.status !== 'ended'" class="notice">解説はコンテスト終了後に公開されます。終了前はコンテストセッターと各問題のテスターが閲覧できます。</p>
+      <div v-if="contest.problems.length" class="content-table-scroll" role="region" aria-label="解説一覧のスクロール領域" tabindex="0">
+        <table class="content-table contest-editorials"><thead><tr><th scope="col">#</th><th scope="col">解説</th></tr></thead><tbody><tr v-for="(p, index) in contest.problems" :key="p.id || index"><td>{{ problemLabel(index) }}</td><th scope="row"><NuxtLink v-if="p.hasEditorial" :to="{ path: `/contests/${contest.id}/problems/${p.id}`, query: { view: 'editorial' } }">{{ p.title }}</NuxtLink><template v-else><span>{{ p.title || '???' }}</span><span class="editorial-state muted">{{ p.hasEditorial === false ? '未登録' : contest.status === 'ended' ? '公開待ち' : '終了後に公開' }}</span></template></th></tr></tbody></table>
+      </div>
+    </section>
   </div>
 </template>
 <style scoped>
@@ -157,7 +164,8 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 .contest-section-heading button:disabled { opacity: .55; cursor: wait; }
 .contest-problems tr.solved { background: var(--color-accent-soft); }
 .contest-problems .problem-limits { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.contest-problems td:first-child { width: 3rem; color: var(--color-muted); }
+.contest-problems td:first-child, .contest-editorials td:first-child { width: 3rem; color: var(--color-muted); }
+.editorial-state { margin-left: 12px; font-weight: 400; }
 .contest-problems thead th:last-child, .contest-problems td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
 .contest-empty { margin: 0; padding-block: 24px; border-top: 1px solid var(--color-line); }
 .standings-table th, .standings-table td { padding: 8px 12px; border: 1px solid var(--color-line); text-align: center; font-variant-numeric: tabular-nums; }

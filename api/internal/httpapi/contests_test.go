@@ -151,7 +151,7 @@ func TestContestsPostgres(t *testing.T) {
 	request("GET", "/contests", "", nil, 200)
 	request("GET", "/contests?offset=-1", "", nil, 400)
 	detail := request("GET", "/contests/"+cid, "", nil, 200)
-	if strings.Contains(detail, "Secret") || strings.Contains(detail, a) || strings.Contains(detail, b) {
+	if strings.Contains(detail, "Secret") || strings.Contains(detail, a) || strings.Contains(detail, b) || strings.Contains(detail, "hasEditorial") {
 		t.Fatal("prestart leak", detail)
 	}
 	var credits contests.Contest
@@ -211,7 +211,8 @@ func TestContestsPostgres(t *testing.T) {
 	if testerView.Official || !testerView.CanViewSubmissions || len(testerView.Problems) != 2 ||
 		testerView.Problems[0].ID != "" || testerView.Problems[0].Points != 200 ||
 		testerView.Problems[1].ID != a || testerView.Problems[1].Title != "Secret A" ||
-		testerView.Problems[1].TimeLimitMS != "1000" || testerView.Problems[1].MemoryLimitMB != "256" {
+		testerView.Problems[1].TimeLimitMS != "1000" || testerView.Problems[1].MemoryLimitMB != "256" ||
+		testerView.Problems[0].HasEditorial != nil || testerView.Problems[1].HasEditorial == nil || !*testerView.Problems[1].HasEditorial {
 		t.Fatal("tester must only see their problem after reorder", testerView.Problems)
 	}
 	// Registration is authenticated, idempotent and immediately visible before the start.
@@ -319,6 +320,9 @@ func TestContestsPostgres(t *testing.T) {
 	detail = request("GET", "/contests/"+cid+"/problems/"+a, "", nil, 200)
 	if !strings.Contains(detail, "secret statement") || strings.Contains(detail, "secret editorial") || strings.Contains(detail, "private input") {
 		t.Fatal("running leak", detail)
+	}
+	if detail = request("GET", "/contests/"+cid, "", nil, 200); strings.Contains(detail, "hasEditorial") {
+		t.Fatal("running editorial availability leak", detail)
 	}
 	// Running contests follow source edits; already accepted jobs remain immutable.
 	draft.Title = "Changed draft"
@@ -551,6 +555,18 @@ func TestContestsPostgres(t *testing.T) {
 	}
 	if !endedView.CanViewSubmissions {
 		t.Fatal("ended contest must allow public submission viewing")
+	}
+	for _, p := range endedView.Problems {
+		if p.HasEditorial == nil || !*p.HasEditorial {
+			t.Fatal("ended contest must link registered editorials", endedView.Problems)
+		}
+	}
+	exec(`UPDATE contest_problems SET draft=draft-'editorial' WHERE contest_id=$1 AND problem_id=$2`, cid, b)
+	if err := json.Unmarshal([]byte(request("GET", "/contests/"+cid, "", nil, 200)), &endedView); err != nil {
+		t.Fatal(err)
+	}
+	if p := endedView.Problems[0]; p.ID != b || p.HasEditorial == nil || *p.HasEditorial {
+		t.Fatal("unregistered editorial must be reported", endedView.Problems)
 	}
 	list := request("GET", "/contests/"+cid+"/submissions", "", nil, 200)
 	if strings.Contains(list, "code of") || !strings.Contains(list, accepted.ID) ||
