@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { accountListSchema, accountProblemSchema, type AccountSummary } from '~~/shared/types/account-problems'
 import { accountError } from '~/utils/account-problems'
+import { problemStatus, type ProblemStatus } from '~/utils/problem-readiness'
 const props = defineProps<{ testing?: boolean }>()
 const heading = computed(() => props.testing ? 'テスト中の問題' : '自分の問題')
 const { user, refreshAccount } = useAccount()
@@ -47,6 +48,31 @@ async function loadAccount(more = false) {
   finally { accountLoading.value = false }
 }
 
+// The labels the 状態 column shows; testers see no readiness, so only authors filter.
+const statusFilters = [
+  { key: 'preparing', label: '準備中' },
+  { key: 'applying', label: '応募中' },
+  { key: 'published', label: '公開中' },
+] as const
+type StatusFilter = typeof statusFilters[number]['key'] | 'all'
+const statusGroups: Record<ProblemStatus['kind'], Exclude<StatusFilter, 'all'>> = {
+  incomplete: 'preparing', ready: 'preparing', unknown: 'preparing', contest: 'applying', featured: 'applying', published: 'published',
+}
+const route = useRoute()
+const router = useRouter()
+const statusFilter = computed<StatusFilter>({
+  get: () => props.testing ? 'all' : statusFilters.find(filter => filter.key === route.query.status)?.key ?? 'all',
+  set: status => { void router.replace({ query: { ...route.query, status: status === 'all' ? undefined : status } }) },
+})
+const entryGroups = computed(() => accountEntries.value.map(entry => statusGroups[problemStatus(entry).kind]))
+const statusCount = (key: StatusFilter) => key === 'all' ? entryGroups.value.length : entryGroups.value.filter(group => group === key).length
+const visibleEntries = computed(() => statusFilter.value === 'all' ? accountEntries.value : accountEntries.value.filter((_, index) => entryGroups.value[index] === statusFilter.value))
+const statusFilterLabel = computed(() => statusFilters.find(filter => filter.key === statusFilter.value)?.label ?? '')
+// A filter needs every page, or a matching problem past the first 50 would look absent.
+watch([statusFilter, nextCursor, accountLoading], () => {
+  if (statusFilter.value !== 'all' && nextCursor.value && !accountLoading.value && !accountMessage.value) void loadAccount(true)
+})
+
 const updatedLabel = (date: string) => new Date(date).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 onMounted(() => { void loadAccount() })
 </script>
@@ -58,15 +84,20 @@ onMounted(() => { void loadAccount() })
       <NuxtLink v-if="!testing" class="editor-button primary" to="/problems/new?fresh=1">新規問題</NuxtLink>
     </header>
     <p v-if="accountMessage" role="alert" class="editor-error">{{ accountMessage }}</p>
-    <LoadingSpinner v-if="accountLoading" label="問題を読み込み中" />
+    <LoadingSpinner v-if="accountLoading && !accountEntries.length" label="問題を読み込み中" />
     <p v-else-if="!user"><NuxtLink to="/login?next=/my%3Ftab%3Dproblems">ログイン</NuxtLink>すると、問題を表示できます。</p>
     <template v-else>
       <EmptyState v-if="!accountEntries.length && !accountMessage && testing" kind="testing" title="テスト中の問題はまだありません。" description="テスターリンクから参加すると、ここに表示されます。" />
       <EmptyState v-else-if="!accountEntries.length && !accountMessage" kind="problem" title="保存した問題はまだありません。" description="「新規問題」から作成すると、ここに表示されます。" />
-      <div v-if="accountEntries.length" class="content-table-scroll">
+      <div v-if="!testing && accountEntries.length" class="status-filter" role="group" aria-label="状態で絞り込む">
+        <button type="button" :aria-pressed="statusFilter === 'all'" @click="statusFilter = 'all'">すべて<span v-if="!nextCursor" class="status-count">{{ statusCount('all') }}</span></button>
+        <button v-for="filter in statusFilters" :key="filter.key" type="button" :aria-pressed="statusFilter === filter.key" @click="statusFilter = filter.key">{{ filter.label }}<span v-if="!nextCursor" class="status-count">{{ statusCount(filter.key) }}</span></button>
+      </div>
+      <EmptyState v-if="accountEntries.length && !visibleEntries.length && !nextCursor && !accountLoading" kind="problem" :title="`「${statusFilterLabel}」の問題はありません。`"><button type="button" class="editor-button" @click="statusFilter = 'all'">すべて表示</button></EmptyState>
+      <div v-if="visibleEntries.length" class="content-table-scroll">
         <table class="content-table" :aria-label="heading">
           <thead><tr><th scope="col">タイトル</th><th scope="col">状態</th><th scope="col">更新日時</th><th scope="col">操作</th></tr></thead>
-          <tbody><tr v-for="entry in accountEntries" :key="entry.id">
+          <tbody><tr v-for="entry in visibleEntries" :key="entry.id">
             <th scope="row">{{ entry.title.trim() || '無題の問題' }}</th>
             <td>
               <span class="problem-state">
@@ -95,7 +126,8 @@ onMounted(() => { void loadAccount() })
           </tr></tbody>
         </table>
       </div>
-      <button v-if="nextCursor" class="editor-button" :disabled="accountLoading" @click="loadAccount(true)">さらに読み込む</button>
+      <LoadingSpinner v-if="accountLoading" label="問題を読み込み中" />
+      <button v-else-if="nextCursor" class="editor-button" @click="loadAccount(true)">さらに読み込む</button>
     </template>
     <button v-if="accountMessage" class="editor-button" :disabled="accountLoading" @click="loadAccount()">再試行</button>
     <Teleport to="body">
@@ -114,6 +146,12 @@ onMounted(() => { void loadAccount() })
 </template>
 
 <style scoped>
+.status-filter { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+.status-filter button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 2px 14px; border: 1px solid var(--color-line); border-radius: 999px; background: var(--color-paper); color: var(--color-muted); font: inherit; font-size: .8125rem; white-space: nowrap; cursor: pointer; }
+.status-filter button:hover { border-color: var(--color-accent); color: var(--color-ink); }
+.status-filter button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.status-filter button[aria-pressed="true"] { border-color: var(--color-accent); background: var(--color-accent-soft); color: var(--color-ink); font-weight: 600; }
+.status-count { color: var(--color-muted); font-weight: 400; font-variant-numeric: tabular-nums; }
 .problem-state { display: inline-flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; }
 .featured-preference { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; color: var(--color-muted); cursor: help; }
 .featured-preference:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 4px; }

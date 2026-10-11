@@ -152,3 +152,54 @@ for (const width of [320, 1280]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   })
 }
+
+test('author problems filter by status across every page', async ({ page }) => {
+  const updatedAt = '2026-09-10T00:00:00Z'
+  const ready = { publish: [], contest: [], featured: [] }
+  const pages: Record<string, object[]> = {
+    '': [
+      { id: '11111111-1111-4111-8111-111111111111', title: '書きかけ', updatedAt, readiness: { publish: [], contest: ['title_missing'], featured: ['title_missing'] } },
+      { id: '22222222-2222-4222-8222-222222222222', title: '出せる問題', updatedAt, readiness: ready },
+      { id: '33333333-3333-4333-8333-333333333333', title: 'コンテストの問題', updatedAt, contestId: 'contest', contestScheduled: true, readiness: ready },
+    ],
+    'page-2': [
+      { id: '44444444-4444-4444-8444-444444444444', title: '定期便の問題', updatedAt, featuredPreference: 'soon', readiness: ready },
+    ],
+  }
+  await page.route(url => url.pathname === '/api/my/problems', route => {
+    const cursor = new URL(route.request().url()).searchParams.get('cursor') ?? ''
+    return route.fulfill({ json: { items: pages[cursor], nextCursor: cursor ? '' : 'page-2' } })
+  })
+  await page.goto('/my?tab=problems')
+  const filters = page.getByRole('group', { name: '状態で絞り込む' })
+  const filter = (label: string) => filters.getByRole('button', { name: new RegExp(`^${label}(?: \\d+)?$`) })
+  const rows = page.getByRole('table', { name: '自分の問題', exact: true }).locator('tbody tr')
+  await expect(rows).toHaveCount(3)
+  // Counts wait for every page, since a partial count would mislead.
+  await expect(filter('すべて')).toHaveAccessibleName('すべて')
+  // 応募中 covers both contests and 定期便, including problems on later pages.
+  await filter('応募中').click()
+  await expect(page).toHaveURL(/status=applying/)
+  await expect(filter('応募中')).toHaveAttribute('aria-pressed', 'true')
+  await expect(rows).toHaveCount(2)
+  await expect(rows.nth(0)).toContainText('コンテストの問題')
+  await expect(rows.nth(1)).toContainText('定期便の問題')
+  await expect(filter('すべて')).toHaveAccessibleName('すべて 4')
+  await expect(filter('準備中')).toHaveAccessibleName('準備中 2')
+  await expect(page.getByRole('button', { name: 'さらに読み込む' })).toHaveCount(0)
+  await filter('準備中').click()
+  await expect(rows).toHaveCount(2)
+  await expect(rows.nth(0)).toContainText('書きかけ')
+  await expect(rows.nth(1)).toContainText('出せる問題')
+  await page.reload()
+  await expect(filter('準備中')).toHaveAttribute('aria-pressed', 'true')
+  await expect(rows).toHaveCount(2)
+  await filter('公開中').click()
+  await expect(page.getByText('「公開中」の問題はありません。')).toBeVisible()
+  await expect(page.getByRole('table', { name: '自分の問題', exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'すべて表示' }).click()
+  await expect(page).not.toHaveURL(/status=/)
+  await expect(rows).toHaveCount(4)
+  await page.getByRole('button', { name: 'テスト中の問題', exact: true }).click()
+  await expect(page.getByRole('group', { name: '状態で絞り込む' })).toHaveCount(0)
+})
