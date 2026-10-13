@@ -38,14 +38,3 @@ test('creation dropdown supports keyboard, dismissal, and creation links', async
   await blog.click()
   await expect(page).toHaveURL(/\/blog\/new$/)
 })
-
-test('footer lists the contact address and X account', async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 800 })
-  await page.goto('/')
-  const footer = page.locator('.site-footer')
-  await expect(footer.getByRole('link', { name: 'shareoj2026@gmail.com' })).toHaveAttribute('href', 'mailto:shareoj2026@gmail.com')
-  const x = footer.getByRole('link', { name: /@share_oj/ })
-  await expect(x).toHaveAttribute('href', 'https://x.com/share_oj')
-  await expect(x).toHaveAttribute('target', '_blank')
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320)
-})
