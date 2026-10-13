@@ -12,7 +12,7 @@ useSeoMeta({ title: () => `提出 | ${item.value?.problemTitle} | ShareOJ`, robo
 <template>
   <div v-if="item" class="submission-page">
     <nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink v-if="route.query.from === 'problem'" :to="`/contests/${id}/problems/${item.problemId}?view=submissions`">この問題のすべての提出</NuxtLink><NuxtLink v-else :to="`/contests/${id}?view=submissions`">コンテストの提出一覧</NuxtLink><span aria-hidden="true">/</span><span>提出結果</span></nav>
-    <nav class="problem-menu" aria-label="提出メニュー"><NuxtLink :to="`/contests/${id}/problems/${item.problemId}`">問題</NuxtLink><NuxtLink :to="`/contests/${id}?view=standings`">順位表</NuxtLink><NuxtLink :to="`/contests/${id}?view=submissions`">提出一覧</NuxtLink></nav>
+    <nav class="problem-menu" aria-label="提出メニュー"><NuxtLink :to="`/contests/${id}/problems/${item.problemId}`">問題</NuxtLink><NuxtLink :to="`/contests/${id}/problems/${item.problemId}?view=submissions`">すべての提出</NuxtLink></nav>
     <SubmissionDetail :item="item" />
   </div>
 </template>

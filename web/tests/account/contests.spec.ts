@@ -344,7 +344,7 @@ test('scheduled problems open for submission, then publish with editorial and so
     expect(await reader.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await reader.screenshot({ path: testInfo.outputPath(`contest-submission-${width}.png`), fullPage: true })
   }
-  await reader.getByRole('navigation', { name: '提出メニュー' }).getByRole('link', { name: '提出一覧', exact: true }).click()
+  await reader.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '提出一覧', exact: true }).click()
   await expect(reader).toHaveURL(`/contests/${id}?view=submissions`)
   await expect(reader.getByRole('region', { name: '提出一覧', exact: true })).toContainText('bob')
   await reader.getByRole('row').filter({ hasText: 'bob' }).getByRole('link', { name: '時間で公開する問題', exact: true }).click()

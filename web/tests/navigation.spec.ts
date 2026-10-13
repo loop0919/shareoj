@@ -38,3 +38,32 @@ test('creation dropdown supports keyboard, dismissal, and creation links', async
   await blog.click()
   await expect(page).toHaveURL(/\/blog\/new$/)
 })
+
+test('contest pages replace the site menu with the contest menu', async ({ page }) => {
+  const contest = '/contests/88888888-8888-4888-8888-888888888888'
+  const siteMenu = page.getByRole('navigation', { name: 'メインナビゲーション' })
+  const contestMenu = page.getByRole('navigation', { name: 'コンテストメニュー' })
+  await page.goto(`${contest}?view=standings`)
+  await expect(siteMenu).toHaveCount(0)
+  await expect(contestMenu.getByRole('link')).toHaveText(['概要', '問題', '順位表', '提出一覧', '解説一覧'])
+  await expect(contestMenu.getByRole('link', { name: '順位表', exact: true })).toHaveAttribute('aria-current', 'page')
+  await contestMenu.getByRole('link', { name: '問題', exact: true }).click()
+  await expect(page).toHaveURL(`${contest}?view=problems`)
+  await expect(contestMenu.getByRole('link', { name: '問題', exact: true })).toHaveAttribute('aria-current', 'page')
+  await expect(contestMenu.getByRole('link', { name: '順位表', exact: true })).not.toHaveAttribute('aria-current')
+  await page.getByRole('region', { name: 'コンテストの問題' }).getByRole('link').first().click()
+  await expect(page).toHaveURL(new RegExp(`${contest}/problems/`))
+  await expect(contestMenu.getByRole('link', { name: '問題', exact: true })).toHaveAttribute('aria-current', 'true')
+  await page.goto(`${contest}/submissions/22222222-2222-4222-8222-222222222222`)
+  await expect(contestMenu.getByRole('link', { name: '提出一覧', exact: true })).toHaveAttribute('aria-current', 'true')
+  for (const width of [320, 375, 768]) {
+    await page.setViewportSize({ width, height: 900 })
+    await expect(contestMenu.getByRole('link', { name: '解説一覧', exact: true })).toBeInViewport()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  }
+  await page.getByRole('link', { name: 'ShareOJ ホーム' }).click()
+  await expect(siteMenu).toBeVisible()
+  await expect(contestMenu).toHaveCount(0)
+  await page.goto('/contests/00000000-0000-4000-8000-000000000000')
+  await expect(siteMenu).toBeVisible()
+})

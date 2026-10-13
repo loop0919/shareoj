@@ -1,17 +1,14 @@
 <script setup lang="ts">
 import { submissionUsage } from '~/utils/submission-usage'
-import { contestDate, contestStatus, problemLabel, type Contest, type Standing } from '~~/shared/types/contest'
+import { contestDate, contestStatus, contestView, problemLabel, type Contest, type Standing } from '~~/shared/types/contest'
 import type { Submission } from '~~/shared/types/submission'
 import type { UserEditorial } from '~~/shared/types/post'
 definePageMeta({ key: route => route.path })
 useResponseHeader('Cache-Control').value = 'no-store'
 useResponseHeader('Vary').value = 'Cookie'
 const route = useRoute()
-const views = { overview: '概要', problems: '問題', standings: '順位表', submissions: '提出一覧', editorials: '解説一覧' }
-const activeView = computed(() => {
-  const view = route.query.view
-  return view === 'problems' || view === 'standings' || view === 'submissions' || view === 'editorials' ? view : 'overview'
-})
+// The layout header shows the contest menu that switches these views.
+const activeView = computed(() => contestView(route.query.view))
 const { user } = useAccount()
 const base = `/api/contests/${encodeURIComponent(String(route.params.id))}`
 const { data: contest, error, refresh } = await useFetch<Contest>(base)
@@ -83,9 +80,6 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 <template>
   <div v-if="contest" class="problem-page contest-page">
     <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink to="/contests">コンテスト</NuxtLink><span aria-hidden="true">/</span><span>{{ contest.title }}</span></nav><TweetButton :title="contest.title" :url="`/contests/${contest.id}`" /></div>
-    <nav class="problem-menu" aria-label="コンテストメニュー">
-      <NuxtLink v-for="(label, view) in views" :key="view" :to="{ path: `/contests/${contest.id}`, query: view === 'overview' ? {} : { view } }" :aria-current="activeView === view ? 'page' : undefined">{{ label }}</NuxtLink>
-    </nav>
     <header class="problem-header">
       <div class="contest-heading">
         <h1>{{ contest.title }}</h1>

@@ -21,6 +21,11 @@ export type Standing = {
 }
 export type ContestProblemDetail = Omit<PublicProblem, 'timeLimitMs' | 'memoryLimitMb'> & { timeLimitMs: string, memoryLimitMb: string }
 export const contestStatus = { scheduled: '開催予定', running: '開催中', ended: '終了' }
+export const contestViews = { overview: '概要', problems: '問題', standings: '順位表', submissions: '提出一覧', editorials: '解説一覧' }
+export type ContestView = keyof typeof contestViews
+export function contestView(value: unknown): ContestView {
+  return value === 'problems' || value === 'standings' || value === 'submissions' || value === 'editorials' ? value : 'overview'
+}
 export function contestDate(value: string) {
   return new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Tokyo' }).format(new Date(value))
 }

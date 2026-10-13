@@ -1,5 +1,10 @@
 <script setup lang="ts">
+import { contestView, contestViews, type ContestView } from '~~/shared/types/contest'
 const route = useRoute()
+const pageError = useError()
+// Contest pages swap the site menu for the contest's own menu. Error pages keep the site menu.
+const contestId = computed(() => !pageError.value && String(route.name ?? '').startsWith('contests-id') ? String(route.params.id) : '')
+const contestSection = computed<ContestView>(() => route.name === 'contests-id' ? contestView(route.query.view) : String(route.name).startsWith('contests-id-submissions') ? 'submissions' : 'problems')
 const { data: judgeCatalog, error: judgeCatalogError, refresh: refreshJudge } = await useJudgeCatalog()
 function refreshVisibleJudge() { if (document.visibilityState === 'visible') void refreshJudge({ dedupe: 'defer' }) }
 // A refresh during hydration reuses Nuxt's server payload.
@@ -32,7 +37,10 @@ onMounted(() => { void refreshAccount().then(account => { if (account) return re
     </div>
     <header v-if="!route.meta.editorLayout" class="site-header">
       <NuxtLink class="wordmark" to="/" aria-label="ShareOJ ホーム">Share<span>OJ</span><span class="wordmark-beta">(β)</span></NuxtLink>
-      <nav aria-label="メインナビゲーション">
+      <nav v-if="contestId" aria-label="コンテストメニュー">
+        <NuxtLink v-for="(label, view) in contestViews" :key="view" :to="{ path: `/contests/${contestId}`, query: view === 'overview' ? {} : { view } }" :aria-current="contestSection === view ? route.name === 'contests-id' ? 'page' : 'true' : undefined">{{ label }}</NuxtLink>
+      </nav>
+      <nav v-else aria-label="メインナビゲーション">
         <NuxtLink to="/">ホーム</NuxtLink>
         <NuxtLink to="/problems">問題</NuxtLink>
         <NuxtLink to="/featured">定期便</NuxtLink>
@@ -73,6 +81,7 @@ onMounted(() => { void refreshAccount().then(account => { if (account) return re
 .site-header nav { position: relative; width: auto; justify-content: flex-end; }
 .header-tools { position: relative; display: flex; align-items: center; gap: 4px; }
 .header-tools a { font-size: .875rem; text-decoration: none; }
+.site-header nav a[aria-current] { text-decoration: underline 2px; }
 @media (max-width: 59.999rem) {
   .site-header { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }
   .header-tools { grid-column: 2; grid-row: 1; gap: 0; }
