@@ -61,6 +61,11 @@ onMounted(() => { void refreshAccount().then(account => { if (account) return re
       <NuxtLink to="/blog/contest-rules">コンテストのルール</NuxtLink>
       <NuxtLink to="/blog/language-guide">使える言語</NuxtLink>
       <NuxtLink to="/blog/markdown-guide">Markdown の書き方</NuxtLink>
+      <address class="site-contact">
+        <span>お問い合わせ</span>
+        <a href="mailto:shareoj2026@gmail.com">shareoj2026@gmail.com</a>
+        <a href="https://x.com/share_oj" target="_blank" rel="noopener noreferrer">X @share_oj ↗</a>
+      </address>
     </footer>
   </div>
 </template>
