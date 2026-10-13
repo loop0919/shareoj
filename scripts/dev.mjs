@@ -38,6 +38,8 @@ function stop(code) {
 }
 process.on('SIGINT', () => stop(0))
 process.on('SIGTERM', () => stop(0))
+// Closing the terminal sends SIGHUP; detached servers would otherwise keep their ports.
+process.on('SIGHUP', () => stop(0))
 
 function run(command, args, cwd, env = process.env) {
   if (stopping) throw new Error('Startup cancelled')
