@@ -80,7 +80,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 <template>
   <div v-if="contest" class="problem-page contest-page">
     <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink to="/contests">コンテスト</NuxtLink><span aria-hidden="true">/</span><span>{{ contest.title }}</span></nav><TweetButton :title="contest.title" :url="`/contests/${contest.id}`" /></div>
-    <header class="problem-header">
+    <header v-if="activeView === 'overview'" class="problem-header">
       <div class="contest-heading">
         <h1>{{ contest.title }}</h1>
         <NuxtLink v-if="contest.canEdit" class="editor-button contest-edit" :to="`/my/contests/${contest.id}`"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4 5 5M4 20l4-1L20 7a2 2 0 0 0-4-4L4 15Z" /></svg>コンテストを編集</NuxtLink>
@@ -96,14 +96,14 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <p><NuxtLink to="/blog/contest-rules">ルール</NuxtLink></p>
     </section>
     <section v-if="activeView === 'problems'" id="problems" class="contest-section" aria-labelledby="problems-title">
-      <h2 id="problems-title">問題</h2>
+      <h1 id="problems-title">問題</h1>
       <p v-if="contest.status === 'scheduled'" class="notice">問題文は開始時刻に公開されます。</p>
       <div v-if="contest.problems.length" class="content-table-scroll" role="region" aria-label="コンテストの問題" tabindex="0">
         <table class="content-table contest-problems"><thead><tr><th scope="col">#</th><th scope="col">問題</th><th scope="col"><abbr title="実行時間制限 / メモリ制限">TL / ML</abbr></th><th scope="col">配点</th></tr></thead><tbody><tr v-for="(p, index) in contest.problems" :key="p.id || index" :class="{ solved: p.solved }"><td>{{ problemLabel(index) }}</td><th scope="row"><NuxtLink v-if="p.id" :to="`/contests/${contest.id}/problems/${p.id}`" :aria-label="p.solved ? `${p.title}（AC 済み）` : undefined">{{ p.title }}</NuxtLink><span v-else>???</span></th><td class="problem-limits">{{ !p.timeLimitMs ? '—' : `${Number(p.timeLimitMs) / 1000} 秒` }}・{{ !p.memoryLimitMb ? '—' : `${p.memoryLimitMb} MiB` }}</td><td>{{ p.points }} 点</td></tr></tbody></table>
       </div>
     </section>
     <section v-if="activeView === 'standings'" id="standings" class="contest-section" aria-labelledby="standings-title">
-      <header class="contest-section-heading"><h2 id="standings-title">公式順位表</h2><button class="editor-button" :disabled="updating" :aria-busy="updating" @click="update">{{ updating ? '更新中…' : '今すぐ更新' }}</button></header>
+      <header class="contest-section-heading"><h1 id="standings-title">公式順位表</h1><button class="editor-button" :disabled="updating" :aria-busy="updating" @click="update">{{ updating ? '更新中…' : '今すぐ更新' }}</button></header>
       <p v-if="user && !contest.official" class="notice">作成者・テスターとしての提出は公式順位の対象外です。</p>
       <p v-if="standingsError" class="notice notice-error" role="alert">順位表を取得できませんでした。</p>
       <p v-if="!standingsError && !standings?.length" class="contest-empty muted">参加者はまだいません。</p>
@@ -135,7 +135,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       </div>
     </section>
     <section v-if="activeView === 'submissions'" id="submissions" class="contest-section" aria-labelledby="submissions-title">
-      <h2 id="submissions-title">提出一覧</h2>
+      <h1 id="submissions-title">提出一覧</h1>
       <p v-if="!canViewSubmissions" class="notice">提出一覧と提出コードはコンテスト終了後に公開されます。終了前はコンテストセッターとテスターが閲覧できます。</p>
       <template v-else><p class="muted">提出コードを閲覧できます。練習提出も掲載します。</p>
       <p v-if="submissionsError" class="notice notice-error" role="alert">{{ submissionsError }}</p>
@@ -144,7 +144,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       </template>
     </section>
     <section v-if="activeView === 'editorials'" id="editorials" class="contest-section" aria-labelledby="editorials-title">
-      <h2 id="editorials-title">解説一覧</h2>
+      <h1 id="editorials-title">解説一覧</h1>
       <p v-if="contest.status !== 'ended'" class="notice">解説はコンテスト終了後に公開されます。終了前はコンテストセッターと各問題のテスターが閲覧できます。</p>
       <p v-if="userEditorialsError" class="notice notice-error" role="alert">{{ userEditorialsError }}</p>
       <LoadingSpinner v-else-if="contest.status === 'ended' && !userEditorials" label="ユーザー解説を読み込み中" />
@@ -171,9 +171,11 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 .contest-scoring { margin: 0; }
 .contest-section { padding-block: 32px; }
 .contest-section > h2, .contest-section-heading { margin: 0 0 20px; }
+/* Views other than the overview drop the contest header, so their section title is the page heading. */
+.contest-section h1 { margin: 0 0 20px; font-size: 1.25rem; letter-spacing: normal; }
 .contest-description { max-width: 52rem; }
 .contest-section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-.contest-section-heading h2 { margin: 0; }
+.contest-section-heading h1 { margin: 0; }
 .contest-section-heading button { min-height: 40px; padding: 8px 12px; }
 .contest-section-heading button:disabled { opacity: .55; cursor: wait; }
 .contest-problems tr.solved { background: var(--color-accent-soft); }

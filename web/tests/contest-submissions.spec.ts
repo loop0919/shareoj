@@ -26,7 +26,7 @@ for (const allowed of [true, false]) {
     })
     await page.goto(`/contests/${id}?view=standings`, { waitUntil: 'networkidle' })
     await page.getByRole('button', { name: '今すぐ更新' }).click()
-    await expect(page.getByRole('heading', { name: contest.title })).toBeVisible()
+    await expect(page.locator('.site-header')).toContainText(contest.title)
     await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '提出一覧', exact: true }).click()
     if (allowed) {
       await expect(page.getByRole('cell', { name: 'participant', exact: true })).toBeVisible()

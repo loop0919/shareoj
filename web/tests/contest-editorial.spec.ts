@@ -42,7 +42,7 @@ for (const status of ['running', 'ended'] as const) {
     // The server render reads the fixture API, so refresh in the browser to use the routed contest.
     await page.goto(`/contests/${id}?view=standings`, { waitUntil: 'networkidle' })
     await page.getByRole('button', { name: '今すぐ更新' }).click()
-    await expect(page.getByRole('heading', { name: contest.title })).toBeVisible()
+    await expect(page.locator('.site-header')).toContainText(contest.title)
     await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '解説一覧', exact: true }).click()
     await expect(page).toHaveURL(`/contests/${id}?view=editorials`)
     await expect(page.getByText('解説はコンテスト終了後に公開されます。', { exact: false })).toBeVisible({ visible: status === 'running' })
