@@ -12,10 +12,10 @@ for (const [handle, visible] of [['alice', true], ['bob', true], ['dave', false]
     await profile
     const menu = page.getByRole('navigation', { name: '問題メニュー' })
     if (!visible) {
-      await expect(menu.getByRole('link')).toHaveText(['問題', '自分の提出', 'すべての提出'])
+      await expect(menu.getByRole('link')).toHaveText(['問題文', '自分の提出', 'すべての提出'])
       return
     }
-    await expect(menu.getByRole('link')).toHaveText(['問題', '解説', '自分の提出', 'すべての提出'])
+    await expect(menu.getByRole('link')).toHaveText(['問題文', '解説', '自分の提出', 'すべての提出'])
     await menu.getByRole('link', { name: '解説', exact: true }).click()
     await expect(page).toHaveURL(`${path}?view=editorial`)
     await expect(page.getByRole('heading', { name: '解説', exact: true })).toBeVisible()

@@ -29,13 +29,6 @@ useSharePreview({ title: () => problem.value!.title, path: () => `/problems/${pr
 <template>
   <div v-if="problem" class="problem-page">
     <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink :to="problem.isPrivate ? '/my' : '/problems'">{{ problem.isPrivate ? 'マイページ' : '問題' }}</NuxtLink><span aria-hidden="true">/</span><span>{{ problem.title }}</span></nav><TweetButton v-if="!problem.isPrivate" :title="problem.title" :url="canonical" /></div>
-    <nav class="problem-menu" aria-label="問題メニュー">
-      <NuxtLink :to="`/problems/${problem.id}`" :aria-current="showingEditorial || submissionView ? undefined : 'page'">問題</NuxtLink>
-      <NuxtLink :to="{ path: `/problems/${problem.id}`, query: { view: 'editorial' } }" :aria-current="showingEditorial ? 'page' : undefined">解説</NuxtLink>
-      <NuxtLink :to="{ path: `/problems/${problem.id}`, query: { view: 'my-submissions' } }" :aria-current="route.query.view === 'my-submissions' ? 'page' : undefined">自分の提出</NuxtLink>
-      <NuxtLink :to="{ path: `/problems/${problem.id}`, query: { view: 'submissions' } }" :aria-current="route.query.view === 'submissions' ? 'page' : undefined">すべての提出</NuxtLink>
-      <NuxtLink v-if="canEdit" :to="{ path: '/problems/new', query: { problem: problem.id } }">作問画面へ</NuxtLink>
-    </nav>
     <header class="problem-header">
       <h1>{{ problem.title }}</h1>
       <p v-if="problem.isPrivate" class="muted">非公開 · 作成者とテスターが閲覧・提出できます。</p>
@@ -53,6 +46,13 @@ useSharePreview({ title: () => problem.value!.title, path: () => `/problems/${pr
       </div>
       <dl class="limits"><div><dt>実行時間制限</dt><dd>{{ problem.timeLimitMs / 1000 }} 秒</dd></div><div><dt>メモリ制限</dt><dd>{{ problem.memoryLimitMb }} MiB</dd></div></dl>
     </header>
+    <nav class="problem-menu" aria-label="問題メニュー">
+      <NuxtLink :to="`/problems/${problem.id}`" :aria-current="showingEditorial || submissionView ? undefined : 'page'">問題文</NuxtLink>
+      <NuxtLink :to="{ path: `/problems/${problem.id}`, query: { view: 'editorial' } }" :aria-current="showingEditorial ? 'page' : undefined">解説</NuxtLink>
+      <NuxtLink :to="{ path: `/problems/${problem.id}`, query: { view: 'my-submissions' } }" :aria-current="route.query.view === 'my-submissions' ? 'page' : undefined">自分の提出</NuxtLink>
+      <NuxtLink :to="{ path: `/problems/${problem.id}`, query: { view: 'submissions' } }" :aria-current="route.query.view === 'submissions' ? 'page' : undefined">すべての提出</NuxtLink>
+      <NuxtLink v-if="canEdit" :to="{ path: '/problems/new', query: { problem: problem.id } }">作問画面へ</NuxtLink>
+    </nav>
     <p v-if="problem.editorialHidden" class="notice">定期便の新作です。解説と他者の提出は{{ problem.editorialRevealAt ? contestDate(problem.editorialRevealAt) : '翌22時' }}（日本時間）に公開します。<template v-if="canEdit">作成者とテスターは公開前から閲覧できます。</template></p>
     <p v-if="problem.editorialHidden && !canEdit && route.query.view === 'submissions'" class="muted">他者の提出は解禁後に閲覧できます。自分の提出と採点結果は「自分の提出」から確認できます。</p>
     <ProblemSubmissionList v-else-if="submissionView" :key="String(route.query.view)" :problem-id="problem.id" :mine="route.query.view === 'my-submissions'" />

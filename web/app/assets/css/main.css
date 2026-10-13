@@ -46,6 +46,11 @@ main { min-height: 70svh; }
 .breadcrumb-row > .breadcrumb { flex: 1; min-width: 0; }
 .eyebrow { color: var(--color-muted); font-family: var(--font-code); font-size: .8125rem; letter-spacing: .08em; }
 .problem-header { padding-block: 20px 32px; border-bottom: 1px solid var(--color-line); }
+/* The problem's tabs follow its title block, and their own rule separates the content. */
+.problem-header:has(+ .problem-menu) { padding-bottom: 24px; border-bottom: 0; }
+/* The breadcrumb's own padding already spaces the title. */
+.breadcrumb-row + .problem-header { padding-top: 0; }
+.problem-header > h1:first-child { margin-top: 0; }
 .problem-header .eyebrow { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
 .sample-label { background: var(--color-accent-soft); color: var(--color-accent); padding: 2px 8px; border-radius: 4px; font-family: var(--font-body); font-size: .75rem; letter-spacing: 0; }
 .limits { display: flex; flex-wrap: wrap; gap: 12px 32px; font-size: .8125rem; margin: 0; }
