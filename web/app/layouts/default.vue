@@ -35,9 +35,10 @@ onMounted(() => { void refreshAccount().then(account => { if (account) return re
     <div v-if="judgeCatalog?.maintenance || judgeCatalogError" class="judge-banner" role="status">
       {{ judgeCatalog?.maintenance ? judgeMaintenanceMessage : 'ジャッジ機能の状態を確認できません。現在、提出等を利用できません。' }}
     </div>
-    <header v-if="!route.meta.editorLayout" class="site-header">
+    <header v-if="!route.meta.editorLayout" class="site-header" :class="{ 'site-header--contest': contestId }">
       <NuxtLink class="wordmark" to="/" aria-label="ShareOJ ホーム">Share<span>OJ</span><span class="wordmark-beta">(β)</span></NuxtLink>
-      <nav v-if="contestId" aria-label="コンテストメニュー">
+      <ContestHeaderTitle v-if="contestId" :id="contestId" class="contest-title" />
+      <nav v-if="contestId" class="contest-menu" aria-label="コンテストメニュー">
         <NuxtLink v-for="(label, view) in contestViews" :key="view" :to="{ path: `/contests/${contestId}`, query: view === 'overview' ? {} : { view } }" :aria-current="contestSection === view ? route.name === 'contests-id' ? 'page' : 'true' : undefined">{{ label }}</NuxtLink>
       </nav>
       <nav v-else aria-label="メインナビゲーション">
@@ -81,11 +82,25 @@ onMounted(() => { void refreshAccount().then(account => { if (account) return re
 .site-header nav { position: relative; width: auto; justify-content: flex-end; }
 .header-tools { position: relative; display: flex; align-items: center; gap: 4px; }
 .header-tools a { font-size: .875rem; text-decoration: none; }
-.site-header nav a[aria-current] { text-decoration: underline 2px; }
 @media (max-width: 59.999rem) {
   .site-header { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }
   .header-tools { grid-column: 2; grid-row: 1; gap: 0; }
   .site-header nav { grid-column: 1 / -1; grid-row: 2; justify-content: space-between; gap: 0 8px; flex-wrap: nowrap; }
+}
+/* Contest pages: the contest title sits beside the wordmark and its menu becomes a tab row on the header line. */
+.site-header--contest { row-gap: 4px; padding-bottom: 0; }
+.site-header--contest .contest-title { grid-column: 2; grid-row: 1; justify-self: start; max-width: 100%; }
+.site-header--contest .contest-title::before { content: ''; flex-shrink: 0; width: 1px; height: 24px; background: var(--color-line); }
+.site-header--contest .header-tools { grid-column: 3; grid-row: 1; }
+.site-header--contest .contest-menu { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; gap: 0 clamp(12px, 4vw, 28px); flex-wrap: nowrap; }
+.contest-menu a { min-height: 44px; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--color-muted); }
+.contest-menu a:hover { color: var(--color-accent); }
+.contest-menu a[aria-current] { border-bottom-color: var(--color-accent); color: var(--color-accent); font-weight: 600; }
+@media (max-width: 59.999rem) {
+  .site-header--contest .contest-title { grid-column: 1 / -1; grid-row: 2; }
+  .site-header--contest .contest-title::before { display: none; }
+  .site-header--contest .header-tools { grid-column: 2; }
+  .site-header--contest .contest-menu { grid-row: 3; }
 }
 .create-menu { font-size: .875rem; }
 .create-menu summary { display: flex; align-items: center; gap: 6px; min-height: 44px; cursor: pointer; list-style: none; color: var(--color-accent); }

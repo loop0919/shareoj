@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Contest, ContestProblemDetail } from '~~/shared/types/contest'
+import type { ContestProblemDetail } from '~~/shared/types/contest'
 definePageMeta({ key: route => route.path })
 useResponseHeader('Cache-Control').value = 'no-store'
 useResponseHeader('Vary').value = 'Cookie'
@@ -7,7 +7,7 @@ const route = useRoute()
 const { profile, user } = useAccount()
 const id = encodeURIComponent(String(route.params.id))
 const pid = encodeURIComponent(String(route.params.problem))
-const { data: contest, refresh: refreshContest } = await useFetch<Contest>(`/api/contests/${id}`)
+const { data: contest, refresh: refreshContest } = await useContest(String(route.params.id))
 const { data: problem, error, refresh } = await useFetch<ContestProblemDetail>(`/api/contests/${id}/problems/${pid}`)
 if (error.value || !problem.value || !contest.value) throw createError({ statusCode: error.value?.statusCode === 404 ? 404 : 502, statusMessage: '問題が見つからないか、まだ公開されていません', fatal: true })
 const showingEditorial = computed(() => route.query.view === 'editorial')

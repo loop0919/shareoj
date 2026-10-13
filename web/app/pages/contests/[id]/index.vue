@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { submissionUsage } from '~/utils/submission-usage'
-import { contestDate, contestStatus, contestView, problemLabel, type Contest, type Standing } from '~~/shared/types/contest'
+import { contestDate, contestStatus, contestView, problemLabel, type Standing } from '~~/shared/types/contest'
 import type { Submission } from '~~/shared/types/submission'
 import type { UserEditorial } from '~~/shared/types/post'
 definePageMeta({ key: route => route.path })
@@ -11,7 +11,7 @@ const route = useRoute()
 const activeView = computed(() => contestView(route.query.view))
 const { user } = useAccount()
 const base = `/api/contests/${encodeURIComponent(String(route.params.id))}`
-const { data: contest, error, refresh } = await useFetch<Contest>(base)
+const { data: contest, error, refresh } = await useContest(String(route.params.id))
 if (error.value || !contest.value) throw createError({ statusCode: error.value?.statusCode === 404 ? 404 : 502, statusMessage: 'コンテストを取得できませんでした', fatal: true })
 useSeoMeta({ title: () => `${contest.value?.title} | ShareOJ` })
 const { data: standings, error: standingsError, refresh: refreshStandings } = await useFetch<Standing[]>(`${base}/standings`)

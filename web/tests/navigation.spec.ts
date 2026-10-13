@@ -45,6 +45,7 @@ test('contest pages replace the site menu with the contest menu', async ({ page 
   const contestMenu = page.getByRole('navigation', { name: 'コンテストメニュー' })
   await page.goto(`${contest}?view=standings`)
   await expect(siteMenu).toHaveCount(0)
+  await expect(page.locator('.site-header').getByRole('link', { name: '共有コンテスト 開催中', exact: true })).toHaveAttribute('href', contest)
   await expect(contestMenu.getByRole('link')).toHaveText(['概要', '問題', '順位表', '提出一覧', '解説一覧'])
   await expect(contestMenu.getByRole('link', { name: '順位表', exact: true })).toHaveAttribute('aria-current', 'page')
   await contestMenu.getByRole('link', { name: '問題', exact: true }).click()
@@ -56,6 +57,7 @@ test('contest pages replace the site menu with the contest menu', async ({ page 
   await expect(contestMenu.getByRole('link', { name: '問題', exact: true })).toHaveAttribute('aria-current', 'true')
   await page.goto(`${contest}/submissions/22222222-2222-4222-8222-222222222222`)
   await expect(contestMenu.getByRole('link', { name: '提出一覧', exact: true })).toHaveAttribute('aria-current', 'true')
+  await expect(page.locator('.site-header')).toContainText('共有コンテスト')
   for (const width of [320, 375, 768]) {
     await page.setViewportSize({ width, height: 900 })
     await expect(contestMenu.getByRole('link', { name: '解説一覧', exact: true })).toBeInViewport()
@@ -64,6 +66,7 @@ test('contest pages replace the site menu with the contest menu', async ({ page 
   await page.getByRole('link', { name: 'ShareOJ ホーム' }).click()
   await expect(siteMenu).toBeVisible()
   await expect(contestMenu).toHaveCount(0)
+  await expect(page.locator('.site-header')).not.toContainText('共有コンテスト')
   await page.goto('/contests/00000000-0000-4000-8000-000000000000')
   await expect(siteMenu).toBeVisible()
 })
