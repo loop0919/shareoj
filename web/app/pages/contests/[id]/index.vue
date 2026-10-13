@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { submissionUsage } from '~/utils/submission-usage'
-import { contestDate, contestStatus, contestView, problemLabel, type Standing } from '~~/shared/types/contest'
+import { contestDate, contestStatus, contestView, contestViews, problemLabel, type Standing } from '~~/shared/types/contest'
 import type { Submission } from '~~/shared/types/submission'
 import type { UserEditorial } from '~~/shared/types/post'
 definePageMeta({ key: route => route.path })
@@ -79,7 +79,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 </script>
 <template>
   <div v-if="contest" class="problem-page contest-page">
-    <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink to="/contests">コンテスト</NuxtLink><span aria-hidden="true">/</span><span>{{ contest.title }}</span></nav><TweetButton :title="contest.title" :url="`/contests/${contest.id}`" /></div>
+    <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><template v-if="activeView === 'overview'"><NuxtLink to="/contests">コンテスト</NuxtLink><span aria-hidden="true">/</span><span>{{ contest.title }}</span></template><template v-else><NuxtLink :to="`/contests/${contest.id}`">{{ contest.title }}</NuxtLink><span aria-hidden="true">/</span><span>{{ contestViews[activeView] }}</span></template></nav><TweetButton :title="contest.title" :url="`/contests/${contest.id}`" /></div>
     <header v-if="activeView === 'overview'" class="problem-header">
       <div class="contest-heading">
         <h1>{{ contest.title }}</h1>

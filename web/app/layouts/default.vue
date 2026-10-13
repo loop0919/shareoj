@@ -30,7 +30,7 @@ onMounted(() => { void refreshAccount().then(account => { if (account) return re
 </script>
 
 <template>
-  <div class="site-shell" :class="{ 'site-shell--editor': route.meta.editorLayout }">
+  <div class="site-shell" :class="{ 'site-shell--editor': route.meta.editorLayout, 'site-shell--contest': contestId }">
     <a class="skip-link" href="#main">本文へ移動</a>
     <div v-if="judgeCatalog?.maintenance || judgeCatalogError" class="judge-banner" role="status">
       {{ judgeCatalog?.maintenance ? judgeMaintenanceMessage : 'ジャッジ機能の状態を確認できません。現在、提出等を利用できません。' }}
@@ -71,12 +71,15 @@ onMounted(() => { void refreshAccount().then(account => { if (account) return re
       <NuxtLink to="/blog/language-guide">使える言語</NuxtLink>
       <NuxtLink to="/blog/markdown-guide">Markdown の書き方</NuxtLink>
     </footer>
+    <ContestClock v-if="contestId" :id="contestId" />
   </div>
 </template>
 
 <style scoped>
 /* Hallmark · component: two-row mobile header · existing green theme
  * pre-emit critique: P4 H5 E4 S5 R5 V4 */
+/* Room below the footer so the fixed contest clock never covers the end of the page. */
+.site-shell--contest { padding-bottom: 96px; }
 .judge-banner { flex-shrink: 0; padding: 12px 16px; background: var(--color-surface); color: var(--color-ink); border-bottom: 2px solid var(--color-accent); font-size: .875rem; overflow-wrap: anywhere; }
 .site-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; }
 .site-header nav { position: relative; width: auto; justify-content: flex-end; }
