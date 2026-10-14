@@ -12,18 +12,26 @@ onBeforeUnmount(pause)
 
 <template>
   <div class="toast-region" aria-live="polite" aria-atomic="true">
-    <div v-if="toast" class="toast" :data-type="toast.type" @mouseenter="pause" @mouseleave="resume" @focusin="pause" @focusout="resume">
-      <svg class="toast-icon" viewBox="0 0 24 24" aria-hidden="true">
-        <template v-if="toast.type === 'warn'"><path d="m12 3 10 18H2Z" /><path d="M12 9v5m0 2v2" /></template>
-        <template v-else><circle cx="12" cy="12" r="9" /><path :d="toast.type === 'error' ? 'm8 8 8 8m0-8-8 8' : 'M12 11v6m0-10v2'" /></template>
-      </svg>
-      <span role="status">{{ toast.message }}</span>
-      <button type="button" aria-label="通知を閉じる" @click="dismissToast"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
-    </div>
+    <Transition name="toast-fade">
+      <div v-if="toast" class="toast" :data-type="toast.type" @mouseenter="pause" @mouseleave="resume" @focusin="pause" @focusout="resume">
+        <svg class="toast-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <template v-if="toast.type === 'warn'"><path d="m12 3 10 18H2Z" /><path d="M12 9v5m0 2v2" /></template>
+          <template v-else><circle cx="12" cy="12" r="9" /><path :d="toast.type === 'error' ? 'm8 8 8 8m0-8-8 8' : 'M12 11v6m0-10v2'" /></template>
+        </svg>
+        <span role="status">{{ toast.message }}</span>
+        <button type="button" aria-label="通知を閉じる" @click="dismissToast"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <style scoped>
+.toast-fade-enter-active { transition: opacity 240ms ease-out, transform 240ms ease-out; }
+.toast-fade-leave-active { transition: opacity 150ms ease-in, transform 150ms ease-in; }
+.toast-fade-enter-from, .toast-fade-leave-to { opacity: 0; transform: translateY(-8px); }
+@media (prefers-reduced-motion: reduce) {
+  .toast-fade-enter-active, .toast-fade-leave-active { transition: none; }
+}
 .toast-region { position: fixed; top: max(16px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 200; width: max-content; max-width: min(28rem, calc(100vw - 32px)); pointer-events: none; }
 .toast { --toast-color: light-dark(#176b43, #86e0ae); --toast-background: light-dark(#edf9f1, #183b2b); --toast-border: light-dark(#90cba7, #347d53); display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; border: 1px solid var(--toast-border); border-radius: 8px; background: var(--toast-background); color: var(--toast-color); box-shadow: 0 4px 20px #0002; font-size: .875rem; overflow-wrap: anywhere; pointer-events: auto; }
 .toast[data-type="warn"] { --toast-color: light-dark(#785600, #f5d76e); --toast-background: light-dark(#fff9db, #3b3214); --toast-border: light-dark(#e8ce63, #8f772e); }
