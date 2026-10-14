@@ -6,6 +6,7 @@ const emit = defineEmits<{ posted: [] }>()
 const preference = ref<'soon' | 'later'>('soon')
 const dialog = ref<HTMLDialogElement>()
 const { refreshAccount } = useAccount()
+const { showToast } = useToast()
 const signedIn = ref(false)
 async function open() {
   selected.value = ''
@@ -70,6 +71,7 @@ async function post(cancelSchedule = false) {
     await $fetch(`/api/my/problems/${problem.id}/publication`, { method: 'PUT', body: { version: problem.version, publish: !cancelSchedule, ...(at ? { scheduledAt: at } : {}) } })
     dialog.value?.close()
     await navigateTo(at || cancelSchedule ? '/my?tab=problems' : `/problems/${problem.id}`)
+    if (!at && !cancelSchedule) showToast('公開しました')
   } catch (error) { message.value = accountError(error) }
   finally { busy.value = false }
 }

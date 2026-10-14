@@ -22,6 +22,10 @@ test('posting selects only unpublished standalone problems across pages and hand
     ], nextCursor: 'next',
   } }))
   let attempts = 0
+  await page.route(`**/api/problems/${id}`, route => route.fulfill({ json: {
+    id, title: '投稿する下書き', markdown: '問題本文', author: 'ui_test', difficulty: 2,
+    timeLimitMs: 2000, memoryLimitMb: 512, publishedAt: updatedAt,
+  } }))
   await page.route(`**/api/my/problems/${id}/publication`, route => {
     expect(route.request().postDataJSON()).toMatchObject({ publish: true, version: expect.any(Number) })
     attempts++
@@ -49,8 +53,10 @@ test('posting selects only unpublished standalone problems across pages and hand
   await select.selectOption(id)
   await page.getByRole('dialog').getByRole('button', { name: '投稿', exact: true }).click()
   await expect(page.getByRole('alert')).toContainText('別の画面で更新されています')
+  await expect(page.locator('.toast').getByRole('status')).toHaveCount(0)
   await page.getByRole('dialog').getByRole('button', { name: '投稿', exact: true }).click()
   await expect(page).toHaveURL(`/problems/${id}`)
+  await expect(page.locator('.toast').getByRole('status')).toHaveText('公開しました')
 })
 
 test('posting has an empty state', async ({ page }) => {
@@ -113,6 +119,7 @@ test('schedule in Japan time, show the reservation, update it and cancel it', as
   await dialog.getByRole('button', { name: '予約する', exact: true }).click()
   await expect(page).toHaveURL('/my?tab=problems')
   expect(requests[0]).toEqual({ version: 1, publish: true, scheduledAt: `${year}-01-02T14:00:00.000Z` })
+  await expect(page.locator('.toast')).toHaveCount(0)
   const row = page.getByRole('row').filter({ hasText: '予約する問題' })
   await expect(row).toContainText('公開予約中')
   await expect(row).toContainText('23:00')

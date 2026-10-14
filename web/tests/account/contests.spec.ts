@@ -40,6 +40,7 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   await page.getByRole('button', { name: 'コンテストを公開', exact: true }).click()
   await expect(page.getByRole('button', { name: '期間・ペナルティ', exact: true })).toHaveAttribute('aria-current', 'page')
   await expect(page.getByLabel('開始日時')).toBeFocused()
+  await expect(page.locator('.toast')).toHaveCount(0)
   await expect(page.getByLabel('誤答ペナルティ（分）')).toHaveValue('5')
   await page.getByLabel('開始日時').fill(localDate(Date.now() + 86400000))
   await page.getByLabel('コンテスト時間（分）').fill('60')
@@ -74,6 +75,7 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   page.once('dialog', dialog => dialog.accept())
   await page.getByRole('button', { name: 'コンテストを公開', exact: true }).click()
   await expect(page).toHaveURL(/\/contests\/[a-f0-9-]{36}$/)
+  await expect(page.locator('.toast').getByRole('status')).toHaveText('公開しました')
   const id = page.url().split('/').pop()!
   const saved = await (await page.request.get(`/api/my/contests/${id}`)).json()
   expect(saved.problems.map((p: { id: string }) => p.id)).toEqual([second, first])

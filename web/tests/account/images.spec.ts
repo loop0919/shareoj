@@ -47,7 +47,7 @@ test('images drop into all editors, deduplicate, follow publication, and can be 
   await expect(page).toHaveURL(/post=/)
   await page.getByRole('button', { name: '記事管理', exact: true }).click()
   await page.getByRole('button', { name: '公開する', exact: true }).click()
-  await expect(page.getByRole('status')).toHaveText('公開しました')
+  await expect(page.locator('.toast').getByRole('status')).toHaveText('公開しました')
   const publicImage = await guest.request.get(imageURL)
   expect(publicImage.status()).toBe(200)
   expect(publicImage.headers()['content-type']).toBe('image/png')
@@ -55,7 +55,7 @@ test('images drop into all editors, deduplicate, follow publication, and can be 
   const headers = { origin: baseURL! }
   expect((await page.request.delete(deleteURL, { headers })).status()).toBe(409)
   await page.getByRole('button', { name: '非公開に戻す', exact: true }).click()
-  await expect(page.getByRole('status')).toHaveText('非公開に戻しました')
+  await expect(page.locator('.draft-status').getByRole('status')).toHaveText('非公開に戻しました')
   expect((await guest.request.get(imageURL)).status()).toBe(404)
   await page.getByRole('button', { name: '本文', exact: true }).click()
   await page.locator('#post-body').fill('画像を外した本文')

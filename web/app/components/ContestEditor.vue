@@ -7,6 +7,7 @@ import { searchProblems } from '~/utils/problem-search'
 const props = defineProps<{ contestId?: string }>()
 const route = useRoute()
 const router = useRouter()
+const { showToast } = useToast()
 const ready = ref(false)
 const busy = ref(false)
 const message = ref('')
@@ -273,6 +274,7 @@ async function publish() {
     await $fetch(`/api/my/contests/${id.value}/publication`, { method: 'PUT', body: { version: version.value } })
     leaving = true
     await navigateTo(`/contests/${id.value}`)
+    showToast('公開しました')
   } catch (error) {
     const code = (error as { data?: { data?: { code?: string } } }).data?.data?.code
     message.value = code === 'contest_not_ready' ? '公開の条件を満たしていません。再読み込みして内容を確認してください。' : (error as { statusCode?: number }).statusCode === 409 ? '公開できませんでした。問題が別のコンテストに登録されたか、別の画面で更新されています。再読み込みしてください。' : failure(error)

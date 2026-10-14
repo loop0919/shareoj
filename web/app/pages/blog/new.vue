@@ -6,6 +6,7 @@ useSeoMeta({ title: '記事を書く | ShareOJ', robots: 'noindex, nofollow' })
 const route = useRoute()
 const router = useRouter()
 const { refreshAccount } = useAccount()
+const { showToast, dismissToast } = useToast()
 const title = ref('')
 const markdown = ref('<!-- ここに記事を記載 -->\n')
 const id = ref('')
@@ -94,10 +95,12 @@ async function publish(value: boolean) {
   if (value && (!title.value.trim() || !markdown.value.trim())) { error.value = '公開するにはタイトルと本文を入力してください。'; return }
   if (!await save()) return
   if (!window.confirm(value ? '現在の内容を公開しますか？誰でも閲覧できるようになります。' : 'この記事を非公開に戻しますか？')) return
+  dismissToast()
   busy.value = true
   try {
     const post = postSchema.parse(await $fetch(`/api/my/posts/${id.value}/publication`, { method: 'PUT', body: { version: version.value, publish: value } }))
-    version.value = post.version; publishedVersion.value = post.publishedVersion; status.value = value ? '公開しました' : '非公開に戻しました'
+    version.value = post.version; publishedVersion.value = post.publishedVersion; status.value = value ? '保存済み' : '非公開に戻しました'
+    if (value) showToast('公開しました')
   } catch (e) { error.value = failure(e) }
   finally { busy.value = false }
 }
