@@ -17,6 +17,7 @@ const saveMessages = {
 }
 
 export function useProblemDraft() {
+  const { showToast, dismissToast } = useToast()
   const route = useRoute()
   const router = useRouter()
   const { user, refreshAccount } = useAccount()
@@ -87,6 +88,7 @@ export function useProblemDraft() {
 
   async function saveDraft(manual = false, updateLocation = true): Promise<boolean> {
     if (disposed || deleted || publishing.value || confirmingDelete.value || !ready.value || (!manual && !allowAutosave)) return false
+    if (manual) dismissToast()
     const testError = testCaseError(draft.testCases)
     if (testError) { saveState.value = 'dirty'; storageError.value = testError; return false }
     if (!manual && fingerprint() === saved) return true
@@ -94,7 +96,10 @@ export function useProblemDraft() {
     clearTimeout(saveTimer)
     if (inFlight) {
       if (!await inFlight) return false
-      if (fingerprint() === saved) return true
+      if (fingerprint() === saved) {
+        if (manual) showToast('保存しました。')
+        return true
+      }
       return saveDraft(manual, updateLocation)
     }
     const version = cloudVersion.value
@@ -128,6 +133,7 @@ export function useProblemDraft() {
         // Reload must reopen this draft before we announce that saving is complete.
         if (updateLocation && route.query.problem !== id) await router.replace({ path: '/problems/new', query: { problem: id } })
         saveState.value = fingerprint() === saved ? 'saved' : 'dirty'
+        if (manual && saveState.value === 'saved') showToast('保存しました。')
         return true
       } catch (error) {
         allowAutosave = false

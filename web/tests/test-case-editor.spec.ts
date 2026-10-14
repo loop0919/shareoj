@@ -397,7 +397,7 @@ test('append samples preserves the statement, excludes private cases, and saves 
   await page.getByRole('button', { name: 'テストケースを追加' }).click()
   await page.getByRole('checkbox', { name: 'サンプルケースにする' }).check()
   await append.click()
-  await expect(page.getByText('2件のサンプルを問題文の末尾に追加しました。')).toBeVisible()
+  await expect(page.locator('.toast').getByRole('status')).toHaveText('2件のサンプルを問題文の末尾に追加しました。')
   await page.getByRole('button', { name: '問題文', exact: true }).click()
   const expected = original + '\n\n## サンプル 2\n\n### 入力\n````text\n3 5\n```\n$literal$\n````\n\n### 出力\n```text\n8\n```\n\n## サンプル 3\n\n### 入力\n```text\n```\n\n### 出力\n```text\n```\n'
   await expect(page.locator('#problem-source')).toHaveText(expected, { useInnerText: true })

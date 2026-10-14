@@ -11,8 +11,7 @@ const handle = ref(props.initial?.handle ?? '')
 const accounts = reactive(accountsSchema.parse(props.initial?.accounts ?? {}))
 const avatar = ref(props.initial?.avatar ?? '')
 const version = ref(props.initial?.version ?? 0)
-const saved = ref(false)
-watch([handle, avatar, accounts], () => { saved.value = false })
+const { showToast, dismissToast } = useToast()
 const saving = ref(false)
 const processing = ref(false)
 const error = ref('')
@@ -45,8 +44,8 @@ async function chooseAvatar(event: Event) {
 }
 async function save() {
   if (saving.value || processing.value) return
+  dismissToast()
   error.value = ''
-  saved.value = false
   if (!validHandle.value) { error.value = 'ユーザーIDは英字で始まる3〜20文字の英小文字・数字・アンダースコアで入力してください。'; return }
   if (deletedHandle.test(normalizedHandle.value)) { error.value = 'このユーザーIDは使えません。別のIDを入力してください。'; return }
   saving.value = true
@@ -58,7 +57,7 @@ async function save() {
     profile.value = result.profile
     version.value = result.profile.version
     if (props.onboarding) await navigateTo(loginDestination(route.query.next))
-    else saved.value = true
+    else showToast('保存しました。')
   } catch (e) { error.value = profileError(e) }
   finally { saving.value = false }
 }
@@ -93,7 +92,6 @@ async function save() {
       </template>
       <p v-if="error" class="editor-error" role="alert">{{ error }}</p>
       <button class="editor-button primary" type="submit" :aria-busy="saving">{{ saving ? '保存中…' : onboarding ? '登録してはじめる' : '変更を保存' }}</button>
-      <span v-if="saved" class="saved-status" role="status">保存しました</span>
     </fieldset>
     <p v-if="processing" role="status">画像を準備しています…</p>
   </form>
@@ -108,7 +106,6 @@ input[type=file] { max-width: 100%; font: inherit; font-size: .85rem; }
 .handle-input { width: 100%; border: 1px solid var(--color-line); border-radius: 4px; min-height: 44px; padding: 8px 12px; font: inherit; }
 .hint { margin: 8px 0 24px; color: var(--color-muted); font-size: .85rem; }
 .account-field { margin-bottom: 20px; }
-.saved-status { margin-left: 16px; color: var(--color-muted); font-size: .875rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); }
 @media(max-width: 480px) { .avatar-field { align-items: flex-start; flex-direction: column; gap: 16px; } }
 </style>

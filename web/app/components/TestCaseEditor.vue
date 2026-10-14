@@ -13,14 +13,15 @@ const fileStatus = reactive({ input: '', output: '' })
 const importing = ref(false)
 const appending = ref(false)
 const appendError = ref('')
-const appendStatus = ref('')
+const { showToast, dismissToast } = useToast()
 const locked = computed(() => props.disabled || importing.value || appending.value)
 async function appendSamples() {
   if (locked.value) return
   const samples = cases.value.filter(item => item.isSample).map(item => ({ ...item }))
   if (!samples.length) return
+  dismissToast()
   appending.value = true
-  appendError.value = ''; appendStatus.value = ''
+  appendError.value = ''
   try {
     for (const item of samples) {
       for (const key of ['input', 'output'] as const) {
@@ -44,7 +45,7 @@ async function appendSamples() {
     const next = markdown.value + (markdown.value ? '\n\n' : '') + content
     if (next.length > 100_000) throw new Error('追加すると問題文が100,000文字を超えます。サンプルを小さくしてください。')
     markdown.value = next
-    appendStatus.value = `${samples.length}件のサンプルを問題文の末尾に追加しました。`
+    showToast(`${samples.length}件のサンプルを問題文の末尾に追加しました。`)
   } catch (error) {
     appendError.value = error instanceof Error && error.message.includes('100,000') ? error.message : 'サンプルの読み込みに失敗しました。もう一度お試しください。'
   } finally {
@@ -140,7 +141,6 @@ function add() {
     </header>
     <p v-if="error" class="editor-error" role="alert">{{ error }}</p>
     <p v-if="appendError" class="editor-error" role="alert">{{ appendError }}</p>
-    <p v-if="appendStatus" class="case-message" role="status">{{ appendStatus }}</p>
     <div class="case-workspace">
       <nav class="case-files" aria-label="テストケース一覧">
         <div class="file-list-heading"><span>テストケース名</span>

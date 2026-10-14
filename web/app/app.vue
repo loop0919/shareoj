@@ -14,4 +14,5 @@ onMounted(() => {
   <NuxtLayout>
     <NuxtPage />
   </NuxtLayout>
+  <AppToast />
 </template>
