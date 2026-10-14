@@ -203,6 +203,8 @@ func (p problemHandler) list(w http.ResponseWriter, r *http.Request, owner strin
 func problemError(w http.ResponseWriter, err error) {
 	switch {
 	case creationQuotaError(w, err):
+	case errors.Is(err, problems.ErrSchedule):
+		authError(w, 400, "invalid_schedule")
 	case errors.Is(err, problems.ErrFeaturedIneligible):
 		authError(w, 400, "featured_ineligible")
 	case errors.Is(err, problems.ErrFeaturedLimit):

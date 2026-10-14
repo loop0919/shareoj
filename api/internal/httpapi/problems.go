@@ -112,8 +112,9 @@ func (p problemHandler) publishedProblems(w http.ResponseWriter, r *http.Request
 }
 
 type publicationInput struct {
-	Version int64 `json:"version"`
-	Publish *bool `json:"publish"`
+	ScheduledAt *time.Time `json:"scheduledAt,omitempty"`
+	Version     int64      `json:"version"`
+	Publish     *bool      `json:"publish"`
 }
 
 func publicationRequest(w http.ResponseWriter, r *http.Request) (publicationInput, bool) {
@@ -143,6 +144,10 @@ func (p problemHandler) publishProblem(w http.ResponseWriter, r *http.Request, o
 	if !ok {
 		return
 	}
+	if in.ScheduledAt != nil && (!*in.Publish || !in.ScheduledAt.After(time.Now())) {
+		authError(w, 400, "invalid_schedule")
+		return
+	}
 	current, err := p.Store.Get(r.Context(), owner, id)
 	if err != nil {
 		problemError(w, err)
@@ -153,7 +158,19 @@ func (p problemHandler) publishProblem(w http.ResponseWriter, r *http.Request, o
 		return
 	}
 
-	result, err := store.Publish(r.Context(), owner, id, in.Version, *in.Publish)
+	var result problems.Problem
+	if in.ScheduledAt != nil {
+		scheduler, ok := p.Store.(interface {
+			Schedule(context.Context, string, string, int64, time.Time) (problems.Problem, error)
+		})
+		if !ok {
+			authError(w, 503, "database_unavailable")
+			return
+		}
+		result, err = scheduler.Schedule(r.Context(), owner, id, in.Version, *in.ScheduledAt)
+	} else {
+		result, err = store.Publish(r.Context(), owner, id, in.Version, *in.Publish)
+	}
 	if err == nil {
 		err = p.withReadiness(r.Context(), owner, &result)
 	}

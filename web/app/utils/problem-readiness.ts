@@ -2,7 +2,7 @@ import type { Readiness } from '~~/shared/types/account-problems'
 
 export type Destination = keyof Readiness
 export type EditorSection = 'statement' | 'tests' | 'checker' | 'editorial'
-export interface ProblemStatusInput { readiness?: Readiness, publishedVersion: number, contestScheduled: boolean, featuredPreference: string }
+export interface ProblemStatusInput { scheduledAt?: string, readiness?: Readiness, publishedVersion: number, contestScheduled: boolean, featuredPreference: string }
 
 export const destinationNames: Record<Destination, string> = { publish: '公開', contest: 'コンテスト', featured: '定期便' }
 
@@ -17,6 +17,7 @@ const messages: Record<string, string> = {
   test_cases_missing: 'テストケースが1件もありません',
   difficulty_missing: '難易度が設定されていません',
   editorial_missing: '解説がありません',
+  scheduled: '予約投稿を取り消してから登録してください',
   published: '公開中の問題はコンテストに登録できません',
   ever_published: '一度公開した問題は定期便に応募できません',
   featured_limit: '定期便に応募できるのは作者ごとに3件までです',
@@ -39,7 +40,7 @@ const sections: Record<string, EditorSection> = {
 export const issueSection = (code: string): EditorSection | undefined => sections[code]
 
 // Reasons about the problem itself; the rest describe where it already is.
-const stateIssues = new Set(['published', 'ever_published', 'in_contest', 'featured_limit'])
+const stateIssues = new Set(['published', 'ever_published', 'in_contest', 'featured_limit', 'scheduled'])
 
 // Contests need a subset of 定期便's content, so the union is what "complete" means.
 export function contentIssues(readiness?: Readiness): string[] {
@@ -48,15 +49,16 @@ export function contentIssues(readiness?: Readiness): string[] {
 }
 
 export interface ProblemStatus {
-  kind: 'published' | 'contest' | 'featured' | 'ready' | 'incomplete' | 'unknown'
+  kind: 'scheduled' | 'published' | 'contest' | 'featured' | 'ready' | 'incomplete' | 'unknown'
   label: string
   summary: string
   issues: string[]
 }
 
-// Five states only: ×準備中, ✅準備中, 応募中（コンテスト）, 応募中（定期便）, 公開中.
+// Publication plans take precedence over draft readiness.
 export function problemStatus(problem: ProblemStatusInput): ProblemStatus {
   if (problem.publishedVersion > 0) return { kind: 'published', label: '公開中', summary: '公開中です', issues: [] }
+  if (problem.scheduledAt) return { kind: 'scheduled', label: '公開予約中', summary: `公開予定：${new Date(problem.scheduledAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}（日本時間）`, issues: [] }
   if (problem.contestScheduled) return { kind: 'contest', label: '応募中（コンテスト）', summary: 'コンテストに登録済みです', issues: [] }
   if (problem.featuredPreference) {
     // An application that stopped qualifying is skipped at selection; say so instead of waiting silently.

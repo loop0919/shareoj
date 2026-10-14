@@ -96,8 +96,8 @@ func (s *Store) ApplyFeatured(ctx context.Context, owner, id string, version int
 	}
 	var raw []byte
 	var current int64
-	var published bool
-	err = tx.QueryRow(ctx, `SELECT draft,version,ever_published FROM problem_drafts WHERE id=$1 AND owner_id=$2 FOR UPDATE`, id, owner).Scan(&raw, &current, &published)
+	var published, scheduled bool
+	err = tx.QueryRow(ctx, `SELECT draft,version,ever_published,scheduled_at IS NOT NULL FROM problem_drafts WHERE id=$1 AND owner_id=$2 FOR UPDATE`, id, owner).Scan(&raw, &current, &published, &scheduled)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -115,7 +115,7 @@ func (s *Store) ApplyFeatured(ctx context.Context, owner, id string, version int
 			return err
 		}
 		var draft Draft
-		if published || reserved || json.Unmarshal(raw, &draft) != nil || !featuredEligible(draft, known, enabled) {
+		if published || scheduled || reserved || json.Unmarshal(raw, &draft) != nil || !featuredEligible(draft, known, enabled) {
 			return ErrFeaturedIneligible
 		}
 		if err = validateTestFiles(ctx, tx.Query, owner, id, draft.TestCases); err != nil {

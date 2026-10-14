@@ -83,7 +83,10 @@ func releaseBefore(store *contests.Store, featured *problems.Store, judging subm
 		}
 		if featured != nil {
 			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-			err := featured.ReleaseFeatured(ctx, submissions.RuntimeIDs(), judging.RuntimeIDs())
+			err := featured.ReleaseScheduled(ctx)
+			if err == nil {
+				err = featured.ReleaseFeatured(ctx, submissions.RuntimeIDs(), judging.RuntimeIDs())
+			}
 			cancel()
 			if err != nil {
 				authError(w, 503, "database_unavailable")

@@ -110,6 +110,9 @@ var userEditorialsSchema string
 //go:embed 028_tags.sql
 var tagsSchema string
 
+//go:embed 029_scheduled_problems.sql
+var scheduledProblemsSchema string
+
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -122,7 +125,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err = tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version bigint PRIMARY KEY)`); err != nil {
 		return err
 	}
-	for index, schema := range []string{problemsSchema, profilesSchema, publicationsSchema, submissionsSchema, judgeOutboxSchema, testFilesSchema, multilanguageDispatchSchema, judgeProgressSchema, generatedTestFilesSchema, problemFavoritesSchema, sampleCaseFlagsSchema, contestsSchema, problemSubmissionsSchema, testerInvitationsSchema, profileAccountsSchema, notificationsSchema, contentImagesSchema, difficultyVotesSchema, reservedSchema, contestParticipantsSchema, featuredProblemsSchema, featuredPreviewsSchema, creationQuotasSchema, registrationQuotasSchema, contestDraftsSchema, accountDeletionSchema, userEditorialsSchema, tagsSchema} {
+	for index, schema := range []string{problemsSchema, profilesSchema, publicationsSchema, submissionsSchema, judgeOutboxSchema, testFilesSchema, multilanguageDispatchSchema, judgeProgressSchema, generatedTestFilesSchema, problemFavoritesSchema, sampleCaseFlagsSchema, contestsSchema, problemSubmissionsSchema, testerInvitationsSchema, profileAccountsSchema, notificationsSchema, contentImagesSchema, difficultyVotesSchema, reservedSchema, contestParticipantsSchema, featuredProblemsSchema, featuredPreviewsSchema, creationQuotasSchema, registrationQuotasSchema, contestDraftsSchema, accountDeletionSchema, userEditorialsSchema, tagsSchema, scheduledProblemsSchema} {
 		version := index + 1
 		var applied bool
 		if err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&applied); err != nil {

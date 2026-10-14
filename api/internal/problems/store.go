@@ -71,6 +71,7 @@ type TestFile struct {
 }
 
 type Problem struct {
+	ScheduledAt *time.Time `json:"scheduledAt,omitempty"`
 	// The author also receives the problem's destinations and why it cannot go there.
 	Readiness          *Readiness `json:"readiness,omitempty"`
 	FeaturedPreference string     `json:"featuredPreference,omitempty"`
@@ -87,6 +88,7 @@ type Problem struct {
 }
 
 type Summary struct {
+	ScheduledAt        *time.Time `json:"scheduledAt,omitempty"`
 	Readiness          *Readiness `json:"readiness,omitempty"`
 	Draft              Draft      `json:"-"`
 	FeaturedPreference string     `json:"featuredPreference,omitempty"`
@@ -130,7 +132,7 @@ func (s *Store) Migrate(ctx context.Context) error { return database.Migrate(ctx
 func scan(row pgx.Row) (Problem, error) {
 	var p Problem
 	var data []byte
-	err := row.Scan(&p.ID, &p.Version, &p.UpdatedAt, &data, &p.PublishedVersion, &p.Author, &p.ContestID)
+	err := row.Scan(&p.ID, &p.Version, &p.UpdatedAt, &data, &p.PublishedVersion, &p.Author, &p.ContestID, &p.ScheduledAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -142,7 +144,7 @@ func scan(row pgx.Row) (Problem, error) {
 }
 
 func (s *Store) Get(ctx context.Context, owner, id string) (Problem, error) {
-	p, err := scan(s.pool.QueryRow(ctx, `SELECT id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),'') FROM problem_drafts WHERE can_manage_problem(id,$1) AND id=$2`, owner, id))
+	p, err := scan(s.pool.QueryRow(ctx, `SELECT id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at FROM problem_drafts WHERE can_manage_problem(id,$1) AND id=$2`, owner, id))
 	if err != nil {
 		return p, err
 	}
@@ -160,7 +162,7 @@ func (s *Store) ListTesting(ctx context.Context, owner string, cursor *Cursor) (
 }
 
 func (s *Store) list(ctx context.Context, owner string, cursor *Cursor, testing bool) ([]Summary, error) {
-	query := `SELECT id, draft, updated_at, published_version,ever_published,COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),COALESCE((SELECT preference FROM featured_applications WHERE problem_id=problem_drafts.id),''),EXISTS(SELECT 1 FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=problem_drafts.id AND NOT c.released) FROM problem_drafts WHERE owner_id=$1`
+	query := `SELECT id, draft, updated_at, published_version,ever_published,COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at,COALESCE((SELECT preference FROM featured_applications WHERE problem_id=problem_drafts.id),''),EXISTS(SELECT 1 FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=problem_drafts.id AND NOT c.released) FROM problem_drafts WHERE owner_id=$1`
 	if testing {
 		query = strings.Replace(query, "WHERE owner_id=$1", "WHERE owner_id<>$1 AND EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=problem_drafts.id AND t.owner_id=$1)", 1)
 	}
@@ -176,7 +178,7 @@ func (s *Store) list(ctx context.Context, owner string, cursor *Cursor, testing 
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Summary, error) {
 		var p Summary
 		var data []byte
-		if err := row.Scan(&p.ID, &data, &p.UpdatedAt, &p.PublishedVersion, &p.EverPublished, &p.ContestID, &p.FeaturedPreference, &p.ContestScheduled); err != nil {
+		if err := row.Scan(&p.ID, &data, &p.UpdatedAt, &p.PublishedVersion, &p.EverPublished, &p.ContestID, &p.ScheduledAt, &p.FeaturedPreference, &p.ContestScheduled); err != nil {
 			return p, err
 		}
 		err := json.Unmarshal(data, &p.Draft)
@@ -195,13 +197,13 @@ func (s *Store) ApplicationCount(ctx context.Context, owner string) (int, error)
 // State reads what readiness needs beyond the draft; ErrNotFound unless owner is the author.
 func (s *Store) State(ctx context.Context, owner, id string) (ProblemState, error) {
 	var state ProblemState
-	err := s.pool.QueryRow(ctx, `SELECT published_version>0, ever_published,
+	err := s.pool.QueryRow(ctx, `SELECT published_version>0, ever_published, scheduled_at IS NOT NULL,
   EXISTS(SELECT 1 FROM contest_problems WHERE problem_id=d.id),
   EXISTS(SELECT 1 FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=d.id AND NOT c.released),
   COALESCE((SELECT preference FROM featured_applications WHERE problem_id=d.id),''),
   (SELECT count(*) FROM featured_applications a JOIN problem_drafts o ON o.id=a.problem_id WHERE o.owner_id=$1 AND a.problem_id<>d.id)
   FROM problem_drafts d WHERE d.owner_id=$1 AND d.id=$2`, owner, id).Scan(
-		&state.Published, &state.EverPublished, &state.InContest, &state.ContestScheduled, &state.FeaturedPreference, &state.OtherApplications)
+		&state.Published, &state.EverPublished, &state.Scheduled, &state.InContest, &state.ContestScheduled, &state.FeaturedPreference, &state.OtherApplications)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return state, ErrNotFound
 	}
@@ -211,7 +213,7 @@ func (s *Store) State(ctx context.Context, owner, id string) (ProblemState, erro
 // SummaryState derives the state of a listed problem; applications is the author's total.
 func SummaryState(p Summary, applications int) ProblemState {
 	state := ProblemState{
-		Published: p.PublishedVersion > 0, EverPublished: p.EverPublished, InContest: p.ContestID != "",
+		Scheduled: p.ScheduledAt != nil, Published: p.PublishedVersion > 0, EverPublished: p.EverPublished, InContest: p.ContestID != "",
 		ContestScheduled: p.ContestScheduled, FeaturedPreference: p.FeaturedPreference, OtherApplications: applications,
 	}
 	if p.FeaturedPreference != "" {
@@ -238,9 +240,9 @@ func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft
 		if err = database.ConsumeCreationQuota(ctx, tx, owner, "problem"); err != nil {
 			return p, err
 		}
-		p, err = scan(tx.QueryRow(ctx, `INSERT INTO problem_drafts (id, owner_id, draft) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING RETURNING id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),'')`, id, owner, data))
+		p, err = scan(tx.QueryRow(ctx, `INSERT INTO problem_drafts (id, owner_id, draft) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING RETURNING id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at`, id, owner, data))
 	} else {
-		p, err = scan(tx.QueryRow(ctx, `UPDATE problem_drafts SET draft=$4, version=version+1, updated_at=clock_timestamp() WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),'')`, owner, id, version, data))
+		p, err = scan(tx.QueryRow(ctx, `UPDATE problem_drafts SET draft=$4, version=version+1, updated_at=clock_timestamp() WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at`, owner, id, version, data))
 	}
 	if err == nil {
 		// Contest saves also lock the source problem before changing contest_problems.

@@ -187,7 +187,7 @@ func save(ctx context.Context, tx pgx.Tx, owner, id string, in Input, policy Jud
 		ids[i] = p.ID
 	}
 	// Lock in UUID order before checking publication; publishing uses the same row lock.
-	rows, err := tx.Query(ctx, `SELECT id,draft,version FROM problem_drafts WHERE id=ANY($1::uuid[]) AND owner_id=$2 AND published_draft IS NULL ORDER BY id FOR UPDATE`, ids, owner)
+	rows, err := tx.Query(ctx, `SELECT id,draft,version FROM problem_drafts WHERE id=ANY($1::uuid[]) AND owner_id=$2 AND published_draft IS NULL AND scheduled_at IS NULL ORDER BY id FOR UPDATE`, ids, owner)
 	if err != nil {
 		return err
 	}

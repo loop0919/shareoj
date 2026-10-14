@@ -25,6 +25,7 @@ export function useProblemDraft() {
   const cloudVersion = ref(0)
   const saving = ref(false)
   const publishing = ref(false)
+  const scheduledAt = ref<string>()
   const publishedVersion = ref(0)
   const contestId = ref('')
   // Server readiness of the saved content; absent for testers and unsaved problems.
@@ -32,6 +33,7 @@ export function useProblemDraft() {
   const featuredPreference = ref('')
   const contestScheduled = ref(false)
   function applyServerState(problem: AccountProblem) {
+    scheduledAt.value = problem.scheduledAt
     publishedVersion.value = problem.publishedVersion
     contestId.value = problem.contestId
     readiness.value = problem.readiness
@@ -283,7 +285,7 @@ export function useProblemDraft() {
   }
 
   return {
-    user, draft, ready, cloudId, cloudVersion, saving, publishing, publishedVersion, contestId, readiness, featuredPreference, contestScheduled, manualSaveOnly,
+    user, draft, ready, cloudId, cloudVersion, saving, publishing, publishedVersion, scheduledAt, contestId, readiness, featuredPreference, contestScheduled, manualSaveOnly,
     publicationError, saveLocation, saveState, status, storageError, leaveDialog, leaveError,
     manageDialog, generating, deleteError, errors, saveDraft, publishProblem, finishLeave,
     openDeleteConfirmation, closeDeleteConfirmation, removeProblem,

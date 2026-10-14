@@ -23,6 +23,7 @@ const (
 	IssuePublished         Issue = "published"
 	IssueEverPublished     Issue = "ever_published"
 	IssueInContest         Issue = "in_contest"
+	IssueScheduled         Issue = "scheduled"
 	IssueFeaturedLimit     Issue = "featured_limit"
 )
 
@@ -30,7 +31,7 @@ const featuredApplicationsPerAuthor = 3
 
 // ProblemState is what the database knows about a problem beyond its draft.
 type ProblemState struct {
-	Published, EverPublished bool
+	Published, EverPublished, Scheduled bool
 	// InContest covers any contest, including released ones; ContestScheduled only unreleased ones.
 	InContest, ContestScheduled bool
 	FeaturedPreference          string
@@ -106,6 +107,10 @@ func Assess(d Draft, s ProblemState, knownRuntimes, enabledRuntimes []string) Re
 	}
 	if s.ContestScheduled {
 		r.Publish = append(r.Publish, IssueInContest)
+	}
+	if s.Scheduled {
+		r.Contest = append(r.Contest, IssueScheduled)
+		r.Featured = append(r.Featured, IssueScheduled)
 	}
 	if s.Published {
 		r.Contest = append(r.Contest, IssuePublished)

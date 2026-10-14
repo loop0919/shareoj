@@ -52,10 +52,11 @@ async function loadAccount(more = false) {
 const statusOptions = [
   { key: 'preparing', label: '準備中' },
   { key: 'applying', label: '応募中' },
+  { key: 'scheduled', label: '公開予約中' },
   { key: 'published', label: '公開中' },
 ] as const
 const statusGroups: Record<ProblemStatus['kind'], typeof statusOptions[number]['key']> = {
-  incomplete: 'preparing', ready: 'preparing', unknown: 'preparing', contest: 'applying', featured: 'applying', published: 'published',
+  scheduled: 'scheduled', incomplete: 'preparing', ready: 'preparing', unknown: 'preparing', contest: 'applying', featured: 'applying', published: 'published',
 }
 const status = defineModel<string>('status', { default: '' })
 const { filter, counts, visible: visibleEntries, label: filterLabel } = useStatusFilter(statusOptions, status, () => accountEntries.value, entry => statusGroups[problemStatus(entry).kind])
@@ -90,6 +91,7 @@ onMounted(() => { void loadAccount() })
             <td>
               <span class="problem-state">
                 <ProblemStatus :problem="entry" />
+                <time v-if="entry.scheduledAt" :datetime="entry.scheduledAt">{{ new Date(entry.scheduledAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) }}（日本時間）</time>
                 <span v-if="!entry.publishedVersion && !entry.contestScheduled && entry.featuredPreference" class="featured-preference" tabindex="0" role="img" :aria-label="preferenceLabel(entry.featuredPreference)" :aria-describedby="`${tooltipId}-${entry.id}`">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <template v-if="entry.featuredPreference === 'soon'">
@@ -107,6 +109,7 @@ onMounted(() => { void loadAccount() })
             </td>
             <td><time :datetime="entry.updatedAt">{{ updatedLabel(entry.updatedAt) }}</time></td>
             <td><div class="problem-actions"><ContentActions :title="entry.title.trim() || '無題の問題'" :edit-to="{ path: '/problems/new', query: { problem: entry.id } }" :view-to="`/problems/${entry.id}`" :published="!!entry.publishedVersion" can-view />
+              <NuxtLink v-if="!testing && entry.scheduledAt" class="editor-button" :to="{ path: '/problems', query: { post: '1', problem: entry.id } }">予約を変更</NuxtLink>
               <button v-if="!testing && entry.featuredPreference" class="editor-button withdraw-featured" :disabled="!!withdrawing" :aria-label="`${entry.title.trim() || '無題の問題'}の定期便応募を取り下げる`" title="定期便応募を取り下げる" @click="confirmWithdraw(entry)">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5-5 5 5 5M4 10h10a6 6 0 0 1 0 12" transform="translate(0 -2)" /></svg>
               </button>

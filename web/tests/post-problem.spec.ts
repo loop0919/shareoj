@@ -76,3 +76,57 @@ test('guests can log in and return to the posting modal', async ({ page }) => {
   await expect(page.getByRole('dialog')).toBeVisible()
   await expect(page.getByRole('link', { name: 'ログインして投稿する' })).toHaveAttribute('href', '/login?next=/problems?post=1')
 })
+
+test('schedule in Japan time, show the reservation, update it and cancel it', async ({ page }, testInfo) => {
+  const id = '11111111-1111-4111-8111-111111111111'
+  let scheduledAt: string | undefined
+  let version = 1
+  const problem = () => ({ id, version, scheduledAt, publishedVersion: 0, updatedAt: '2026-09-10T00:00:00Z', draft: { title: '予約する問題', markdown: '問題文', difficulty: 3, timeLimitMs: '2000', memoryLimitMb: '512', testCases: [] } })
+  await page.route('**/api/my/problems?*', route => route.fulfill({ json: { items: [{ ...problem(), title: '予約する問題' }], nextCursor: '' } }))
+  await page.route('**/api/my/problems', route => route.fulfill({ json: { items: [{ ...problem(), title: '予約する問題' }], nextCursor: '' } }))
+  await page.route(`**/api/my/problems/${id}`, route => route.fulfill({ json: problem() }))
+  const requests: Record<string, unknown>[] = []
+  await page.route(`**/api/my/problems/${id}/publication`, route => {
+    const body = route.request().postDataJSON()
+    expect(body.version).toBe(version)
+    requests.push(body)
+    scheduledAt = body.publish ? body.scheduledAt : undefined
+    version++
+    return route.fulfill({ json: problem() })
+  })
+  await page.goto('/problems?post=1')
+  const dialog = page.getByRole('dialog')
+  await page.getByLabel('投稿する問題').selectOption(id)
+  await page.getByLabel('公開するタイミング').selectOption('schedule')
+  const input = page.getByLabel('公開日時（日本時間）')
+  await input.fill('2000-01-01T23:00')
+  await dialog.getByRole('button', { name: '予約する', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('未来の公開日時')
+  expect(requests).toHaveLength(0)
+  const year = new Date().getUTCFullYear() + 1
+  await input.fill(`${year}-01-02T23:00`)
+  await page.setViewportSize({ width: 375, height: 900 })
+  const box = (await dialog.boundingBox())!
+  expect(box.x).toBeGreaterThanOrEqual(0)
+  expect(box.x + box.width).toBeLessThanOrEqual(375)
+  await page.screenshot({ path: testInfo.outputPath('schedule-mobile.png') })
+  await dialog.getByRole('button', { name: '予約する', exact: true }).click()
+  await expect(page).toHaveURL('/my?tab=problems')
+  expect(requests[0]).toEqual({ version: 1, publish: true, scheduledAt: `${year}-01-02T14:00:00.000Z` })
+  const row = page.getByRole('row').filter({ hasText: '予約する問題' })
+  await expect(row).toContainText('公開予約中')
+  await expect(row).toContainText('23:00')
+  await row.getByRole('link', { name: '予約を変更' }).click()
+  await expect(input).toHaveValue(`${year}-01-02T23:00`)
+  await input.fill(`${year}-01-03T09:30`)
+  await dialog.getByRole('button', { name: '予約を更新', exact: true }).click()
+  await expect(page).toHaveURL('/my?tab=problems')
+  expect(requests[1]).toEqual({ version: 2, publish: true, scheduledAt: `${year}-01-03T00:30:00.000Z` })
+  await row.getByRole('link', { name: '予約を変更' }).click()
+  // Cancellation must work even if the date input is empty or no longer valid.
+  await input.fill('')
+  await dialog.getByRole('button', { name: '予約を取り消す' }).click()
+  await expect(page).toHaveURL('/my?tab=problems')
+  expect(requests[2]).toEqual({ version: 3, publish: false })
+  await expect(row).not.toContainText('公開予約中')
+})

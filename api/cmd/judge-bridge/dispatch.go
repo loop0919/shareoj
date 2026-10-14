@@ -36,6 +36,9 @@ func (b bridge) dispatch(ctx context.Context) (err error) {
 	if err := (&contests.Store{Pool: b.db}).Release(ctx); err != nil {
 		return err
 	}
+	if err := problems.New(b.db).ReleaseScheduled(ctx); err != nil {
+		return err
+	}
 	if err := problems.New(b.db).ReleaseFeatured(ctx, submissions.RuntimeIDs(), b.publishedRuntimes()); err != nil {
 		return err
 	}
