@@ -122,9 +122,61 @@ func TestScheduledProblemImagesAndReleaseOnReadPostgres(t *testing.T) {
 	f.request("GET", "/my/images/"+imageID, "bob", nil, 404)
 	f.request("DELETE", "/my/images/"+imageID, "alice", nil, 409)
 	f.exec(`UPDATE problem_drafts SET scheduled_at=clock_timestamp()-interval '1 second' WHERE id=$1`, p.ID)
+	// An image may be the first request after the deadline, before any problem page or minute tick.
+	f.request("GET", "/images/"+imageID, "", nil, 200)
 	if !strings.Contains(f.request("GET", "/problems/"+p.ID, "", nil, 200), imageID) {
 		t.Fatal("reading a due problem did not release the reserved editorial")
 	}
 	f.request("GET", "/images/"+imageID, "", nil, 200)
 	f.request("POST", "/my/submissions", "bob", map[string]any{"problemId": p.ID, "runtime": "cpp17", "source": "int main() {}"}, 202)
+}
+
+func TestScheduledProblemsReleaseAllDueOnFirstReadPostgres(t *testing.T) {
+	f := newFeaturedTest(t)
+	p := f.draft("alice", 3)
+	// More than a background batch is due, but the first reader must see all of it.
+	f.exec(`INSERT INTO problem_drafts(id,owner_id,draft,scheduled_draft,scheduled_version,scheduled_at)
+ SELECT gen_random_uuid(),owner_id,draft,draft,version,clock_timestamp()-interval '1 second'
+ FROM problem_drafts CROSS JOIN generate_series(1,101) WHERE id=$1`, p.ID)
+	f.request("GET", "/problems", "", nil, 200)
+	var published, pending int
+	if err := f.store.Pool().QueryRow(context.Background(), `SELECT count(*) FILTER (WHERE published_draft IS NOT NULL),
+ count(*) FILTER (WHERE scheduled_at IS NOT NULL) FROM problem_drafts`).Scan(&published, &pending); err != nil {
+		t.Fatal(err)
+	}
+	if published != 101 || pending != 0 {
+		t.Fatalf("first read published %d problems, left %d pending", published, pending)
+	}
+}
+
+func TestScheduledProblemWaitsForConcurrentUpdatePostgres(t *testing.T) {
+	f := newFeaturedTest(t)
+	p := f.draft("alice", 3)
+	f.exec(`UPDATE problem_drafts SET scheduled_draft=draft,scheduled_version=version,scheduled_at=clock_timestamp()-interval '1 second' WHERE id=$1`, p.ID)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	tx, err := f.store.Pool().Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	if _, err = tx.Exec(ctx, `SELECT id FROM problem_drafts WHERE id=$1 FOR UPDATE`, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- f.store.ReleaseScheduled(ctx) }()
+	select {
+	case err := <-done:
+		t.Fatalf("release returned before the due problem could be published: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err = tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err = <-done; err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.store.PublicGet(ctx, p.ID, ""); err != nil {
+		t.Fatalf("due problem still unavailable after release: %v", err)
+	}
 }

@@ -46,12 +46,12 @@ func (s *Store) Schedule(ctx context.Context, owner, id string, version int64, a
 	return p, err
 }
 
-// ReleaseScheduled runs on the existing minute tick and before relevant reads.
-// Row locks and clearing the reservation make concurrent calls and retries idempotent.
+// ReleaseScheduled completes due publications before reads; the minute tick is only a fallback.
+// Do not limit or skip locked rows: readers must not miss due problems while another request publishes them.
 func (s *Store) ReleaseScheduled(ctx context.Context) error {
 	_, err := s.pool.Exec(ctx, `UPDATE problem_drafts SET published_draft=scheduled_draft,
  published_version=scheduled_version,published_at=scheduled_at,version=version+1
  WHERE id IN (SELECT id FROM problem_drafts WHERE scheduled_at<=statement_timestamp()
- ORDER BY scheduled_at,id LIMIT 100 FOR UPDATE SKIP LOCKED)`)
+ ORDER BY scheduled_at,id FOR UPDATE)`)
 	return err
 }

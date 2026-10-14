@@ -98,7 +98,7 @@ async function post(cancelSchedule = false) {
             <template v-if="timing === 'schedule'">
               <label class="publication-note" for="post-scheduled-at">公開日時（日本時間）</label>
               <input id="post-scheduled-at" v-model="scheduledAt" type="datetime-local" required :disabled="busy">
-              <p class="publication-note">予約時の保存済みの内容を公開します。その後の編集を反映するには予約を更新してください。公開は指定時刻から1分ほど遅れることがあります。</p>
+              <p class="publication-note">指定した日時に、予約時の保存済みの内容を公開します。その後の編集を反映するには予約を更新してください。</p>
               <p v-if="selectedProblem?.featuredPreference" class="publication-note">定期便に応募中です。「自分の問題」で応募を取り下げてから予約してください。</p>
             </template>
             <p v-else class="publication-note">保存済みの内容が公開され、誰でも閲覧・提出できるようになります。</p>
