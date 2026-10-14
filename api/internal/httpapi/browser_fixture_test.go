@@ -130,7 +130,7 @@ func TestBrowserFixture(t *testing.T) {
 	f := newSigningFixture(t)
 	cognito := &browserCognito{t: t, signer: f, users: make(map[string]*browserUser)}
 	// leaver exists so the account deletion test cannot take a shared user with it.
-	for _, name := range []string{"alice", "bob", "test_cases", "leaver"} {
+	for _, name := range []string{"alice", "bob", "test_cases", "shared_submission", "leaver"} {
 		if _, err := profileStore.Save(ctx, name+"@example.test", name, "", 0, profiles.Accounts{}); err != nil {
 			t.Fatal(err)
 		}

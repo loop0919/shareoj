@@ -30,8 +30,13 @@ test('failed leave-save explains how to keep editing or discard', async ({ page 
   await expect(dialog.getByRole('alert')).toHaveText('保存できませんでした。編集を続けるか、保存せずに移動してください。')
 })
 
-for (const mode of ['published', 'contest']) {
-  test(`${mode} drafts explain that automatic saving is disabled`, async ({ page }) => {
+const manualSaveCopy = {
+  published: '「保存」を押すと公開内容に反映されます。',
+  contest: '「保存」を押すとコンテストの出題・採点内容に反映されます。',
+}
+
+for (const mode of ['published', 'contest'] as const) {
+  test(`${mode} drafts explain what saving updates`, async ({ page }) => {
     const id = '11111111-1111-4111-8111-111111111113'
     await page.route(`**/api/my/problems/${id}`, route => route.fulfill({ json: {
       id, version: 1, updatedAt: new Date().toISOString(),
@@ -40,6 +45,6 @@ for (const mode of ['published', 'contest']) {
       draft: { title: '文言確認', markdown: '', timeLimitMs: '2000', memoryLimitMb: '512', testCases: [] },
     } }))
     await page.goto(`/problems/new?problem=${id}`)
-    await expect(page.getByText('自動保存はオフです。', { exact: false })).toBeVisible()
+    await expect(page.getByText(manualSaveCopy[mode], { exact: true })).toBeVisible()
   })
 }

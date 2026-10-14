@@ -35,8 +35,9 @@ test('settings split the profile into tabs reached from the account menu', async
   await expect(page.getByLabel('AtCoder ID', { exact: true })).toHaveValue('tourist')
   await page.getByLabel('AtCoder ID', { exact: true }).fill('')
   await page.getByRole('button', { name: '変更を保存', exact: true }).click()
+  // The first save's toast is still fading out, so wait for the second request itself.
+  await expect.poll(() => saved).toMatchObject({ version: 2, accounts: { atcoder: '' } })
   await expect(page.getByRole('status').filter({ hasText: '保存しました' })).toBeVisible()
-  expect(saved).toMatchObject({ version: 2, accounts: { atcoder: '' } })
   for (const width of [320, 375, 768]) {
     await page.setViewportSize({ width, height: 800 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)

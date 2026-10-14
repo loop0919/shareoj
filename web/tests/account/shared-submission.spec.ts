@@ -10,7 +10,8 @@ async function login(page: Page, name: string) {
 }
 
 test('old my links resolve public submissions for guests and other users while draft runs stay private', async ({ page, browser }) => {
-  await login(page, 'alice')
+  // Keep the submission quota independent of the contest tests' Alice account.
+  await login(page, 'shared_submission')
   const origin = 'http://127.0.0.1:13002'
   const headers = { origin }
   const pid = randomUUID()
