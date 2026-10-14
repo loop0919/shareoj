@@ -66,7 +66,7 @@ def validate_job(job, runtime):
     if job.get('generate') and not re.fullmatch(r'test-files/[a-f0-9]{32}/[a-f0-9-]{36}/generated/', job.get('generationPrefix', '')):
         raise ValueError('generation prefix')
     source = job.get('source')
-    if not isinstance(source, str) or not 0 < len(source.encode()) <= 65536 or '\0' in source:
+    if not isinstance(source, str) or not 0 < len(source.encode()) <= 131072 or '\0' in source:
         raise ValueError('source')
     if type(job.get('memoryLimitMb')) is not int or not 64 <= job['memoryLimitMb'] <= 512:
         raise ValueError('memory limit')

@@ -7,7 +7,7 @@ import { indentUnit, defaultHighlightStyle, HighlightStyle, syntaxHighlighting }
 import { EditorView, keymap } from '@codemirror/view'
 
 const source = defineModel<string>({ required: true })
-const props = defineProps<{ disabled?: boolean, readonly?: boolean, label?: string, runtime?: string }>()
+const props = withDefaults(defineProps<{ disabled?: boolean, readonly?: boolean, label?: string, runtime?: string, limit?: number }>(), { limit: 65536 })
 const labelId = useId()
 const container = ref<HTMLDivElement>()
 const bytes = computed(() => new TextEncoder().encode(source.value).length)
@@ -68,7 +68,7 @@ onBeforeUnmount(() => editor?.destroy())
   <div class="source-code-editor" :class="{ 'is-disabled': disabled, 'is-readonly': readonly }">
     <div class="pane-heading">
       <span :id="labelId">{{ label || 'ソースコード' }}</span>
-      <div class="source-editor-actions"><span class="byte-count">{{ bytes.toLocaleString('en-US') }}{{ readonly ? ' bytes' : ' / 65,536 bytes' }}</span><EditorSettings kind="code" :language="language" v-if="!readonly" :disabled="disabled" /></div>
+      <div class="source-editor-actions"><span class="byte-count">{{ bytes.toLocaleString('en-US') }}{{ readonly ? ' bytes' : ` / ${limit.toLocaleString('en-US')} bytes` }}</span><EditorSettings kind="code" :language="language" v-if="!readonly" :disabled="disabled" /></div>
     </div>
     <div ref="container" class="code-surface" />
   </div>

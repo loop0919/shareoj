@@ -415,6 +415,16 @@ class RunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'test set limit'):
             host.validate_job(job, 'sha256:test')
 
+    def test_source_size_limit(self):
+        job = dict(runtime='python314-isolate', runtimeDigest='sha256:test', source='#' * 131072,
+                   memoryLimitMb=512, timeLimitMs=1000, cases=[dict(input='', output='')])
+        host.validate_job(job, 'sha256:test')
+        job['source'] = 'あ' * 43691
+        with self.assertRaisesRegex(ValueError, 'source'):
+            host.validate_job(job, 'sha256:test')
+        with self.assertRaisesRegex(ValueError, 'invalid source'):
+            sandbox.execute(job, compile_phase=True)
+
     def test_cleanup_failure_stops_worker(self):
         import subprocess
         import tempfile

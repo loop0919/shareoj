@@ -31,8 +31,8 @@ onBeforeUnmount(() => { disposed = true })
 watch([source, runtime, () => props.problemId], () => { easyResult.value = null })
 async function submit(easyTest = false) {
   if ((easyTest && !props.hasSamples) || props.disabled || sending.value || !available.value.some(item => item.id === runtime.value)) return
-  if (!source.value.trim() || new TextEncoder().encode(source.value).length > 65536) {
-    message.value = 'ソースコードを1〜65,536バイトで入力してください。'
+  if (!source.value.trim() || new TextEncoder().encode(source.value).length > 131072) {
+    message.value = 'ソースコードを1〜131,072バイトで入力してください。'
     return
   }
   runningEasyTest.value = easyTest
@@ -84,7 +84,7 @@ async function submit(easyTest = false) {
   </section>
   <section v-else class="submission-form" aria-labelledby="submission-title">
     <h2 id="submission-title">提出</h2>
-    <p class="muted">ソースコードは64 KiBまで</p>
+    <p class="muted">ソースコードは128 KiBまで</p>
     <form @submit.prevent="submit()">
       <label for="submission-language">言語</label>
       <select id="submission-language" v-model="runtime" :disabled="sending" @change="rememberRuntime">
@@ -93,7 +93,7 @@ async function submit(easyTest = false) {
       </select>
       <p><NuxtLink to="/blog/language-guide" target="_blank" rel="noopener noreferrer">使える言語と実行環境の仕様 ↗</NuxtLink></p>
       <p v-if="catalogError || !available.length" class="notice" role="status">現在、提出受付を停止しています。</p>
-      <SourceCodeEditor v-model="source" :runtime="runtime" :disabled="sending" />
+      <SourceCodeEditor v-model="source" :runtime="runtime" :limit="131072" :disabled="sending" />
       <p v-if="message" class="notice notice-error" role="alert">{{ message }}</p>
       <div class="submission-actions">
         <div class="sample-action" :class="{ 'no-samples': !hasSamples }">

@@ -63,7 +63,7 @@ def execute(request, compile_phase=False, *, artifact=None, checker_files=None):
     runtime = RUNTIMES[request.get('runtime', 'cpp17-isolate')]
     if compile_phase:
         source = request.get('source')
-        if not isinstance(source, str) or not 0 < len(source.encode()) <= 65536 or '\0' in source:
+        if not isinstance(source, str) or not 0 < len(source.encode()) <= 131072 or '\0' in source:
             raise ValueError('invalid source')
         memory, cpu, wall = 1024, 30, 40
     else:
@@ -215,7 +215,7 @@ def judge_verdict(metrics, protocol='legacy'):
 
 def collect_artifact(box, runtime):
     if runtime['artifact'] == 'source':
-        return regular_read(box / runtime['source'], 65536)
+        return regular_read(box / runtime['source'], 131072)
     if runtime['artifact'] == 'generated-source':
         if not stat.S_ISDIR((box / runtime['compile_output']).parent.lstat().st_mode):
             raise ValueError('invalid compiler output directory')

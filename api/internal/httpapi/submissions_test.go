@@ -289,6 +289,10 @@ func TestSubmissionsPostgres(t *testing.T) {
 	request("POST", "/my/submissions", "", body, 401)
 	request("POST", "/my/submissions", "alice", strings.Replace(body, "cpp17-local", "python", 1), 400)
 	request("POST", "/my/submissions", "alice", strings.TrimSuffix(body, "}")+`,"owner_id":"bob"}`, 400)
+	request("POST", "/my/submissions", "alice", strings.Replace(body, "// 日本語😀", strings.Repeat("/", 128<<10), 1), 400)
+	// encoding/json escapes every "<" to six bytes; the largest source must still reach validation.
+	escaped, _ := json.Marshal(map[string]string{"problemId": id, "runtime": "python", "source": strings.Repeat("<", 128<<10)})
+	request("POST", "/my/submissions", "alice", string(escaped), 400)
 	var item submissions.Submission
 	if err := json.Unmarshal([]byte(request("POST", "/my/submissions", "alice", body, 202)), &item); err != nil {
 		t.Fatal(err)

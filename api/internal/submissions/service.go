@@ -56,7 +56,7 @@ func (s Service) Create(ctx context.Context, owner, id string, input CreateInput
 	}
 	if ((input.EasyTest || input.ContestID != "") && input.Generation != nil) ||
 		(input.ContestID != "" && !problems.ValidID(input.ContestID)) || !problems.ValidID(input.ProblemID) || selected == "" ||
-		strings.TrimSpace(input.Source) == "" || len(input.Source) > 64<<10 || !utf8.ValidString(input.Source) || strings.ContainsRune(input.Source, 0) {
+		strings.TrimSpace(input.Source) == "" || len(input.Source) > 128<<10 || !utf8.ValidString(input.Source) || strings.ContainsRune(input.Source, 0) {
 		return Submission{}, ErrInvalid
 	}
 	params := RunInput{

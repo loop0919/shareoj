@@ -55,7 +55,7 @@ func (p submissionHandler) submission(w http.ResponseWriter, r *http.Request, ow
 		authError(w, 415, "json_required")
 		return
 	}
-	if !readJSONBody(w, r, &input, 400<<10) {
+	if !readJSONBody(w, r, &input, 800<<10) {
 		return
 	}
 	item, err := p.Create(r.Context(), owner, newSubmissionID(), input)

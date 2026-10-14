@@ -126,7 +126,7 @@ test('C++ submission opens its result and polls until completion', async ({ page
   await page.goto(`/problems/${problemId}`)
   await expect(page.getByRole('heading', { name: 'ログインして解答を提出' })).toBeHidden()
   await page.getByLabel('ソースコード', { exact: true }).fill('int main(){}')
-  await expect(page.getByText('12 / 65,536 bytes', { exact: true })).toBeVisible()
+  await expect(page.getByText('12 / 131,072 bytes', { exact: true })).toBeVisible()
   const keyword = page.locator('.cm-line span').filter({ hasText: /^int$/ }).first()
   await expect(keyword).toBeVisible()
   expect(await keyword.evaluate(element => getComputedStyle(element).color !== getComputedStyle(element.closest('.cm-content')!).color)).toBe(true)
