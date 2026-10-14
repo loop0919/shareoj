@@ -22,7 +22,7 @@ function load() {
     () => { message.value = '提出一覧を取得できませんでした。閲覧権限を確認し、再取得してください。' })
 }
 function detail(item: Submission) {
-  if (props.mine) return `/my/submissions/${item.id}?from=${props.contestId ? 'contest-problem' : 'problem'}`
+  if (props.mine) return props.contestId ? `/contests/${props.contestId}/my-submissions/${item.id}` : `/my/submissions/${item.id}?from=problem`
   return props.contestId ? `/contests/${props.contestId}/submissions/${item.id}?from=problem` : `/problems/${props.problemId}/submissions/${item.id}`
 }
 watch(() => [user.value?.id, props.problemId, props.contestId, props.mine], () => {
