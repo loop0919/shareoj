@@ -226,6 +226,11 @@ func TestFeaturedReleaseAndEmbargoPostgres(t *testing.T) {
 			t.Fatal("wrong submission list access", viewer, body)
 		}
 		f.request("GET", path+"/"+sid, viewer, nil, map[bool]int{true: 200, false: 404}[visible])
+		shared := "/submissions/" + sid
+		if viewer != "" {
+			shared = "/my" + shared + "/public"
+		}
+		f.request("GET", shared, viewer, nil, map[bool]int{true: 200, false: 404}[visible])
 	}
 	f.request("GET", "/my/problems/"+a.ID+"/submissions/"+sid, "bob", nil, 200)
 	f.request("GET", "/my/submissions/"+sid, "bob", nil, 200)
@@ -242,6 +247,8 @@ func TestFeaturedReleaseAndEmbargoPostgres(t *testing.T) {
 		t.Fatal("slot changed after difficulty edit", edited.Items)
 	}
 	f.exec(`UPDATE featured_slots SET reveal_at=statement_timestamp() WHERE problem_id=$1`, a.ID)
+	f.request("GET", "/submissions/"+sid, "", nil, 200)
+	f.request("GET", "/my/submissions/"+sid+"/public", "carol", nil, 200)
 	if !strings.Contains(f.request("GET", "/problems/"+a.ID, "", nil, 200), "SECRET EDITORIAL") {
 		t.Fatal("editorial did not unlock")
 	}

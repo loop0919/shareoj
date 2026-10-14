@@ -59,3 +59,15 @@ func (s *Store) ProblemGet(ctx context.Context, problemID, id, viewer string) (S
 	item, err := scan(s.Pool.QueryRow(ctx, `SELECT `+columns+` FROM submissions WHERE `+problemSubmissionVisible+` AND id=$5`, problemID, "", viewer, false, id))
 	return publicSubmission(item), err
 }
+
+// Resolve a shared ID through the same visibility rules as the submission lists.
+func (s *Store) VisibleGet(ctx context.Context, id, viewer string) (Submission, error) {
+	var problemID, contestID string
+	if err := s.Pool.QueryRow(ctx, `SELECT problem_id,COALESCE(contest_id::text,'') FROM submissions WHERE id=$1`, id).Scan(&problemID, &contestID); err != nil {
+		return Submission{}, err
+	}
+	if contestID != "" {
+		return s.ContestGet(ctx, contestID, id, viewer)
+	}
+	return s.ProblemGet(ctx, problemID, id, viewer)
+}

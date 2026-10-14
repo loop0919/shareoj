@@ -430,10 +430,12 @@ func TestContestsPostgres(t *testing.T) {
 	request("GET", "/contests/"+cid+"/submissions", "", nil, 404)
 	request("GET", "/contests/"+cid+"/submissions/"+accepted.ID, "", nil, 404)
 	request("GET", "/my/submissions/"+accepted.ID, "carol", nil, 404)
+	request("GET", "/submissions/"+accepted.ID, "", nil, 404)
 	// Ordinary participants cannot view other submissions before the end.
 	for _, viewer := range []string{"bob", "carol"} {
 		request("GET", "/my/contests/"+cid+"/problems/"+a+"/submissions", viewer, nil, 404)
 		request("GET", "/my/contests/"+cid+"/submissions/"+accepted.ID, viewer, nil, 404)
+		request("GET", "/my/submissions/"+accepted.ID+"/public", viewer, nil, 404)
 	}
 	request("GET", "/contests/"+cid+"/problems/"+a+"/submissions", "", nil, 404)
 	request("GET", "/contests/"+cid+"/problems/"+a+"/submissions?mine=1", "", nil, 401)
@@ -574,6 +576,11 @@ func TestContestsPostgres(t *testing.T) {
 		t.Fatal("public contest submissions exposed drafts", list)
 	}
 	request("GET", "/contests/"+cid+"/submissions/"+draftRuns["tester"].ID, "", nil, 404)
+	request("GET", "/submissions/"+accepted.ID, "", nil, 200)
+	request("GET", "/my/submissions/"+accepted.ID+"/public", "carol", nil, 200)
+	for _, hidden := range []string{draftRuns["tester"].ID, pre.ID, easy.ID} {
+		request("GET", "/submissions/"+hidden, "", nil, 404)
+	}
 	list = request("GET", "/contests/"+cid+"/problems/"+a+"/submissions", "", nil, 200)
 	if !strings.Contains(list, accepted.ID) || !strings.Contains(list, tied.ID) || strings.Contains(list, unsolved.ID) || strings.Contains(list, pre.ID) {
 		t.Fatal("ended problem filter", list)

@@ -2,6 +2,8 @@ import { loginDestination } from '~~/shared/utils/login-destination'
 
 export default defineNuxtRouteMiddleware(async to => {
   if (import.meta.server) return
+  // Shared submission links resolve public visibility before requiring a login.
+  if (/^\/my\/submissions\/[^/]+\/?$/.test(to.path)) return
   if (!(to.path === '/my' || to.path.startsWith('/my/') || to.path === '/problems/new' || to.path === '/blog/new' || to.path === '/onboarding')) return
   const app = useNuxtApp()
   const { refreshAccount, refreshProfile } = useAccount()

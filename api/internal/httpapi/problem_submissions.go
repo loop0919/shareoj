@@ -32,7 +32,7 @@ func (p submissionHandler) problemSubmissions(w http.ResponseWriter, r *http.Req
 		return
 	}
 	pid, sid := r.PathValue("id"), r.PathValue("submission")
-	if !problemID.MatchString(pid) || (sid != "" && !problemID.MatchString(sid)) {
+	if (pid != "" && !problemID.MatchString(pid)) || (sid != "" && !problemID.MatchString(sid)) || (pid == "" && sid == "") {
 		authError(w, 404, "submission_not_found")
 		return
 	}
@@ -42,7 +42,9 @@ func (p submissionHandler) problemSubmissions(w http.ResponseWriter, r *http.Req
 	}
 	var result any
 	var err error
-	if sid != "" {
+	if pid == "" {
+		result, err = p.Submissions.VisibleGet(r.Context(), sid, owner)
+	} else if sid != "" {
 		result, err = p.Submissions.ProblemGet(r.Context(), pid, sid, owner)
 	} else {
 		offset := 0
