@@ -141,7 +141,7 @@ func TestProfilesPostgres(t *testing.T) {
 		t.Fatalf("public identity: %d %s", w.Code, w.Body.String())
 	}
 
-	// Public snapshots never expose later private edits; all mutation paths enforce ownership and version.
+	// All mutation paths enforce ownership and version.
 	if w := request("PUT", "/my/profile", "bob", `{"handle":"bob","avatar":"","version":0}`); w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
@@ -321,15 +321,15 @@ func TestProfilesPostgres(t *testing.T) {
 			}
 		}
 		check("PUT", private, "alice", body(2, "private secret"), 200)
-		if strings.Contains(check("GET", public, "", "", 200), "private secret") {
-			t.Fatal("draft leaked")
+		if updated := strings.Contains(check("GET", public, "", "", 200), "private secret"); updated != (kind == "problems") {
+			t.Fatal("problem saves must publish; post saves must stay private")
 		}
 		listing := check("GET", "/"+kind, "", "", 200)
 		if !strings.Contains(listing, id) || strings.Contains(listing, "private secret") {
 			t.Fatal(listing)
 		}
 		if kind == "problems" {
-			for _, field := range []string{`"difficulty":4`, `"timeLimitMs":"2000"`, `"memoryLimitMb":"256"`, `"favoriteCount":1`, `"solverCount":2`} {
+			for _, field := range []string{`"difficulty":10`, `"timeLimitMs":"2000"`, `"memoryLimitMb":"256"`, `"favoriteCount":1`, `"solverCount":2`} {
 				if !strings.Contains(listing, field) {
 					t.Fatalf("missing %s: %s", field, listing)
 				}

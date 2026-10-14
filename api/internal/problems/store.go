@@ -242,7 +242,7 @@ func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft
 		}
 		p, err = scan(tx.QueryRow(ctx, `INSERT INTO problem_drafts (id, owner_id, draft) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING RETURNING id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at`, id, owner, data))
 	} else {
-		p, err = scan(tx.QueryRow(ctx, `UPDATE problem_drafts SET draft=$4, version=version+1, updated_at=clock_timestamp() WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at`, owner, id, version, data))
+		p, err = scan(tx.QueryRow(ctx, `UPDATE problem_drafts SET draft=$4, published_draft=CASE WHEN published_draft IS NOT NULL THEN $4::jsonb ELSE NULL END, published_version=CASE WHEN published_draft IS NOT NULL THEN version+1 ELSE 0 END, version=version+1, updated_at=clock_timestamp() WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at`, owner, id, version, data))
 	}
 	if err == nil {
 		// Contest saves also lock the source problem before changing contest_problems.

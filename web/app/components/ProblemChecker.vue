@@ -93,7 +93,7 @@ const error = computed(() => code.value && (!code.value.source.trim() || new Tex
       <p v-if="error" class="editor-error" role="alert">{{ error }}</p>
     </template>
     <div class="checker-trial">
-      <p v-if="published">提出は公開中の設定で採点します。編集内容を採点へ反映するには、問題管理から公開内容を更新してください。</p>
+      <p v-if="published">「保存」を押すと、編集した設定が以後の提出の採点に反映されます。</p>
       <p v-else>問題ページから解答を提出すると、保存した下書きで採点します。</p>
       <button type="button" class="editor-button" :disabled="disabled || !!error || opening" @click="openProblem">{{ opening ? '保存しています…' : '問題ページで提出する' }}</button>
       <p v-if="openError" class="editor-error" role="alert">{{ openError }}</p>

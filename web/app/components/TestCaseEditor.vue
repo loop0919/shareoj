@@ -132,7 +132,7 @@ function add() {
         <p class="case-limits">入出力は各16 MiB・合計512 MiBまで
           <span class="case-info" tabindex="0" role="img" aria-label="保存と公開について" :aria-describedby="`${dialogId}-info`">
             <svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></svg>
-            <span :id="`${dialogId}-info`" class="case-info-tooltip" role="tooltip">変更は自動保存され、「公開する／公開内容を更新」で採点に反映されます。入出力は公開ページには表示されません。</span>
+            <span :id="`${dialogId}-info`" class="case-info-tooltip" role="tooltip">公開中の問題は「保存」で変更が採点に反映されます。入出力は公開ページには表示されません。</span>
           </span>
         </p>
       </div>

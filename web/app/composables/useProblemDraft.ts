@@ -11,7 +11,6 @@ const saveMessages = {
   'saving': '保存しています…',
   'saved': '保存済み',
   'failed': '保存に失敗しました',
-  'published': '公開しました',
   'unpublished': '非公開に戻しました',
   'load-failed': '問題を読み込めませんでした',
   'new': 'サンプルから書き始められます',
@@ -141,22 +140,18 @@ export function useProblemDraft() {
     finally { inFlight = undefined }
   }
 
-  async function publishProblem(publish: boolean) {
+  async function unpublishProblem() {
     if (publishing.value || saving.value || generating.value) return
     publicationError.value = ''
-    if (publish && (!draft.title.trim() || !draft.markdown.trim())) { publicationError.value = '公開するにはタイトルと本文を入力してください。'; return }
-    if (publish && draft.difficulty == null) { publicationError.value = '公開するには難易度を設定してください。'; return }
-    if (publish && errors.value.checker) { publicationError.value = errors.value.checker; return }
-    if (!await saveDraft(true)) return
-    if (!window.confirm(publish ? '現在の内容を公開しますか？誰でも閲覧できるようになります。' : 'この問題を非公開に戻しますか？')) return
+    if (!window.confirm('この問題を非公開に戻しますか？')) return
     clearTimeout(saveTimer)
     publishing.value = true
     try {
-      const result = accountProblemSchema.parse(await $fetch(`/api/my/problems/${cloudId.value}/publication`, { method: 'PUT', body: { version: cloudVersion.value, publish } }))
+      const result = accountProblemSchema.parse(await $fetch(`/api/my/problems/${cloudId.value}/publication`, { method: 'PUT', body: { version: cloudVersion.value, publish: false } }))
       cloudVersion.value = result.version
       applyServerState(result)
       writeProblemCache(cloudOwner, result)
-      saveState.value = publish ? 'published' : 'unpublished'
+      saveState.value = fingerprint() === saved ? 'unpublished' : 'dirty'
     } catch (error) { publicationError.value = accountError(error) }
     finally { publishing.value = false }
   }
@@ -287,7 +282,7 @@ export function useProblemDraft() {
   return {
     user, draft, ready, cloudId, cloudVersion, saving, publishing, publishedVersion, scheduledAt, contestId, readiness, featuredPreference, contestScheduled, manualSaveOnly,
     publicationError, saveLocation, saveState, status, storageError, leaveDialog, leaveError,
-    manageDialog, generating, deleteError, errors, saveDraft, publishProblem, finishLeave,
+    manageDialog, generating, deleteError, errors, saveDraft, unpublishProblem, finishLeave,
     openDeleteConfirmation, closeDeleteConfirmation, removeProblem,
   }
 }

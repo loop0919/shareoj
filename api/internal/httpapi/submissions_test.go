@@ -372,7 +372,7 @@ func TestSubmissionsPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	h = localHandler
-	// Draft changes must not affect published tests or accepted submissions.
+	// Saved changes update future judging without changing accepted submissions or exposing hidden tests.
 	changed := published.Draft
 	changed.TestCases = []problems.TestCase{{Input: "secret-input", Output: "999"}}
 	updated, err := store.Save(ctx, "alice", id, published.Version, changed)
@@ -411,14 +411,14 @@ func TestSubmissionsPostgres(t *testing.T) {
 	if !strings.Contains(got, `"verdict":"AC"`) || strings.Contains(got, `"cases"`) {
 		t.Fatal(got)
 	}
-	// Submitting before publication still uses the old cases.
+	// Saving is sufficient for subsequent submissions to use the new cases.
 	var before submissions.Submission
 	if err := json.Unmarshal([]byte(request("POST", "/my/submissions", "alice", body, 202)), &before); err != nil {
 		t.Fatal(err)
 	}
-	_, oldJob, err := queue.Claim(ctx)
-	if err != nil || oldJob.Cases[0].Output != "3" {
-		t.Fatalf("draft leaked into judging: %+v %v", oldJob, err)
+	_, savedJob, err := queue.Claim(ctx)
+	if err != nil || savedJob.Cases[0].Output != "999" {
+		t.Fatalf("saved tests not used: %+v %v", savedJob, err)
 	}
 	if _, err := store.Publish(ctx, "alice", id, updated.Version, true); err != nil {
 		t.Fatal(err)
@@ -631,12 +631,12 @@ func TestSubmissionsPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkerDraft.Checker = nil
+	checkerDraft.Checker = &problems.Generator{Runtime: "python314", Source: "assert 1 == 1"}
 	if _, err = store.Save(ctx, "alice", checkerID, cp.Version, checkerDraft); err != nil {
 		t.Fatal(err)
 	}
 	publicChecker := request("GET", "/problems/"+checkerID, "", "", 200)
-	if !strings.Contains(publicChecker, `"specialJudge":true`) || strings.Contains(publicChecker, "assert True") {
+	if !strings.Contains(publicChecker, `"specialJudge":true`) || strings.Contains(publicChecker, "assert") {
 		t.Fatal(publicChecker)
 	}
 	for _, submitter := range []string{"alice", "bob"} {
@@ -646,8 +646,8 @@ func TestSubmissionsPostgres(t *testing.T) {
 		if err = store.Pool().QueryRow(ctx, `SELECT job FROM submissions WHERE id=$1`, cs.ID).Scan(&checkerRaw); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(checkerRaw), "assert True") {
-			t.Fatal("published checker not pinned")
+		if !strings.Contains(string(checkerRaw), "assert 1 == 1") {
+			t.Fatal("saved checker not pinned")
 		}
 		if _, err = store.Pool().Exec(ctx, `UPDATE submissions SET status='DONE',result='{"verdict":"WA","passed":0,"total":1,"checkerLog":"private-checker-diagnostic"}' WHERE id=$1`, cs.ID); err != nil {
 			t.Fatal(err)
@@ -688,7 +688,7 @@ func TestSubmissionsPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	draft.Interactor = nil
+	draft.Interactor = &problems.Generator{Runtime: "python314", Source: "saved-interactor"}
 	if _, err = store.Save(ctx, "alice", interactiveID, ip.Version, draft); err != nil {
 		t.Fatal(err)
 	}
@@ -703,8 +703,8 @@ func TestSubmissionsPostgres(t *testing.T) {
 		if err = store.Pool().QueryRow(ctx, `SELECT job FROM submissions WHERE id=$1`, isub.ID).Scan(&checkerRaw); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(checkerRaw), "edited-interactor") {
-			t.Fatal("published interactor not pinned")
+		if !strings.Contains(string(checkerRaw), "saved-interactor") {
+			t.Fatal("saved interactor not pinned")
 		}
 		if _, err = store.Pool().Exec(ctx, `UPDATE submissions SET status='DONE',result='{"verdict":"AC","passed":1,"total":1,"checkerLog":"private-dialogue"}' WHERE id=$1`, isub.ID); err != nil {
 			t.Fatal(err)

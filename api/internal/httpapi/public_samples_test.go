@@ -40,7 +40,7 @@ func testPublicSamples(t *testing.T, store *problems.Store) {
 		if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || result.Items == nil {
 			t.Fatalf("invalid sample response: %s (%v)", w.Body.String(), err)
 		}
-		for _, secret := range []string{"hidden", "draft-only", "inputFileID", "versionId"} {
+		for _, secret := range []string{"hidden", "inputFileID", "versionId"} {
 			if strings.Contains(w.Body.String(), secret) {
 				t.Fatalf("leaked %s: %s", secret, w.Body.String())
 			}
@@ -68,13 +68,13 @@ func testPublicSamples(t *testing.T, store *problems.Store) {
 	if got := request(path, 200); !reflect.DeepEqual(got, want) {
 		t.Fatalf("samples = %#v", got)
 	}
-	draft.TestCases = []problems.TestCase{{Name: "draft-only", Input: "draft-only", IsSample: true}}
+	draft.TestCases = []problems.TestCase{{Name: "updated", Input: "updated", IsSample: true}, {Name: "hidden", Input: "hidden input"}}
 	p, err = store.Save(ctx, "alice", id, p.Version, draft)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := request(path, 200); !reflect.DeepEqual(got, want) {
-		t.Fatalf("draft exposed: %#v", got)
+	if got := request(path, 200); !reflect.DeepEqual(got, []publicSample{{Name: "updated", Input: "updated"}}) {
+		t.Fatalf("saved sample not updated: %#v", got)
 	}
 	p, err = store.Publish(ctx, "alice", id, p.Version, false)
 	if err != nil {

@@ -64,8 +64,6 @@ test('test cases can be edited, restored, published and used for submission with
   await page.getByRole('button', { name: '一括削除', exact: true }).click()
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('status')).toHaveText('保存済み')
-  await page.getByRole('button', { name: '公開内容を更新' }).click()
-  await expect(page.getByRole('status')).toHaveText('公開しました')
   const rejected = await page.request.post('/api/my/submissions', { headers: { origin: 'http://127.0.0.1:13002' }, data: { problemId: id, runtime: 'cpp17-local', source: 'int main(){}' } })
   expect(rejected.status()).toBe(409)
 })

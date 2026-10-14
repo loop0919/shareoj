@@ -79,6 +79,22 @@ func (p problemHandler) problem(w http.ResponseWriter, r *http.Request, owner st
 			authError(w, 400, "invalid_draft")
 			return
 		}
+		if input.Version > 0 {
+			current, err := p.Store.Get(ctx, owner, id)
+			if err != nil {
+				problemError(w, err)
+				return
+			}
+			// Save checks this version again, so publication cannot change between validation and writing.
+			if current.Version != input.Version {
+				problemError(w, problems.ErrConflict)
+				return
+			}
+			if current.PublishedVersion > 0 && !problems.Publishable(input.Draft, submissions.RuntimeIDs(), p.Judging.RuntimeIDs()) {
+				authError(w, 400, "incomplete_problem")
+				return
+			}
+		}
 		result, err = p.Store.Save(ctx, owner, id, input.Version, input.Draft)
 	case http.MethodDelete:
 		version, parseErr := strconv.ParseInt(r.URL.Query().Get("version"), 10, 64)
