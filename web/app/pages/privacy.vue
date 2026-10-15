@@ -97,7 +97,7 @@ useSharePreview({ title, path: '/privacy', description })
         <li>本サービスは個人で運営しており、個人情報を取り扱うのは運営者本人だけです。</li>
         <li>本サービスとの通信は、HTTPSで暗号化しています。</li>
         <li>個人情報を保存するサーバーやデータベースには運営者だけがアクセスできるよう制限し、管理用のアカウントには多要素認証を設定しています。</li>
-        <li>個人情報は、Amazon Web Servicesの東京リージョン（日本国内）に保存しています。</li>
+        <li>本サービスで取得する個人情報は、Amazon Web Servicesの東京リージョン（日本国内）に保存しています。お問い合わせのメールは、Google LLC（米国）が提供するGmailで受け取り、保存しています。</li>
       </ol>
     </section>
     <section id="article-8">
