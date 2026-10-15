@@ -99,6 +99,7 @@ type Progress struct {
 type Submission struct {
 	Author         string    `json:"author"`
 	ContestID      string    `json:"contestId,omitempty"`
+	ProblemIndex   *int      `json:"problemIndex,omitempty"` // position in the contest, set only with ContestID
 	EasyTest       bool      `json:"easyTest"`
 	ID             string    `json:"id"`
 	ProblemID      string    `json:"problemId"`
@@ -115,12 +116,12 @@ type Submission struct {
 
 type Store struct{ Pool *pgxpool.Pool }
 
-const columns = `id,problem_id,problem_version,problem_title,runtime,source,status,result,created_at,progress,COALESCE((job->>'easyTest')::boolean,false),COALESCE(contest_id::text,''),(SELECT handle FROM user_profiles WHERE user_profiles.owner_id=submissions.owner_id)`
+const columns = `id,problem_id,problem_version,problem_title,runtime,source,status,result,created_at,progress,COALESCE((job->>'easyTest')::boolean,false),COALESCE(contest_id::text,''),(SELECT handle FROM user_profiles WHERE user_profiles.owner_id=submissions.owner_id),(SELECT position FROM contest_problems cp WHERE cp.contest_id=submissions.contest_id AND cp.problem_id=submissions.problem_id)`
 
 func scan(row pgx.Row) (Submission, error) {
 	var s Submission
 	var result, progress []byte
-	err := row.Scan(&s.ID, &s.ProblemID, &s.ProblemVersion, &s.ProblemTitle, &s.Runtime, &s.Source, &s.Status, &result, &s.CreatedAt, &progress, &s.EasyTest, &s.ContestID, &s.Author)
+	err := row.Scan(&s.ID, &s.ProblemID, &s.ProblemVersion, &s.ProblemTitle, &s.Runtime, &s.Source, &s.Status, &result, &s.CreatedAt, &progress, &s.EasyTest, &s.ContestID, &s.Author, &s.ProblemIndex)
 	s.SourceBytes = len(s.Source)
 	if err == nil && result != nil {
 		err = json.Unmarshal(result, &s.Result)

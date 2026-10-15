@@ -353,6 +353,9 @@ func TestContestsPostgres(t *testing.T) {
 	if accepted.ContestID != cid {
 		t.Fatal("missing contest context")
 	}
+	if accepted.ProblemIndex == nil || *accepted.ProblemIndex != 1 {
+		t.Fatal("wrong problem index", accepted.ProblemIndex)
+	}
 	// Create out of judging order; ranking uses acceptance order, including delayed results.
 	set := func(s submissions.Submission, minute int, verdict string) {
 		t.Helper()
@@ -368,6 +371,9 @@ func TestContestsPostgres(t *testing.T) {
 	after := submit("bob", a, false)
 	set(after, 31, "WA")
 	unsolved := submit("bob", b, false)
+	if unsolved.ProblemIndex == nil || *unsolved.ProblemIndex != 0 {
+		t.Fatal("wrong problem index", unsolved.ProblemIndex)
+	}
 	set(unsolved, 5, "WA")
 	easy := submit("bob", b, true)
 	set(easy, 20, "AC")
@@ -602,6 +608,9 @@ func TestContestsPostgres(t *testing.T) {
 				continue
 			}
 			found = true
+			if item.ProblemIndex == nil || *item.ProblemIndex != 1 {
+				t.Fatalf("wrong problem index on %s", path)
+			}
 			if item.Result.CPUTimeMS == nil || *item.Result.CPUTimeMS != 12.25 || item.Result.MemoryBytes == nil || *item.Result.MemoryBytes != 2500000 {
 				t.Fatalf("missing usage summary on %s: %+v", path, item.Result)
 			}
@@ -635,6 +644,9 @@ func TestContestsPostgres(t *testing.T) {
 	var practiceNormal submissions.Submission
 	if err := json.Unmarshal([]byte(normal), &practiceNormal); err != nil {
 		t.Fatal(err)
+	}
+	if strings.Contains(normal, "problemIndex") {
+		t.Fatal("practice submission has a problem index", normal)
 	}
 	list = request("GET", "/problems/"+a+"/submissions", "", nil, 200)
 	if !strings.Contains(list, practiceNormal.ID) {
