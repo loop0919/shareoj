@@ -22,7 +22,7 @@ function dismiss() {
 <template>
   <section v-if="visible" class="policy-notice" aria-label="利用規約とプライバシーポリシーのお知らせ">
     <p>2026年10月15日に<NuxtLink to="/terms">利用規約</NuxtLink>と<NuxtLink to="/privacy">プライバシーポリシー</NuxtLink>を定めました。
-      今後もShareOJを利用する場合は、これらに同意したものとみなします。</p>
+      今後のご利用に適用されますので、お時間のあるときにご確認ください。</p>
     <button class="editor-button" type="button" @click="dismiss">閉じる</button>
   </section>
 </template>
