@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ProblemDraft } from '~~/shared/types/problem-draft'
+import { shortId } from '~~/shared/utils/short-id'
 
 const checker = defineModel<ProblemDraft['checker']>({ required: true })
 const interactor = defineModel<ProblemDraft['interactor']>('interactor', { required: true })
@@ -36,7 +37,7 @@ async function openProblem() {
   try {
     if (!await props.save()) { openError.value = '下書きを保存できませんでした。保存内容を確認してください。'; return }
     await nextTick()
-    if (props.problemId) await navigateTo(`/problems/${props.problemId}#submission-title`)
+    if (props.problemId) await navigateTo(`/problems/${shortId(props.problemId)}#submission-title`)
   } finally { opening.value = false }
 }
 const error = computed(() => code.value && (!code.value.source.trim() || new TextEncoder().encode(code.value.source).length > 65536 || code.value.source.includes('\0'))

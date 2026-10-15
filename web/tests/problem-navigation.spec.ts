@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures/account'
+import { shortId } from '../shared/utils/short-id'
 
 const id = '11111111-1111-4111-8111-111111111111'
 
@@ -37,7 +38,7 @@ for (const handle of ['alice', 'bob', 'reader', null]) {
     await expect(page.locator('#problem-title')).toHaveValue('未保存の変更')
     await view.click()
     await page.getByRole('button', { name: '保存せずに移動', exact: true }).click()
-    await expect(page).toHaveURL(`/problems/${id}`)
+    await expect(page).toHaveURL(`/problems/${shortId(id)}`)
     await page.getByRole('link', { name: '解説', exact: true }).click()
     await expect(edit).toBeVisible()
     await edit.click()
@@ -58,5 +59,5 @@ test('new problems get a viewing link only after a successful save', async ({ pa
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
   const savedId = new URL(page.url()).searchParams.get('problem')!
-  await expect(view).toHaveAttribute('href', `/problems/${savedId}`)
+  await expect(view).toHaveAttribute('href', `/problems/${shortId(savedId)}`)
 })

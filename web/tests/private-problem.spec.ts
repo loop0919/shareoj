@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { shortId } from '../shared/utils/short-id'
 
 const id = '55555555-5555-4555-8555-555555555555'
 const base = 'http://127.0.0.1:13000'
@@ -15,7 +16,7 @@ test('owner can read a private problem and editorial, then submit', async ({ pag
   await expect(page).toHaveURL(`/problems/new?problem=${id}`)
   await expect(page.locator('#problem-title')).toHaveValue('非公開の練習問題')
   await page.getByRole('link', { name: '問題を見る', exact: true }).click()
-  await expect(page).toHaveURL(`/problems/${id}`)
+  await expect(page).toHaveURL(`/problems/${shortId(id)}`)
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex, nofollow')
   expect(await response!.text()).not.toContain('secret-input')
   const api = await context.request.get(`/api/problems/${id}`)

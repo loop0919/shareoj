@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { contestDate } from '~~/shared/types/contest'
+import { shortId } from '~~/shared/utils/short-id'
 useResponseHeader('Cache-Control').value = 'no-store'
 useSeoMeta({ title: '定期便 | ShareOJ', description: '毎週月曜・木曜23時（日本時間）にEasyとHardを一問ずつ出題します。新作の解説は翌22時に公開。' })
 const offset = ref(0)
@@ -24,10 +25,10 @@ usePolling(() => refresh(), 60000)
             <div class="slot-heading"><h4>{{ slot.slot === 'easy' ? 'Easy' : (slot.difficulty ?? 0) >= 9 ? 'Ultimate' : 'Hard' }}</h4><span>{{ slot.kind === 'new' ? '新作' : slot.kind === 'revival' ? '復刻' : '欠番' }}</span></div>
             <p v-if="slot.kind === 'missing'" class="muted">この枠の出題はありません。</p>
             <template v-else>
-              <p v-if="slot.problemId"><NuxtLink :to="`/problems/${slot.problemId}`">{{ slot.title }}</NuxtLink> <DifficultyBadge :level="slot.difficulty" /></p>
+              <p v-if="slot.problemId"><NuxtLink :to="`/problems/${shortId(slot.problemId)}`">{{ slot.title }}</NuxtLink> <DifficultyBadge :level="slot.difficulty" /></p>
               <p v-else class="muted">現在、この問題は公開されていません。</p>
               <p v-if="slot.editorialHidden" class="muted">解説・他者の提出：{{ contestDate(slot.revealAt) }} 公開</p>
-              <p v-else class="muted">解説公開済み<template v-if="slot.problemId"> · <NuxtLink :to="{ path: `/problems/${slot.problemId}`, query: { view: 'editorial' } }">解説を読む</NuxtLink></template></p>
+              <p v-else class="muted">解説公開済み<template v-if="slot.problemId"> · <NuxtLink :to="{ path: `/problems/${shortId(slot.problemId)}`, query: { view: 'editorial' } }">解説を読む</NuxtLink></template></p>
             </template>
           </section>
         </div>

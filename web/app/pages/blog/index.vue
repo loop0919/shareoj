@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { z } from 'zod'
 import type { postListSchema } from '~~/shared/types/post'
+import { shortId } from '~~/shared/utils/short-id'
 // Each tag gets a fresh list and pagination.
 definePageMeta({ key: route => `posts:${typeof route.query.tag === 'string' ? route.query.tag : ''}` })
 const route = useRoute()
@@ -29,7 +30,7 @@ useSharePreview({ type: 'website', title: heading, path, description })
       <table class="content-table">
         <thead><tr><th scope="col">タイトル</th><th scope="col">投稿者</th><th scope="col">公開日</th></tr></thead>
         <tbody><tr v-for="post in current.items" :key="post.id">
-          <th scope="row"><NuxtLink :to="`/blog/${post.id}`">{{ post.title }}</NuxtLink><TagLinks v-if="post.tags.length" class="post-row-tags" :tags="post.tags" to="/blog" /></th>
+          <th scope="row"><NuxtLink :to="`/blog/${shortId(post.id)}`">{{ post.title }}</NuxtLink><TagLinks v-if="post.tags.length" class="post-row-tags" :tags="post.tags" to="/blog" /></th>
           <td><UserLink :handle="post.author" /> <span v-if="post.isOperator" class="operator-label">運営</span></td>
           <td><time v-if="post.publishedAt" :datetime="post.publishedAt">{{ date(post.publishedAt) }}</time><span v-else>—</span></td>
         </tr></tbody>

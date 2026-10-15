@@ -1,4 +1,5 @@
 import type { PublicProblem } from './problem'
+import { shortId } from '../utils/short-id'
 // hasEditorial is present only when the viewer may read the editorial now. False means none is registered.
 export type ContestProblem = { id: string, points: number, title?: string, timeLimitMs?: string, memoryLimitMb?: string, solved?: boolean, hasEditorial?: boolean }
 export type Contest = {
@@ -33,3 +34,11 @@ export function contestDate(value: string) {
 export function problemLabel(index: number): string {
   return index < 26 ? String.fromCharCode(65 + index) : problemLabel(Math.floor(index / 26) - 1) + problemLabel(index % 26)
 }
+// The inverse of problemLabel; -1 for anything it never produces.
+export function labelIndex(label: unknown) {
+  if (typeof label !== 'string' || !/^[A-Z]{1,3}$/.test(label)) return -1
+  let index = 0
+  for (const char of label) index = index * 26 + char.charCodeAt(0) - 64
+  return index - 1
+}
+export const contestProblemPath = (contestId: string, index: number) => `/contests/${shortId(contestId)}/${problemLabel(index)}`

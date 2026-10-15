@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { postListSchema, type postSummarySchema } from '~~/shared/types/post'
 import type { z } from 'zod'
+import { shortId } from '~~/shared/utils/short-id'
 const posts = ref<z.infer<typeof postSummarySchema>[]>([])
 const cursor = ref('')
 const loading = ref(true)
@@ -37,7 +38,7 @@ onMounted(() => { void load() })
           <th scope="row">{{ post.title.trim() || '無題の記事' }}</th>
           <td>{{ post.publishedVersion ? '公開中' : '下書き' }}</td>
           <td><time :datetime="post.updatedAt">{{ new Date(post.updatedAt).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) }}</time></td>
-          <td><ContentActions :title="post.title.trim() || '無題の記事'" :edit-to="{ path: '/blog/new', query: { post: post.id } }" :view-to="`/blog/${post.id}`" :published="!!post.publishedVersion" /></td>
+          <td><ContentActions :title="post.title.trim() || '無題の記事'" :edit-to="{ path: '/blog/new', query: { post: post.id } }" :view-to="`/blog/${shortId(post.id)}`" :published="!!post.publishedVersion" /></td>
         </tr></tbody>
       </table>
     </div>

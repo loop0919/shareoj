@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { contestView, contestViews, type ContestView } from '~~/shared/types/contest'
+import { fullId, shortId } from '~~/shared/utils/short-id'
 const route = useRoute()
 const pageError = useError()
 // Contest pages swap the site menu for the contest's own menu. Error pages keep the site menu.
-const contestId = computed(() => !pageError.value && String(route.name ?? '').startsWith('contests-id') ? String(route.params.id) : '')
+const contestId = computed(() => !pageError.value && String(route.name ?? '').startsWith('contests-id') ? fullId(route.params.id) : '')
 const contestSection = computed<ContestView>(() => route.name === 'contests-id' ? contestView(route.query.view) : String(route.name).startsWith('contests-id-submissions') ? 'submissions' : 'problems')
 const { data: judgeCatalog, error: judgeCatalogError, refresh: refreshJudge } = await useJudgeCatalog()
 function refreshVisibleJudge() { if (document.visibilityState === 'visible') void refreshJudge({ dedupe: 'defer' }) }
@@ -39,7 +40,7 @@ onMounted(() => { void refreshAccount().then(account => { if (account) return re
       <NuxtLink class="wordmark" to="/" aria-label="ShareOJ ホーム">Share<span>OJ</span><span class="wordmark-beta">(β)</span></NuxtLink>
       <ContestHeaderTitle v-if="contestId" :id="contestId" class="contest-title" />
       <nav v-if="contestId" class="contest-menu" aria-label="コンテストメニュー">
-        <NuxtLink v-for="(label, view) in contestViews" :key="view" :to="{ path: `/contests/${contestId}`, query: view === 'overview' ? {} : { view } }" :aria-current="contestSection === view ? route.name === 'contests-id' ? 'page' : 'true' : undefined">{{ label }}</NuxtLink>
+        <NuxtLink v-for="(label, view) in contestViews" :key="view" :to="{ path: `/contests/${shortId(contestId)}`, query: view === 'overview' ? {} : { view } }" :aria-current="contestSection === view ? route.name === 'contests-id' ? 'page' : 'true' : undefined">{{ label }}</NuxtLink>
       </nav>
       <nav v-else aria-label="メインナビゲーション">
         <NuxtLink to="/">ホーム</NuxtLink>

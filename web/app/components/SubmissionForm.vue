@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Submission } from '../../shared/types/submission'
+import { shortId } from '~~/shared/utils/short-id'
 
 const props = defineProps<{ problemId: string, hasSamples: boolean, contestId?: string, beforeSubmit?: () => Promise<boolean>, disabled?: boolean }>()
 const { user } = useAccount()
@@ -58,7 +59,7 @@ async function submit(easyTest = false) {
       }
       return
     }
-    await navigateTo(props.contestId ? `/contests/${props.contestId}/my-submissions/${result.id}` : `/my/submissions/${result.id}`)
+    await navigateTo(props.contestId ? `/contests/${shortId(props.contestId)}/my-submissions/${shortId(result.id)}` : `/my/submissions/${shortId(result.id)}`)
   } catch (error) {
     const failure = error as { statusCode?: number, data?: { data?: { code?: string, retryAfter?: number } } }
     const code = failure.data?.data?.code
@@ -114,7 +115,7 @@ async function submit(easyTest = false) {
         <h4>ジャッジコードの診断</h4><pre>{{ easyResult.result.checkerLog }}</pre>
       </section>
       <pre v-if="easyResult.result?.compileLog">{{ easyResult.result.compileLog }}</pre>
-      <NuxtLink :to="contestId ? `/contests/${contestId}/my-submissions/${easyResult.id}` : `/my/submissions/${easyResult.id}`" target="_blank" rel="noopener noreferrer">結果の詳細 ↗</NuxtLink>
+      <NuxtLink :to="contestId ? `/contests/${shortId(contestId)}/my-submissions/${shortId(easyResult.id)}` : `/my/submissions/${shortId(easyResult.id)}`" target="_blank" rel="noopener noreferrer">結果の詳細 ↗</NuxtLink>
     </section>
   </section>
 </template>

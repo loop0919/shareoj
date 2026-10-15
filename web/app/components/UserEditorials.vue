@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { contestDate } from '~~/shared/types/contest'
 import type { UserEditorial } from '~~/shared/types/post'
+import { shortId } from '~~/shared/utils/short-id'
 const props = defineProps<{ problemId: string }>()
 const { data, error } = await useFetch<{ items: UserEditorial[] }>(() => `/api/problems/${props.problemId}/editorials`)
 </script>
@@ -14,7 +15,7 @@ const { data, error } = await useFetch<{ items: UserEditorial[] }>(() => `/api/p
     <p v-else-if="!data?.items.length" class="muted">ユーザー解説はまだありません。</p>
     <ul v-else class="user-editorial-list">
       <li v-for="item in data.items" :key="item.id">
-        <NuxtLink :to="`/blog/${item.id}`">{{ item.title }}</NuxtLink>
+        <NuxtLink :to="`/blog/${shortId(item.id)}`">{{ item.title }}</NuxtLink>
         <span class="muted"><UserLink :handle="item.author" /><span v-if="item.isOperator">・運営</span> · <time :datetime="item.publishedAt">{{ contestDate(item.publishedAt) }}</time></span>
       </li>
     </ul>

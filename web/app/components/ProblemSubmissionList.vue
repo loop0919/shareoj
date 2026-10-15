@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { contestDate } from '~~/shared/types/contest'
 import type { Submission } from '~~/shared/types/submission'
+import { shortId } from '~~/shared/utils/short-id'
 import { submissionUsage } from '~/utils/submission-usage'
 import { runtimeLabel } from '~/utils/runtime-label'
 const props = defineProps<{ problemId: string, contestId?: string, mine: boolean }>()
@@ -22,8 +23,8 @@ function load() {
     () => { message.value = '提出一覧を取得できませんでした。閲覧権限を確認し、再取得してください。' })
 }
 function detail(item: Submission) {
-  if (props.mine) return props.contestId ? `/contests/${props.contestId}/my-submissions/${item.id}` : `/my/submissions/${item.id}?from=problem`
-  return props.contestId ? `/contests/${props.contestId}/submissions/${item.id}?from=problem` : `/problems/${props.problemId}/submissions/${item.id}`
+  if (props.mine) return props.contestId ? `/contests/${shortId(props.contestId)}/my-submissions/${shortId(item.id)}` : `/my/submissions/${shortId(item.id)}?from=problem`
+  return props.contestId ? `/contests/${shortId(props.contestId)}/submissions/${shortId(item.id)}?from=problem` : `/problems/${shortId(props.problemId)}/submissions/${shortId(item.id)}`
 }
 watch(() => [user.value?.id, props.problemId, props.contestId, props.mine], () => {
   invalidate(); data.value = null; offset.value = 0

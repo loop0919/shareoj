@@ -1,18 +1,22 @@
 <script setup lang="ts">
-import type { ContestProblemDetail } from '~~/shared/types/contest'
+import { contestProblemPath, labelIndex, type ContestProblemDetail } from '~~/shared/types/contest'
+import { fullId, shortId } from '~~/shared/utils/short-id'
 definePageMeta({ key: route => route.path })
 useResponseHeader('Cache-Control').value = 'no-store'
 useResponseHeader('Vary').value = 'Cookie'
 const route = useRoute()
 const { profile, user } = useAccount()
-const id = encodeURIComponent(String(route.params.id))
-const pid = encodeURIComponent(String(route.params.problem))
-const { data: contest, refresh: refreshContest } = await useContest(String(route.params.id))
-const { data: problem, error, refresh } = await useFetch<ContestProblemDetail>(`/api/contests/${id}/problems/${pid}`)
+const id = fullId(route.params.id)
+const index = labelIndex(route.params.label)
+const { data: contest, error: contestError, refresh: refreshContest } = await useContest(id)
+// The contest returns a problem's ID only to viewers who may open it.
+const pid = contest.value?.problems[index]?.id
+if (!pid) throw createError({ statusCode: contestError.value && contestError.value.statusCode !== 404 ? 502 : 404, statusMessage: '問題が見つからないか、まだ公開されていません', fatal: true })
+const { data: problem, error, refresh } = await useFetch<ContestProblemDetail>(`/api/contests/${encodeURIComponent(id)}/problems/${encodeURIComponent(pid)}`)
 if (error.value || !problem.value || !contest.value) throw createError({ statusCode: error.value?.statusCode === 404 ? 404 : 502, statusMessage: '問題が見つからないか、まだ公開されていません', fatal: true })
 const showingEditorial = computed(() => route.query.view === 'editorial')
 const submissionView = computed(() => route.query.view === 'my-submissions' || route.query.view === 'submissions')
-const problemPath = `/contests/${id}/problems/${pid}`
+const problemPath = contestProblemPath(id, index)
 // The API returns the editorial before the end to the setter and this problem's testers.
 const canReadEditorial = computed(() => contest.value?.status === 'ended' || (!!profile.value && (profile.value.handle === problem.value?.author || !!problem.value?.testers?.includes(profile.value.handle))))
 useSeoMeta({ title: () => `${problem.value?.title} | ${contest.value?.title} | ShareOJ` })
@@ -22,7 +26,7 @@ useSharePreview({ title: () => problem.value!.title, path: problemPath, descript
 </script>
 <template>
   <div v-if="problem && contest" class="problem-page">
-    <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink :to="`/contests/${id}`">{{ contest.title }}</NuxtLink><span aria-hidden="true">/</span><NuxtLink :to="`/contests/${id}?view=problems`">問題</NuxtLink><span aria-hidden="true">/</span><span>{{ problem.title }}</span></nav><TweetButton v-if="contest.status !== 'scheduled'" :title="problem.title" :url="problemPath" /></div>
+    <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink :to="`/contests/${shortId(id)}`">{{ contest.title }}</NuxtLink><span aria-hidden="true">/</span><NuxtLink :to="`/contests/${shortId(id)}?view=problems`">問題</NuxtLink><span aria-hidden="true">/</span><span>{{ problem.title }}</span></nav><TweetButton v-if="contest.status !== 'scheduled'" :title="problem.title" :url="problemPath" /></div>
     <header class="problem-header"><h1>{{ problem.title }}</h1><div class="problem-summary"><div class="problem-meta muted"><p>作成者 <UserLink :handle="problem.author" /></p><p v-if="problem.testers?.length">テスター <template v-for="(tester, index) in problem.testers" :key="tester"><span v-if="index">、</span><UserLink :handle="tester" /></template></p><p>配点 {{ contest.problems.find(p => p.id === problem!.id)?.points }} 点</p></div></div><dl class="limits"><div><dt>実行時間制限</dt><dd>{{ Number(problem.timeLimitMs) / 1000 }} 秒</dd></div><div><dt>メモリ制限</dt><dd>{{ problem.memoryLimitMb }} MiB</dd></div></dl></header>
     <nav class="problem-menu" aria-label="問題メニュー"><NuxtLink :to="problemPath" :aria-current="showingEditorial || submissionView ? undefined : 'page'">問題文</NuxtLink><NuxtLink v-if="canReadEditorial" :to="{ path: problemPath, query: { view: 'editorial' } }" :aria-current="showingEditorial ? 'page' : undefined">解説</NuxtLink><NuxtLink :to="{ path: problemPath, query: { view: 'my-submissions' } }" :aria-current="route.query.view === 'my-submissions' ? 'page' : undefined">自分の提出</NuxtLink><NuxtLink :to="{ path: problemPath, query: { view: 'submissions' } }" :aria-current="route.query.view === 'submissions' ? 'page' : undefined">すべての提出</NuxtLink></nav>
     <template v-if="submissionView">

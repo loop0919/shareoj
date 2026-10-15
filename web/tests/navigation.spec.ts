@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { shortId } from '../shared/utils/short-id'
 
 for (const width of [320, 375, 414, 768, 1280]) {
   test(`creation dropdown fits ${width}px when open`, async ({ page }) => {
@@ -40,7 +41,7 @@ test('creation dropdown supports keyboard, dismissal, and creation links', async
 })
 
 test('contest pages replace the site menu with the contest menu', async ({ page }) => {
-  const contest = '/contests/88888888-8888-4888-8888-888888888888'
+  const contest = `/contests/${shortId('88888888-8888-4888-8888-888888888888')}`
   const siteMenu = page.getByRole('navigation', { name: 'メインナビゲーション' })
   const contestMenu = page.getByRole('navigation', { name: 'コンテストメニュー' })
   await page.goto(`${contest}?view=standings`)
@@ -66,7 +67,7 @@ test('contest pages replace the site menu with the contest menu', async ({ page 
   await expect(breadcrumb).toHaveText('コンテスト/共有コンテスト')
   await contestMenu.getByRole('link', { name: '問題', exact: true }).click()
   await page.getByRole('region', { name: 'コンテストの問題' }).getByRole('link').first().click()
-  await expect(page).toHaveURL(new RegExp(`${contest}/problems/`))
+  await expect(page).toHaveURL(`${contest}/A`)
   await expect(contestMenu.getByRole('link', { name: '問題', exact: true })).toHaveAttribute('aria-current', 'true')
   await expect(breadcrumb.getByRole('link')).toHaveText(['共有コンテスト', '問題'])
   // The problem's own tabs come after its title so the two menus do not stack.

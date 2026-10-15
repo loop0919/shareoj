@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { executionTime, memoryUsage } from '~/utils/submission-usage'
 import { runtimeLabel } from '~/utils/runtime-label'
-import type { Submission } from '~~/shared/types/submission'
+import { submissionProblemPath, type Submission } from '~~/shared/types/submission'
 const props = defineProps<{ item: Submission }>()
 const item = toRef(props, 'item')
 const expanded = ref(false)
@@ -41,7 +41,7 @@ const verdicts: Record<string, string> = { AC: '正解', WA: '不正解', CE: '�
           <tbody>
             <tr><th scope="row">提出日時</th><td><time :datetime="item.createdAt">{{ new Date(item.createdAt).toLocaleString('ja-JP') }}</time></td></tr>
             <tr v-if="item.author"><th scope="row">提出者</th><td><UserLink :handle="item.author" /></td></tr>
-            <tr><th scope="row">問題</th><td><NuxtLink :to="item.contestId ? `/contests/${item.contestId}/problems/${item.problemId}` : `/problems/${item.problemId}`">{{ item.problemTitle }}</NuxtLink></td></tr>
+            <tr><th scope="row">問題</th><td><NuxtLink :to="submissionProblemPath(item)">{{ item.problemTitle }}</NuxtLink></td></tr>
             <tr><th scope="row">言語</th><td>{{ runtimeLabel(item.runtime) }}</td></tr>
             <tr><th scope="row">コード長</th><td>{{ codeBytes === null ? '—' : `${codeBytes.toLocaleString('en-US')} bytes` }}</td></tr>
             <tr><th scope="row" title="各テストケースの最大CPU時間">実行時間</th><td>{{ executionTime(item.result?.cpuTimeMs) }}</td></tr>

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { shortId } from '../shared/utils/short-id'
 
 test('initial HTTP response includes the problem and SEO metadata', async ({ request, page }) => {
   const response = await request.get('/problems/11111111-1111-4111-8111-111111111111?ref=test')
@@ -10,7 +11,7 @@ test('initial HTTP response includes the problem and SEO metadata', async ({ req
   expect(markup).toContain('<title>A + B | ShareOJ</title>')
   expect(markup).toContain('name="description"')
   expect(markup).toContain('property="og:title"')
-  expect(markup).toContain('rel="canonical" href="https://judge.example/problems/11111111-1111-4111-8111-111111111111"')
+  expect(markup).toContain(`rel="canonical" href="https://judge.example/problems/${shortId('11111111-1111-4111-8111-111111111111')}"`)
   await page.setContent(markup)
   const testers = page.locator('p').filter({ hasText: /^テスター / })
   await expect(testers).toHaveText('テスター bob、carol')

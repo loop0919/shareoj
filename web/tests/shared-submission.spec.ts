@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures/account'
+import { shortId } from '../shared/utils/short-id'
 
 const pid = '11111111-1111-4111-8111-111111111111'
 const sid = '22222222-2222-4222-8222-222222222222'
@@ -11,14 +12,14 @@ for (const scope of ['problem', 'contest', 'contest-own']) {
       await page.route(`**/api/my/submissions/${sid}`, route => route.fulfill({ status: guest ? 401 : 404, json: {} }))
       await page.route(`**/api/submissions/${sid}`, route => route.fulfill({ json: { id: sid, problemId: pid, ...(scope !== 'problem' ? { contestId: cid } : {}) } }))
       await page.goto(scope === 'contest-own' ? `/contests/${cid}/my-submissions/${sid}` : `/my/submissions/${sid}?from=problem`)
-      await expect(page).toHaveURL(scope !== 'problem' ? `/contests/${cid}/submissions/${sid}` : `/problems/${pid}/submissions/${sid}`)
+      await expect(page).toHaveURL(scope !== 'problem' ? `/contests/${shortId(cid)}/submissions/${shortId(sid)}` : `/problems/${shortId(pid)}/submissions/${shortId(sid)}`)
       await expect(page.getByRole('textbox', { name: 'ソースコード', exact: true })).toHaveText('int main(){}')
       await expect(page.getByRole('link', { name: 'すべての提出', exact: true })).toBeVisible()
     })
   }
 }
 
-for (const path of [`/my/submissions/${sid}`, `/contests/${cid}/my-submissions/${sid}`]) {
+for (const path of [`/my/submissions/${shortId(sid)}`, `/contests/${shortId(cid)}/my-submissions/${shortId(sid)}`]) {
   test(`a restricted shared submission stays hidden and offers login to its owner: ${path}`, async ({ page }) => {
     await page.route('**/api/auth/me', route => route.fulfill({ json: { user: null } }))
     await page.route(`**/api/my/submissions/${sid}`, route => route.fulfill({ status: 401, json: {} }))

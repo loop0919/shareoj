@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures/account'
+import { shortId } from '../shared/utils/short-id'
 
 const problemId = '11111111-1111-4111-8111-111111111111'
 const postId = '77777777-7777-4777-8777-777777777777'
@@ -8,10 +9,10 @@ test('problem editorial tab and post link each other', async ({ page }) => {
   const section = page.getByRole('region', { name: 'ユーザー解説' })
   await expect(section.getByRole('link', { name: 'ユーザー解説を書く', exact: true })).toHaveAttribute('href', `/blog/new?problem=${problemId}`)
   await section.getByRole('link', { name: '日本語 & #記事 + 共有', exact: true }).click()
-  await expect(page).toHaveURL(`/blog/${postId}`)
+  await expect(page).toHaveURL(`/blog/${shortId(postId)}`)
   await expect(page.getByText('解説している問題')).toBeVisible()
   await page.locator('.post-problems').getByRole('link', { name: 'A + B', exact: true }).click()
-  await expect(page).toHaveURL(`/problems/${problemId}`)
+  await expect(page).toHaveURL(`/problems/${shortId(problemId)}`)
 })
 
 test('hidden featured editorials have no user editorials', async ({ page }) => {
@@ -66,6 +67,6 @@ test('user editorial notifications open the editorial tab', async ({ page }) => 
   await page.goto('/')
   await page.getByLabel('通知（未読1件）').click()
   await page.getByRole('link', { name: /bobがユーザー解説を書きました/ }).click()
-  await expect(page).toHaveURL(`/problems/${problemId}?view=editorial`)
+  await expect(page).toHaveURL(`/problems/${shortId(problemId)}?view=editorial`)
   await expect(page.getByRole('region', { name: 'ユーザー解説' })).toBeVisible()
 })

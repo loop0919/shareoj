@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { shortId } from '~~/shared/utils/short-id'
 const props = defineProps<{ problemId: string, average: number | null, count: number, distribution: number[] }>()
 const emit = defineEmits<{ updated: [average: number | null, count: number] }>()
 const dialog = ref<HTMLDialogElement>()
@@ -104,7 +105,7 @@ onBeforeUnmount(() => { requestVersion++ })
             <button class="editor-button primary" :disabled="loading || !ready || selected === null || selected === voted" @click="save()">{{ voted === null ? '投票する' : '投票を変更' }}</button>
           </footer>
         </template>
-        <NuxtLink v-else :to="{ path: '/login', query: { next: `/problems/${problemId}` } }">ログインして難易度を投票</NuxtLink>
+        <NuxtLink v-else :to="{ path: '/login', query: { next: `/problems/${shortId(problemId)}` } }">ログインして難易度を投票</NuxtLink>
       </dialog>
     </Teleport>
   </div>

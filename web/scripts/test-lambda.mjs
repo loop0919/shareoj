@@ -156,10 +156,14 @@ try {
   }
   assert.equal(exchanges, 2)
   console.log('Google OAuth callback: code exchange, PKCE, secret authentication, verified session and invalid-token rejection passed')
-  const problem = await invoke('/problems/11111111-1111-4111-8111-111111111111')
+  // Page URLs carry the UUID in base62; the old form redirects permanently.
+  const legacy = await invoke('/problems/11111111-1111-4111-8111-111111111111?view=editorial')
+  assert.equal(legacy.statusCode, 301)
+  assert.equal(legacy.headers.location, '/problems/0WCfTognyye34UJm92NqYz?view=editorial')
+  const problem = await invoke('/problems/0WCfTognyye34UJm92NqYz')
   assert.equal(problem.statusCode, 200)
   assert.match(problem.body, /katex-html/)
-  assert.match(problem.body, /https:\/\/frontend.example\/problems\/11111111-1111-4111-8111-111111111111/)
+  assert.match(problem.body, /https:\/\/frontend.example\/problems\/0WCfTognyye34UJm92NqYz/)
   const editor = await invoke('/problems/new')
   assert.equal(editor.statusCode, 200)
   assert.match(editor.body, /noindex/)

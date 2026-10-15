@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures/account'
+import { shortId } from '../shared/utils/short-id'
 
 test('multiple drafts remain independent and reopen from the library', async ({ page }) => {
   await page.goto('/my?tab=problems')
@@ -53,13 +54,13 @@ for (const width of [375, 1280]) {
     await expect(page.getByRole('table', { name: '自分の問題' })).toBeVisible()
     await expect(page.getByRole('table', { name: '作成した記事' })).toBeHidden()
     await expect(page.getByRole('link', { name: 'A + Bを編集' })).toHaveAttribute('href', `/problems/new?problem=${id}`)
-    await expect(page.getByRole('link', { name: '未公開の問題を閲覧' })).toHaveAttribute('href', `/problems/${draftId}`)
+    await expect(page.getByRole('link', { name: '未公開の問題を閲覧' })).toHaveAttribute('href', `/problems/${shortId(draftId)}`)
     await page.getByRole('button', { name: '記事', exact: true }).click()
     await expect(page.getByRole('button', { name: '記事', exact: true })).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByRole('table', { name: '自分の問題' })).toBeHidden()
     await expect(page.getByRole('table', { name: '作成した記事' })).toBeVisible()
     await expect(page.getByRole('link', { name: '公開記事を編集' })).toHaveAttribute('href', `/blog/new?post=${id}`)
-    await expect(page.getByRole('link', { name: '公開記事を閲覧' })).toHaveAttribute('href', `/blog/${id}`)
+    await expect(page.getByRole('link', { name: '公開記事を閲覧' })).toHaveAttribute('href', `/blog/${shortId(id)}`)
     await expect(page.getByRole('button', { name: '下書き記事を閲覧（公開すると閲覧できます）' })).toBeDisabled()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.getByRole('button', { name: '提出履歴', exact: true }).click()
@@ -73,7 +74,7 @@ for (const width of [375, 1280]) {
     await page.getByRole('button', { name: '自分の問題', exact: true }).click()
     await expect(page.getByRole('heading', { name: '提出履歴', exact: true })).toHaveCount(0)
     await page.getByRole('link', { name: 'A + Bを閲覧' }).click()
-    await expect(page).toHaveURL(`/problems/${id}`)
+    await expect(page).toHaveURL(`/problems/${shortId(id)}`)
     await expect(page.getByRole('heading', { name: 'A + B', exact: true })).toBeVisible()
   })
 }

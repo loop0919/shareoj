@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures/account'
+import { shortId } from '../shared/utils/short-id'
 
 const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const hidden = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
@@ -26,7 +27,7 @@ test('featured editions show two slots, revivals, vacancies and the Ultimate lab
   await expect(page.getByRole('heading', { name: 'Ultimate', exact: true })).toBeVisible()
   await expect(page.getByText('欠番', { exact: true })).toBeVisible()
   await expect(page.getByText('解説公開済み', { exact: false }).first()).toBeVisible()
-  await expect(page.getByRole('link', { name: '定期便の新作', exact: true })).toHaveAttribute('href', `/problems/${hidden}`)
+  await expect(page.getByRole('link', { name: '定期便の新作', exact: true })).toHaveAttribute('href', `/problems/${shortId(hidden)}`)
   for (const width of [375, 1280]) {
     await page.setViewportSize({ width, height: 1000 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
@@ -170,7 +171,7 @@ test('published edition shows both titles and credits, then switches back to pre
   const delivery = page.getByRole('region', { name: 'ShareOJ定期便' })
   await expect(delivery).toContainText('公開中の問題')
   await expect(delivery.getByRole('link', { name: 'A + B' })).toBeVisible()
-  await expect(delivery.getByRole('link', { name: '定期便の新作' })).toHaveAttribute('href', `/problems/${hidden}`)
+  await expect(delivery.getByRole('link', { name: '定期便の新作' })).toHaveAttribute('href', `/problems/${shortId(hidden)}`)
   await expect(delivery).toContainText('Ultimate')
   await expect(delivery).toContainText('解説・他者の提出')
   for (const width of [375, 1280]) {

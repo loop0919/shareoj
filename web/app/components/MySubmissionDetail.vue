@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { Submission } from '~~/shared/types/submission'
+import { submissionProblemPath, type Submission } from '~~/shared/types/submission'
+import { shortId } from '~~/shared/utils/short-id'
 const props = defineProps<{ id: string, contestId?: string }>()
 useSeoMeta({ title: '提出結果 | ShareOJ', robots: 'noindex, nofollow' })
 const route = useRoute()
@@ -18,8 +19,8 @@ function load() {
     }
   }, ({ submission, shared }) => {
     if (shared) {
-      const path = submission.contestId ? `/contests/${submission.contestId}` : `/problems/${submission.problemId}`
-      void navigateTo(`${path}/submissions/${submission.id}`, { replace: true })
+      const path = submission.contestId ? `/contests/${shortId(submission.contestId)}` : `/problems/${shortId(submission.problemId)}`
+      void navigateTo(`${path}/submissions/${shortId(submission.id)}`, { replace: true })
     } else item.value = submission
   }, error => {
     message.value = (error as { statusCode?: number }).statusCode === 404
@@ -33,7 +34,7 @@ usePolling(load, 2000, () => !message.value && (!!item.value && item.value.statu
 
 <template>
   <div>
-    <nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink v-if="item && (contestId || route.query.from === 'problem' || route.query.from === 'contest-problem')" :to="`${contestId ? `/contests/${contestId}/problems` : route.query.from === 'contest-problem' && item.contestId ? `/contests/${item.contestId}/problems` : '/problems'}/${item.problemId}?view=my-submissions`">この問題の自分の提出</NuxtLink><NuxtLink v-else to="/my/submissions">提出履歴</NuxtLink><span aria-hidden="true">/</span><span>提出結果</span></nav>
+    <nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink v-if="item && (contestId || route.query.from === 'problem' || route.query.from === 'contest-problem')" :to="`${submissionProblemPath(item, contestId || (route.query.from === 'contest-problem' ? item.contestId : ''))}?view=my-submissions`">この問題の自分の提出</NuxtLink><NuxtLink v-else to="/my/submissions">提出履歴</NuxtLink><span aria-hidden="true">/</span><span>提出結果</span></nav>
     <p v-if="message" class="notice notice-error" role="alert">{{ message }} <NuxtLink v-if="!user" :to="{ path: '/login', query: { next: route.fullPath } }">ログイン</NuxtLink> <button class="editor-button" @click="load">再取得</button></p>
     <SubmissionDetail v-if="item" :item="item" />
     <LoadingSpinner v-else-if="!message" label="提出結果を読み込み中" />

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { submissionUsage } from '~/utils/submission-usage'
 import { runtimeLabel } from '~/utils/runtime-label'
-import type { Submission } from '~~/shared/types/submission'
+import { submissionProblemPath, type Submission } from '~~/shared/types/submission'
+import { shortId } from '~~/shared/utils/short-id'
 withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
 const items = ref<Submission[]>([])
 const message = ref('')
@@ -32,12 +33,12 @@ usePolling(load, 2000, () => !message.value && (items.value.some(item => item.st
         <tbody>
           <tr v-for="item in items" :key="item.id">
             <td class="submission-date"><time :datetime="item.createdAt">{{ new Date(item.createdAt).toLocaleString('ja-JP') }}</time></td>
-            <td class="submission-problem"><NuxtLink :to="item.contestId ? `/contests/${item.contestId}/problems/${item.problemId}` : `/problems/${item.problemId}`">{{ item.problemTitle }}</NuxtLink></td>
+            <td class="submission-problem"><NuxtLink :to="submissionProblemPath(item)">{{ item.problemTitle }}</NuxtLink></td>
             <td class="submission-language">{{ runtimeLabel(item.runtime) }}</td>
             <td class="submission-usage">{{ item.sourceBytes == null ? '—' : `${item.sourceBytes.toLocaleString('en-US')} bytes` }}</td>
             <td class="submission-usage">{{ submissionUsage(item.result) }}</td>
             <td class="submission-result"><span role="status"><SubmissionStatus :item="item" /></span></td>
-            <td><NuxtLink :to="`/my/submissions/${item.id}`" :aria-label="`${item.problemTitle}の提出詳細`">詳細</NuxtLink></td>
+            <td><NuxtLink :to="`/my/submissions/${shortId(item.id)}`" :aria-label="`${item.problemTitle}の提出詳細`">詳細</NuxtLink></td>
           </tr>
         </tbody>
       </table>

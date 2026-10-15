@@ -118,7 +118,7 @@ createServer(async (req, res) => {
   ] }))
   else if (path === `/problems/${problem.id}/submissions`) res.end(JSON.stringify({ items: [submission], hasMore: false }))
   else if (path === `/problems/${problem.id}/submissions/${submission.id}`) res.end(JSON.stringify(submission))
-  else if (path === `/contests/88888888-8888-4888-8888-888888888888/submissions/${submission.id}`) res.end(JSON.stringify({ ...submission, contestId: '88888888-8888-4888-8888-888888888888' }))
+  else if (path === `/contests/88888888-8888-4888-8888-888888888888/submissions/${submission.id}`) res.end(JSON.stringify({ ...submission, contestId: '88888888-8888-4888-8888-888888888888', problemIndex: 0 }))
   else if (path === '/posts') {
     const query = new URL(req.url, 'http://localhost').searchParams
     const matches = query.get('author') === 'alice' || (query.get('tag') && publicPost.tags.includes(query.get('tag')))

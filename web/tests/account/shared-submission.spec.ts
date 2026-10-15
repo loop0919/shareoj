@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { expect, test, type Page } from '@playwright/test'
+import { shortId } from '../../shared/utils/short-id'
 
 async function login(page: Page, name: string) {
   await page.goto('/login')
@@ -28,13 +29,13 @@ test('old my links resolve public submissions for guests and other users while d
   const sid = await submit()
   await page.goto(`/my/submissions/${sid}`)
   await expect(page.getByRole('textbox', { name: 'ソースコード', exact: true })).toHaveText('int main(){}')
-  await expect(page).toHaveURL(`/my/submissions/${sid}`)
+  await expect(page).toHaveURL(`/my/submissions/${shortId(sid)}`)
   const context = await browser.newContext({ baseURL: origin })
   const reader = await context.newPage()
   for (const viewer of ['guest', 'bob']) {
     if (viewer === 'bob') await login(reader, viewer)
     await reader.goto(`/my/submissions/${sid}`)
-    await expect(reader).toHaveURL(`/problems/${pid}/submissions/${sid}`)
+    await expect(reader).toHaveURL(`/problems/${shortId(pid)}/submissions/${shortId(sid)}`)
     await expect(reader.getByRole('textbox', { name: 'ソースコード', exact: true })).toHaveText('int main(){}')
     await reader.goto(`/my/submissions/${privateSid}`)
     await expect(reader.getByRole('alert')).toContainText('まだ公開されていません')

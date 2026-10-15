@@ -1,13 +1,14 @@
 import { expect, test } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
 import { shareImageSvg } from '../server/utils/share-image'
+import { shortId } from '../shared/utils/short-id'
 
 const problem = '11111111-1111-4111-8111-111111111111'
 const running = '88888888-8888-4888-8888-888888888888'
 const scheduled = '99999999-9999-4999-8999-999999999999'
-const paths = ['/', '/problems', '/contests', '/blog', `/problems/${problem}`,
-  `/contests/${running}`, `/contests/${scheduled}`, `/contests/${running}/problems/${problem}`,
-  '/blog/77777777-7777-4777-8777-777777777777', '/blog/markdown-guide', '/blog/generator-guide', '/blog/language-guide', '/blog/contest-rules']
+const paths = ['/', '/problems', '/contests', '/blog', `/problems/${shortId(problem)}`,
+  `/contests/${shortId(running)}`, `/contests/${shortId(scheduled)}`, `/contests/${shortId(running)}/A`,
+  `/blog/${shortId('77777777-7777-4777-8777-777777777777')}`, '/blog/markdown-guide', '/blog/generator-guide', '/blog/language-guide', '/blog/contest-rules']
 
 for (const path of paths) {
   test(`SSR exposes a working PNG preview: ${path}`, async ({ browser, request }, testInfo) => {
@@ -39,7 +40,7 @@ test('private and pre-start images stay unavailable even with a session', async 
   await page.goto('/problems/55555555-5555-4555-8555-555555555555')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('非公開の練習問題')
   await expect(page.locator('meta[property="og:image"], meta[name="twitter:image"]')).toHaveCount(0)
-  for (const path of ['/problems/55555555-5555-4555-8555-555555555555', `/contests/${scheduled}/problems/${problem}`, '/blog/new', '/problems/missing', '/my/settings']) {
+  for (const path of [`/problems/${shortId('55555555-5555-4555-8555-555555555555')}`, `/contests/${shortId(scheduled)}/A`, `/contests/${shortId(running)}/B`, '/blog/new', '/problems/missing', '/my/settings']) {
     const response = await context.request.get(`/og${path}.png`)
     expect(response.status()).toBe(404)
     expect(response.headers()['cache-control']).toMatch(/no-store|no-cache/)
@@ -63,7 +64,7 @@ test('titles are escaped, bounded and rendered as text', () => {
 })
 
 test('upstream outages do not generate a successful image', async ({ request }) => {
-  const response = await request.get('http://127.0.0.1:13001/og/problems/33333333-3333-4333-8333-333333333333.png')
+  const response = await request.get(`http://127.0.0.1:13001/og/problems/${shortId('33333333-3333-4333-8333-333333333333')}.png`)
   expect(response.status()).toBe(502)
   expect(response.headers()['cache-control']).toBe('no-store')
 })

@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures/account'
+import { shortId } from '../shared/utils/short-id'
 
 test('posting selects only unpublished standalone problems across pages and handles failures', async ({ page }, testInfo) => {
   await page.goto('/problems/new')
@@ -55,7 +56,7 @@ test('posting selects only unpublished standalone problems across pages and hand
   await expect(page.getByRole('alert')).toContainText('別の画面で更新されています')
   await expect(page.locator('.toast').getByRole('status')).toHaveCount(0)
   await page.getByRole('dialog').getByRole('button', { name: '投稿', exact: true }).click()
-  await expect(page).toHaveURL(`/problems/${id}`)
+  await expect(page).toHaveURL(`/problems/${shortId(id)}`)
   await expect(page.locator('.toast').getByRole('status')).toHaveText('公開しました')
 })
 

@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import type { Submission } from '~~/shared/types/submission'
+import { fullId, shortId } from '~~/shared/utils/short-id'
 definePageMeta({ key: route => route.path })
 useResponseHeader('Cache-Control').value = 'no-store'
 useResponseHeader('Vary').value = 'Cookie'
 const route = useRoute()
-const id = encodeURIComponent(String(route.params.id))
-const { data: item, error } = await useFetch<Submission>(`/api/problems/${id}/submissions/${encodeURIComponent(String(route.params.submission))}`)
+const id = fullId(route.params.id)
+const { data: item, error } = await useFetch<Submission>(`/api/problems/${encodeURIComponent(id)}/submissions/${encodeURIComponent(fullId(route.params.submission))}`)
 if (error.value || !item.value) throw createError({ statusCode: error.value?.statusCode === 404 ? 404 : 502, statusMessage: '提出が見つからないか、まだ公開されていません', fatal: true })
 useSeoMeta({ title: () => `提出 | ${item.value?.problemTitle} | ShareOJ`, robots: 'noindex, nofollow' })
 </script>
 <template>
   <div v-if="item" class="submission-page">
-    <nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink :to="`/problems/${id}?view=submissions`">この問題のすべての提出</NuxtLink><span aria-hidden="true">/</span><span>提出結果</span></nav>
-    <nav class="problem-menu" aria-label="提出メニュー"><NuxtLink :to="`/problems/${id}`">問題</NuxtLink><NuxtLink :to="`/problems/${id}?view=submissions`">すべての提出</NuxtLink></nav>
+    <nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink :to="`/problems/${shortId(id)}?view=submissions`">この問題のすべての提出</NuxtLink><span aria-hidden="true">/</span><span>提出結果</span></nav>
+    <nav class="problem-menu" aria-label="提出メニュー"><NuxtLink :to="`/problems/${shortId(id)}`">問題</NuxtLink><NuxtLink :to="`/problems/${shortId(id)}?view=submissions`">すべての提出</NuxtLink></nav>
     <SubmissionDetail :item="item" />
   </div>
 </template>

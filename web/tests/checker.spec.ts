@@ -126,5 +126,5 @@ test('judge tab saves the draft and opens the problem page to submit', async ({ 
   const saved = page.waitForRequest(request => request.method() === 'PUT' && /^\/api\/my\/problems\/[^/]+$/.test(new URL(request.url()).pathname))
   await open.click()
   expect((await saved).postDataJSON().draft.checker.source).toBe('int main(){}')
-  await expect(page).toHaveURL(/\/problems\/[0-9a-f-]{36}#submission-title$/)
+  await expect(page).toHaveURL(/\/problems\/[0-9A-Za-z]{22}#submission-title$/)
 })

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { shortId } from '../../shared/utils/short-id'
 
 async function login(page: Page, name: string) {
   await page.getByLabel('メールアドレス', { exact: true }).fill(`${name}@example.test`)
@@ -53,7 +54,7 @@ test('tester invitation requires consent, resumes after login, and grants shared
     await expect(page.getByLabel('通知（未読0件）', { exact: true })).toBeVisible()
     expect((await (await page.request.get('/api/my/notifications')).json()).notifications).toHaveLength(0)
     await page.getByRole('link', { name: /bobがテスターに参加しました/ }).click()
-    await expect(page).toHaveURL(`/problems/${id}`)
+    await expect(page).toHaveURL(`/problems/${shortId(id)}`)
     await expect(page.getByLabel('通知（未読0件）', { exact: true })).toBeVisible()
     await page.reload()
     await page.getByLabel('通知（未読0件）', { exact: true }).click()

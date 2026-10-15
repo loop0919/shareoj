@@ -39,6 +39,17 @@ npm run dev
 API の接続先はサーバー専用の設定であり、ブラウザーには渡さない。
 公開 URL は信頼できる設定値から生成し、リクエストの Host ヘッダーを使わない。
 
+## ページの URL
+
+ページの URL では、UUID を 22 文字の base62 で表す（`shared/utils/short-id.ts`）。
+API との通信は UUID のまま行い、ページが受け取った値は `fullId` で UUID に戻す。
+コンテストの問題は出題順の記号で `/contests/<ID>/A` と表す。
+問題記号は、コンテストの API が問題 ID を返す閲覧者だけが解決できる。
+
+UUID を含む旧 URL は 301 で短い形へ転送する。
+旧形式のコンテスト問題 `/contests/<ID>/problems/<問題ID>` は、出題順を引いて問題記号へ転送する。
+開始前は出題順が変わりうるため、この転送だけ 302 にする。
+
 ## SSR とエラー応答
 
 `/problems/:id` は `useFetch` で Nuxt の `/api/problems/:id` を呼び出す。

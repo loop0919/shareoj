@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { contestDate, contestStatus } from '~~/shared/types/contest'
+import { shortId } from '~~/shared/utils/short-id'
 const props = defineProps<{ id: string }>()
 const { data: contest } = useContest(() => props.id)
 // A same-day end shows only its time: 2026/09/13 18:58 〜 19:00.
@@ -13,7 +14,7 @@ const period = computed(() => {
 </script>
 <template>
   <div v-if="contest && period" class="contest-header-title">
-    <NuxtLink class="contest-header-name" :to="`/contests/${contest.id}`"><span>{{ contest.title }}</span></NuxtLink>
+    <NuxtLink class="contest-header-name" :to="`/contests/${shortId(contest.id)}`"><span>{{ contest.title }}</span></NuxtLink>
     <span class="contest-header-status" :data-status="contest.status">{{ contestStatus[contest.status] }}</span>
     <span class="contest-header-period"><time :datetime="contest.startsAt">{{ period.start }}</time> 〜 <time :datetime="contest.endsAt">{{ period.end }}</time></span>
   </div>

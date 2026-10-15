@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test'
+import { shortId } from '../shared/utils/short-id'
 
 // The fixture contest is running. Its problem is by alice and tested by bob and carol.
-const path = '/contests/88888888-8888-4888-8888-888888888888/problems/11111111-1111-4111-8111-111111111111'
+const path = `/contests/${shortId('88888888-8888-4888-8888-888888888888')}/A`
 
 for (const [handle, visible] of [['alice', true], ['bob', true], ['dave', false]] as const) {
   test(`running contest editorial tab for ${handle}: ${visible}`, async ({ page }) => {
@@ -40,11 +41,11 @@ for (const status of ['running', 'ended'] as const) {
       return route.fulfill({ json: contest })
     })
     // The server render reads the fixture API, so refresh in the browser to use the routed contest.
-    await page.goto(`/contests/${id}?view=standings`, { waitUntil: 'networkidle' })
+    await page.goto(`/contests/${shortId(id)}?view=standings`, { waitUntil: 'networkidle' })
     await page.getByRole('button', { name: '今すぐ更新' }).click()
     await expect(page.locator('.site-header')).toContainText(contest.title)
     await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '解説一覧', exact: true }).click()
-    await expect(page).toHaveURL(`/contests/${id}?view=editorials`)
+    await expect(page).toHaveURL(`/contests/${shortId(id)}?view=editorials`)
     await expect(page.getByText('解説はコンテスト終了後に公開されます。', { exact: false })).toBeVisible({ visible: status === 'running' })
     const list = page.getByRole('region', { name: '解説一覧のスクロール領域' })
     // User editorials appear once the problems become public at the end.
@@ -52,7 +53,7 @@ for (const status of ['running', 'ended'] as const) {
     await expect(list.getByRole('columnheader', { name: 'ユーザー解説' })).toHaveCount(status === 'ended' ? 1 : 0)
     await expect(list.getByRole('rowheader', { name: /A - B/ })).toContainText(status === 'ended' ? '未登録' : '終了後に公開')
     await list.getByRole('link', { name: 'A + B', exact: true }).click()
-    await expect(page).toHaveURL(`/contests/${id}/problems/${a}?view=editorial`)
+    await expect(page).toHaveURL(`/contests/${shortId(id)}/A?view=editorial`)
     await expect(page.getByText('足すだけです。')).toBeVisible()
     await expect(page.getByRole('region', { name: 'ユーザー解説' })).toHaveCount(status === 'ended' ? 1 : 0)
   })

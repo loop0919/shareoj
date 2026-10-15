@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { accountListSchema, type AccountSummary } from '~~/shared/types/account-problems'
 import { problemLabel, type Contest, type ContestDraft, type ContestDraftResult } from '~~/shared/types/contest'
+import { shortId } from '~~/shared/utils/short-id'
 import { accountError } from '~/utils/account-problems'
 import { issueMessage } from '~/utils/problem-readiness'
 import { searchProblems } from '~/utils/problem-search'
@@ -273,7 +274,7 @@ async function publish() {
   try {
     await $fetch(`/api/my/contests/${id.value}/publication`, { method: 'PUT', body: { version: version.value } })
     leaving = true
-    await navigateTo(`/contests/${id.value}`)
+    await navigateTo(`/contests/${shortId(id.value)}`)
     showToast('公開しました')
   } catch (error) {
     const code = (error as { data?: { data?: { code?: string } } }).data?.data?.code
@@ -307,7 +308,7 @@ async function save() {
   try {
     await $fetch(`/api/my/contests/${id.value}`, { method: 'PUT', body: { title: title.value, description: description.value, startsAt: start.toISOString(), endsAt: end.toISOString(), penaltyMinutes: penaltyMinutes.value, version: version.value, problems: selected.value.map(({ id, points }) => ({ id, points })) } })
     leaving = true
-    await navigateTo(`/contests/${id.value}`)
+    await navigateTo(`/contests/${shortId(id.value)}`)
   } catch (error) {
     const status = (error as { statusCode?: number }).statusCode
     message.value = status === 409 ? '保存できませんでした。問題の公開状態・他コンテストへの登録・テストケースを確認してください。開催開始や別画面での更新があった場合は再読み込みが必要です。' : status === 400 ? '入力内容を確認してください。' : '保存を確認できませんでした。作成したコンテスト一覧を確認してから再度お試しください。'
@@ -440,7 +441,7 @@ async function save() {
               </template>
             </div></section>
             <section v-if="!published" class="management-row"><div><h3>公開</h3><p>公開するまで、このコンテストは自分だけが見られる下書きです。公開すると、保存した内容で条件を確かめてからコンテスト一覧に載せ、参加登録を受け付けます。</p></div><button type="button" class="editor-button primary" :disabled="!ready || locked || busy" @click="publish">公開する</button></section>
-            <section v-else class="management-row"><div><h3>公開ページ</h3><p>参加者に見える内容を確認できます。</p><NuxtLink :to="`/contests/${id}`" target="_blank">公開ページを見る</NuxtLink></div></section>
+            <section v-else class="management-row"><div><h3>公開ページ</h3><p>参加者に見える内容を確認できます。</p><NuxtLink :to="`/contests/${shortId(id)}`" target="_blank">公開ページを見る</NuxtLink></div></section>
             <section v-if="!published && version" class="management-row"><div><h3>下書きの削除</h3><p>この下書きを削除します。この操作は取り消せません。</p></div><button type="button" class="editor-button danger" :disabled="busy" @click="removeDraft">下書きを削除</button></section>
           </div>
         </section>

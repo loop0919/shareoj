@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { shortId } from '../../shared/utils/short-id'
 
 test('test cases can be edited, restored, published and used for submission without public disclosure', async ({ page }, testInfo) => {
   await page.goto('/login')
@@ -45,7 +46,7 @@ test('test cases can be edited, restored, published and used for submission with
   await page.getByRole('button', { name: '問題投稿', exact: true }).click()
   await page.getByLabel('投稿する問題').selectOption(id)
   await page.getByRole('dialog').getByRole('button', { name: '投稿', exact: true }).click()
-  await expect(page).toHaveURL(`/problems/${id}`)
+  await expect(page).toHaveURL(`/problems/${shortId(id)}`)
   await page.goto(`/problems/new?problem=${id}`)
   const publicResponse = await page.request.get(`/api/problems/${id}`)
   expect(publicResponse.status()).toBe(200)

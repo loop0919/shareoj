@@ -2,6 +2,7 @@
 import { accountError } from '~/utils/account-problems'
 import type { EditorSection } from '~/utils/problem-readiness'
 import { maxTags } from '~~/shared/types/tag'
+import { shortId } from '~~/shared/utils/short-id'
 
 definePageMeta({ editorLayout: true })
 useSeoMeta({ title: '問題を作成 | ShareOJ', robots: 'noindex, nofollow' })
@@ -119,7 +120,7 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
       </div>
       <div class="author-actions">
         <div class="editor-save-actions">
-        <NuxtLink v-if="ready && cloudVersion > 0" class="editor-button" :to="`/problems/${cloudId}`">問題を見る</NuxtLink>
+        <NuxtLink v-if="ready && cloudVersion > 0" class="editor-button" :to="`/problems/${shortId(cloudId)}`">問題を見る</NuxtLink>
         <button type="button" class="editor-button primary save-button" :disabled="!ready || saving || publishing" :aria-busy="saving" :aria-label="saving ? '保存中' : '保存'" title="保存（Ctrl+S / ⌘S）" aria-keyshortcuts="Control+s Meta+s" @click="saveDraft(true)">
           <span :class="{ 'save-label-hidden': saving }">保存</span>
           <span v-if="saving" class="save-spinner" aria-hidden="true" />
@@ -208,7 +209,7 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
       <div class="management-content">
         <header><h1 id="management-title">問題管理</h1><p class="manage-problem-title">{{ draft.title.trim() || '無題の問題' }}</p><p class="muted">{{ saveLocation }}</p></header>
         <section class="management-row readiness-row" aria-labelledby="readiness-title"><div><h2 id="readiness-title">状態</h2><ProblemReadiness :problem="statusInput" :saved="!!cloudId" @jump="jump" /></div></section>
-        <section class="management-row"><div><h2>公開設定</h2><p v-if="publishedVersion">「保存」を押すと、問題文・解説・採点設定が公開内容に反映されます。</p><p v-else-if="scheduledAt">{{ new Date(scheduledAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) }}（日本時間）に公開予約中です。編集を公開内容に反映するには、保存後に予約を更新してください。<NuxtLink :to="{ path: '/problems', query: { post: '1', problem: cloudId } }">予約を変更・取り消す</NuxtLink></p><p v-else>問題一覧の「投稿」から公開できます。</p><p v-if="publicationError" class="editor-error" role="alert">{{ publicationError }}</p><NuxtLink v-if="publishedVersion" :to="`/problems/${cloudId}`" target="_blank">公開ページを見る</NuxtLink></div><div v-if="publishedVersion" class="publication-actions"><button class="editor-button" :disabled="saving || publishing || generating" @click="unpublishProblem()">非公開に戻す</button></div></section>
+        <section class="management-row"><div><h2>公開設定</h2><p v-if="publishedVersion">「保存」を押すと、問題文・解説・採点設定が公開内容に反映されます。</p><p v-else-if="scheduledAt">{{ new Date(scheduledAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) }}（日本時間）に公開予約中です。編集を公開内容に反映するには、保存後に予約を更新してください。<NuxtLink :to="{ path: '/problems', query: { post: '1', problem: cloudId } }">予約を変更・取り消す</NuxtLink></p><p v-else>問題一覧の「投稿」から公開できます。</p><p v-if="publicationError" class="editor-error" role="alert">{{ publicationError }}</p><NuxtLink v-if="publishedVersion" :to="`/problems/${shortId(cloudId)}`" target="_blank">公開ページを見る</NuxtLink></div><div v-if="publishedVersion" class="publication-actions"><button class="editor-button" :disabled="saving || publishing || generating" @click="unpublishProblem()">非公開に戻す</button></div></section>
         <section class="management-row"><div class="tester-link-row"><h2>テスターリンク</h2><p>リンクから参加したユーザーは、作者と同じく編集・公開・削除ができます。</p><template v-if="testerLink"><label for="tester-link">招待リンク</label><div class="tester-link-field"><input id="tester-link" :value="testerLink" readonly @focus="($event.target as HTMLInputElement).select()"><button type="button" class="editor-button tester-link-copy" :aria-label="testerLinkCopied ? 'コピーしました' : 'リンクをコピー'" :title="testerLinkCopied ? 'コピーしました' : 'リンクをコピー'" @click="copyTesterLink"><svg v-if="testerLinkCopied" class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L19 8" /></svg><svg v-else class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V4H4v12h4" /></svg></button></div></template><p v-if="testerLinkMessage" role="status">{{ testerLinkMessage }}</p></div><button type="button" class="editor-button" :disabled="!ready || saving || publishing || generating || testerLinkBusy" @click="createTesterLink">{{ testerLinkBusy ? '発行中…' : 'リンクを発行' }}</button></section>
         <section class="management-row"><div><h2>テストケースの一括削除</h2><p>登録したテストケースをすべて削除します。</p></div><button type="button" class="editor-button" :disabled="!draft.testCases.length || publishing || generating" @click="clearTestCases">一括削除</button></section>
         <section class="management-row"><div><h2>問題の削除</h2><p>この操作は取り消せません。</p></div><button type="button" class="editor-button danger" :disabled="generating" @click="openDeleteConfirmation">問題を削除</button></section>

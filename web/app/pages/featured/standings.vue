@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { contestDate } from '~~/shared/types/contest'
+import { shortId } from '~~/shared/utils/short-id'
 
 definePageMeta({ key: route => String(route.query.at) })
 useResponseHeader('Cache-Control').value = 'no-store'
@@ -35,7 +36,7 @@ function elapsed(ms: number | null) {
           <thead><tr>
             <th scope="col">順位</th><th scope="col">ユーザー</th><th scope="col">時間</th>
             <th v-for="column in columns" :key="column.slot" scope="col">
-              <NuxtLink v-if="column.problem?.problemId" :to="`/problems/${column.problem.problemId}`" :title="column.problem.title">{{ column.slot === 'easy' ? 'Easy' : 'Hard' }}</NuxtLink>
+              <NuxtLink v-if="column.problem?.problemId" :to="`/problems/${shortId(column.problem.problemId)}`" :title="column.problem.title">{{ column.slot === 'easy' ? 'Easy' : 'Hard' }}</NuxtLink>
               <span v-else>{{ column.slot === 'easy' ? 'Easy' : 'Hard' }}</span>
               <small v-if="column.problem?.kind === 'missing'">欠番</small>
             </th>

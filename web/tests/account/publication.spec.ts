@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { shortId } from '../../shared/utils/short-id'
 async function login(page: Page) {
   await page.goto('/login')
   await page.getByLabel('メールアドレス').fill('alice@example.test')
@@ -27,7 +28,7 @@ test('published problem saves update the public content', async ({ page, browser
   await page.getByRole('button', { name: '問題投稿', exact: true }).click()
   await page.getByLabel('投稿する問題').selectOption(id)
   await page.getByRole('dialog').getByRole('button', { name: '投稿', exact: true }).click()
-  await expect(page).toHaveURL(`/problems/${id}`)
+  await expect(page).toHaveURL(`/problems/${shortId(id)}`)
   await expect(page.locator('.toast').getByRole('status')).toHaveText('公開しました')
   const reader = await guest.newPage()
   await reader.goto(`/problems/${id}`)

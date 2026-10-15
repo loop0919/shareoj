@@ -1,13 +1,14 @@
 import { expect, test } from '@playwright/test'
+import { shortId } from '../shared/utils/short-id'
 
 const problemId = '11111111-1111-4111-8111-111111111111'
 const submissionId = '22222222-2222-4222-8222-222222222222'
+const contestId = '88888888-8888-4888-8888-888888888888'
 
 for (const scope of ['problem', 'contest']) {
   test(`${scope} public submission uses the full result view`, async ({ page }) => {
-    const contestId = '88888888-8888-4888-8888-888888888888'
-    const problemPath = scope === 'contest' ? `/contests/${contestId}/problems/${problemId}` : `/problems/${problemId}`
-    const detailPath = scope === 'contest' ? `/contests/${contestId}/submissions/${submissionId}?from=problem` : `/problems/${problemId}/submissions/${submissionId}`
+    const problemPath = scope === 'contest' ? `/contests/${shortId(contestId)}/A` : `/problems/${shortId(problemId)}`
+    const detailPath = scope === 'contest' ? `/contests/${shortId(contestId)}/submissions/${shortId(submissionId)}?from=problem` : `/problems/${shortId(problemId)}/submissions/${shortId(submissionId)}`
     if (scope === 'problem') {
       await page.goto(`${problemPath}?view=submissions`)
       await page.getByRole('link', { name: '詳細', exact: true }).click()
@@ -131,7 +132,7 @@ test('C++ submission opens its result and polls until completion', async ({ page
   await expect(keyword).toBeVisible()
   expect(await keyword.evaluate(element => getComputedStyle(element).color !== getComputedStyle(element.closest('.cm-content')!).color)).toBe(true)
   await page.getByRole('button', { name: '提出する', exact: true }).click()
-  await expect(page).toHaveURL(`/my/submissions/${submissionId}`)
+  await expect(page).toHaveURL(`/my/submissions/${shortId(submissionId)}`)
   await expect(page.getByRole('status')).toHaveText('AC：正解')
   await expect(page.getByRole('row', { name: '正解したケース 2 / 2' })).toBeVisible()
   await expect(page.getByRole('row', { name: '実行時間 4 ms', exact: true })).toBeVisible()
@@ -238,7 +239,7 @@ test('Sample validation polls inline and retains the source for a full submissio
   const details = page.locator('.sample-case')
   await expect(details.locator('dt')).toHaveText(['入力', '期待される出力', '実際の出力'])
   await expect(details.locator('pre')).toHaveText(['1 2\n', '3\n', '7\n'])
-  await expect(page).toHaveURL(`/problems/${problemId}`)
+  await expect(page).toHaveURL(`/problems/${shortId(problemId)}`)
   await expect(source).toHaveText('int main(){}')
   await expect(source).toBeEditable()
   await page.setViewportSize({ width: 375, height: 900 })
@@ -250,7 +251,7 @@ test('Sample validation polls inline and retains the source for a full submissio
   await source.hover()
   expect(requests[0]).toEqual({ problemId, runtime: 'cpp17', source: 'int main(){}', easyTest: true })
   await page.getByRole('button', { name: '提出する', exact: true }).click()
-  await expect(page).toHaveURL(`/my/submissions/${submissionId}`)
+  await expect(page).toHaveURL(`/my/submissions/${shortId(submissionId)}`)
   expect(requests[1]).toEqual({ problemId, runtime: 'cpp17', source: 'int main(){}' })
 })
 
@@ -386,7 +387,7 @@ for (const scope of ['problem', 'contest']) {
       await route.fulfill({ json: { ...await response.json(), hasSamples: false } })
     })
     await page.goto(scope === 'contest' ? `${base}?view=problems` : '/problems')
-    await page.locator(`a[href="${base}/problems/${problemId}"]`).first().click()
+    await page.locator(`a[href="${scope === 'contest' ? `/contests/${shortId(contestId)}/A` : `/problems/${shortId(problemId)}`}"]`).first().click()
     if (scope === 'contest') await expect(page.getByText('参加済み', { exact: true })).toBeVisible()
     await page.getByLabel('ソースコード', { exact: true }).fill('int main(){}')
     const sample = page.getByRole('button', { name: 'サンプル検証', exact: true })
