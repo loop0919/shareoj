@@ -8,4 +8,6 @@ export const socialPages: Record<string, { title: string, kind: string }> = {
   '/blog/generator-guide': { title: '入出力生成と入力検証の使い方', kind: 'GUIDE' },
   '/blog/language-guide': { title: '使える言語と実行環境の仕様', kind: 'GUIDE' },
   '/blog/contest-rules': { title: 'コンテストのルール', kind: 'GUIDE' },
+  '/terms': { title: '利用規約', kind: 'TERMS' },
+  '/privacy': { title: 'プライバシーポリシー', kind: 'PRIVACY' },
 }

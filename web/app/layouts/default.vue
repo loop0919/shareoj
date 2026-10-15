@@ -63,6 +63,7 @@ onMounted(() => { void refreshAccount().then(account => { if (account) return re
         <NuxtLink v-else to="/login">ログイン</NuxtLink>
       </div>
     </header>
+    <PolicyNotice v-if="!route.meta.editorLayout" />
     <main id="main" tabindex="-1"><slot /></main>
     <footer v-if="!route.meta.editorLayout" class="site-footer">
       <span class="wordmark">ShareOJ<span class="wordmark-beta">(β)</span></span>
@@ -70,6 +71,8 @@ onMounted(() => { void refreshAccount().then(account => { if (account) return re
       <NuxtLink to="/blog/contest-rules">コンテストのルール</NuxtLink>
       <NuxtLink to="/blog/language-guide">使える言語</NuxtLink>
       <NuxtLink to="/blog/markdown-guide">Markdown の書き方</NuxtLink>
+      <NuxtLink to="/terms">利用規約</NuxtLink>
+      <NuxtLink to="/privacy">プライバシーポリシー</NuxtLink>
     </footer>
     <ContestClock v-if="contestId" :id="contestId" />
   </div>

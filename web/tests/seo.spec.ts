@@ -34,7 +34,7 @@ test('robots and sitemap expose canonical public entry points', async ({ request
   expect(locations).toEqual([
     '/', '/problems', '/contests', '/blog',
     '/blog/contest-rules', '/blog/language-guide', '/blog/generator-guide',
-    '/blog/difficulty-guide', '/blog/markdown-guide',
+    '/blog/difficulty-guide', '/blog/markdown-guide', '/terms', '/privacy',
   ].map(path => `https://judge.example${path}`))
   for (const location of locations) {
     expect(location).toMatch(/^https:\/\/judge\.example\//)

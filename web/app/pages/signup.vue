@@ -70,6 +70,7 @@ async function resend() {
 <template>
   <section class="account-signup">
     <h1>{{ stage === 'complete' ? 'メールアドレスの確認が完了しました' : stage === 'confirm' ? 'メールアドレスを確認' : 'アカウントを作成' }}</h1>
+    <p v-if="stage === 'signup'" class="muted">アカウントを作成すると、<NuxtLink to="/terms">利用規約</NuxtLink>と<NuxtLink to="/privacy">プライバシーポリシー</NuxtLink>に同意したものとみなします。</p>
     <p v-if="providers?.google"><GoogleLoginLink>Googleで登録・ログイン</GoogleLoginLink></p>
     <AuthDivider v-if="providers?.google && stage === 'signup'" />
     <template v-if="stage === 'signup'">
