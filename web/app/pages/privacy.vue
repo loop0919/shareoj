@@ -143,6 +143,6 @@ useSharePreview({ title, path: '/privacy', description })
       </dl>
       <p>運営者の氏名と住所は、請求があれば遅滞なくお知らせします。</p>
     </section>
-    <p class="legal-date">2026年10月15日 制定</p>
+    <p class="legal-date">2026年10月16日 制定</p>
   </article>
 </template>

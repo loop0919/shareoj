@@ -166,6 +166,6 @@ useSharePreview({ title, path: '/terms', description })
         <li>本サービスに関して紛争が生じた場合には、運営者の住所地を管轄する裁判所を専属的合意管轄とします。</li>
       </ol>
     </section>
-    <p class="legal-date">2026年10月15日 制定</p>
+    <p class="legal-date">2026年10月16日 制定</p>
   </article>
 </template>
