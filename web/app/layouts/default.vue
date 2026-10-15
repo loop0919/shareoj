@@ -66,13 +66,32 @@ onMounted(() => { void refreshAccount().then(account => { if (account) return re
     <PolicyNotice v-if="!route.meta.editorLayout" />
     <main id="main" tabindex="-1"><slot /></main>
     <footer v-if="!route.meta.editorLayout" class="site-footer">
-      <span class="wordmark">ShareOJ<span class="wordmark-beta">(β)</span></span>
-      <span>Share Online Judge</span>
-      <NuxtLink to="/blog/contest-rules">コンテストのルール</NuxtLink>
-      <NuxtLink to="/blog/language-guide">使える言語</NuxtLink>
-      <NuxtLink to="/blog/markdown-guide">Markdown の書き方</NuxtLink>
-      <NuxtLink to="/terms">利用規約</NuxtLink>
-      <NuxtLink to="/privacy">プライバシーポリシー</NuxtLink>
+      <div class="site-footer-brand">
+        <span class="wordmark">ShareOJ<span class="wordmark-beta">(β)</span></span>
+        <span class="site-footer-tagline">Share Online Judge</span>
+      </div>
+      <nav class="site-footer-group" aria-labelledby="site-footer-guides">
+        <p id="site-footer-guides" class="site-footer-heading">ガイド</p>
+        <ul>
+          <li><NuxtLink to="/blog/contest-rules">コンテストのルール</NuxtLink></li>
+          <li><NuxtLink to="/blog/language-guide">使える言語</NuxtLink></li>
+          <li><NuxtLink to="/blog/markdown-guide">Markdown の書き方</NuxtLink></li>
+        </ul>
+      </nav>
+      <nav class="site-footer-group" aria-labelledby="site-footer-policies">
+        <p id="site-footer-policies" class="site-footer-heading">規約</p>
+        <ul>
+          <li><NuxtLink to="/terms">利用規約</NuxtLink></li>
+          <li><NuxtLink to="/privacy">プライバシーポリシー</NuxtLink></li>
+        </ul>
+      </nav>
+      <nav class="site-footer-group" aria-labelledby="site-footer-external">
+        <p id="site-footer-external" class="site-footer-heading">外部リンク</p>
+        <ul>
+          <li><a href="https://x.com/share_oj" target="_blank" rel="noopener noreferrer">X（@share_oj） ↗</a></li>
+          <li><a href="https://github.com/loop0919/shareoj" target="_blank" rel="noopener noreferrer">GitHub ↗</a></li>
+        </ul>
+      </nav>
     </footer>
     <ContestClock v-if="contestId" :id="contestId" />
   </div>

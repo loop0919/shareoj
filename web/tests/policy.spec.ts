@@ -11,6 +11,21 @@ test('the footer links the terms and the privacy policy', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'shareoj2026@gmail.com', exact: true })).toHaveAttribute('href', 'mailto:shareoj2026@gmail.com')
 })
 
+test('the footer groups its links and opens external ones in a new tab', async ({ page }) => {
+  await page.goto('/problems')
+  const footer = page.locator('.site-footer')
+  const groups = footer.getByRole('navigation')
+  await expect(groups).toHaveCount(3)
+  for (const [index, name] of ['ガイド', '規約', '外部リンク'].entries()) await expect(groups.nth(index)).toHaveAccessibleName(name)
+  const external = footer.getByRole('navigation', { name: '外部リンク', exact: true })
+  await expect(external.getByRole('link', { name: 'X（@share_oj） ↗', exact: true })).toHaveAttribute('href', 'https://x.com/share_oj')
+  await expect(external.getByRole('link', { name: 'GitHub ↗', exact: true })).toHaveAttribute('href', 'https://github.com/loop0919/shareoj')
+  for (const link of await external.getByRole('link').all()) {
+    await expect(link).toHaveAttribute('target', '_blank')
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  }
+})
+
 test('users registered before the terms see the notice until they close it', async ({ page }) => {
   await page.goto('/problems')
   const notice = page.getByRole('region', { name: '利用規約とプライバシーポリシーのお知らせ', exact: true })

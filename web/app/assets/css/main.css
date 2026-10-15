@@ -93,8 +93,29 @@ code { font-family: var(--font-code); }
 .contents p { width: 100%; margin-bottom: 8px; color: var(--color-muted); font-size: .75rem; }
 .contents a { display: flex; align-items: center; min-height: 44px; font-size: .875rem; white-space: nowrap; text-decoration: none; }
 .contents a:hover { text-decoration: underline; }
-.site-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px; border-top: 1px solid var(--color-line); padding-block: 28px; color: var(--color-muted); font-size: .75rem; }
+/* Hallmark · component: mast-headed footer (Ft1) with link groups · existing green theme
+ * states: default · hover · focus · active (links inherit the global a states)
+ * pre-emit critique: P4 H5 E4 S4 R5 V4 */
+.site-footer { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; border-top: 1px solid var(--color-line); padding-block: 40px 48px; color: var(--color-muted); font-size: .875rem; line-height: 1.6; }
+.site-footer-brand { display: grid; gap: 4px; align-content: start; }
 .site-footer .wordmark { font-size: 1.25rem; }
+.site-footer-tagline { font-size: .75rem; }
+.site-footer-heading { margin: 0 0 8px; color: var(--color-ink); font-size: .8125rem; font-weight: 600; }
+.site-footer-group ul { margin: 0; padding: 0; list-style: none; }
+.site-footer-group a { display: inline-flex; align-items: center; min-height: 36px; white-space: nowrap; }
+/* Groups go side by side only where the longest link still fits on one line. */
+@media (min-width: 30rem) {
+  .site-footer { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .site-footer-brand { grid-column: 1 / -1; }
+}
+@media (min-width: 40rem) {
+  .site-footer { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 64rem) {
+  .site-footer { grid-template-columns: minmax(0, 1fr) repeat(3, minmax(0, 12rem)); column-gap: 48px; }
+  .site-footer-brand { grid-column: auto; }
+}
+@media (pointer: coarse) { .site-footer-group a { min-height: 44px; } }
 .catalogue, .error-page { padding-block: 64px 96px; }
 .lead { color: var(--color-muted); max-width: 44rem; }
 .problem-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; padding-block: 24px; margin-block: 40px 24px; border-block: 1px solid var(--color-line); text-decoration: none; color: var(--color-ink); }
