@@ -59,7 +59,10 @@ test('new users must choose an ID, upload an icon, and can edit their persisted 
   for (const [label, id] of [['X', 'alice_x'], ['AtCoder', 'tourist'], ['Codeforces', 'tourist'], ['yukicoder', '123']]) {
     await page.getByLabel(`${label} ID`, { exact: true }).fill(id!)
   }
+  // The first save's toast is still fading out, so wait for the second request itself.
+  const servicesSaved = page.waitForResponse(response => new URL(response.url()).pathname === '/api/my/profile' && response.request().method() === 'PUT')
   await page.getByRole('button', { name: '変更を保存' }).click()
+  expect((await servicesSaved).ok()).toBe(true)
   await expect(page.getByRole('status').filter({ hasText: '保存しました' })).toBeVisible()
   await page.getByRole('link', { name: 'マイページへ戻る' }).click()
   await expect(page).toHaveURL('/my')
