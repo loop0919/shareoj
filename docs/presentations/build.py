@@ -164,7 +164,7 @@ text('解答者から作問者へ。ひとつのサービスで活動を広げ�
 
 page('問題を読んで、提出し、結果を確かめる', '02  SOLVING',
      '画面そのもののスクリーンショットではなく、利用の流れを示す模式図。サンプル検証と本提出は別操作。進捗は実際の採点情報から表示し、結果詳細にはケースの判定や資源使用量がある。ACなどの表示は説明用の例で、実測や本番提出の結果ではない。',
-     ['web/app/components/SubmissionForm.vue','web/app/components/SubmissionStatus.vue','web/app/content/guides/language-guide.md'])
+     ['web/app/components/SubmissionForm.vue','web/app/components/SubmissionStatus.vue','web/app/content/docs/languages.md'])
 for i,t in enumerate(['問題を読む','サンプル検証','提出する','結果を確認']):
     node(t,'',48+i*222,139,198,52)
     if i<3: line(250+i*222,165,265+i*222,165,GREEN,1.5,True)
@@ -181,7 +181,7 @@ for i,(v,t) in enumerate([('AC','正解'),('WA','出力が条件を満たさな�
 
 page('作問を支える編集と検証', '03  AUTHORING',
      '問題編集画面には問題文、解説、テストケース、生成、判定コード、管理の入口がある。Markdownと数式、生成コードと入力検証、未公開問題への提出、テスター招待を組み合わせて公開前に確認できる。古いweb/READMEの未実装という記述より現行コンポーネントを優先した。',
-     ['web/app/pages/problems/new.vue','web/app/content/guides/generator-guide.md','api/README.md'])
+     ['web/app/pages/problems/new.vue','web/app/content/docs/generator.md','api/README.md'])
 text('書く',48,153,180,36,GREEN)
 text('Markdownと数式で\n問題文と解説を編集',250,157,630,22)
 line(48,234,912,234)
@@ -193,7 +193,7 @@ text('問題を公開、またはコンテストへ登録\n提出時の問題と
 
 page('コンテストと記事で、学びを共有する', '04  COMMUNITY',
      'コンテストは主催者が開催期間、問題、配点、誤答ペナルティを設定する。公式順位は期間内にコンテストの問題ページから受け付けた提出が対象。記事は問題の解き方や学びを共有する場である。利用者数、継続率、開催実績などの定量効果は確認していないため記載しない。',
-     ['web/app/pages/blog/contest-rules.vue','web/app/pages/blog/new.vue','README.md'])
+     ['web/app/content/docs/contest-rules.md','web/app/pages/blog/new.vue','README.md'])
 text('CONTEST',48,149,390,13,GREEN)
 text('同じ問題に挑む場',48,183,405,29,bold=True)
 text('開催期間、問題、配点を設定\n得点とペナルティで順位を表示\n終了後は問題と登録済み解説を公開',48,253,414,19,leading=1.9)
@@ -292,7 +292,7 @@ for y,name,body,flow in [(148,'通常判定','出力を期待出力と比較','�
 
 page('言語環境を固定し、検証して公開する', '11  RUNTIMES',
      '言語一覧はリポジトリの言語ガイドに基づく例。受付可能なランタイムはGET /runtimesと提出欄が正とし、ここでは本番の公開状態を再確認していない。各言語の配布元、版、ライブラリをlockファイルで固定し、runtime名とdigestで採点条件を識別する。旧環境を保存して過去提出を再実行する仕組みは未実装。',
-     ['web/app/content/guides/language-guide.md','docs/judge/runtime-policy.md','judge/runtimes.py'])
+     ['web/app/content/docs/languages.md','docs/judge/runtime-policy.md','judge/runtimes.py'])
 text('言語ガイドに掲載される環境',48,148,460,15,MUTED)
 text('C / C++ / Rust\nPython / Java / C#\nGo / Nim / Haskell\nJavaScript / TypeScript / Ruby',48,189,495,25,leading=1.75)
 line(570,150,570,419)

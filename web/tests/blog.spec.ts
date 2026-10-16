@@ -2,11 +2,11 @@ import { expect, test } from './fixtures/account'
 
 test('guide opens in a separate tab while the editor keeps its draft', async ({ page, request }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
-  const response = await request.get('/blog/markdown-guide')
+  const response = await request.get('/docs/markdown')
   expect(response.status()).toBe(200)
   const html = await response.text()
   expect(html).toContain('katex-html')
-  expect(html).toContain('rel="canonical" href="https://judge.example/blog/markdown-guide"')
+  expect(html).toContain('rel="canonical" href="https://judge.example/docs/markdown"')
   await page.goto('/problems/new')
   await page.locator('#problem-title').fill('記事を読んでも残る下書き')
   await page.locator('#problem-source').fill('## 保存した本文\n\n$A+B$')
@@ -46,10 +46,11 @@ test('guide opens in a separate tab while the editor keeps its draft', async ({ 
 })
 
 for (const width of [320, 375, 768, 1440]) {
-  test(`blog guide is readable at ${width}px`, async ({ page }, testInfo) => {
+  test(`Markdown guide is readable at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 })
     await page.goto('/blog')
-    await page.getByRole('link', { name: 'Markdown・数式の書き方' }).click()
+    await page.getByRole('main').getByRole('link', { name: 'ガイド', exact: true }).click()
+    await page.locator('.docs-index').getByRole('link', { name: 'Markdown と数式の書き方', exact: true }).click()
     await expect(page.locator('.blog-article .input-format .katex')).toHaveCount(7)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     expect(await page.locator('.input-format .math-expression').evaluateAll(elements =>

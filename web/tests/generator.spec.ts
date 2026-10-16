@@ -127,7 +127,7 @@ test('sidebar opens the generator workspace and links to its public guide', asyn
   await menu.getByRole('button', { name: '生成・検証・判定', exact: true }).click()
   await expect(menu.getByRole('button', { name: '生成・検証・判定', exact: true })).toHaveAttribute('aria-current', 'page')
   await expect(page.getByRole('heading', { name: '生成・検証・判定', exact: true })).toBeVisible()
-  await expect(page.getByRole('link', { name: /入出力生成と入力検証の使い方/ })).toHaveAttribute('href', '/blog/generator-guide')
+  await expect(page.getByRole('link', { name: /入出力生成と入力検証の使い方/ })).toHaveAttribute('href', '/docs/generator')
   await page.getByLabel('入力生成のコード').fill('int main(){}')
   await page.getByLabel('開始ケース番号').fill('7')
   await page.getByRole('button', { name: 'テストケースを確認' }).click()
@@ -166,14 +166,14 @@ test('sidebar opens the generator workspace and links to its public guide', asyn
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.screenshot({ path: testInfo.outputPath(`generator-${width}.png`), fullPage: true })
   }
-  await page.goto('/blog/generator-guide')
+  await page.goto('/docs/generator')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('入出力生成と入力検証の使い方')
   await expect(page.locator('article pre')).toHaveCount(3)
   await expect(page.locator('article')).toContainText('512 MiB')
   await expect(page.locator('article')).toContainText('std::cin >> case_number')
-  await expect(page.locator('link[rel=canonical]')).toHaveAttribute('href', 'https://judge.example/blog/generator-guide')
-  await page.goto('/blog')
-  await expect(page.getByRole('link', { name: '入出力生成と入力検証の使い方', exact: true })).toBeVisible()
+  await expect(page.locator('link[rel=canonical]')).toHaveAttribute('href', 'https://judge.example/docs/generator')
+  await page.goto('/docs')
+  await expect(page.getByRole('main').getByRole('link', { name: '入出力生成と入力検証の使い方', exact: true })).toBeVisible()
 })
 
 test('input validation reports each case without changing test data and persists its code', async ({ page }) => {

@@ -158,5 +158,5 @@ EasyとHardの待ち件数は、現時点で出題条件を満たす未公開の
 
 ## 関連文書
 
-- [難易度の目安](../../web/app/content/guides/difficulty-guide.md)
+- [難易度の目安](../../web/app/content/docs/difficulty.md)
 - [フロントエンドの問題作成と公開](../../web/README.md)

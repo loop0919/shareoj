@@ -58,7 +58,7 @@ useSharePreview({ title, path: '/privacy', description })
           <ol class="legal-items">
             <li>ユーザーID、アイコン画像、外部サービスのアカウント名</li>
             <li>公開した問題・記事・コンテストと、その作成者のユーザーID</li>
-            <li>提出したソースコード、判定結果、提出日時と提出者のユーザーID（コンテスト中の提出は、「<NuxtLink to="/blog/contest-rules">コンテストのルール</NuxtLink>」に定める時期から公開します）</li>
+            <li>提出したソースコード、判定結果、提出日時と提出者のユーザーID（コンテスト中の提出は、「<NuxtLink to="/docs/contest-rules">コンテストのルール</NuxtLink>」に定める時期から公開します）</li>
             <li>コンテストの順位表に載る成績</li>
           </ol>
         </li>

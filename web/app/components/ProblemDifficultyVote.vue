@@ -94,7 +94,7 @@ onBeforeUnmount(() => { requestVersion++ })
           </ol>
           </section>
         </details>
-        <p><NuxtLink to="/blog/difficulty-guide" target="_blank" rel="noopener noreferrer">難易度の目安を見る ↗</NuxtLink></p>
+        <p><NuxtLink to="/docs/difficulty" target="_blank" rel="noopener noreferrer">難易度の目安を見る ↗</NuxtLink></p>
         <template v-if="user">
           <label for="difficulty-vote-level">あなたの評価</label>
           <DifficultySelect :key="selectionKey" id="difficulty-vote-level" v-model="selected" label="あなたの評価" :disabled="loading || !ready" />

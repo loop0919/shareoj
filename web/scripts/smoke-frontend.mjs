@@ -35,7 +35,7 @@ export async function smokeFrontend(siteUrl, { attempts = 12, retryDelayMs = 500
     assert.equal(typeof catalogue.nextCursor, 'string', `${path}: cursor missing`)
   }
   // The guide exercises server-side math rendering without depending on user data.
-  assert.match(await (await get('/blog/markdown-guide')).text(), /katex-html/)
+  assert.match(await (await get('/docs/markdown')).text(), /katex-html/)
   for (const path of ['/problems/new', '/blog/new', '/login', '/signup']) {
     assert.match(await (await get(path)).text(), /noindex/)
   }

@@ -21,21 +21,21 @@ ShareOJはプログラミング問題を解き、作り、共有できるオン�
 
 - [web/app/components/SubmissionForm.vue](../../web/app/components/SubmissionForm.vue)
 - [web/app/components/SubmissionStatus.vue](../../web/app/components/SubmissionStatus.vue)
-- [web/app/content/guides/language-guide.md](../../web/app/content/guides/language-guide.md)
+- [web/app/content/docs/languages.md](../../web/app/content/docs/languages.md)
 
 ## 04 作問を支える編集と検証
 
 問題編集画面には問題文、解説、テストケース、生成、判定コード、管理の入口がある。Markdownと数式、生成コードと入力検証、未公開問題への提出、テスター招待を組み合わせて公開前に確認できる。古いweb/READMEの未実装という記述より現行コンポーネントを優先した。
 
 - [web/app/pages/problems/new.vue](../../web/app/pages/problems/new.vue)
-- [web/app/content/guides/generator-guide.md](../../web/app/content/guides/generator-guide.md)
+- [web/app/content/docs/generator.md](../../web/app/content/docs/generator.md)
 - [api/README.md](../../api/README.md)
 
 ## 05 コンテストと記事で、学びを共有する
 
 コンテストは主催者が開催期間、問題、配点、誤答ペナルティを設定する。公式順位は期間内にコンテストの問題ページから受け付けた提出が対象。記事は問題の解き方や学びを共有する場である。利用者数、継続率、開催実績などの定量効果は確認していないため記載しない。
 
-- [web/app/pages/blog/contest-rules.vue](../../web/app/pages/blog/contest-rules.vue)
+- [web/app/content/docs/contest-rules.md](../../web/app/content/docs/contest-rules.md)
 - [web/app/pages/blog/new.vue](../../web/app/pages/blog/new.vue)
 - [README.md](../../README.md)
 
@@ -92,7 +92,7 @@ SQS Standardの再配信を前提にしている。exactly-once実行を保証�
 
 言語一覧はリポジトリの言語ガイドに基づく例。受付可能なランタイムはGET /runtimesと提出欄が正とし、ここでは本番の公開状態を再確認していない。各言語の配布元、版、ライブラリをlockファイルで固定し、runtime名とdigestで採点条件を識別する。旧環境を保存して過去提出を再実行する仕組みは未実装。
 
-- [web/app/content/guides/language-guide.md](../../web/app/content/guides/language-guide.md)
+- [web/app/content/docs/languages.md](../../web/app/content/docs/languages.md)
 - [docs/judge/runtime-policy.md](../../docs/judge/runtime-policy.md)
 - [judge/runtimes.py](../../judge/runtimes.py)
 

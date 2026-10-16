@@ -8,7 +8,7 @@ const running = '88888888-8888-4888-8888-888888888888'
 const scheduled = '99999999-9999-4999-8999-999999999999'
 const paths = ['/', '/problems', '/contests', '/blog', `/problems/${shortId(problem)}`,
   `/contests/${shortId(running)}`, `/contests/${shortId(scheduled)}`, `/contests/${shortId(running)}/A`,
-  `/blog/${shortId('77777777-7777-4777-8777-777777777777')}`, '/blog/markdown-guide', '/blog/generator-guide', '/blog/language-guide', '/blog/contest-rules']
+  `/blog/${shortId('77777777-7777-4777-8777-777777777777')}`, '/docs', '/docs/markdown', '/docs/generator', '/docs/languages', '/docs/contest-rules']
 
 for (const path of paths) {
   test(`SSR exposes a working PNG preview: ${path}`, async ({ browser, request }, testInfo) => {

@@ -92,7 +92,7 @@ async function submit(easyTest = false) {
         <option value="">-- 未選択 --</option>
         <option v-for="item in available" :key="item.id" :value="item.id">{{ item.label }}</option>
       </select>
-      <p><NuxtLink to="/blog/language-guide" target="_blank" rel="noopener noreferrer">使える言語と実行環境の仕様 ↗</NuxtLink></p>
+      <p><NuxtLink to="/docs/languages" target="_blank" rel="noopener noreferrer">使える言語と実行環境の仕様 ↗</NuxtLink></p>
       <p v-if="catalogError || !available.length" class="notice" role="status">現在、提出受付を停止しています。</p>
       <SourceCodeEditor v-model="source" :runtime="runtime" :limit="131072" :disabled="sending" />
       <p v-if="message" class="notice notice-error" role="alert">{{ message }}</p>

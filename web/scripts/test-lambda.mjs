@@ -122,7 +122,7 @@ try {
   }
   console.log('Profile cache coalescing, five-minute TTL, and failure caching passed')
   clockOffset = 0
-  const shareImage = await invoke('/og/blog/markdown-guide.png')
+  const shareImage = await invoke('/og/docs/markdown.png')
   assert.equal(shareImage.statusCode, 200)
   assert.equal(shareImage.headers['content-type'], 'image/png')
   assert.equal(shareImage.isBase64Encoded, true)

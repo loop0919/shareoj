@@ -118,10 +118,10 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   await expect(page.getByRole('heading', { name: '開催案内', exact: true })).toBeVisible()
   await expect(contestMenu.getByRole('link', { name: 'ルール', exact: true })).toHaveCount(0)
   await page.getByRole('region', { name: '概要', exact: true }).getByRole('link', { name: 'ルール', exact: true }).click()
-  await expect(page).toHaveURL('/blog/contest-rules')
+  await expect(page).toHaveURL('/docs/contest-rules')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('コンテストのルール')
   await page.getByRole('link', { name: '使える言語と実行環境の仕様', exact: true }).click()
-  await expect(page).toHaveURL('/blog/language-guide')
+  await expect(page).toHaveURL('/docs/languages')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('使える言語と実行環境の仕様')
   for (const width of [320, 375, 414, 768]) {
     await page.setViewportSize({ width, height: 900 })
@@ -296,7 +296,7 @@ test('scheduled problems open for submission, then publish with editorial and so
   const guideOpened = bob.waitForEvent('popup')
   await bob.getByRole('link', { name: '使える言語と実行環境の仕様' }).click()
   const guide = await guideOpened
-  await expect(guide).toHaveURL('/blog/language-guide')
+  await expect(guide).toHaveURL('/docs/languages')
   await expect(guide.getByRole('heading', { level: 1 })).toHaveText('使える言語と実行環境の仕様')
   await guide.close()
   await expect(bob.getByLabel('ソースコード', { exact: true })).toHaveText('int main(){}')

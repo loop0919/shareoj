@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test'
+import { docPages, legacyDocPaths } from '../shared/docs'
 
-for (const [slug, codeBlocks, tables] of [['generator-guide', 3, 1], ['language-guide', 2, 9]] as const) {
+for (const [slug, codeBlocks, tables] of [['generator', 3, 1], ['languages', 2, 9]] as const) {
   test(`${slug} renders Markdown, highlighted code and stable section links`, async ({ page, request }, testInfo) => {
-    const path = `/blog/${slug}`
+    const path = `/docs/${slug}`
     const response = await request.get(path)
     expect(response.status()).toBe(200)
     expect(await response.text()).toContain('class="hljs-')
@@ -16,7 +17,7 @@ for (const [slug, codeBlocks, tables] of [['generator-guide', 3, 1], ['language-
       await expect(code).toContainText('#include')
     }
     await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', `https://judge.example${path}`)
-    for (const link of await page.getByRole('navigation', { name: '記事の目次' }).getByRole('link').all()) {
+    for (const link of await page.getByRole('navigation', { name: 'このページの目次' }).getByRole('link').all()) {
       const target = (await link.getAttribute('href'))!
       await expect(page.locator(target)).toHaveCount(1)
       await link.click()
@@ -31,3 +32,57 @@ for (const [slug, codeBlocks, tables] of [['generator-guide', 3, 1], ['language-
     }
   })
 }
+
+test('the guide index lists every guide and the sidebar follows the reader', async ({ page, request }) => {
+  expect((await request.get('/docs/unknown')).status()).toBe(404)
+  await page.goto('/docs')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('ガイド')
+  const index = page.locator('.docs-index')
+  for (const doc of docPages) await expect(index.getByRole('link', { name: doc.title, exact: true })).toHaveAttribute('href', `/docs/${doc.slug}`)
+  await index.getByRole('link', { name: 'コンテストのルール', exact: true }).click()
+  await expect(page).toHaveURL('/docs/contest-rules')
+  const sidebar = page.getByRole('navigation', { name: 'ガイドの一覧' })
+  await expect(sidebar.getByRole('link', { name: 'コンテストのルール', exact: true })).toHaveAttribute('aria-current', 'page')
+  // A link in the Markdown body moves within the app, keeping the sidebar.
+  await page.locator('article .markdown-body').getByRole('link', { name: '使える言語と実行環境の仕様' }).click()
+  await expect(page).toHaveURL('/docs/languages')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('使える言語と実行環境の仕様')
+  await expect(sidebar.getByRole('link', { name: '使える言語', exact: true })).toHaveAttribute('aria-current', 'page')
+  const next = docPages[docPages.findIndex(doc => doc.slug === 'languages') + 1]!
+  await page.getByRole('navigation', { name: '前後のガイド' }).getByRole('link', { name: new RegExp(`次のガイド\\s*${next.label}`) }).click()
+  await expect(page).toHaveURL(`/docs/${next.slug}`)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(next.title)
+})
+
+test('old guide URLs redirect permanently to the guides', async ({ request }) => {
+  for (const [path, slug] of Object.entries(legacyDocPaths)) {
+    const response = await request.get(path, { maxRedirects: 0 })
+    expect(response.status()).toBe(301)
+    expect(response.headers().location).toBe(`/docs/${slug}`)
+  }
+})
+
+test('narrow screens fold the guide list behind a button and never scroll sideways', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 375, height: 800 })
+  await page.goto('/docs/markdown')
+  const toggle = page.getByRole('button', { name: 'ガイドの一覧' })
+  const sidebar = page.getByRole('navigation', { name: 'ガイドの一覧' })
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(sidebar.getByRole('link', { name: '使える言語', exact: true })).toBeHidden()
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await sidebar.getByRole('link', { name: '使える言語', exact: true }).click()
+  await expect(page).toHaveURL('/docs/languages')
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  for (const path of ['/docs', ...docPages.map(doc => `/docs/${doc.slug}`)]) {
+    await page.goto(path)
+    for (const width of [320, 768]) {
+      await page.setViewportSize({ width, height: 800 })
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${path} at ${width}px`).toBe(true)
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await expect(toggle).toBeHidden()
+  await expect(sidebar.getByRole('link', { name: '使える言語', exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('docs-1280.png') })
+})

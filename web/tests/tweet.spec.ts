@@ -5,7 +5,7 @@ const problemId = '11111111-1111-4111-8111-111111111111'
 for (const path of [
   `/problems/${shortId(problemId)}`, `/contests/${shortId('88888888-8888-4888-8888-888888888888')}`, `/contests/${shortId('99999999-9999-4999-8999-999999999999')}`,
   `/contests/${shortId('88888888-8888-4888-8888-888888888888')}/A`, `/blog/${shortId('77777777-7777-4777-8777-777777777777')}`,
-  '/blog/markdown-guide', '/blog/generator-guide', '/blog/language-guide', '/blog/contest-rules',
+  '/docs/markdown', '/docs/generator', '/docs/languages', '/docs/contest-rules',
 ]) {
   test(`Tweet shares the title, canonical URL and hashtag: ${path}`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'light' })

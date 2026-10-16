@@ -16,7 +16,7 @@ if (error.value || !data.value) throw createError({ statusCode: 502, statusMessa
 const { current, index, loading, message, move } = useContentPages(data.value, cursor => $fetch<z.infer<typeof postListSchema>>('/api/posts', { query: tag ? { cursor, tag } : { cursor } }))
 const date = (value: string) => new Date(value).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' })
 const heading = tag ? `タグ「${tag}」の記事` : '記事'
-const description = tag ? `ShareOJ で「${tag}」のタグが付いた記事の一覧。` : 'ShareOJ の記事一覧。プログラミング問題の解き方や学んだことを共有する記事と、問題作成・コンテスト・実行環境の使い方を読めます。'
+const description = tag ? `ShareOJ で「${tag}」のタグが付いた記事の一覧。` : 'ShareOJ の記事一覧。プログラミング問題の解き方や学んだことを共有する記事を読めます。'
 useSeoMeta({ title: `${heading} | ShareOJ`, description, ogDescription: description, ogTitle: `${heading} | ShareOJ`, ogUrl: canonical, ogType: 'website' })
 useHead({ link: [{ rel: 'canonical', href: canonical }] })
 useSharePreview({ type: 'website', title: heading, path, description })
@@ -38,11 +38,7 @@ useSharePreview({ type: 'website', title: heading, path, description })
     </div>
     <p v-if="message" role="alert">{{ message }}</p>
     <ContentPagination v-if="current.items.length || index" :index="index" :has-next="!!current.nextCursor" :loading="loading" @move="move" />
-    <p><NuxtLink to="/blog/difficulty-guide">難易度の目安</NuxtLink></p>
-    <p><NuxtLink to="/blog/contest-rules">コンテストのルール</NuxtLink></p>
-    <p><NuxtLink to="/blog/language-guide">使える言語と実行環境の仕様</NuxtLink></p>
-    <p><NuxtLink to="/blog/generator-guide">入出力生成と入力検証の使い方</NuxtLink></p>
-    <p><NuxtLink to="/blog/markdown-guide">Markdown・数式の書き方</NuxtLink></p>
+    <p class="muted">ShareOJ の使い方は<NuxtLink to="/docs">ガイド</NuxtLink>にまとめています。</p>
   </div>
 </template>
 <style scoped>

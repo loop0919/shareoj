@@ -184,7 +184,7 @@ samples = ["sample1"]
 入力生成器はケース番号を標準入力で受け取り、1 ケースの入力を標準出力へ書きます。
 出力生成器は問題の入力を読み、期待出力を書きます。
 入力検証器は入力を読み、妥当なら終了コード 0 を返します。
-詳細は [生成器ガイド](../web/app/content/guides/generator-guide.md) を参照してください。
+詳細は [生成器ガイド](../web/app/content/docs/generator.md) を参照してください。
 
 カスタム判定器は `[checker]`、対話プログラムは `[interactor]` に同じ `source` と `runtime` を指定します。
 両方の同時指定はできません。

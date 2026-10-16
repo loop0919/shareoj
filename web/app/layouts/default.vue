@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { contestView, contestViews, type ContestView } from '~~/shared/types/contest'
+import { docPath, footerDocs } from '~~/shared/docs'
 import { fullId, shortId } from '~~/shared/utils/short-id'
 const route = useRoute()
 const pageError = useError()
@@ -74,9 +75,8 @@ onMounted(() => { void refreshAccount().then(account => { if (account) return re
       <nav class="site-footer-group" aria-labelledby="site-footer-guides">
         <p id="site-footer-guides" class="site-footer-heading">ガイド</p>
         <ul>
-          <li><NuxtLink to="/blog/contest-rules">コンテストのルール</NuxtLink></li>
-          <li><NuxtLink to="/blog/language-guide">使える言語</NuxtLink></li>
-          <li><NuxtLink to="/blog/markdown-guide">Markdown の書き方</NuxtLink></li>
+          <li><NuxtLink to="/docs">ガイドのトップ</NuxtLink></li>
+          <li v-for="page in footerDocs" :key="page.slug"><NuxtLink :to="docPath(page.slug)">{{ page.label }}</NuxtLink></li>
         </ul>
       </nav>
       <nav class="site-footer-group" aria-labelledby="site-footer-policies">

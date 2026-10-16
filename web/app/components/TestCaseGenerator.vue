@@ -138,7 +138,7 @@ async function generate() {
   <section class="generator" aria-labelledby="generator-title">
     <header class="generator-heading">
       <div><h1 id="generator-title">生成・検証・判定</h1><p>コードでテストケースの入出力を生成・検証し、提出の判定方法を設定します。</p></div>
-      <NuxtLink to="/blog/generator-guide" target="_blank" rel="noopener noreferrer">入出力生成と入力検証の使い方 ↗</NuxtLink>
+      <NuxtLink to="/docs/generator" target="_blank" rel="noopener noreferrer">入出力生成と入力検証の使い方 ↗</NuxtLink>
     </header>
     <div class="generator-panel">
       <div class="problem-menu" role="group" aria-label="生成・検証・判定の種類">

@@ -11,7 +11,7 @@ async function site(t, overrides = {}) {
     if (req.url === '/problems') return res.end(`<title>ShareOJ</title><link rel="canonical" href="http://${req.headers.host}/problems"><script src="/app.js"></script><link href="/app.css">`)
     if (req.url === '/blog') return res.end('ShareOJ: 公開された記事はまだありません。')
     if (req.url === '/api/problems' || req.url === '/api/posts') return res.end(JSON.stringify({ items: [], nextCursor: '' }))
-    if (req.url === '/blog/markdown-guide') return res.end('<span class="katex-html">math</span>')
+    if (req.url === '/docs/markdown') return res.end('<span class="katex-html">math</span>')
     if (['/problems/new', '/blog/new', '/login', '/signup'].includes(req.url)) return res.end('<meta name="robots" content="noindex, nofollow">')
     if (req.url === '/app.js' || req.url === '/app.css') return res.end('/* asset */')
     res.writeHead(404).end()

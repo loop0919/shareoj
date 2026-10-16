@@ -146,5 +146,5 @@ rimeの生成済みファイルを使う場合は、実際の出力先を `tests
 自動選択されない場合はCodexで `$shareoj-authoring`、Claude Codeで `/shareoj-authoring` を明示できます。
 
 詳しいCLI仕様: https://github.com/loop0919/shareoj/tree/main/cli
-生成器ガイド: https://www.share-oj.net/blog/generator-guide
-言語ガイド: https://www.share-oj.net/blog/language-guide
+生成器ガイド: https://www.share-oj.net/docs/generator
+言語ガイド: https://www.share-oj.net/docs/languages

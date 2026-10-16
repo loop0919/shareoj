@@ -25,12 +25,14 @@ test('editor previews mark each block with its source lines', () => {
 
 test('copy buttons copy only code text and report clipboard failures', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-  await page.goto('/blog/markdown-guide')
-  await page.locator('#programs summary').click()
+  await page.goto('/docs/markdown')
+  const languages = page.locator('details').filter({ hasText: '対応言語と指定する言語名' })
+  await languages.locator('summary').click()
   for (const language of ['Python', 'C++', 'C', 'Rust', 'C#', 'Java', 'Nim', 'Go', 'Haskell', 'JavaScript', 'TypeScript', 'Ruby']) {
-    await expect(page.locator('#programs td').getByText(language, { exact: true })).toBeVisible()
+    await expect(languages.locator('td').getByText(language, { exact: true })).toBeVisible()
   }
-  await expect(page.locator('#input-format .code-copy')).toHaveCount(0)
+  await expect(page.locator('.guide-result .input-format')).toHaveCount(2)
+  await expect(page.locator('.guide-result .code-copy')).toHaveCount(1)
   for (const block of await page.locator('.markdown-body .copyable-code').all()) {
     const source = await block.locator('pre > code').textContent()
     await block.getByRole('button', { name: 'コードをコピー' }).click()
@@ -39,8 +41,8 @@ test('copy buttons copy only code text and report clipboard failures', async ({ 
   await page.evaluate(() => {
     Object.defineProperty(navigator.clipboard, 'writeText', { value: () => Promise.reject(new Error('denied')) })
   })
-  await page.locator('#programs .code-copy').click()
-  await expect(page.locator('#programs [role="status"]').filter({ hasText: 'コピーできませんでした' })).toBeVisible()
+  await page.locator('.guide-result .code-copy').click()
+  await expect(page.locator('.guide-result [role="status"]').filter({ hasText: 'コピーできませんでした' })).toBeVisible()
 })
 
 test('explicit heading anchors preserve formatting and reject attribute injection', () => {

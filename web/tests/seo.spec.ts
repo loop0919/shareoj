@@ -9,7 +9,7 @@ test('home serves site identity and crawlable navigation before JavaScript', asy
   expect(html).toContain('rel="canonical" href="https://judge.example/"')
   const json = html.match(/<script[^>]*type="application\/ld\+json"[^>]*>(.*?)<\/script>/s)?.[1]
   expect(JSON.parse(json!)).toMatchObject({ '@type': 'WebSite', name: 'ShareOJ', alternateName: 'Share Online Judge', url: 'https://judge.example/' })
-  for (const path of ['/problems', '/contests', '/blog', '/blog/contest-rules', '/blog/language-guide', '/blog/markdown-guide']) {
+  for (const path of ['/problems', '/contests', '/blog', '/docs', '/docs/contest-rules', '/docs/languages', '/docs/markdown']) {
     expect(html).toContain(`href="${path}"`)
   }
   expect(html).not.toContain('noindex')
@@ -32,9 +32,9 @@ test('robots and sitemap expose canonical public entry points', async ({ request
   expect(xml).toContain('xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"')
   const locations = [...xml.matchAll(/<loc>(.*?)<\/loc>/g)].map(match => match[1]!)
   expect(locations).toEqual([
-    '/', '/problems', '/contests', '/blog',
-    '/blog/contest-rules', '/blog/language-guide', '/blog/generator-guide',
-    '/blog/difficulty-guide', '/blog/markdown-guide', '/terms', '/privacy',
+    '/', '/problems', '/contests', '/blog', '/docs',
+    '/docs/languages', '/docs/difficulty', '/docs/contest-rules',
+    '/docs/markdown', '/docs/generator', '/terms', '/privacy',
   ].map(path => `https://judge.example${path}`))
   for (const location of locations) {
     expect(location).toMatch(/^https:\/\/judge\.example\//)

@@ -1,6 +1,7 @@
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { copyFileSync, mkdirSync } from 'node:fs'
+import { docPath, legacyDocPaths } from './shared/docs'
 
 // Stage the WASM outside node_modules so Nitro's package aliases do not rewrite the raw asset path.
 const resvgAssets = fileURLToPath(new URL('./.build/og-renderer/', import.meta.url))
@@ -18,6 +19,7 @@ export default defineNuxtConfig({
     ...(process.env.OPENOJ_LAMBDA_BUILD === '1' ? { preset: 'aws-lambda', output: { dir: '.output-lambda' } } : {}),
   },
   devtools: { enabled: false },
+  routeRules: Object.fromEntries(Object.entries(legacyDocPaths).map(([path, slug]) => [path, { redirect: { to: docPath(slug), statusCode: 301 } }])),
   css: ['katex/dist/katex.min.css', '~/assets/css/main.css', '~/assets/css/editor.css', '~/assets/css/blog.css'],
   runtimeConfig: {
     apiBaseUrl: 'http://127.0.0.1:8080',

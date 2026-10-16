@@ -95,7 +95,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
     <ContestParticipation :contest="contest" @joined="value => { contest = value; refreshStandings() }" />
     <section v-if="activeView === 'overview'" id="overview" class="contest-section contest-description" aria-labelledby="overview-title">
       <h2 id="overview-title">概要</h2><ProblemMarkdown v-if="contest.description" :source="contest.description" /><p v-else class="muted">コンテストの説明はまだありません。</p>
-      <p><NuxtLink to="/blog/contest-rules">ルール</NuxtLink></p>
+      <p><NuxtLink to="/docs/contest-rules">ルール</NuxtLink></p>
     </section>
     <section v-if="activeView === 'problems'" id="problems" class="contest-section" aria-labelledby="problems-title">
       <h1 id="problems-title">問題</h1>
