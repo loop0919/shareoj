@@ -25,7 +25,7 @@ ShareOJへの保存まで依頼されている場合は、以下の手順で下�
 ## 新規作問と既存問題の編集
 
 新しく作問する場合は `shareoj init ./my-problem` で雛形を作り、問題文、解法、生成器、テストケースを作成する問題に合わせて書き換えます。
-既存の問題を編集する場合はWeb画面の問題編集URLからUUIDを確認し、`shareoj pull <problem-id> ./my-problem` で下書きを取得します。
+既存の問題を編集する場合は、Web画面の問題編集URLのUUIDか、問題ページのURL（`/problems/<ID>`）にある22文字のIDを確認し、`shareoj pull <problem-id> ./my-problem` で下書きを取得します。
 テスターとして問題を取得する場合は、招待を受け入れたアカウントでログインしてください。
 `init` と `pull` は既存ディレクトリを上書きしません。
 

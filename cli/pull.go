@@ -8,18 +8,44 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 )
 
+const base62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+// fullProblemID turns the 22 base62 characters in a problem page URL back into the UUID.
+// Other values pass through unchanged for the UUID check.
+func fullProblemID(value string) string {
+	if len(value) != 22 {
+		return value
+	}
+	n := new(big.Int)
+	for _, char := range value {
+		digit := strings.IndexRune(base62, char)
+		if digit < 0 {
+			return value
+		}
+		n.Mul(n, big.NewInt(62)).Add(n, big.NewInt(int64(digit)))
+	}
+	if n.BitLen() > 128 {
+		return value
+	}
+	digits := fmt.Sprintf("%032x", n)
+	return digits[:8] + "-" + digits[8:12] + "-" + digits[12:16] + "-" + digits[16:20] + "-" + digits[20:]
+}
+
 // pull reserves a new directory and removes partial output on failure.
 func pull(ctx context.Context, id, directory string, c *apiClient) (saved state, err error) {
+	id = fullProblemID(id)
 	if !problemID.MatchString(id) {
-		return saved, errors.New("expected a problem UUID")
+		return saved, errors.New("expected a problem UUID or the short ID from the problem page URL")
 	}
 	if err = os.Mkdir(directory, 0700); err != nil {
 		return saved, err

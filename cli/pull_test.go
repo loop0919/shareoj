@@ -192,7 +192,8 @@ func TestPullLifecycle(t *testing.T) {
 	// Small cases exercise pull -> edit -> push without a storage upload mock.
 	d.set("testCases", cases[:1])
 	dir = filepath.Join(t.TempDir(), "editable")
-	if _, err := pull(ctx, id, dir, client); err != nil {
+	// The short ID from the problem page URL resolves to the same UUID.
+	if _, err := pull(ctx, "000000001VgEh72lXvTXkH", dir, client); err != nil {
 		t.Fatal(err)
 	}
 	write(t, filepath.Join(dir, "statement.md"), "edited")
@@ -210,6 +211,24 @@ func TestPullLifecycle(t *testing.T) {
 	for _, args := range [][]string{{"pull"}, {"pull", id}, {"pull", "../bad", filepath.Join(t.TempDir(), "bad")}} {
 		if err := run(ctx, args, io.Discard); err == nil {
 			t.Fatalf("invalid args accepted: %v", args)
+		}
+	}
+}
+
+func TestFullProblemID(t *testing.T) {
+	// Vectors come from the website's shortId so both sides agree.
+	for short, id := range map[string]string{
+		"000000001VgEh72lXvTXkH": "00000000-0000-4000-8000-000000000001",
+		"0WCfTognyye34UJm92NqYz": "11111111-1111-4111-8111-111111111111",
+		"7n42DGM5PW9UTFKxP3NWYh": "ffffffff-ffff-4fff-bfff-ffffffffffff",
+	} {
+		if got := fullProblemID(short); got != id {
+			t.Errorf("%s: got %s want %s", short, got, id)
+		}
+	}
+	for _, value := range []string{"00000000-0000-4000-8000-000000000001", "zzzzzzzzzzzzzzzzzzzzzz", "000000001VgEh72lXvTXk-", "short", ""} {
+		if got := fullProblemID(value); got != value {
+			t.Errorf("%q changed to %q", value, got)
 		}
 	}
 }
