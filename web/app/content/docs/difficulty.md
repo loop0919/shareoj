@@ -1,7 +1,7 @@
 ## レベルごとの目安
 
 ShareOJの難易度はLv.1〜10の10段階です。
-AtCoder Beginner Contest（ABC）の問題と、AtCoder Problemsの難易度（diff）を基準に、次のような目安を設けています。
+AtCoder Beginner Contest（ABC）の問題と、AtCoder Problemsの難易度（diff）を基準にしています。
 
 | レベル | 難易度の目安 |
 | --- | --- |
@@ -16,15 +16,12 @@ AtCoder Beginner Contest（ABC）の問題と、AtCoder Problemsの難易度（d
 | Lv.9 | AtCoder Problemsの赤diff相当 |
 | Lv.10 | AtCoder Problemsの銅diff以上 |
 
-Lv.1とLv.2は、灰diff相当の問題の中でもABCのA問題相当か、B問題以降に出題される問題相当かで区別します。
-B問題以降でも、茶diff相当ならLv.3のように、難易度に応じたレベルを目安にしてください。
+B問題以降の問題でも、茶diff以上ならdiffに応じたレベルにしてください。
 
 ## 難易度を評価するとき
 
 ![問題ページの①難易度評価と、評価画面の②あなたの評価、③投票する](/images/docs/difficulty-vote.png)
 
-問題ページの①「難易度評価」を押し、上の表を目安に②で1〜10を選んで、③「投票する」を押します。
+問題ページの①「難易度評価」を押し、上の表を目安に②でレベルを選んで、③「投票する」を押します。
 投票にはログインが必要です。
-
-この対応表はShareOJでの評価の目安です。
-解法を思いつく難しさや実装の負担を含め、解いた問題全体の難易度で判断してください。
+解法を思いつく難しさや実装の負担を含め、問題全体の難易度で判断してください。
