@@ -93,7 +93,7 @@ createServer(async (req, res) => {
   }
   else if (['/users/alice', '/users/bob', '/users/carol', '/users/yuki'].includes(path)) res.end(JSON.stringify({ handle: path.split('/').at(-1), accounts: path === '/users/yuki' ? { yukicoder: '123' } : {}, avatar: '', createdAt: '2026-09-10T00:00:00Z' }))
   else if (path === '/health') res.end('{}')
-  else if (path === '/runtimes') res.end(JSON.stringify({ items: [{ id: 'cpp17', label: 'C++17 (GCC)' }, { id: 'python314', label: 'Python 3.14' }] }))
+  else if (path === '/runtimes') res.end(JSON.stringify({ items: [{ id: 'cpp23-gcc', label: 'C++23 (GCC)' }, { id: 'cpp17', label: 'C++17 (GCC)' }, { id: 'python314', label: 'Python 3.14' }] }))
   else if (path === '/featured/standings') {
     const at = new URL(req.url, 'http://localhost').searchParams.get('at')
     const round = featured.items.find(round => round.scheduledAt === at)

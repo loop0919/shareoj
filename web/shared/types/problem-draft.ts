@@ -7,14 +7,14 @@ export const inlineTestSetLimit = 256 << 10
 export const testSetLimit = 512 << 20
 export const testFileSchema = z.object({ id: z.string().uuid(), size: z.number().int().positive().max(testFileLimit), sha256: z.string().regex(/^[a-f0-9]{64}$/) })
 export type TestFile = z.infer<typeof testFileSchema>
-export const generatorSchema = z.object({ runtime: z.string().max(64).default('cpp17'), source: z.string().default('') })
+export const generatorSchema = z.object({ runtime: z.string().max(64).default('cpp23-gcc'), source: z.string().default('') })
 const judgeCodeSchema = generatorSchema.extend({ protocol: z.enum(['legacy', 'testlib']).optional() }).refine(
   code => code.protocol !== 'testlib' || ['cpp23-gcc', 'cpp23-clang'].includes(code.runtime),
   { message: 'testlib形式ではC++23のGCCまたはClangを選んでください。' },
 )
-export const generatorsSchema = z.object({ input: generatorSchema, output: generatorSchema, validation: generatorSchema.default({ runtime: 'cpp17', source: '' }) })
+export const generatorsSchema = z.object({ input: generatorSchema, output: generatorSchema, validation: generatorSchema.default({ runtime: 'cpp23-gcc', source: '' }) })
 export type Generators = z.infer<typeof generatorsSchema>
-export const emptyGenerators = (): Generators => ({ input: { runtime: 'cpp17', source: '' }, output: { runtime: 'cpp17', source: '' }, validation: { runtime: 'cpp17', source: '' } })
+export const emptyGenerators = (): Generators => ({ input: { runtime: 'cpp23-gcc', source: '' }, output: { runtime: 'cpp23-gcc', source: '' }, validation: { runtime: 'cpp23-gcc', source: '' } })
 
 export const problemDraftSchema = z.object({
   difficulty: difficultySchema,

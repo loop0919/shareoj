@@ -11,7 +11,7 @@ let previousCode: ProblemDraft['checker'] = null
 const method = computed({
   get: () => interactor.value ? 'interactive' : checker.value ? 'special' : 'normal',
   set: value => {
-    const runtime = available.value.find(item => item.id === 'cpp23-gcc')?.id ?? available.value[0]?.id ?? 'cpp17'
+    const runtime = available.value.find(item => item.id === 'cpp23-gcc')?.id ?? available.value[0]?.id ?? 'cpp23-gcc'
     const previous = interactor.value ?? checker.value ?? previousCode ?? { runtime, source: '', protocol: runtime === 'cpp23-gcc' ? 'testlib' : 'legacy' }
     previousCode = previous
     checker.value = value === 'special' ? previous : null

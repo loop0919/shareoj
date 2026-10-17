@@ -56,15 +56,15 @@ difficulty = 3
 
 [generators.input]
 source = "input.cpp"
-runtime = "cpp17"
+runtime = "cpp23-gcc"
 
 [generators.output]
 source = "output.cpp"
-runtime = "cpp17"
+runtime = "cpp23-gcc"
 
 [generators.validation]
 source = "validate.cpp"
-runtime = "cpp17"
+runtime = "cpp23-gcc"
 
 [tests]
 directory = "tests"

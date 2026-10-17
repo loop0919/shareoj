@@ -47,7 +47,7 @@ test('language selection survives reloads and returning to the problem', async (
   await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'alice' } } }))
   await page.goto(`/problems/${problemId}`)
   const language = page.getByRole('combobox', { name: '言語' })
-  await expect(language).toHaveValue('cpp17')
+  await expect(language).toHaveValue('cpp23-gcc')
   await language.selectOption('python314')
   await page.reload()
   await expect(language).toHaveValue('python314')
@@ -84,7 +84,7 @@ test('an unavailable saved language falls back to the default', async ({ page })
   await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'alice' } } }))
   await page.addInitScript(() => localStorage.setItem('openoj.submission-runtime', 'removed-runtime'))
   await page.goto(`/problems/${problemId}`)
-  await expect(page.getByRole('combobox', { name: '言語' })).toHaveValue('cpp17')
+  await expect(page.getByRole('combobox', { name: '言語' })).toHaveValue('cpp23-gcc')
 })
 
 test('language selection works when browser storage is disabled', async ({ page }) => {
@@ -96,7 +96,7 @@ test('language selection works when browser storage is disabled', async ({ page 
   page.on('pageerror', error => errors.push(error))
   await page.goto(`/problems/${problemId}`)
   const language = page.getByRole('combobox', { name: '言語' })
-  await expect(language).toHaveValue('cpp17')
+  await expect(language).toHaveValue('cpp23-gcc')
   await language.selectOption('python314')
   await expect(language).toHaveValue('python314')
   expect(errors).toEqual([])
@@ -119,7 +119,7 @@ test('C++ submission opens its result and polls until completion', async ({ page
   const item = { id: submissionId, problemId, problemVersion: 2, problemTitle: 'A + B', runtime: 'cpp17-local', source: 'int main(){}', status: 'QUEUED', result: null, createdAt: '2026-09-01T00:00:00Z' }
   await page.route('**/api/my/submissions', async route => {
     expect(route.request().method()).toBe('POST')
-    expect(route.request().postDataJSON()).toEqual({ problemId, runtime: 'cpp17', source: 'int main(){}' })
+    expect(route.request().postDataJSON()).toEqual({ problemId, runtime: 'cpp23-gcc', source: 'int main(){}' })
     await route.fulfill({ status: 202, json: item })
   })
   let reads = 0
@@ -249,10 +249,10 @@ test('Sample validation polls inline and retains the source for a full submissio
   expect(tooltipBox!.x).toBeGreaterThanOrEqual(0)
   expect(tooltipBox!.x + tooltipBox!.width).toBeLessThanOrEqual(375)
   await source.hover()
-  expect(requests[0]).toEqual({ problemId, runtime: 'cpp17', source: 'int main(){}', easyTest: true })
+  expect(requests[0]).toEqual({ problemId, runtime: 'cpp23-gcc', source: 'int main(){}', easyTest: true })
   await page.getByRole('button', { name: '提出する', exact: true }).click()
   await expect(page).toHaveURL(`/my/submissions/${shortId(submissionId)}`)
-  expect(requests[1]).toEqual({ problemId, runtime: 'cpp17', source: 'int main(){}' })
+  expect(requests[1]).toEqual({ problemId, runtime: 'cpp23-gcc', source: 'int main(){}' })
 })
 
 

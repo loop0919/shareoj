@@ -26,7 +26,7 @@ test('owner can read a private problem and editorial, then submit', async ({ pag
   await expect(page.getByText('非公開の解説')).toBeVisible()
   await page.getByRole('navigation', { name: '問題メニュー' }).getByRole('link', { name: '問題文', exact: true }).click()
   await page.route('**/api/my/submissions', async route => {
-    expect(route.request().postDataJSON()).toEqual({ problemId: id, runtime: 'cpp17', source: 'int main(){}' })
+    expect(route.request().postDataJSON()).toEqual({ problemId: id, runtime: 'cpp23-gcc', source: 'int main(){}' })
     await route.fulfill({ status: 202, json: { id: 'private-submission' } })
   })
   await page.route('**/api/my/submissions/private-submission', route => route.fulfill({ json: {

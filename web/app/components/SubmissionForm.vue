@@ -6,7 +6,7 @@ const props = defineProps<{ problemId: string, hasSamples: boolean, contestId?: 
 const { user } = useAccount()
 const sampleHelpId = useId()
 const source = ref('')
-const runtime = ref('cpp17')
+const runtime = ref('cpp23-gcc')
 const { data: catalog, error: catalogError, refresh: refreshCatalog } = await useJudgeCatalog()
 const available = computed(() => catalogError.value || catalog.value?.maintenance ? [] : catalog.value?.items ?? [])
 const runtimeStorageKey = 'openoj.submission-runtime'
