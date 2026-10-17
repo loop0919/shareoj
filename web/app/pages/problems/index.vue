@@ -23,9 +23,9 @@ async function loadSolved() {
 watch(() => user.value?.id, loadSolved)
 onMounted(loadSolved)
 onBeforeUnmount(() => { solvedRequest++ })
-const postDialog = ref<{ open: () => Promise<void> }>()
 const route = useRoute()
-onMounted(() => { if (route.query.post === '1') void postDialog.value?.open() })
+// Older links opened the posting modal here; posting now has its own page.
+if (route.query.post === '1') await navigateTo({ path: '/problems/post', query: typeof route.query.problem === 'string' ? { problem: route.query.problem } : {} }, { replace: true, redirectCode: 301 })
 const config = useRuntimeConfig()
 // Rendering depends on the tag preference cookie.
 useResponseHeader('Vary').value = 'Cookie'
@@ -45,8 +45,7 @@ useSharePreview({ type: 'website', title: heading, path, description })
 </script>
 <template>
   <div class="catalogue">
-    <ProblemPostDialog ref="postDialog" />
-    <header class="catalogue-heading"><h1>問題</h1><button type="button" class="editor-button primary" @click="postDialog?.open()">問題投稿</button></header>
+    <header class="catalogue-heading"><h1>問題</h1><NuxtLink class="editor-button primary catalogue-action" to="/problems/post">問題投稿</NuxtLink></header>
     <!-- Viewers who hide problem tags get no tag search, unless a link opened a filtered list. -->
     <TagFilter v-if="showTags || tag" kind="problem" :tag="tag" to="/problems" />
     <EmptyState v-if="!current.items.length" kind="problem" :title="tag ? `「${tag}」のタグが付いた問題はまだありません。` : '公開された問題はまだありません。'" />
@@ -67,6 +66,7 @@ useSharePreview({ type: 'website', title: heading, path, description })
 </template>
 
 <style scoped>
+.catalogue-action { min-height: 40px; padding-inline: 16px; }
 .content-table tr.solved { background: var(--color-accent-soft); }
 .problem-row-tags { margin-top: 6px; }
 </style>

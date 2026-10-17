@@ -111,15 +111,18 @@ test('published problem management', async ({ page }) => {
 
 test('post a problem', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 640 })
-  const items = [{ id: draftId, title: 'A + B', publishedVersion: 0, updatedAt }]
+  await savedProblem(page, { author: 'alice' })
+  await page.getByRole('button', { name: '公開・応募', exact: true }).click()
+  const choice = page.getByRole('dialog', { name: '公開・応募' })
+  await annotate(page, [choice.getByRole('link', { name: /問題を投稿/ }), choice.getByRole('link', { name: /定期便に応募/ })])
+  await shoot(page, 'problem-publish-choice', [choice])
+  const items = [{ id: draftId, title: 'A + B', difficulty: 1, publishedVersion: 0, updatedAt, readiness: { publish: [], contest: [], featured: [] } }]
   await page.route('**/api/my/problems?*', route => route.fulfill({ json: { items, nextCursor: '' } }))
-  await page.route('**/api/my/problems', route => route.fulfill({ json: { items, nextCursor: '' } }))
-  await page.goto('/problems')
-  await page.getByRole('button', { name: '問題投稿' }).click()
-  const dialog = page.getByRole('dialog')
-  await dialog.locator('#post-problem').selectOption(draftId)
-  await annotate(page, [page.getByRole('button', { name: '問題投稿' }), dialog.locator('#post-problem'), dialog.locator('#post-timing'), dialog.getByRole('button', { name: '投稿', exact: true })])
-  await shoot(page, 'problem-post')
+  await choice.getByRole('link', { name: /問題を投稿/ }).click()
+  const choices = page.getByRole('group', { name: '問題' })
+  await expect(choices.getByRole('radio', { name: /A \+ B/ })).toBeChecked()
+  await annotate(page, [choices, page.getByRole('group', { name: '公開のタイミング' }), page.getByRole('button', { name: '投稿する', exact: true })])
+  await shoot(page, 'problem-post', [page.locator('.problem-post')])
 })
 
 test('submission form', async ({ page }) => {
@@ -160,15 +163,20 @@ test('contest editor', async ({ page }) => {
 })
 
 test('featured application', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 640 })
+  await page.setViewportSize({ width: 1280, height: 800 })
   await page.route('**/api/my/featured', route => route.fulfill({ json: { items: [] } }))
-  await page.route(/\/api\/my\/problems(?:\?.*)?$/, route => route.fulfill({ json: { items: [{ id: draftId, title: 'A + B', featuredPreference: '', updatedAt }], nextCursor: '' } }))
-  await page.goto('/featured')
-  await page.getByRole('button', { name: '新作を応募' }).click()
-  const dialog = page.getByRole('dialog')
-  await dialog.locator('#post-problem').selectOption(draftId)
-  await annotate(page, [page.getByRole('button', { name: '新作を応募' }), dialog.locator('#post-problem'), dialog.locator('#featured-preference'), dialog.getByRole('button', { name: '応募する', exact: true })])
-  await shoot(page, 'featured-apply')
+  await page.route(/\/api\/my\/problems(?:\?.*)?$/, route => route.fulfill({ json: { items: [{ id: draftId, title: 'A + B', difficulty: 1, featuredPreference: '', updatedAt, readiness: { publish: [], contest: [], featured: [] } }], nextCursor: '' } }))
+  await page.route('**/api/my/featured/schedule**', async route => {
+    const plan = await (await page.request.get('/api/featured/schedule')).json()
+    plan.rounds[1].slots[1].difficulty = 8
+    plan.rounds[2].slots[0].writer = 'carol'
+    plan.rounds[3].slots[0] = { slot: 'easy', kind: 'new', writer: 'alice', difficulty: 1, mine: true, title: 'A + B', trial: true }
+    return route.fulfill({ json: plan })
+  })
+  await page.goto(`/featured/apply?problem=${draftId}`)
+  await expect(page.locator('.apply-projection')).toBeVisible()
+  await annotate(page, [page.getByRole('group', { name: '問題' }), page.getByRole('group', { name: '希望' }), page.locator('.apply-schedule td[data-trial]'), page.getByRole('button', { name: '応募する', exact: true })])
+  await shoot(page, 'featured-apply', [page.locator('.featured-apply')])
 })
 
 test('generator and checker', async ({ page }) => {

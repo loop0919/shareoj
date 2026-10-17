@@ -15,6 +15,9 @@ const {
 const { profile } = useAccount()
 // Testers may edit and unpublish, but publishing and reservations stay with the author.
 const testing = computed(() => !!author.value && !!profile.value && author.value !== profile.value.handle)
+// Only the author of a saved, unpublished problem can post or apply it.
+const canPublish = computed(() => ready.value && !!cloudId.value && !publishedVersion.value && !!profile.value && author.value === profile.value.handle)
+const publishChoice = ref<{ open: () => void }>()
 const statusInput = computed(() => ({ scheduledAt: scheduledAt.value, readiness: readiness.value, publishedVersion: publishedVersion.value, contestScheduled: contestScheduled.value, featuredPreference: featuredPreference.value }))
 const testerLink = ref('')
 const testerLinkBusy = ref(false)
@@ -113,6 +116,7 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
         <button type="button" class="editor-button danger" @click="removeProblem">削除する</button>
       </div>
     </dialog>
+    <ProblemPublishChoice v-if="canPublish" ref="publishChoice" :problem-id="cloudId" :title="draft.title.trim()" :readiness="readiness" :scheduled="!!scheduledAt" :applied="!!featuredPreference" />
     <header class="editor-topbar">
       <NuxtLink class="wordmark" to="/my" aria-label="ShareOJ マイページ">Share<span>OJ</span><span class="wordmark-beta">(β)</span></NuxtLink>
       <ThemeSelect />
@@ -124,6 +128,7 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
       <div class="author-actions">
         <div class="editor-save-actions">
         <NuxtLink v-if="ready && cloudVersion > 0" class="editor-button" :to="`/problems/${shortId(cloudId)}`">問題を見る</NuxtLink>
+        <button v-if="canPublish" type="button" class="editor-button publish-button" :disabled="saving || publishing" @click="publishChoice?.open()"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0-4.5 4.5M12 4l4.5 4.5M4 20h16" /></svg>公開・応募</button>
         <button type="button" class="editor-button primary save-button" :disabled="!ready || saving || publishing" :aria-busy="saving" :aria-label="saving ? '保存中' : '保存'" title="保存（Ctrl+S / ⌘S）" aria-keyshortcuts="Control+s Meta+s" @click="saveDraft(true)">
           <span :class="{ 'save-label-hidden': saving }">保存</span>
           <span v-if="saving" class="save-spinner" aria-hidden="true" />
@@ -212,7 +217,7 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
       <div class="management-content">
         <header><h1 id="management-title">問題管理</h1><p class="manage-problem-title">{{ draft.title.trim() || '無題の問題' }}</p><p class="muted">{{ saveLocation }}</p></header>
         <section class="management-row readiness-row" aria-labelledby="readiness-title"><div><h2 id="readiness-title">状態</h2><ProblemReadiness :problem="statusInput" :saved="!!cloudId" @jump="jump" /></div></section>
-        <section class="management-row"><div><h2>公開設定</h2><p v-if="publishedVersion">「保存」を押すと、問題文・解説・採点設定が公開内容に反映されます。</p><p v-else-if="scheduledAt">{{ new Date(scheduledAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) }}（日本時間）に公開予約中です。<template v-if="!testing">編集を公開内容に反映するには、保存後に予約を更新してください。<NuxtLink :to="{ path: '/problems', query: { post: '1', problem: cloudId } }">予約を変更・取り消す</NuxtLink></template></p><p v-else-if="testing">公開と公開予約は、作者だけができます。</p><p v-else>問題一覧の「投稿」から公開できます。</p><p v-if="publicationError" class="editor-error" role="alert">{{ publicationError }}</p><NuxtLink v-if="publishedVersion" :to="`/problems/${shortId(cloudId)}`" target="_blank">公開ページを見る</NuxtLink></div><div v-if="publishedVersion" class="publication-actions"><button class="editor-button" :disabled="saving || publishing || generating" @click="unpublishProblem()">非公開に戻す</button></div></section>
+        <section class="management-row"><div><h2>公開設定</h2><p v-if="publishedVersion">「保存」を押すと、問題文・解説・採点設定が公開内容に反映されます。</p><p v-else-if="scheduledAt">{{ new Date(scheduledAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) }}（日本時間）に公開予約中です。<template v-if="!testing">編集を公開内容に反映するには、保存後に予約を更新してください。<NuxtLink :to="{ path: '/problems/post', query: { problem: cloudId } }">予約を変更・取り消す</NuxtLink></template></p><p v-else-if="testing">公開と公開予約は、作者だけができます。</p><p v-else>画面上部の「公開・応募」から、公開するか定期便に応募できます。</p><p v-if="publicationError" class="editor-error" role="alert">{{ publicationError }}</p><NuxtLink v-if="publishedVersion" :to="`/problems/${shortId(cloudId)}`" target="_blank">公開ページを見る</NuxtLink></div><div v-if="publishedVersion" class="publication-actions"><button class="editor-button" :disabled="saving || publishing || generating" @click="unpublishProblem()">非公開に戻す</button></div></section>
         <section class="management-row"><div class="tester-link-row"><h2>テスターリンク</h2><p>リンクから参加したユーザーは、編集・削除・リジャッジと、自分のコンテストへの登録ができます。公開と定期便への応募は作者だけができます。</p><template v-if="testerLink"><label for="tester-link">招待リンク</label><div class="tester-link-field"><input id="tester-link" :value="testerLink" readonly @focus="($event.target as HTMLInputElement).select()"><button type="button" class="editor-button tester-link-copy" :aria-label="testerLinkCopied ? 'コピーしました' : 'リンクをコピー'" :title="testerLinkCopied ? 'コピーしました' : 'リンクをコピー'" @click="copyTesterLink"><svg v-if="testerLinkCopied" class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L19 8" /></svg><svg v-else class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V4H4v12h4" /></svg></button></div></template><p v-if="testerLinkMessage" role="status">{{ testerLinkMessage }}</p></div><button type="button" class="editor-button" :disabled="!ready || saving || publishing || generating || testerLinkBusy" @click="createTesterLink">{{ testerLinkBusy ? '発行中…' : 'リンクを発行' }}</button></section>
         <ProblemRejudge v-if="cloudId" :problem-id="cloudId" :saved="saveState === 'saved' || saveState === 'unpublished'" :disabled="saving || publishing || generating" />
         <section class="management-row"><div><h2>テストケースの一括削除</h2><p>登録したテストケースをすべて削除します。</p></div><button type="button" class="editor-button" :disabled="!draft.testCases.length || publishing || generating" @click="clearTestCases">一括削除</button></section>
@@ -226,6 +231,8 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
 </template>
 
 <style scoped>
+.publish-button { display: inline-flex; align-items: center; gap: 6px; border-color: var(--color-accent); color: var(--color-accent); font-weight: 600; }
+.publish-button:disabled { opacity: .55; cursor: not-allowed; }
 .tester-link-row { flex: 1; min-width: 0; }
 .tester-link-row label { display: block; margin-top: 12px; font-size: .75rem; color: var(--color-muted); }
 .tester-link-field { display: flex; gap: 8px; margin-top: 4px; }

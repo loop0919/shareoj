@@ -1,7 +1,7 @@
 ## できること {#overview}
 
 作問CLI（`shareoj`）を使うと、問題文、生成コード、テストケースを手元のファイルで編集し、ShareOJの下書きに保存できます。
-保存した問題の公開は、Webの「問題投稿」から行います。
+保存した問題の公開は、Webのエディタの「公開・応募」か、問題一覧の「問題投稿」から行います。
 CLIは問題を公開したり、解答を提出したりしません。
 
 すべての設定とオプションは、GitHubの[CLIのREADME](https://github.com/loop0919/shareoj/blob/main/cli/README.md)に書いています。
