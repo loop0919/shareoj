@@ -1,5 +1,14 @@
 [
   {
+    "date": "2026-10-17",
+    "macrostructure": "Workbench (in-app pages inside the existing system)",
+    "theme": "Plain (existing ShareOJ system)",
+    "nav": "N1a (shared site navigation)",
+    "footer": "Ft1 (shared site footer)",
+    "enrichment": "none",
+    "brief": "ShareOJ posting page, 定期便 application page with a live placement schedule, public 定期便 schedule page, and the editor's post-or-apply chooser dialog; replaces the posting/application modals"
+  },
+  {
     "date": "2026-09-09",
     "macrostructure": "Workbench",
     "theme": "Plain (existing OpenOJ system)",

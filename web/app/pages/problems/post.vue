@@ -14,6 +14,7 @@ const timing = ref<'now' | 'schedule'>('now')
 const scheduledAt = ref('')
 const busy = ref(false)
 const error = ref('')
+const invalidDate = ref(false)
 const candidates = computed(() => problems.value.filter(problem => !problem.publishedVersion))
 const choices = computed(() => choosableFirst(candidates.value.map(problem => problemChoice(problem, 'publish',
   problem.scheduledAt ? `公開予約中・${contestDate(problem.scheduledAt)}` : problem.featuredPreference ? '定期便に応募中' : ''))))
@@ -31,7 +32,7 @@ watch(selected, () => {
 })
 
 // An error describes the last attempt; editing the choice clears it.
-watch([timing, scheduledAt], () => { error.value = '' })
+watch([timing, scheduledAt], () => { error.value = ''; invalidDate.value = false })
 
 onMounted(async () => {
   await load()
@@ -45,7 +46,7 @@ async function post(cancel = false) {
   let at: string | undefined
   if (!cancel && timing.value === 'schedule') {
     const date = new Date(`${scheduledAt.value}:00+09:00`)
-    if (!scheduledAt.value || !Number.isFinite(date.getTime()) || date.getTime() <= Date.now()) { error.value = '未来の公開日時を日本時間で指定してください。'; return }
+    if (!scheduledAt.value || !Number.isFinite(date.getTime()) || date.getTime() <= Date.now()) { error.value = '未来の公開日時を日本時間で指定してください。'; invalidDate.value = true; return }
     at = date.toISOString()
   }
   busy.value = true
@@ -83,12 +84,12 @@ async function post(cancel = false) {
         <p v-if="applied" id="post-applied" class="post-hint">定期便に応募中のため予約できません。予約するには「自分の問題」で応募を取り下げてください。</p>
         <div v-if="timing === 'schedule'" class="post-when">
           <label for="post-scheduled-at">公開日時（日本時間）</label>
-          <input id="post-scheduled-at" v-model="scheduledAt" type="datetime-local" required aria-describedby="post-when-hint">
+          <input id="post-scheduled-at" v-model="scheduledAt" type="datetime-local" required :aria-invalid="invalidDate || undefined" :aria-describedby="invalidDate ? 'post-when-hint post-error' : 'post-when-hint'">
           <p id="post-when-hint" class="post-hint">予約した時点の保存済みの内容を公開します。そのあとの編集は、予約を更新すると反映されます。</p>
         </div>
         <p v-else class="post-hint">保存済みの内容を公開し、誰でも閲覧・提出できるようにします。</p>
       </fieldset>
-      <p v-if="error" role="alert" class="editor-error">{{ error }}</p>
+      <p v-if="error" id="post-error" role="alert" class="editor-error">{{ error }}</p>
       <div class="post-actions">
         <button v-if="reserved" type="button" class="editor-button" :disabled="busy" @click="post(true)">予約を取り消す</button>
         <button class="editor-button primary" :disabled="busy || !selected" :aria-busy="busy">{{ label }}</button>
@@ -113,6 +114,7 @@ async function post(cancel = false) {
 .post-timing input:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 3px; }
 .post-when { display: grid; gap: 6px; margin-top: 16px; }
 .post-when label { font-size: .8125rem; font-weight: 600; }
+.post-when input[aria-invalid] { border-color: var(--color-error); }
 .post-when input { width: 100%; max-width: 18rem; min-height: 44px; padding: 8px 12px; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-paper); color: var(--color-ink); font: inherit; font-size: .9375rem; }
 .post-hint { margin: 10px 0 0; color: var(--color-muted); font-size: .8125rem; line-height: 1.7; }
 .post-when .post-hint { margin-top: 0; }
@@ -122,6 +124,6 @@ async function post(cancel = false) {
 .post-actions .primary { padding-inline: 28px; font-weight: 600; }
 .post-actions .editor-button:disabled { opacity: .55; cursor: not-allowed; text-decoration: none; }
 @media (hover: hover) {
-  .post-pills label:not(:has(input:checked)):not(:has(input:disabled)):hover { background: var(--color-surface); }
+  .post-pills label:not(:has(input:checked)):not(:has(input:disabled)):hover, .post-when input:hover { background: var(--color-surface); }
 }
 </style>

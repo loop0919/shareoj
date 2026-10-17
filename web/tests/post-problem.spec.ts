@@ -130,9 +130,13 @@ test('schedule in Japan time, show the reservation, update it and cancel it', as
   await input.fill('2000-01-01T23:00')
   await page.getByRole('button', { name: '予約する', exact: true }).click()
   await expect(page.getByRole('alert')).toContainText('未来の公開日時')
+  await expect(input).toHaveAttribute('aria-invalid', 'true')
   expect(requests).toHaveLength(0)
   const year = new Date().getUTCFullYear() + 1
   await input.fill(`${year}-01-02T23:00`)
+  // Correcting the date clears the stale error.
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(input).not.toHaveAttribute('aria-invalid')
   await page.setViewportSize({ width: 375, height: 900 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
   await page.screenshot({ path: testInfo.outputPath('schedule-mobile.png'), fullPage: true })

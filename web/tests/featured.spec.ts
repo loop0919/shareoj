@@ -102,6 +102,9 @@ test('authors choose a problem and preference, see where it lands, apply and wit
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
     await page.screenshot({ path: testInfo.outputPath(`apply-${width}.png`), fullPage: true })
   }
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.screenshot({ path: testInfo.outputPath('apply-dark.png'), fullPage: true })
+  await page.emulateMedia({ colorScheme: 'light' })
   await submit.click()
   await expect(page.getByRole('alert')).toContainText('難易度・解説')
   await submit.click()
@@ -165,6 +168,9 @@ test('the schedule lists coming rounds with writers and fits narrow screens', as
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
     await page.screenshot({ path: testInfo.outputPath(`schedule-${width}.png`), fullPage: true })
   }
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.screenshot({ path: testInfo.outputPath('schedule-dark.png'), fullPage: true })
+  await page.emulateMedia({ colorScheme: 'light' })
   await page.getByRole('link', { name: '新作を応募' }).click()
   await expect(page).toHaveURL('/featured/apply')
 })

@@ -139,6 +139,9 @@ async function apply() {
 .apply-preference input:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 3px; }
 .apply-preference:disabled label { opacity: .55; cursor: not-allowed; }
 .apply-preference label svg { color: var(--color-muted); }
+@media (hover: hover) {
+  .apply-preference:not(:disabled) label:not(:has(input:checked)):hover { background: var(--color-surface); }
+}
 .apply-projection { margin: 0; font-size: .9375rem; font-weight: 500; }
 .apply-status { display: flex; align-items: flex-start; gap: 8px; margin: 0; color: var(--color-accent); font-size: .9375rem; font-weight: 500; }
 .apply-status svg { flex: none; width: 20px; height: 20px; margin-top: 4px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
