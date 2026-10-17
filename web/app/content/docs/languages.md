@@ -49,6 +49,8 @@ CPythonとPyPyは実行前に構文検査を行います。 Codonはネイティ
 
 ACLは`#include <atcoder/all>`などで読み込めます。 別途リンクが必要なBoostライブラリは対象外です。
 
+testlibを使う判定コードの書き方は、[判定方法の設定](/docs/checkers#testlib)を確認してください。
+
 ### CPython・PyPy
 
 | ライブラリ | バージョン | 対応環境 |
@@ -167,42 +169,6 @@ Rubyの対話判定では`STDIN.gets`で通信入力を読み、`$stdout.sync = 
 引数なしの`gets`は、判定コードに渡されるファイル名を入力として扱います。
 Torch、LightGBM、Rumaleは導入していません。
 対話問題では`$stdout.sync = true`または`STDOUT.flush`を使用してください。
-
-## testlib形式の判定 {#testlib}
-
-C++23のGCC・Clangの両方で`#include "testlib.h"`を使用できます。 作問画面の判定方法でスペシャルジャッジまたは対話形式を選び、「判定コードの形式」を「testlib形式」にしてください。 既存の判定コードは「現行形式」のまま使えます。
-
-次は、提出出力と正解ファイルから整数を1つずつ読み、比較するcheckerです。 `inf`はテスト入力、`ouf`は提出出力、`ans`は正解ファイルを読みます。
-
-```cpp
-#include "testlib.h"
-int main(int argc, char** argv) {
-  registerTestlibCmd(argc, argv);
-  int actual = ouf.readInt();
-  int expected = ans.readInt();
-  if (actual != expected) quitf(_wa, "different answer");
-  quitf(_ok, "accepted");
-}
-```
-
-対話形式では`registerInteraction`で初期化します。 次の例は入力ファイルの整数を提出へ送り、その2倍が返ることを確認します。 `std::endl`で出力をフラッシュし、`ouf`で提出からの返答を読みます。
-
-```cpp
-#include "testlib.h"
-#include <iostream>
-int main(int argc, char** argv) {
-  registerInteraction(argc, argv);
-  int n = inf.readInt();
-  std::cout << n << std::endl;
-  int actual = ouf.readInt();
-  if (actual != 2 * n) quitf(_wa, "expected twice n");
-  quitf(_ok, "accepted");
-}
-```
-
-`_ok`はAC、`_wa`と`_pe`はWA、`_fail`はJEです。 部分点（`quitp`や`_pc`）には対応していません。 `tout`は一時ファイルで、内容を別のcheckerで判定する処理は行いません。interactor自身で正誤を決めてください。
-
-判定コードの上限はCPU 5秒、checkerは512 MiB、interactorは256 MiBです。 制限超過はJEになります。Polygonパッケージの取り込みには対応していません。
 
 ## 実行制限 {#limits}
 

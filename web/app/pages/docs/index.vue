@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { docPath, docSections } from '~~/shared/docs'
 const config = useRuntimeConfig()
-const description = 'ShareOJ の使い方のガイド。提出できる言語、コンテストのルール、問題の書き方とテストケースの作り方を目的別にまとめています。'
+const description = 'ShareOJ の使い方のガイド。提出と判定結果、コンテストのルールと開き方、問題の作り方、定期便、作問CLIと公開APIを目的別にまとめています。'
 const canonical = new URL('/docs', config.public.siteUrl).href
 useSeoMeta({ title: 'ガイド | ShareOJ', description })
 useHead({ link: [{ rel: 'canonical', href: canonical }] })

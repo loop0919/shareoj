@@ -98,7 +98,7 @@ samples = ["sample1"]
 `protocol = "legacy"` または `protocol = "testlib"` を指定できるのは、この2種類だけです。
 `testlib` は `cpp23-gcc` と `cpp23-clang` に対応します。
 生成器には `protocol` を指定しません。
-判定器を実装する前に、Webの言語ガイドで入出力や終了コードの仕様を確認してください。
+判定器を実装する前に、Webの判定方法ガイドで入出力や終了コードの仕様を確認してください。
 
 ## テストの配置と検証
 
@@ -148,3 +148,4 @@ rimeの生成済みファイルを使う場合は、実際の出力先を `tests
 詳しいCLI仕様: https://github.com/loop0919/shareoj/tree/main/cli
 生成器ガイド: https://www.share-oj.net/docs/generator
 言語ガイド: https://www.share-oj.net/docs/languages
+判定方法ガイド: https://www.share-oj.net/docs/checkers

@@ -1,12 +1,12 @@
 import { expect, test } from '@playwright/test'
 import { docPages, legacyDocPaths } from '../shared/docs'
 
-for (const [slug, codeBlocks, tables] of [['generator', 3, 1], ['languages', 2, 9]] as const) {
+for (const [slug, codeBlocks, tables] of [['generator', 3, 1], ['checkers', 3, 1], ['languages', 0, 9]] as const) {
   test(`${slug} renders Markdown, highlighted code and stable section links`, async ({ page, request }, testInfo) => {
     const path = `/docs/${slug}`
     const response = await request.get(path)
     expect(response.status()).toBe(200)
-    expect(await response.text()).toContain('class="hljs-')
+    if (codeBlocks) expect(await response.text()).toContain('class="hljs-')
     await page.goto(path)
     const body = page.locator('article .markdown-body')
     await expect(body.locator('pre.highlighted-code')).toHaveCount(codeBlocks)
@@ -26,7 +26,7 @@ for (const [slug, codeBlocks, tables] of [['generator', 3, 1], ['languages', 2, 
     }
     for (const width of [375, 1280]) {
       await page.setViewportSize({ width, height: 900 })
-      await body.locator('pre').first().scrollIntoViewIfNeeded()
+      await body.locator(codeBlocks ? 'pre' : 'table').first().scrollIntoViewIfNeeded()
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
       await page.screenshot({ path: testInfo.outputPath(`${slug}-${width}.png`) })
     }
@@ -85,4 +85,21 @@ test('narrow screens fold the guide list behind a button and never scroll sidewa
   await expect(toggle).toBeHidden()
   await expect(sidebar.getByRole('link', { name: '使える言語', exact: true })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('docs-1280.png') })
+})
+
+test('links between guides point at existing pages and headings', async ({ page }) => {
+  const targets = new Set<string>()
+  for (const doc of docPages) {
+    await page.goto(`/docs/${doc.slug}`)
+    for (const href of await page.locator('article .markdown-body a[href^="/docs/"], article .markdown-body a[href^="#"]').evaluateAll(links => links.map(link => link.getAttribute('href')!))) {
+      targets.add(href.startsWith('#') ? `/docs/${doc.slug}${href}` : href)
+    }
+  }
+  expect(targets.size).toBeGreaterThan(10)
+  for (const target of targets) {
+    const [path, hash] = target.split('#')
+    const response = await page.goto(path!)
+    expect(response?.status(), target).toBe(200)
+    if (hash) await expect(page.locator(`#${hash}`), target).toHaveCount(1)
+  }
 })
