@@ -1,9 +1,17 @@
 <script setup lang="ts">
 import { docPath, docSections } from '~~/shared/docs'
+import { docHeadings } from '~/utils/doc-content'
 const route = useRoute()
 // Narrow screens fold the guide list behind a button; it closes after each move.
 const menuOpen = ref(false)
 watch(() => route.path, () => { menuOpen.value = false })
+// Only the open guide lists its headings, under its own link.
+const slug = computed(() => String(route.params.slug ?? ''))
+const sources = import.meta.glob<string>('../content/docs/*.md', { query: '?raw', import: 'default' })
+const { data: headings } = await useAsyncData(() => `doc-headings:${slug.value}`, async () => {
+  const load = sources[`../content/docs/${slug.value}.md`]
+  return load ? docHeadings(await load()) : []
+}, { default: () => [] })
 </script>
 
 <template>
@@ -15,7 +23,12 @@ watch(() => route.path, () => { menuOpen.value = false })
         <div v-for="section in docSections" :key="section.title">
           <p class="docs-nav-heading">{{ section.title }}</p>
           <ul>
-            <li v-for="page in section.pages" :key="page.slug"><NuxtLink :to="docPath(page.slug)">{{ page.label }}</NuxtLink></li>
+            <li v-for="page in section.pages" :key="page.slug">
+              <NuxtLink :to="docPath(page.slug)">{{ page.label }}</NuxtLink>
+              <ul v-if="page.slug === slug && headings.length > 1" class="docs-nav-headings" aria-label="このページの目次">
+                <li v-for="heading in headings" :key="heading.id"><a :href="`#${heading.id}`" @click="menuOpen = false">{{ heading.text }}</a></li>
+              </ul>
+            </li>
           </ul>
         </div>
       </div>
@@ -43,6 +56,9 @@ watch(() => route.path, () => { menuOpen.value = false })
 .docs-nav a { display: flex; align-items: center; min-height: 44px; padding-inline: 12px; border-inline-start: 2px solid transparent; color: var(--color-ink); font-size: .875rem; text-decoration: none; white-space: nowrap; }
 .docs-nav a:hover { color: var(--color-accent); background: var(--color-surface); }
 .docs-nav a[aria-current="page"] { border-inline-start-color: var(--color-accent); background: var(--color-accent-soft); color: var(--color-accent); font-weight: 600; }
+.docs-nav-headings { margin-block: 2px 8px; }
+.docs-nav .docs-nav-headings a { min-height: 32px; padding-block: 4px; padding-inline-start: 28px; color: var(--color-muted); font-size: .8125rem; line-height: 1.5; white-space: normal; }
+.docs-nav .docs-nav-headings a:hover { color: var(--color-accent); }
 /* Wide screens keep the list open beside the page and pin it while the page scrolls. */
 @media (min-width: 60rem) {
   .docs-layout { grid-template-columns: 13rem minmax(0, 1fr); column-gap: 48px; }
@@ -50,6 +66,8 @@ watch(() => route.path, () => { menuOpen.value = false })
   .docs-nav-toggle { display: none; }
   .docs-nav-list { display: block; position: sticky; top: 0; max-height: 100svh; overflow-y: auto; padding-block: 24px 48px; }
   .docs-nav a { min-height: 36px; }
+  .docs-nav .docs-nav-headings a { min-height: 28px; }
 }
 @media (min-width: 60rem) and (pointer: coarse) { .docs-nav a { min-height: 44px; } }
+@media (pointer: coarse) { .docs-nav .docs-nav-headings a { min-height: 44px; } }
 </style>

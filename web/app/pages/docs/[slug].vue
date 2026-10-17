@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { docPages, docPath, docSection, findDoc } from '~~/shared/docs'
-import { docHeadings, sourceFence, splitDocExamples } from '~/utils/doc-content'
+import { sourceFence, splitDocExamples } from '~/utils/doc-content'
 const route = useRoute()
 const page = findDoc(String(route.params.slug))
 if (!page) throw createError({ statusCode: 404, statusMessage: 'ガイドが見つかりません', fatal: true })
@@ -16,7 +16,6 @@ const previous = docPages[position - 1]
 const next = docPages[position + 1]
 const sources = import.meta.glob<string>('../../content/docs/*.md', { query: '?raw', import: 'default' })
 const source = await sources[`../../content/docs/${page.slug}.md`]!()
-const headings = docHeadings(source)
 const blocks = splitDocExamples(source)
 
 // Links between guides in the Markdown body move within the app instead of reloading the page.
@@ -38,7 +37,6 @@ function followLink(event: MouseEvent) {
       <h1>{{ page.title }}</h1>
       <p class="lead">{{ page.lead }}</p>
     </header>
-    <nav v-if="headings.length > 1" class="blog-toc" aria-label="このページの目次"><a v-for="heading in headings" :key="heading.id" :href="`#${heading.id}`">{{ heading.text }}</a></nav>
     <template v-for="(block, index) in blocks" :key="index">
       <ProblemMarkdown v-if="block.kind === 'markdown'" :source="block.source" />
       <template v-else>

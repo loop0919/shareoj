@@ -17,7 +17,7 @@ for (const [slug, codeBlocks, tables] of [['generator', 3, 1], ['checkers', 3, 1
       await expect(code).toContainText('#include')
     }
     await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', `https://judge.example${path}`)
-    for (const link of await page.getByRole('navigation', { name: 'このページの目次' }).getByRole('link').all()) {
+    for (const link of await page.getByRole('navigation', { name: 'ガイドの一覧' }).getByRole('list', { name: 'このページの目次' }).getByRole('link').all()) {
       const target = (await link.getAttribute('href'))!
       await expect(page.locator(target)).toHaveCount(1)
       await link.click()
@@ -43,6 +43,16 @@ test('the guide index lists every guide and the sidebar follows the reader', asy
   await expect(page).toHaveURL('/docs/contest-rules')
   const sidebar = page.getByRole('navigation', { name: 'ガイドの一覧' })
   await expect(sidebar.getByRole('link', { name: 'コンテストのルール', exact: true })).toHaveAttribute('aria-current', 'page')
+  // Only the open guide lists its headings, right under its link.
+  const contents = sidebar.getByRole('list', { name: 'このページの目次' })
+  await expect(contents).toHaveCount(1)
+  await expect(sidebar.getByRole('listitem').filter({ has: page.getByRole('link', { name: 'コンテストのルール', exact: true }) }).getByRole('list', { name: 'このページの目次' })).toBeVisible()
+  await expect(contents.getByRole('link', { name: '参加と開催時間' })).toHaveAttribute('href', '#participation')
+  // The sidebar switches guides and their headings follow.
+  await sidebar.getByRole('link', { name: '提出と判定結果', exact: true }).click()
+  await expect(page).toHaveURL('/docs/submissions')
+  await expect(contents.getByRole('link', { name: '解答を提出する' })).toHaveAttribute('href', '#submit')
+  await expect(contents.getByRole('link', { name: '参加と開催時間' })).toHaveCount(0)
   // A link in the Markdown body moves within the app, keeping the sidebar.
   await page.locator('article .markdown-body').getByRole('link', { name: '使える言語と実行環境の仕様' }).click()
   await expect(page).toHaveURL('/docs/languages')
