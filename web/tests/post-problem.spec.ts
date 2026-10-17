@@ -76,6 +76,12 @@ test('posting lists unpublished problems across pages, explains blocked ones and
   await expect(choices.getByRole('radio', { name: /コンテスト用/ })).toBeDisabled()
   await expect(choices).toContainText('コンテストに登録済みのため、コンテストが終わるまで公開できません')
   await expect(choices).not.toContainText('公開済み')
+  const hide = page.getByRole('switch', { name: /投稿不可の問題を隠す/ })
+  await hide.check()
+  await expect(choices.getByRole('radio')).toHaveCount(1)
+  await expect(choices.getByRole('status')).toHaveText('1件を隠しています')
+  await hide.uncheck()
+  await expect(choices.getByRole('radio')).toHaveCount(2)
   const submit = page.getByRole('button', { name: '投稿する', exact: true })
   await expect(submit).toBeDisabled()
   for (const width of [320, 375, 414, 768, 1280]) {

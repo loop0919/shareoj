@@ -74,7 +74,7 @@ async function post(cancel = false) {
     <p v-else-if="!signedIn"><NuxtLink to="/login?next=/problems/post">ログイン</NuxtLink>すると、自分の問題を投稿できます。</p>
     <EmptyState v-else-if="!choices.length" kind="problem" title="投稿できる未公開の問題はありません。" description="問題を作成して保存すると、ここから公開できます。"><NuxtLink class="editor-button" to="/problems/new?fresh=1">新規問題を作成</NuxtLink></EmptyState>
     <form v-else class="post-form" @submit.prevent="post()">
-      <ProblemChoiceList v-model="selected" legend="問題" name="post-problem" :choices="choices" :disabled="busy" />
+      <ProblemChoiceList v-model="selected" legend="問題" name="post-problem" :choices="choices" :disabled="busy" hide-blocked-label="投稿不可の問題を隠す" />
       <fieldset class="post-timing" :disabled="busy || !selected">
         <legend>公開のタイミング</legend>
         <div class="post-pills">

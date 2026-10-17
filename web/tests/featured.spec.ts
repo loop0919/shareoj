@@ -92,7 +92,11 @@ test('authors choose a problem and preference, see where it lands, apply and wit
   await expect(page.locator('.apply-schedule')).toContainText('確定')
   await choices.getByRole('radio', { name: /応募する問題/ }).check()
   await expect(page.locator('.apply-projection')).toContainText('10/5')
-  await expect(page.locator('.apply-schedule td[data-trial]')).toContainText('この問題')
+  const placed = page.locator('.apply-schedule td[data-trial]')
+  // The chosen problem shows by name, marked as a what-if until it is applied.
+  await expect(placed).toContainText('応募する問題')
+  await expect(placed).toContainText('応募した場合')
+  await expect(page.locator('.apply-bar')).toContainText('「応募する問題」は10/5')
   await page.getByRole('radio', { name: 'ゆっくりで良い' }).check()
   await expect(page.locator('.apply-projection')).toContainText('10/12')
   expect(plans.at(-1)?.get('preference')).toBe('later')
@@ -108,7 +112,8 @@ test('authors choose a problem and preference, see where it lands, apply and wit
   await submit.click()
   await expect(page.getByRole('alert')).toContainText('難易度・解説')
   await submit.click()
-  await expect(page.getByRole('status')).toContainText('応募しました。10/12')
+  await expect(page.getByRole('status')).toContainText('応募しました。「応募する問題」は10/12')
+  await expect(placed).toContainText('応募中')
   await expect(page.getByRole('button', { name: '応募済み', exact: true })).toBeDisabled()
   await expect(page.getByText('応募枠 1 / 3')).toBeVisible()
   await page.getByRole('radio', { name: '早めに出したい' }).check()
@@ -146,6 +151,44 @@ test('authors choose a problem and preference, see where it lands, apply and wit
   expect(withdrawals).toBe(2)
   await expect(row).toContainText('準備中')
   await expect(row.getByRole('img')).toHaveCount(0)
+})
+
+test('a long list scrolls inside itself, can hide blocked problems, and keeps the button on screen', async ({ page }, testInfo) => {
+  const items = Array.from({ length: 30 }, (_, index) => ({
+    id: `aaaaaaaa-aaaa-4aaa-8aaa-${String(index).padStart(12, '0')}`, title: `問題 ${index + 1}`, difficulty: index % 10 + 1, updatedAt,
+    readiness: { publish: [], contest: [], featured: index % 3 ? ['editorial_missing'] : [] },
+  }))
+  const last = items[27]!
+  await page.route(/\/api\/my\/problems(?:\?.*)?$/, route => route.fulfill({ json: { items, nextCursor: '' } }))
+  await page.route('**/api/my/featured/schedule**', async route => route.fulfill({ json: await (await page.request.get('/api/featured/schedule')).json() }))
+  for (const size of [{ width: 1280, height: 800 }, { width: 375, height: 812 }]) {
+    await page.setViewportSize(size)
+    await page.goto(`/featured/apply?problem=${last.id}`)
+    const radio = page.getByRole('radio', { name: /問題 28/ })
+    await expect(radio).toBeChecked()
+    // The problem chosen by the link is scrolled into the list's view, not the page's.
+    await expect(radio).toBeInViewport()
+    await expect(page.getByRole('button', { name: '応募する', exact: true })).toBeInViewport()
+    await expect(page.getByRole('radio', { name: 'ゆっくりで良い' })).toBeInViewport()
+    await expect(page.locator('.apply-bar')).toContainText('「問題 28」は')
+    expect(await page.evaluate(() => scrollY)).toBe(0)
+    await page.screenshot({ path: testInfo.outputPath(`apply-long-${size.width}.png`) })
+  }
+  const toggle = page.getByRole('switch', { name: /応募不可の問題を隠す/ })
+  await expect(toggle).not.toBeChecked()
+  await expect(page.locator('.choices-switch')).toContainText('20件')
+  await expect(page.getByRole('radio')).toHaveCount(32)
+  await toggle.click()
+  await expect(toggle).toBeChecked()
+  await expect(page.getByRole('group', { name: '問題' }).getByRole('radio')).toHaveCount(10)
+  await expect(page.getByRole('group', { name: '問題' }).getByRole('status')).toHaveText('20件を隠しています')
+  await expect(page.getByRole('radio', { name: /問題 28/ })).toBeChecked()
+  await page.screenshot({ path: testInfo.outputPath('apply-switch-on.png') })
+  // The keyboard turns it back off.
+  await toggle.focus()
+  await page.keyboard.press('Space')
+  await expect(toggle).not.toBeChecked()
+  await expect(page.getByRole('group', { name: '問題' }).getByRole('radio')).toHaveCount(30)
 })
 
 test('the schedule lists coming rounds with writers and fits narrow screens', async ({ page }, testInfo) => {
