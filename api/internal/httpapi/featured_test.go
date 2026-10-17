@@ -575,6 +575,10 @@ func TestFeaturedSchedulePostgres(t *testing.T) {
 		f.apply(apply.p, apply.preference, 204)
 		f.exec(`UPDATE featured_applications SET entered_at=clock_timestamp()-make_interval(hours=>$2) WHERE problem_id=$1`, apply.p.ID, 10-i)
 	}
+	// The application page reads each problem's slot from the list.
+	if !strings.Contains(f.request("GET", "/my/problems", "alice", nil, 200), `"difficulty":3`) {
+		t.Fatal("list lacks difficulty")
+	}
 	body := f.request("GET", "/featured/schedule", "", nil, 200)
 	for _, secret := range []string{a1.ID, b2.ID, "Featured problem", `"mine"`, `"title"`} {
 		if strings.Contains(body, secret) {

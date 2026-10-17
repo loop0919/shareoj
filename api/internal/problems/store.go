@@ -98,6 +98,7 @@ type Summary struct {
 	PublishedVersion   int64      `json:"publishedVersion"`
 	ID                 string     `json:"id"`
 	Title              string     `json:"title"`
+	Difficulty         *int       `json:"difficulty"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
 }
 
@@ -182,7 +183,7 @@ func (s *Store) list(ctx context.Context, owner string, cursor *Cursor, testing 
 			return p, err
 		}
 		err := json.Unmarshal(data, &p.Draft)
-		p.Title = p.Draft.Title
+		p.Title, p.Difficulty = p.Draft.Title, p.Draft.Difficulty
 		return p, err
 	})
 }
