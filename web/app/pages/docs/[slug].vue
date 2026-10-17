@@ -56,6 +56,8 @@ function followLink(event: MouseEvent) {
 .docs-pager a { display: grid; gap: 2px; padding: 12px 16px; border: 1px solid var(--color-line); border-radius: 4px; font-weight: 600; text-decoration: none; white-space: nowrap; }
 .docs-pager a:hover { border-color: var(--color-accent); background: var(--color-accent-soft); }
 .docs-pager span { color: var(--color-muted); font-size: .75rem; font-weight: 400; }
+/* The body follows the title directly; its first heading needs no extra gap. */
+.blog-article-header + :deep(.markdown-body > :first-child) { margin-top: 0; }
 /* Screenshots in the guides need an edge against the page background. */
 .blog-article :deep(.markdown-body img) { display: block; border: 1px solid var(--color-line); border-radius: 4px; }
 .docs-pager-next { text-align: end; }
