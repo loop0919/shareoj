@@ -22,7 +22,7 @@ Architecture Decision Record（ADR）は、採用した設計だけでなく、�
 | [0010](0010-extend-judge-languages-and-libraries.md) | Accepted | testlib形式の判定とC#、Java 25、Nim、Goを追加する |
 | [0011](0011-schedule-featured-problems.md) | Accepted（応募条件は0013、応募一覧は0020で一部変更） | 月曜と木曜に難易度別の問題を出す |
 | [0012](0012-run-judge-on-ec2-pool.md) | Accepted（配布は0014で一部変更） | EC2の常時稼働1台とコンテスト時の増設で採点する |
-| [0013](0013-assess-problem-readiness.md) | Accepted | 問題の準備状況をサーバーで判定し、公開とコンテストにも難易度を求める |
+| [0013](0013-assess-problem-readiness.md) | Accepted（内容の条件は0021で統一） | 問題の準備状況をサーバーで判定し、公開とコンテストにも難易度を求める |
 | [0014](0014-roll-out-os-updates-without-stopping-judging.md) | Accepted（未実装） | 採点を止めずにOS更新を配布する |
 | [0015](0015-save-contests-as-drafts.md) | Accepted | コンテストを下書きとして保存し、公開時に検証する |
 | [0016](0016-anonymize-deleted-accounts.md) | Accepted | アカウント削除では公開物を残し、作者を匿名にする |
@@ -30,3 +30,4 @@ Architecture Decision Record（ADR）は、採用した設計だけでなく、�
 | [0018](0018-tag-problems-and-posts.md) | Accepted | 問題と記事にタグを付け、使われている表記を候補に出す |
 | [0019](0019-rejudge-submissions.md) | Accepted | 提出を今の問題の内容でリジャッジし、新しい提出の採点を優先する |
 | [0020](0020-post-and-apply-on-dedicated-pages.md) | Accepted | 問題の投稿と定期便の応募を専用ページで行い、定期便の予定を公開する |
+| [0021](0021-unify-problem-requirements.md) | Accepted | 公開・コンテスト・定期便に、同じ内容の条件を求める |

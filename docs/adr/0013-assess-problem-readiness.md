@@ -1,6 +1,6 @@
 # ADR 0013: 問題の準備状況をサーバーで判定し、公開とコンテストにも難易度を求める
 
-- 状態：Accepted
+- 状態：Accepted（出し先ごとの内容の条件は[ADR 0021](0021-unify-problem-requirements.md)で統一）
 - 決定日：2026-09-30
 - 一部変更：[ADR 0011](0011-schedule-featured-problems.md)の応募条件（テストケースを追加）
 
