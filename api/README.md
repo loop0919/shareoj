@@ -514,6 +514,13 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 応募は`PUT /my/problems/{id}/featured`へ`{"version":1,"preference":"soon"}`を送り、`later`なら後日の公開を希望し、空文字なら取り下げる。
 応募一覧は`GET /my/featured`で取得する。
 
+[ADR 0020](../docs/adr/0020-post-and-apply-on-dedicated-pages.md)に従い、`GET /featured/schedule`は次回から8回分の予定を返す。
+各回の`slots`はEasyとHardの作者名・難易度・`kind`（`new`、`revival`、`missing`）で、問題名と問題IDは含めない。
+`confirmed: true`の次回は次回予告と同じ選出で、2回目以降は今の応募が残ると仮定した見込みである。
+`GET /my/featured/schedule`は同じ形で、自分の問題に`mine`と`title`を付ける。
+`?problem=<id>&preference=soon|later`を付けると、その問題を応募したと仮定した予定を返し、入る枠に`trial: true`を付ける。
+応募できない問題は仮定に含めず、他人の問題は404 `problem_not_found`、不正な希望は400 `invalid_request`を返す。
+
 新作の公開問題レスポンスは、翌22時まで`editorialHidden: true`と`editorialRevealAt`を返し、`editorial`を返さない。
 提出一覧と詳細にも同じ解禁条件を適用する。
 その間も自分の提出は認証済みAPIから確認できる。

@@ -531,3 +531,112 @@ func TestFeaturedRoundNumbersPostgres(t *testing.T) {
 		t.Fatalf("round numbers %+v", page)
 	}
 }
+
+func (f featuredTest) plan(path, owner string) problems.FeaturedPlan {
+	f.t.Helper()
+	var result problems.FeaturedPlan
+	if err := json.Unmarshal([]byte(f.request("GET", path, owner, nil, 200)), &result); err != nil {
+		f.t.Fatal(err)
+	}
+	return result
+}
+
+// writers lists one slot's writers per round, "-" for a slot without a new problem.
+func writers(plan problems.FeaturedPlan, slot int) string {
+	var names []string
+	for _, round := range plan.Rounds {
+		s := round.Slots[slot]
+		if s.Kind != "new" {
+			names = append(names, "-"+s.Kind)
+			continue
+		}
+		name := s.Writer
+		if s.Mine {
+			name += "*"
+		}
+		if s.Trial {
+			name += "!"
+		}
+		names = append(names, name)
+	}
+	return strings.Join(names, ",")
+}
+
+func TestFeaturedSchedulePostgres(t *testing.T) {
+	f := newFeaturedTest(t)
+	next := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+	f.exec(`UPDATE featured_schedule SET next_at=$1`, next)
+	a1, a2, b1 := f.draft("alice", 3), f.draft("alice", 2), f.draft("bob", 4)
+	b2, c1, c2 := f.draft("bob", 7), f.draft("carol", 6), f.draft("carol", 1)
+	for i, apply := range []struct {
+		p          problems.Problem
+		preference string
+	}{{a1, "soon"}, {a2, "later"}, {b1, "soon"}, {b2, "soon"}, {c1, "later"}, {c2, "later"}} {
+		f.apply(apply.p, apply.preference, 204)
+		f.exec(`UPDATE featured_applications SET entered_at=clock_timestamp()-make_interval(hours=>$2) WHERE problem_id=$1`, apply.p.ID, 10-i)
+	}
+	body := f.request("GET", "/featured/schedule", "", nil, 200)
+	for _, secret := range []string{a1.ID, b2.ID, "Featured problem", `"mine"`, `"title"`} {
+		if strings.Contains(body, secret) {
+			t.Fatal("schedule leaked", secret, body)
+		}
+	}
+	plan := f.plan("/featured/schedule", "")
+	if len(plan.Rounds) != 8 || !plan.Rounds[0].Confirmed || plan.Rounds[1].Confirmed || !plan.Rounds[0].ScheduledAt.Equal(next) || !plan.Rounds[1].ScheduledAt.Equal(problems.NextFeatured(next)) {
+		t.Fatal("wrong rounds", body)
+	}
+	if plan.Waiting.Easy != 4 || plan.Waiting.Hard != 2 {
+		t.Fatal("wrong waiting counts", plan.Waiting)
+	}
+	// Easy: soon, soon, later, then soon falls back to the remaining later application.
+	if got := writers(plan, 0); got != "alice,bob,alice,carol,-missing,-missing,-missing,-missing" {
+		t.Fatal("easy", got)
+	}
+	if got := writers(plan, 1); got != "bob,carol,-missing,-missing,-missing,-missing,-missing,-missing" {
+		t.Fatal("hard", got)
+	}
+	// The first round is the same preview that /featured announces.
+	page := f.page("/featured")
+	if page.NextSlots[0].Writer != "alice" || page.NextSlots[1].Writer != "bob" {
+		t.Fatal("preview disagrees", page.NextSlots)
+	}
+	if got := writers(f.plan("/my/featured/schedule", "alice"), 0); got != "alice*,bob,alice*,carol,-missing,-missing,-missing,-missing" {
+		t.Fatal("own problems", got)
+	}
+	mine := f.plan("/my/featured/schedule", "alice")
+	if mine.Rounds[0].Slots[0].Title != "Featured problem" || mine.Rounds[1].Slots[0].Title != "" {
+		t.Fatal("wrong titles", mine.Rounds[0].Slots[0], mine.Rounds[1].Slots[0])
+	}
+
+	// A trial joins at the current time; its preference decides where it lands.
+	a3 := f.draft("alice", 4)
+	if got := writers(f.plan("/my/featured/schedule?problem="+a3.ID+"&preference=soon", "alice"), 0); got != "alice*,bob,alice*,alice*!,carol,-missing,-missing,-missing" {
+		t.Fatal("soon trial", got)
+	}
+	if got := writers(f.plan("/my/featured/schedule?problem="+a3.ID+"&preference=later", "alice"), 0); got != "alice*,bob,alice*,carol,alice*!,-missing,-missing,-missing" {
+		t.Fatal("later trial", got)
+	}
+	// An existing application keeps its entry time and only changes preference; the preview stays.
+	// The third round is a later turn, so carol's application now comes before bob's.
+	if got := writers(f.plan("/my/featured/schedule?problem="+a2.ID+"&preference=soon", "alice"), 0); got != "alice*,alice*!,carol,bob,-missing,-missing,-missing,-missing" {
+		t.Fatal("changed preference", got)
+	}
+	f.request("GET", "/my/featured/schedule?problem="+a3.ID, "bob", nil, 404)
+	f.request("GET", "/my/featured/schedule?problem=bad", "alice", nil, 404)
+	f.request("GET", "/my/featured/schedule?problem="+a3.ID+"&preference=now", "alice", nil, 400)
+	f.request("GET", "/my/featured/schedule", "", nil, 401)
+	// A problem that cannot be applied is left out instead of failing.
+	f.exec(`UPDATE problem_drafts SET draft=draft-'editorial' WHERE id=$1`, a3.ID)
+	if got := writers(f.plan("/my/featured/schedule?problem="+a3.ID, "alice"), 0); strings.Contains(got, "!") {
+		t.Fatal("ineligible trial placed", got)
+	}
+	// Published inventory turns empty rounds into revivals for that difficulty only.
+	revival := f.draft("carol", 8)
+	f.request("PUT", "/my/problems/"+revival.ID+"/publication", "carol", map[string]any{"version": revival.Version, "publish": true}, 200)
+	if got := writers(f.plan("/featured/schedule", ""), 1); got != "bob,carol,-revival,-revival,-revival,-revival,-revival,-revival" {
+		t.Fatal("revival", got)
+	}
+	if got := writers(f.plan("/featured/schedule", ""), 0); !strings.HasSuffix(got, "-missing") {
+		t.Fatal("revival crossed difficulty", got)
+	}
+}

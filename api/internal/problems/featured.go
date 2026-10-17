@@ -70,6 +70,33 @@ func featuredEligible(d Draft, known, enabled []string) bool {
 	return len(FeaturedContentIssues(d, known, enabled)) == 0
 }
 
+type featuredCandidate struct {
+	id, owner  string
+	raw        []byte
+	preference string
+	entered    time.Time
+}
+
+// featuredPreference is the preference a slot favors after count new problems: soon, soon, later.
+func featuredPreference(count int) string {
+	if count%3 == 2 {
+		return "later"
+	}
+	return "soon"
+}
+
+// featuredBefore ranks one slot's candidates: the saved preview, the favored preference, then entry order.
+// Selection and the published schedule share it so the schedule cannot drift from delivery.
+func featuredBefore(a, b featuredCandidate, reserved, preference string) bool {
+	if (a.id == reserved) != (b.id == reserved) {
+		return a.id == reserved
+	}
+	if (a.preference == preference) != (b.preference == preference) {
+		return a.preference == preference
+	}
+	return a.entered.Before(b.entered)
+}
+
 // NextFeatured returns the first Monday/Thursday 23:00 JST strictly after now.
 func NextFeatured(now time.Time) time.Time {
 	jst := time.FixedZone("JST", 9*60*60)
@@ -204,24 +231,15 @@ func (s *Store) selectFeatured(ctx context.Context, tx pgx.Tx, at, now time.Time
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM featured_slots WHERE slot=$1 AND kind='new'`, slot).Scan(&count); err != nil {
 		return pick, waiting, err
 	}
-	preference := "soon"
-	if count%3 == 2 {
-		preference = "later"
-	}
+	preference := featuredPreference(count)
 	// Lock in the same UUID order as contest saves, then rank the queue in memory.
 	rows, err := tx.Query(ctx, `SELECT d.id,d.owner_id,d.draft,a.preference,a.entered_at FROM problem_drafts d JOIN featured_applications a ON a.problem_id=d.id
  WHERE NOT d.ever_published AND a.entered_at<=$1 AND NOT EXISTS(SELECT 1 FROM contest_problems cp WHERE cp.problem_id=d.id) ORDER BY d.id FOR UPDATE OF d`, at)
 	if err != nil {
 		return pick, waiting, err
 	}
-	type candidate struct {
-		id, owner  string
-		raw        []byte
-		preference string
-		entered    time.Time
-	}
-	candidates, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (candidate, error) {
-		var c candidate
+	candidates, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (featuredCandidate, error) {
+		var c featuredCandidate
 		e := row.Scan(&c.id, &c.owner, &c.raw, &c.preference, &c.entered)
 		return c, e
 	})
@@ -229,14 +247,7 @@ func (s *Store) selectFeatured(ctx context.Context, tx pgx.Tx, at, now time.Time
 		return pick, waiting, err
 	}
 	sort.SliceStable(candidates, func(i, j int) bool {
-		a, b := candidates[i], candidates[j]
-		if (a.id == reserved) != (b.id == reserved) {
-			return a.id == reserved
-		}
-		if (a.preference == preference) != (b.preference == preference) {
-			return a.preference == preference
-		}
-		return a.entered.Before(b.entered)
+		return featuredBefore(candidates[i], candidates[j], reserved, preference)
 	})
 	for _, c := range candidates {
 		var eligible bool
@@ -287,6 +298,36 @@ func (s *Store) selectFeatured(ctx context.Context, tx pgx.Tx, at, now time.Time
 	return pick, waiting, err
 }
 
+// previewFeatured selects the next round and saves it as the preview, so every reader announces the same problems.
+// The caller must hold the featured_schedule row lock. ids holds each slot's problem, or "" when it has none.
+func (s *Store) previewFeatured(ctx context.Context, tx pgx.Tx, at, now time.Time, known, enabled []string) (previews []FeaturedPreview, ids []string, waiting FeaturedWaiting, err error) {
+	for _, name := range []string{"easy", "hard"} {
+		pick, count, e := s.selectFeatured(ctx, tx, at, now, name, known, enabled)
+		if e != nil {
+			return nil, nil, waiting, e
+		}
+		if name == "easy" {
+			waiting.Easy = count
+		} else {
+			waiting.Hard = count
+		}
+		preview := FeaturedPreview{Slot: name, Kind: pick.Kind, Difficulty: pick.Difficulty, Testers: []string{}}
+		if pick.ProblemID != "" {
+			if _, err = tx.Exec(ctx, `INSERT INTO featured_previews(scheduled_at,slot,problem_id) VALUES($1,$2,$3) ON CONFLICT(scheduled_at,slot) DO UPDATE SET problem_id=excluded.problem_id`, at, name, pick.ProblemID); err != nil {
+				return nil, nil, waiting, err
+			}
+			if err = tx.QueryRow(ctx, `SELECT u.handle, ARRAY(SELECT u.handle FROM problem_testers t JOIN user_profiles u ON u.owner_id=t.owner_id WHERE t.problem_id=d.id ORDER BY u.handle) FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id WHERE d.id=$1`, pick.ProblemID).Scan(&preview.Writer, &preview.Testers); err != nil {
+				return nil, nil, waiting, err
+			}
+		} else if _, err = tx.Exec(ctx, `DELETE FROM featured_previews WHERE scheduled_at=$1 AND slot=$2`, at, name); err != nil {
+			return nil, nil, waiting, err
+		}
+		previews = append(previews, preview)
+		ids = append(ids, pick.ProblemID)
+	}
+	return previews, ids, waiting, nil
+}
+
 func (s *Store) FeaturedList(ctx context.Context, offset int, known, enabled []string) (FeaturedPage, error) {
 	page := FeaturedPage{Items: []FeaturedRound{}, NextSlots: []FeaturedPreview{}}
 	tx, err := s.pool.Begin(ctx)
@@ -302,28 +343,8 @@ func (s *Store) FeaturedList(ctx context.Context, offset int, known, enabled []s
 	if err = tx.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&now); err != nil {
 		return page, err
 	}
-	for _, name := range []string{"easy", "hard"} {
-		pick, waiting, e := s.selectFeatured(ctx, tx, page.NextAt, now, name, known, enabled)
-		if e != nil {
-			return page, e
-		}
-		if name == "easy" {
-			page.Waiting.Easy = waiting
-		} else {
-			page.Waiting.Hard = waiting
-		}
-		preview := FeaturedPreview{Slot: name, Kind: pick.Kind, Difficulty: pick.Difficulty, Testers: []string{}}
-		if pick.ProblemID != "" {
-			if _, err = tx.Exec(ctx, `INSERT INTO featured_previews(scheduled_at,slot,problem_id) VALUES($1,$2,$3) ON CONFLICT(scheduled_at,slot) DO UPDATE SET problem_id=excluded.problem_id`, page.NextAt, name, pick.ProblemID); err != nil {
-				return page, err
-			}
-			if err = tx.QueryRow(ctx, `SELECT u.handle, ARRAY(SELECT u.handle FROM problem_testers t JOIN user_profiles u ON u.owner_id=t.owner_id WHERE t.problem_id=d.id ORDER BY u.handle) FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id WHERE d.id=$1`, pick.ProblemID).Scan(&preview.Writer, &preview.Testers); err != nil {
-				return page, err
-			}
-		} else if _, err = tx.Exec(ctx, `DELETE FROM featured_previews WHERE scheduled_at=$1 AND slot=$2`, page.NextAt, name); err != nil {
-			return page, err
-		}
-		page.NextSlots = append(page.NextSlots, preview)
+	if page.NextSlots, _, page.Waiting, err = s.previewFeatured(ctx, tx, page.NextAt, now, known, enabled); err != nil {
+		return page, err
 	}
 	if err = tx.QueryRow(ctx, `SELECT count(DISTINCT scheduled_at)+1 FROM featured_slots`).Scan(&page.NextNumber); err != nil {
 		return page, err

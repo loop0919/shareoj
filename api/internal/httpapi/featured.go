@@ -75,6 +75,45 @@ func (p problemHandler) featuredApplication(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNoContent)
 }
 
+type featuredPlanResponse = problems.FeaturedPlan
+
+func (p problemHandler) featuredSchedule(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	p.writeFeaturedPlan(w, r, "", "", "")
+}
+
+// myFeaturedSchedule marks the viewer's problems and can place one of them as if it were applied.
+func (p problemHandler) myFeaturedSchedule(w http.ResponseWriter, r *http.Request, owner string) {
+	query := r.URL.Query()
+	id, preference := query.Get("problem"), query.Get("preference")
+	if id != "" && !problemID.MatchString(id) {
+		authError(w, 404, "problem_not_found")
+		return
+	}
+	if preference == "" {
+		preference = "soon"
+	}
+	if preference != "soon" && preference != "later" {
+		authError(w, 400, "invalid_request")
+		return
+	}
+	p.writeFeaturedPlan(w, r, owner, id, preference)
+}
+
+func (p problemHandler) writeFeaturedPlan(w http.ResponseWriter, r *http.Request, owner, id, preference string) {
+	store, ok := p.Store.(*problems.Store)
+	if !ok {
+		authError(w, 503, "database_unavailable")
+		return
+	}
+	plan, err := store.FeaturedPlan(r.Context(), owner, id, preference, submissions.RuntimeIDs(), p.Judging.RuntimeIDs())
+	if err != nil {
+		problemError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, plan)
+}
+
 type featuredStandingsResponse = problems.FeaturedStandings
 
 func featuredStandingsParameters() []*huma.Param {
