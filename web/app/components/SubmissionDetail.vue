@@ -40,6 +40,7 @@ const verdicts: Record<string, string> = { AC: '正解', WA: '不正解', CE: '�
         <table aria-label="提出情報">
           <tbody>
             <tr><th scope="row">提出日時</th><td><time :datetime="item.createdAt">{{ new Date(item.createdAt).toLocaleString('ja-JP') }}</time></td></tr>
+            <tr v-if="item.rejudgedAt"><th scope="row">リジャッジ日時</th><td><time :datetime="item.rejudgedAt">{{ new Date(item.rejudgedAt).toLocaleString('ja-JP') }}</time></td></tr>
             <tr v-if="item.author"><th scope="row">提出者</th><td><UserLink :handle="item.author" /></td></tr>
             <tr><th scope="row">問題</th><td><NuxtLink :to="submissionProblemPath(item)">{{ item.problemTitle }}</NuxtLink></td></tr>
             <tr><th scope="row">言語</th><td>{{ runtimeLabel(item.runtime) }}</td></tr>

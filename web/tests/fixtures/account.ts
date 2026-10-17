@@ -22,6 +22,8 @@ export const test = base.extend({
       if (request.method() === 'DELETE') { problems.delete(id); return route.fulfill({ status: 204 }) }
       return route.fulfill(problems.has(id) ? { json: problems.get(id) } : { status: 404, json: {} })
     })
+    // Saved drafts are not rejudgeable unless a test grants it; registered last, so it wins.
+    await page.route('**/api/my/problems/*/rejudge', route => route.fulfill({ status: 404, json: {} }))
     await use(page)
   },
 })

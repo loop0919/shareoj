@@ -108,6 +108,7 @@ func validResult(r submissions.Result) bool {
 
 func (b bridge) results(ctx context.Context, event events.SQSEvent) events.SQSEventResponse {
 	response := events.SQSEventResponse{}
+	finished := false
 	for _, record := range event.Records {
 		started := time.Now()
 		var e envelope
@@ -139,7 +140,14 @@ func (b bridge) results(ctx context.Context, event events.SQSEvent) events.SQSEv
 			response.BatchItemFailures = append(response.BatchItemFailures, events.SQSBatchItemFailure{ItemIdentifier: record.MessageId})
 		}
 		if err == nil && e.Result != nil {
+			finished = true
 			observe("result_processed", "", "", e.ID, e.Attempt, "verdict", e.Result.Verdict, "durationMs", time.Since(started).Milliseconds())
+		}
+	}
+	// A finished judgement frees capacity. Send waiting rejudges now instead of on the next tick.
+	if finished && !b.paused {
+		if err := b.send(ctx); err != nil {
+			observe("failure", "platform", "dispatch_failed", "", "")
 		}
 	}
 	return response

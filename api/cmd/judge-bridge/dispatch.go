@@ -43,15 +43,21 @@ func (b bridge) dispatch(ctx context.Context) (err error) {
 		return err
 	}
 	// Bounded expiry covers queue retries too; it does not rejudge a finalized submission.
+	// A requested rejudge counts from its request, not from the original submission.
 	expired, err := b.db.Exec(ctx, `UPDATE submissions SET status='DONE',finished_at=clock_timestamp(),result='{"verdict":"JE","passed":0,"total":0}'
-  WHERE runtime=ANY($1::text[]) AND status <> 'DONE' AND created_at < clock_timestamp()-interval '6 hours'`, submissions.IsolateRuntimeIDs())
+  WHERE runtime=ANY($1::text[]) AND status <> 'DONE' AND COALESCE(rejudged_at,created_at) < clock_timestamp()-interval '6 hours'`, submissions.IsolateRuntimeIDs())
 	if err != nil {
 		return err
 	}
 	if expired.RowsAffected() > 0 {
 		observe("failure", "platform", "submission_expired", "", "", "count", expired.RowsAffected())
 	}
-	// The API invokes dispatch per submission, so pausing the schedule alone would not hold requests.
+	return b.send(ctx)
+}
+
+// send moves queued submissions to SQS. The API invokes dispatch per submission, so pausing
+// the schedule alone would not hold requests.
+func (b bridge) send(ctx context.Context) error {
 	if b.paused {
 		observe("dispatch_paused", "", "", "", "")
 		return nil
@@ -80,6 +86,9 @@ func (b bridge) publishedRuntimes() []string {
 	return (submissions.Config{JudgeImage: b.runtime, JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: b.enabled}).RuntimeIDs()
 }
 
+// rejudgeInFlight limits judgements sent while rejudges wait. Rejudges use spare capacity only.
+const rejudgeInFlight = 2
+
 func (b bridge) dispatchOne(ctx context.Context, tx pgx.Tx) (err error) {
 	var id, attempt, source, runtime string
 	var raw []byte
@@ -89,9 +98,13 @@ func (b bridge) dispatchOne(ctx context.Context, tx pgx.Tx) (err error) {
 			observe("failure", "platform", stage+"_failed", id, attempt)
 		}
 	}()
+	// New submissions go first. A rejudge waits until fewer than rejudgeInFlight judgements
+	// are in SQS or running, so a new submission queues behind at most that many.
 	err = tx.QueryRow(ctx, `SELECT id::text,judge_attempt::text,source,job,runtime FROM submissions
   WHERE runtime=ANY($1::text[]) AND dispatched_at IS NULL AND status <> 'DONE'
-  ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1`, submissions.IsolateRuntimeIDs()).Scan(&id, &attempt, &source, &raw, &runtime)
+    AND (rejudged_at IS NULL OR (SELECT COUNT(*) FROM submissions f
+      WHERE f.runtime=ANY($1::text[]) AND f.dispatched_at IS NOT NULL AND f.status <> 'DONE') < $2)
+  ORDER BY rejudged_at IS NOT NULL,COALESCE(rejudged_at,created_at),id FOR UPDATE SKIP LOCKED LIMIT 1`, submissions.IsolateRuntimeIDs(), rejudgeInFlight).Scan(&id, &attempt, &source, &raw, &runtime)
 	if err != nil {
 		return err
 	}

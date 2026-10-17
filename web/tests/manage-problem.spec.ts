@@ -78,12 +78,13 @@ test('published problems explain where else they cannot go', async ({ page }) =>
   await expect(status.getByRole('list', { name: '提出先の制限' }).getByRole('listitem')).toHaveText(['コンテスト：公開中の問題はコンテストに登録できません', '定期便：一度公開した問題は定期便に応募できません'])
 })
 
-test('tester links copy from an icon button and the rejudge placeholder is gone', async ({ page, context }) => {
+test('tester links copy from an icon button', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.route('**/api/my/problems/*/tester-invitation', route => route.fulfill({ json: { token: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567' } }))
   await page.goto('/problems/new')
   await page.locator('#problem-title').fill('テスターリンク')
   await page.getByRole('button', { name: '問題管理', exact: true }).click()
+  // Rejudging appears only after the first save.
   await expect(page.getByRole('heading', { name: 'リジャッジ' })).toHaveCount(0)
   await page.getByRole('button', { name: 'リンクを発行', exact: true }).click()
   const link = page.getByLabel('招待リンク', { exact: true })

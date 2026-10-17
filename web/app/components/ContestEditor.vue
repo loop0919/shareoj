@@ -409,7 +409,7 @@ async function save() {
                 </template>
               </section>
             </fieldset>
-            <p class="selection-note muted">問題の保存内容は、開始後もコンテストに自動で反映されます。更新後の提出から新しい内容で採点し、受付済みの提出は再採点しません。</p>
+            <p class="selection-note muted">問題の保存内容は、開始後もコンテストに自動で反映されます。更新後の提出から新しい内容で採点します。受付済みの提出を採点し直すには、問題管理からリジャッジしてください。</p>
           </div>
         </section>
         <section v-show="section === 'schedule'" class="problem-management" data-section="schedule" aria-labelledby="contest-schedule-title">

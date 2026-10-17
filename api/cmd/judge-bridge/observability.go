@@ -24,7 +24,7 @@ func observe(event, category, reason, id, attempt string, fields ...any) {
 // Emitted only after a successful DB query, so missing data detects dispatcher failure.
 func (b bridge) pendingAge(ctx context.Context) error {
 	var age float64
-	err := b.db.QueryRow(ctx, `SELECT COALESCE(GREATEST(EXTRACT(EPOCH FROM clock_timestamp()-MIN(created_at)),0),0)::float8
+	err := b.db.QueryRow(ctx, `SELECT COALESCE(GREATEST(EXTRACT(EPOCH FROM clock_timestamp()-MIN(COALESCE(rejudged_at,created_at))),0),0)::float8
       FROM submissions WHERE runtime=ANY($1::text[]) AND status <> 'DONE'`, submissions.IsolateRuntimeIDs()).Scan(&age)
 	if err == nil {
 		observe("pending_age", "", "", "", "", "oldestPendingSeconds", age)

@@ -32,6 +32,20 @@ watch(() => [user.value?.id, props.problemId, props.contestId, props.mine], () =
 watch([offset, () => user.value?.id, () => props.problemId, () => props.contestId, () => props.mine], load)
 onMounted(load)
 usePolling(load, 15000)
+
+const { allowed: canRejudge, busy: rejudging, message: rejudgeMessage, rejudge } = useRejudge(() => props.problemId)
+const selected = ref<string[]>([])
+// Only finished judgements can be rejudged. Selection belongs to the visible page.
+const selectable = computed(() => data.value?.items.filter(item => item.status === 'DONE').map(item => item.id) ?? [])
+const allSelected = computed(() => selectable.value.length > 0 && selectable.value.every(id => selected.value.includes(id)))
+watch(selectable, ids => { selected.value = selected.value.filter(id => ids.includes(id)) })
+async function rejudgeSelected() {
+  const count = selected.value.length
+  if (!count || !window.confirm(`選択した${count}件の提出をリジャッジしますか？\n保存済みの問題の内容で採点し直します。`)) return
+  if (await rejudge([...selected.value])) { selected.value = []; await load() }
+}
+// Follow rejudged rows more closely than the regular refresh.
+usePolling(load, 3000, () => canRejudge.value && !!data.value?.items.some(item => item.status !== 'DONE'))
 </script>
 <template>
   <section class="problem-submissions" :aria-label="title">
@@ -42,9 +56,13 @@ usePolling(load, 15000)
       <LoadingSpinner v-if="loading && !data" label="提出一覧を読み込み中" />
       <template v-if="data">
         <p v-if="!data.items.length" class="muted">提出はまだありません。</p>
-        <div v-else class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0" :aria-busy="loading">
-          <table class="content-table"><thead><tr><th scope="col">提出日時（日本時間）</th><th scope="col">ユーザー</th><th scope="col">言語</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th scope="col">結果</th><th scope="col">詳細</th></tr></thead>
-            <tbody><tr v-for="item in data.items" :key="item.id"><td><time :datetime="item.createdAt">{{ contestDate(item.createdAt) }}</time></td><td><UserLink :handle="item.author" /></td><td>{{ runtimeLabel(item.runtime) }}</td><td class="submission-usage">{{ item.sourceBytes == null ? '—' : `${item.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage">{{ submissionUsage(item.result) }}</td><td><SubmissionStatus :item="item" /></td><td><NuxtLink :to="detail(item)">詳細</NuxtLink></td></tr></tbody>
+        <div v-if="canRejudge && data.items.length" class="rejudge-bar">
+          <button type="button" class="editor-button" :disabled="!selected.length || rejudging" @click="rejudgeSelected">{{ rejudging ? '依頼中…' : `選択した提出をリジャッジ（${selected.length}件）` }}</button>
+          <p v-if="rejudgeMessage" role="status">{{ rejudgeMessage }}</p>
+        </div>
+        <div v-if="data.items.length" class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0" :aria-busy="loading">
+          <table class="content-table"><thead><tr><th v-if="canRejudge" scope="col" class="select-cell"><input type="checkbox" :checked="allSelected" :disabled="!selectable.length" aria-label="このページの提出をすべて選択" @change="selected = ($event.target as HTMLInputElement).checked ? [...selectable] : []"></th><th scope="col">提出日時（日本時間）</th><th scope="col">ユーザー</th><th scope="col">言語</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th scope="col">結果</th><th scope="col">詳細</th></tr></thead>
+            <tbody><tr v-for="item in data.items" :key="item.id"><td v-if="canRejudge" class="select-cell"><input v-model="selected" type="checkbox" :value="item.id" :disabled="!selectable.includes(item.id)" :aria-label="`${contestDate(item.createdAt)}の提出を選択`"></td><td><time :datetime="item.createdAt">{{ contestDate(item.createdAt) }}</time></td><td><UserLink :handle="item.author" /></td><td>{{ runtimeLabel(item.runtime) }}</td><td class="submission-usage">{{ item.sourceBytes == null ? '—' : `${item.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage">{{ submissionUsage(item.result) }}</td><td><SubmissionStatus :item="item" /></td><td><NuxtLink :to="detail(item)">詳細</NuxtLink></td></tr></tbody>
           </table>
         </div>
         <ContentPagination :index="offset / 50" :has-next="data.hasMore" :loading="loading" @move="direction => offset += direction * 50" />
@@ -58,4 +76,10 @@ usePolling(load, 15000)
 .submission-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .submission-heading h2 { margin: 0; }
 .submission-heading button { min-height: 40px; padding-inline: 16px; }
+.rejudge-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 12px; }
+.rejudge-bar button { min-height: 40px; padding-inline: 16px; white-space: nowrap; }
+.rejudge-bar p { margin: 0; color: var(--color-muted); font-size: .8125rem; }
+.select-cell { width: 44px; text-align: center; }
+.select-cell input { width: 18px; height: 18px; margin: 0; accent-color: var(--color-accent); cursor: pointer; }
+.select-cell input:disabled { cursor: not-allowed; }
 </style>

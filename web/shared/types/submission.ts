@@ -21,6 +21,7 @@ export type Submission = {
   progress?: { phase: 'PREPARING' | 'JUDGING', completed: number, total: number, verdict?: 'WA' | 'TLE' | 'MLE' | 'OLE' | 'RE' } | null
   result: { cpuTimeMs?: number, memoryBytes?: number, interactive?: boolean, verdict: string, passed: number, total: number, compileLog?: string, checkerLog?: string, cases?: { checkerLog?: TextPreview, sampleDetails?: SampleDetails, name: string, verdict: string, output?: string, outputFile?: TestFile, cpuTimeMs?: number, wallTimeMs?: number, memoryBytes?: number }[] } | null
   createdAt: string
+  rejudgedAt?: string
 }
 
 // Without the contest position, link the older path; its page redirects to the problem's letter.

@@ -28,3 +28,4 @@ Architecture Decision Record（ADR）は、採用した設計だけでなく、�
 | [0016](0016-anonymize-deleted-accounts.md) | Accepted | アカウント削除では公開物を残し、作者を匿名にする |
 | [0017](0017-link-posts-as-user-editorials.md) | Accepted | 記事をユーザー解説として問題に紐付ける |
 | [0018](0018-tag-problems-and-posts.md) | Accepted | 問題と記事にタグを付け、使われている表記を候補に出す |
+| [0019](0019-rejudge-submissions.md) | Accepted | 提出を今の問題の内容でリジャッジし、新しい提出の採点を優先する |

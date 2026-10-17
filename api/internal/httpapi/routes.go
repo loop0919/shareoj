@@ -55,8 +55,11 @@ type postHandler struct {
 }
 type (
 	profileHandler    struct{ Profiles profiles.Repository }
-	submissionHandler struct{ submissions.Service }
-	contestHandler    struct {
+	submissionHandler struct {
+		submissions.Service
+		Operators map[string]bool
+	}
+	contestHandler struct {
 		Contests    *contests.Store
 		Submissions *submissions.Store
 		Judging     submissions.Config
@@ -105,7 +108,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	problems := problemHandler{Store: d.Store, Files: d.Files, Judging: judging}
 	posts := postHandler{Posts: d.Posts, Operators: d.Operators}
 	profiles := profileHandler{Profiles: d.Profiles}
-	submissions := submissionHandler{Service: submissions.Service{Config: judging, Submissions: d.Submissions, Problems: d.Store, DispatchJudge: d.DispatchJudge}}
+	submissions := submissionHandler{Service: submissions.Service{Config: judging, Submissions: d.Submissions, Problems: d.Store, DispatchJudge: d.DispatchJudge}, Operators: d.Operators}
 	contests := contestHandler{Contests: d.Contests, Submissions: d.Submissions, Judging: judging}
 	images := imageHandler{Store: d.Images}
 	notifications := notificationHandler{Store: d.Notifications}
@@ -209,6 +212,8 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	private("GET /my/problems/{id}", problems.problem, true)
 	private("GET /my/problems/{id}/submissions", submissions.problemSubmissions, true)
 	private("GET /my/problems/{id}/submissions/{submission}", submissions.problemSubmissions, true)
+	private("GET /my/problems/{id}/rejudge", submissions.rejudge, false)
+	private("POST /my/problems/{id}/rejudge", submissions.rejudge, false)
 	private("PUT /my/problems/{id}", problems.problem, true)
 	private("DELETE /my/problems/{id}", problems.problem, true)
 	mux.HandleFunc("POST /my/problems/{id}/test-files", auth.require(problems.testFile, true, 25*time.Second))

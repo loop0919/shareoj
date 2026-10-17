@@ -98,3 +98,45 @@ func (s Service) Create(ctx context.Context, owner, id string, input CreateInput
 	}
 	return item, nil
 }
+
+// submissionRuntimes lists the stored runtime IDs that new submissions may use now.
+func (s Service) submissionRuntimes() []string {
+	if s.JudgeRuntime == "" || s.JudgeRuntime == "cpp17-local" {
+		return []string{"cpp17-local"}
+	}
+	ids := []string{}
+	for _, rt := range s.AvailableRuntimes() {
+		ids = append(ids, rt.ID+"-isolate")
+	}
+	return ids
+}
+
+// Rejudge requeues finished submissions of a problem the actor manages, or any problem for an operator.
+func (s Service) Rejudge(ctx context.Context, actor, problemID string, submissionIDs []string, operator bool) (int64, error) {
+	if s.Submissions == nil {
+		return 0, ErrUnavailable
+	}
+	if err := s.Ready(); err != nil {
+		return 0, err
+	}
+	if !problems.ValidID(problemID) || len(submissionIDs) > MaxRejudgeTargets {
+		return 0, ErrInvalid
+	}
+	for _, id := range submissionIDs {
+		if !problems.ValidID(id) {
+			return 0, ErrInvalid
+		}
+	}
+	queued, err := s.Submissions.Rejudge(ctx, RejudgeInput{
+		Actor: actor, Operator: operator, ProblemID: problemID, SubmissionIDs: submissionIDs,
+		Image: s.JudgeImage, Runtimes: s.submissionRuntimes(), CheckerRuntimes: s.RuntimeIDs(),
+	})
+	if err == nil && queued > 0 && s.JudgeRuntime != "" && s.JudgeRuntime != "cpp17-local" && s.DispatchJudge != nil {
+		wakeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		if s.DispatchJudge(wakeCtx) != nil {
+			slog.Warn("immediate judge dispatch unavailable for rejudge; periodic recovery retained", "problemId", problemID)
+		}
+		cancel()
+	}
+	return queued, err
+}

@@ -97,31 +97,32 @@ type Progress struct {
 }
 
 type Submission struct {
-	Author         string    `json:"author"`
-	ContestID      string    `json:"contestId,omitempty"`
-	ProblemIndex   *int      `json:"problemIndex,omitempty"` // position in the contest, set only with ContestID
-	EasyTest       bool      `json:"easyTest"`
-	ID             string    `json:"id"`
-	ProblemID      string    `json:"problemId"`
-	ProblemVersion int64     `json:"problemVersion"`
-	ProblemTitle   string    `json:"problemTitle"`
-	Runtime        string    `json:"runtime"`
-	Source         string    `json:"source,omitempty"`
-	SourceBytes    int       `json:"sourceBytes"`
-	Status         string    `json:"status"`
-	Result         *Result   `json:"result"`
-	Progress       *Progress `json:"progress"`
-	CreatedAt      time.Time `json:"createdAt"`
+	Author         string     `json:"author"`
+	ContestID      string     `json:"contestId,omitempty"`
+	ProblemIndex   *int       `json:"problemIndex,omitempty"` // position in the contest, set only with ContestID
+	EasyTest       bool       `json:"easyTest"`
+	ID             string     `json:"id"`
+	ProblemID      string     `json:"problemId"`
+	ProblemVersion int64      `json:"problemVersion"`
+	ProblemTitle   string     `json:"problemTitle"`
+	Runtime        string     `json:"runtime"`
+	Source         string     `json:"source,omitempty"`
+	SourceBytes    int        `json:"sourceBytes"`
+	Status         string     `json:"status"`
+	Result         *Result    `json:"result"`
+	Progress       *Progress  `json:"progress"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	RejudgedAt     *time.Time `json:"rejudgedAt,omitempty"`
 }
 
 type Store struct{ Pool *pgxpool.Pool }
 
-const columns = `id,problem_id,problem_version,problem_title,runtime,source,status,result,created_at,progress,COALESCE((job->>'easyTest')::boolean,false),COALESCE(contest_id::text,''),(SELECT handle FROM user_profiles WHERE user_profiles.owner_id=submissions.owner_id),(SELECT position FROM contest_problems cp WHERE cp.contest_id=submissions.contest_id AND cp.problem_id=submissions.problem_id)`
+const columns = `id,problem_id,problem_version,problem_title,runtime,source,status,result,created_at,progress,COALESCE((job->>'easyTest')::boolean,false),COALESCE(contest_id::text,''),(SELECT handle FROM user_profiles WHERE user_profiles.owner_id=submissions.owner_id),(SELECT position FROM contest_problems cp WHERE cp.contest_id=submissions.contest_id AND cp.problem_id=submissions.problem_id),rejudged_at`
 
 func scan(row pgx.Row) (Submission, error) {
 	var s Submission
 	var result, progress []byte
-	err := row.Scan(&s.ID, &s.ProblemID, &s.ProblemVersion, &s.ProblemTitle, &s.Runtime, &s.Source, &s.Status, &result, &s.CreatedAt, &progress, &s.EasyTest, &s.ContestID, &s.Author, &s.ProblemIndex)
+	err := row.Scan(&s.ID, &s.ProblemID, &s.ProblemVersion, &s.ProblemTitle, &s.Runtime, &s.Source, &s.Status, &result, &s.CreatedAt, &progress, &s.EasyTest, &s.ContestID, &s.Author, &s.ProblemIndex, &s.RejudgedAt)
 	s.SourceBytes = len(s.Source)
 	if err == nil && result != nil {
 		err = json.Unmarshal(result, &s.Result)
@@ -250,7 +251,7 @@ func (s *Store) Claim(ctx context.Context) (Submission, Job, error) {
 	var id string
 	var raw []byte
 	err = s.Pool.QueryRow(ctx, `UPDATE submissions SET status='RUNNING',started_at=clock_timestamp()
-		WHERE id=(SELECT id FROM submissions WHERE runtime='cpp17-local' AND status='QUEUED' ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1)
+		WHERE id=(SELECT id FROM submissions WHERE runtime='cpp17-local' AND status='QUEUED' ORDER BY rejudged_at IS NOT NULL,COALESCE(rejudged_at,created_at),id FOR UPDATE SKIP LOCKED LIMIT 1)
 		RETURNING id,job`).Scan(&id, &raw)
 	if err != nil {
 		return Submission{}, Job{}, err

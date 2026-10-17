@@ -217,12 +217,13 @@ func maxTime(a, b time.Time) time.Time {
 	return b
 }
 
+// Rejudges never start hosts; they wait for spare capacity instead.
 func loadDemand(ctx context.Context, db *pgxpool.Pool, minParticipants int) (demand, error) {
 	var d demand
 	var waiting float64
 	err := db.QueryRow(ctx, `SELECT statement_timestamp(), COUNT(*),
   COALESCE(EXTRACT(EPOCH FROM statement_timestamp()-MIN(dispatched_at)),0)::float8
-  FROM submissions WHERE runtime=ANY($1::text[]) AND status='QUEUED' AND dispatched_at IS NOT NULL`,
+  FROM submissions WHERE runtime=ANY($1::text[]) AND status='QUEUED' AND dispatched_at IS NOT NULL AND rejudged_at IS NULL`,
 		submissions.IsolateRuntimeIDs()).Scan(&d.Now, &d.Queued, &waiting)
 	if err != nil {
 		return d, err
