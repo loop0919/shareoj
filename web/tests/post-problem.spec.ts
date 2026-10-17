@@ -98,6 +98,37 @@ test('posting lists unpublished problems across pages, explains blocked ones and
   await expect(page.locator('.toast').getByRole('status')).toHaveText('公開しました')
 })
 
+test('posting keeps the timing beside a long list and the button on screen', async ({ page }, testInfo) => {
+  const items = Array.from({ length: 30 }, (_, index) => ({
+    id: `aaaaaaaa-aaaa-4aaa-8aaa-${String(index).padStart(12, '0')}`, title: `問題 ${index + 1}`, difficulty: index % 10 + 1, updatedAt,
+    readiness: { ...ready, publish: index % 4 ? [] : ['in_contest'] },
+  }))
+  await page.route('**/api/my/problems?*', route => route.fulfill({ json: { items, nextCursor: '' } }))
+  for (const size of [{ width: 1280, height: 800 }, { width: 375, height: 812 }]) {
+    await page.setViewportSize(size)
+    await page.goto(`/problems/post?problem=${items[29]!.id}`)
+    const radio = page.getByRole('radio', { name: /問題 30/ })
+    await expect(radio).toBeChecked()
+    await expect(radio).toBeInViewport()
+    await expect(page.getByRole('button', { name: '投稿する', exact: true })).toBeInViewport()
+    await expect(page.locator('.post-bar')).toContainText('「問題 30」を今すぐ公開します')
+    expect(await page.evaluate(() => scrollY)).toBe(0)
+    await page.screenshot({ path: testInfo.outputPath(`post-long-${size.width}.png`) })
+  }
+  // On a wide screen the timing sits to the right of the list.
+  await page.setViewportSize({ width: 1280, height: 800 })
+  const list = (await page.getByRole('group', { name: '問題' }).boundingBox())!
+  const timing = (await page.getByRole('group', { name: '公開のタイミング' }).boundingBox())!
+  expect(timing.x).toBeGreaterThan(list.x + list.width)
+  // The button closes the page at the bottom right, under the timing.
+  const button = (await page.getByRole('button', { name: '投稿する', exact: true }).boundingBox())!
+  expect(button.x).toBeGreaterThan(timing.x)
+  await page.getByRole('radio', { name: '日時を指定' }).check()
+  await page.getByLabel('公開日時（日本時間）').fill('2099-10-20T21:00')
+  await expect(page.locator('.post-bar')).toContainText('「問題 30」を10/20(火) 21:00に公開します')
+  await expect(page.getByRole('button', { name: '予約する', exact: true })).toBeInViewport()
+})
+
 test('posting has an empty state', async ({ page }) => {
   await page.goto('/problems/post')
   await expect(page.getByText('投稿できる未公開の問題はありません。')).toBeVisible()

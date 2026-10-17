@@ -174,7 +174,7 @@ test('featured application', async ({ page }) => {
     return route.fulfill({ json: plan })
   })
   await page.goto(`/featured/apply?problem=${draftId}`)
-  await expect(page.locator('.apply-projection')).toBeVisible()
+  await expect(page.locator('.apply-bar .bar-message')).toBeVisible()
   await annotate(page, [page.getByRole('group', { name: '問題' }), page.getByRole('group', { name: '希望' }), page.locator('.apply-schedule td[data-trial]'), page.getByRole('button', { name: '応募する', exact: true })])
   await shoot(page, 'featured-apply', [page.locator('.featured-apply')])
 })

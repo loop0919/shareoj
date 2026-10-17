@@ -91,14 +91,14 @@ test('authors choose a problem and preference, see where it lands, apply and wit
   await expect(page.locator('.apply-schedule tbody tr')).toHaveCount(6)
   await expect(page.locator('.apply-schedule')).toContainText('確定')
   await choices.getByRole('radio', { name: /応募する問題/ }).check()
-  await expect(page.locator('.apply-projection')).toContainText('10/5')
+  await expect(page.locator('.apply-bar .bar-message')).toContainText('10/5')
   const placed = page.locator('.apply-schedule td[data-trial]')
   // The chosen problem shows by name, marked as a what-if until it is applied.
   await expect(placed).toContainText('応募する問題')
   await expect(placed).toContainText('応募した場合')
   await expect(page.locator('.apply-bar')).toContainText('「応募する問題」は10/5')
   await page.getByRole('radio', { name: 'ゆっくりで良い' }).check()
-  await expect(page.locator('.apply-projection')).toContainText('10/12')
+  await expect(page.locator('.apply-bar .bar-message')).toContainText('10/12')
   expect(plans.at(-1)?.get('preference')).toBe('later')
   expect(plans.at(-1)?.get('problem')).toBe(id)
   for (const width of [320, 375, 414, 768, 1280]) {
@@ -171,6 +171,12 @@ test('a long list scrolls inside itself, can hide blocked problems, and keeps th
     await expect(page.getByRole('button', { name: '応募する', exact: true })).toBeInViewport()
     await expect(page.getByRole('radio', { name: 'ゆっくりで良い' })).toBeInViewport()
     await expect(page.locator('.apply-bar')).toContainText('「問題 28」は')
+    if (size.width === 1280) {
+      // The button closes the page at the bottom right, under the schedule.
+      const button = (await page.getByRole('button', { name: '応募する', exact: true }).boundingBox())!
+      const schedule = (await page.locator('.apply-schedule').boundingBox())!
+      expect(button.x).toBeGreaterThan(schedule.x)
+    }
     expect(await page.evaluate(() => scrollY)).toBe(0)
     await page.screenshot({ path: testInfo.outputPath(`apply-long-${size.width}.png`) })
   }
