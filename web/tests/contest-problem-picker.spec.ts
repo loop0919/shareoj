@@ -9,7 +9,7 @@ const problems = [
 ]
 
 test('contest problems are found by fuzzy title or UUID and added to the end of the order', async ({ page }) => {
-  await page.route('**/api/my/problems**', route => route.fulfill({ json: { items: problems, nextCursor: '' } }))
+  await page.route('**/api/my/problems**', route => route.fulfill({ json: { items: new URL(route.request().url()).searchParams.get('role') === 'tester' ? [] : problems, nextCursor: '' } }))
   await page.goto('/my/contests/new')
   const section = page.getByRole('button', { name: '問題・配点', exact: true })
   await section.click()
@@ -80,4 +80,17 @@ test('contest problems are found by fuzzy title or UUID and added to the end of 
   await page.getByRole('button', { name: 'Range Sum Queryを外す', exact: true }).click()
   await expect(selected.locator('strong')).toHaveText(['最短経路の数え上げ'])
   await expect(page.getByRole('button', { name: 'Range Sum Queryを追加', exact: true })).toBeEnabled()
+})
+
+test('problems the setter tests can be entered alongside their own', async ({ page }) => {
+  const tested = { id: '44444444-dddd-4ddd-8ddd-000000000004', title: 'テスト中の問題', updatedAt, readiness: ready }
+  await page.route('**/api/my/problems**', route => route.fulfill({ json: { items: new URL(route.request().url()).searchParams.get('role') === 'tester' ? [tested] : [problems[0]], nextCursor: '' } }))
+  await page.goto('/my/contests/new')
+  await page.getByRole('button', { name: '問題・配点', exact: true }).click()
+  const candidates = page.locator('#problem-candidates li')
+  await expect(candidates).toHaveCount(2)
+  await expect(candidates.filter({ hasText: 'テスト中の問題' }).locator('.problem-role')).toHaveText('テスター')
+  await expect(candidates.filter({ hasText: '最短経路の数え上げ' }).locator('.problem-role')).toHaveCount(0)
+  await page.getByRole('button', { name: 'テスト中の問題を追加', exact: true }).click()
+  await expect(page.locator('.selected li strong')).toHaveText(['テスト中の問題'])
 })

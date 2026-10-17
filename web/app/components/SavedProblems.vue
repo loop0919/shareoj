@@ -43,6 +43,8 @@ async function loadAccount(more = false) {
     if (!account) { accountEntries.value = []; nextCursor.value = ''; await navigateTo('/login?next=/my%3Ftab%3Dproblems', { replace: true }); return }
     if (listedOwner !== account.id) { more = false; accountEntries.value = []; nextCursor.value = ''; listedOwner = account.id }
     const result = accountListSchema.parse(await $fetch('/api/my/problems', { query: { ...(props.testing ? { role: 'tester' } : {}), ...(more ? { cursor: nextCursor.value } : {}) } }))
+    // Testers cannot publish or apply to 定期便, so the destinations in their list are not shown here.
+    if (props.testing) for (const item of result.items) delete item.readiness
     accountEntries.value = more ? [...accountEntries.value, ...result.items] : result.items
     nextCursor.value = result.nextCursor
   } catch (error) { accountMessage.value = accountError(error) }

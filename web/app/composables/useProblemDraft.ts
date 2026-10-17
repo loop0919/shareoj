@@ -32,7 +32,10 @@ export function useProblemDraft() {
   const readiness = ref<Readiness>()
   const featuredPreference = ref('')
   const contestScheduled = ref(false)
+  // The author's handle; another handle means the viewer is a tester.
+  const author = ref('')
   function applyServerState(problem: AccountProblem) {
+    author.value = problem.author
     scheduledAt.value = problem.scheduledAt
     publishedVersion.value = problem.publishedVersion
     contestId.value = problem.contestId
@@ -287,7 +290,7 @@ export function useProblemDraft() {
 
   return {
     user, draft, ready, cloudId, cloudVersion, saving, publishing, publishedVersion, scheduledAt, contestId, readiness, featuredPreference, contestScheduled, manualSaveOnly,
-    publicationError, saveLocation, saveState, status, storageError, leaveDialog, leaveError,
+    author, publicationError, saveLocation, saveState, status, storageError, leaveDialog, leaveError,
     manageDialog, generating, deleteError, errors, saveDraft, unpublishProblem, finishLeave,
     openDeleteConfirmation, closeDeleteConfirmation, removeProblem,
   }

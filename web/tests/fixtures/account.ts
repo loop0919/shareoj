@@ -12,6 +12,8 @@ export const test = base.extend({
     await page.route('**/api/my/problems**', async route => {
       const request = route.request()
       const id = new URL(request.url()).pathname.split('/')[4]
+      // The fixture user tests nobody else's problems.
+      if (!id && new URL(request.url()).searchParams.get('role') === 'tester') return route.fulfill({ json: { items: [], nextCursor: '' } })
       if (!id) return route.fulfill({ json: { items: [...problems.values()].reverse().map(p => ({ id: p.id, title: p.draft.title, updatedAt: p.updatedAt })), nextCursor: '' } })
       if (request.method() === 'PUT') {
         const body = request.postDataJSON()
