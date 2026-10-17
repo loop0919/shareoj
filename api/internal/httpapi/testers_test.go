@@ -193,7 +193,7 @@ func TestTesterInvitationsPostgres(t *testing.T) {
 	request("PUT", "/my/problems/"+b, "alice", map[string]any{"version": 1, "draft": draft}, 400)
 	// A tester may enter a tested problem in their own contest, but not someone else's problem.
 	const c = "33333333-3333-4333-8333-333333333333"
-	if _, err = store.Save(ctx, "alice", c, 0, problems.Draft{Difficulty: &difficulty, Title: "Tested C", Markdown: "statement", TimeLimitMS: "1000", MemoryLimitMB: "512", TestCases: []problems.TestCase{{Input: "1", Output: "2"}}}); err != nil {
+	if _, err = store.Save(ctx, "alice", c, 0, problems.Draft{Difficulty: &difficulty, Title: "Tested C", Markdown: "statement", Editorial: "explanation", TimeLimitMS: "1000", MemoryLimitMB: "512", TestCases: []problems.TestCase{{Input: "1", Output: "2"}}}); err != nil {
 		t.Fatal(err)
 	}
 	exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'bob')`, c)

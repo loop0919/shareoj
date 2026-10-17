@@ -17,7 +17,7 @@ test('old my links resolve public submissions for guests and other users while d
   const headers = { origin }
   const pid = randomUUID()
   expect((await page.request.put(`/api/my/problems/${pid}`, { headers, data: { version: 0, draft: {
-    title: '共有する提出', markdown: '整数を出力してください。', difficulty: 3, timeLimitMs: '1000', memoryLimitMb: '256', testCases: [{ input: '1', output: '2' }],
+    title: '共有する提出', markdown: '整数を出力してください。', editorial: '2 を出力します。', difficulty: 3, timeLimitMs: '1000', memoryLimitMb: '256', testCases: [{ input: '1', output: '2' }],
   } } })).status()).toBe(200)
   const submit = async () => {
     const response = await page.request.post('/api/my/submissions', { headers, data: { problemId: pid, runtime: 'cpp17', source: 'int main(){}' } })

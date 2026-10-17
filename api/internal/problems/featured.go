@@ -67,7 +67,7 @@ type FeaturedPage struct {
 }
 
 func featuredEligible(d Draft, known, enabled []string) bool {
-	return len(FeaturedContentIssues(d, known, enabled)) == 0
+	return len(ContentIssues(d, known, enabled)) == 0
 }
 
 type featuredCandidate struct {

@@ -85,5 +85,5 @@ func ValidDraft(d Draft, knownRuntimes []string) bool {
 
 // Publishable adds publication requirements to the rules for a saved draft.
 func Publishable(d Draft, knownRuntimes, enabledRuntimes []string) bool {
-	return len(PublishIssues(d, knownRuntimes, enabledRuntimes)) == 0
+	return len(ContentIssues(d, knownRuntimes, enabledRuntimes)) == 0
 }

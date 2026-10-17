@@ -17,6 +17,11 @@ test('published problem saves update the public content', async ({ page, browser
   await page.locator('#problem-source').fill('## 公開本文\n$A+B$')
   await page.getByRole('button', { name: '解説', exact: true }).click()
   await page.locator('#problem-source').fill('## 公開解説\n$A+B$ を計算します。')
+  // Publication needs at least one test case, like contests and 定期便.
+  await page.getByRole('button', { name: 'テストケース', exact: true }).click()
+  await page.getByRole('button', { name: 'テストケースを追加' }).click()
+  await page.getByLabel('入力', { exact: true }).fill('1 2\n')
+  await page.getByLabel('出力', { exact: true }).fill('3\n')
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page).toHaveURL(/problem=/)
   await expect(page.locator('.draft-status').getByRole('status')).toHaveText('保存済み')

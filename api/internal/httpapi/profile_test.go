@@ -153,7 +153,7 @@ func TestProfilesPostgres(t *testing.T) {
 		public := "/" + kind + "/" + id
 		body := func(version int, text string) string {
 			if kind == "problems" {
-				return fmt.Sprintf(`{"version":%d,"draft":{"title":"Published title","markdown":%q,"timeLimitMs":"2000","memoryLimitMb":"256","difficulty":%d}}`, version, text, min(10, 4+version*3))
+				return fmt.Sprintf(`{"version":%d,"draft":{"title":"Published title","markdown":%q,"editorial":"Explanation","timeLimitMs":"2000","memoryLimitMb":"256","difficulty":%d,"testCases":[{"input":"1","output":"1"}]}}`, version, text, min(10, 4+version*3))
 			}
 			return fmt.Sprintf(`{"version":%d,"title":"Published title","markdown":%q}`, version, text)
 		}

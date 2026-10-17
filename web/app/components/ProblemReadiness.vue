@@ -29,7 +29,7 @@ const notes = computed(() => {
           <button v-if="issueSection(code)" type="button" class="editor-button" @click="emit('jump', issueSection(code)!)">{{ sectionNames[issueSection(code)!] }}を開く</button>
         </li>
       </ul>
-      <p v-else-if="status.kind === 'ready'">コンテストにも定期便にも出せます。</p>
+      <p v-else-if="status.kind === 'ready'">公開・コンテスト・定期便のどれにも出せます。</p>
       <ul v-if="notes.length" class="readiness-notes" aria-label="提出先の制限">
         <li v-for="note in notes" :key="note">{{ note }}</li>
       </ul>

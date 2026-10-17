@@ -66,7 +66,7 @@ func TestContestDraftsPostgres(t *testing.T) {
 	const incomplete = "33333333-3333-4333-8333-333333333333"
 	const missing = "44444444-4444-4444-8444-444444444444"
 	difficulty := 3
-	complete := problems.Draft{Difficulty: &difficulty, Title: "Ready", Markdown: "statement", TimeLimitMS: "1000", MemoryLimitMB: "256", TestCases: []problems.TestCase{{Input: "1", Output: "2", IsSample: true}}}
+	complete := problems.Draft{Difficulty: &difficulty, Title: "Ready", Markdown: "statement", Editorial: "explanation", TimeLimitMS: "1000", MemoryLimitMB: "256", TestCases: []problems.TestCase{{Input: "1", Output: "2", IsSample: true}}}
 	for _, pid := range []string{ready, second} {
 		if _, err = store.Save(ctx, "alice", pid, 0, complete); err != nil {
 			t.Fatal(err)

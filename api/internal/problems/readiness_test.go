@@ -36,11 +36,11 @@ func TestAssessListsEveryReason(t *testing.T) {
 			},
 		},
 		{
-			"difficulty is required everywhere; 定期便 also needs editorial and tests", with(func(d *Draft) { d.Difficulty, d.Editorial, d.TestCases = nil, " ", nil }),
+			"every destination needs difficulty, tests and an editorial", with(func(d *Draft) { d.Difficulty, d.Editorial, d.TestCases = nil, " ", nil }),
 			ProblemState{},
 			Readiness{
-				Publish:  []Issue{IssueDifficulty},
-				Contest:  []Issue{IssueDifficulty, IssueTestCases},
+				Publish:  []Issue{IssueDifficulty, IssueTestCases, IssueEditorial},
+				Contest:  []Issue{IssueDifficulty, IssueTestCases, IssueEditorial},
 				Featured: []Issue{IssueDifficulty, IssueTestCases, IssueEditorial},
 			},
 		},
@@ -99,16 +99,18 @@ func TestAssessListsEveryReason(t *testing.T) {
 func TestBooleanChecksFollowTheIssueLists(t *testing.T) {
 	difficulty := 5
 	d := Draft{Difficulty: &difficulty, Title: "A", Markdown: "本文", Editorial: "解説", TimeLimitMS: "1000", MemoryLimitMB: "256"}
-	if !Publishable(d, []string{"cpp17"}, nil) {
-		t.Fatal("a problem without judge code does not need an enabled runtime")
-	}
-	if featuredEligible(d, []string{"cpp17"}, nil) {
-		t.Fatal("定期便 needs at least one test case")
+	if Publishable(d, []string{"cpp17"}, nil) || featuredEligible(d, []string{"cpp17"}, nil) {
+		t.Fatal("publication and 定期便 both need at least one test case")
 	}
 	d.TestCases = []TestCase{{Name: "1", Input: "1", Output: "1"}}
-	if !featuredEligible(d, []string{"cpp17"}, nil) {
-		t.Fatal("a complete problem is eligible")
+	if !Publishable(d, []string{"cpp17"}, nil) || !featuredEligible(d, []string{"cpp17"}, nil) {
+		t.Fatal("a complete problem without judge code needs no enabled runtime")
 	}
+	d.Editorial = " "
+	if Publishable(d, []string{"cpp17"}, nil) || featuredEligible(d, []string{"cpp17"}, nil) {
+		t.Fatal("publication and 定期便 both need an editorial")
+	}
+	d.Editorial = "解説"
 	d.Checker = &Generator{Runtime: "cpp17", Source: "int main(){}"}
 	if Publishable(d, []string{"cpp17"}, nil) || featuredEligible(d, []string{"cpp17"}, nil) {
 		t.Fatal("judge code waits while its runtime is disabled")

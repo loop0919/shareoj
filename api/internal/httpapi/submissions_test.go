@@ -732,7 +732,7 @@ func TestSubmissionsPostgres(t *testing.T) {
 			pid := fmt.Sprintf("aaaaaaaa-aaaa-4aaa-8aaa-%012d", index)
 			code := &problems.Generator{Runtime: "cpp23-gcc", Source: "testlib-original", Protocol: "testlib"}
 			difficulty := 3
-			d := problems.Draft{Difficulty: &difficulty, Title: "Protocol snapshot", Markdown: "Check", TimeLimitMS: "1000", MemoryLimitMB: "512", TestCases: []problems.TestCase{{Input: "3", Output: "3"}}}
+			d := problems.Draft{Difficulty: &difficulty, Title: "Protocol snapshot", Markdown: "Check", Editorial: "Explain", TimeLimitMS: "1000", MemoryLimitMB: "512", TestCases: []problems.TestCase{{Input: "3", Output: "3"}}}
 			if field == "checker" {
 				d.Checker = code
 			} else {

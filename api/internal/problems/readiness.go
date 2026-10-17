@@ -47,8 +47,8 @@ type Readiness struct {
 	Featured []Issue `json:"featured"`
 }
 
-// PublishIssues lists every publication requirement the draft misses.
-func PublishIssues(d Draft, knownRuntimes, enabledRuntimes []string) []Issue {
+// ContentIssues lists what the draft misses for any destination: publication, a contest and 定期便 share one bar.
+func ContentIssues(d Draft, knownRuntimes, enabledRuntimes []string) []Issue {
 	issues := []Issue{}
 	if !ValidDraft(d, knownRuntimes) {
 		issues = append(issues, IssueInvalidDraft)
@@ -59,7 +59,7 @@ func PublishIssues(d Draft, knownRuntimes, enabledRuntimes []string) []Issue {
 	if strings.TrimSpace(d.Markdown) == "" {
 		issues = append(issues, IssueStatement)
 	}
-	// Required since 2026-09-30; problems published earlier stay public until their next update.
+	// Problems published before a requirement existed stay public until their next update.
 	if d.Difficulty == nil {
 		issues = append(issues, IssueDifficulty)
 	}
@@ -78,21 +78,9 @@ func PublishIssues(d Draft, knownRuntimes, enabledRuntimes []string) []Issue {
 			issues = append(issues, judge.language)
 		}
 	}
-	return issues
-}
-
-// ContestContentIssues adds what a contest needs from the draft itself.
-func ContestContentIssues(d Draft, knownRuntimes, enabledRuntimes []string) []Issue {
-	issues := PublishIssues(d, knownRuntimes, enabledRuntimes)
 	if len(d.TestCases) == 0 {
 		issues = append(issues, IssueTestCases)
 	}
-	return issues
-}
-
-// FeaturedContentIssues adds what 定期便 needs from the draft itself.
-func FeaturedContentIssues(d Draft, knownRuntimes, enabledRuntimes []string) []Issue {
-	issues := ContestContentIssues(d, knownRuntimes, enabledRuntimes)
 	if strings.TrimSpace(d.Editorial) == "" {
 		issues = append(issues, IssueEditorial)
 	}
@@ -100,12 +88,10 @@ func FeaturedContentIssues(d Draft, knownRuntimes, enabledRuntimes []string) []I
 }
 
 // Assess mirrors the checks of publication, contest saving and ApplyFeatured.
+// The content is judged once; destinations differ only in what the problem's state rules out.
 func Assess(d Draft, s ProblemState, knownRuntimes, enabledRuntimes []string) Readiness {
-	r := Readiness{
-		Publish:  PublishIssues(d, knownRuntimes, enabledRuntimes),
-		Contest:  ContestContentIssues(d, knownRuntimes, enabledRuntimes),
-		Featured: FeaturedContentIssues(d, knownRuntimes, enabledRuntimes),
-	}
+	content := ContentIssues(d, knownRuntimes, enabledRuntimes)
+	r := Readiness{Publish: slices.Clone(content), Contest: slices.Clone(content), Featured: slices.Clone(content)}
 	if s.ContestScheduled {
 		r.Publish = append(r.Publish, IssueInContest)
 	}

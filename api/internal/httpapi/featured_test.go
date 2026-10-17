@@ -476,7 +476,7 @@ func TestProblemReadinessPostgres(t *testing.T) {
 	}
 	want := map[string]readiness{
 		ready.ID: {Publish: []string{}, Contest: []string{"featured_applied"}, Featured: []string{}},
-		empty.ID: {Publish: []string{}, Contest: []string{"test_cases_missing"}, Featured: []string{"test_cases_missing"}},
+		empty.ID: {Publish: []string{"test_cases_missing"}, Contest: []string{"test_cases_missing"}, Featured: []string{"test_cases_missing"}},
 	}
 	for _, item := range list.Items {
 		if item.Readiness == nil || !reflect.DeepEqual(*item.Readiness, want[item.ID]) {
@@ -501,7 +501,7 @@ func TestProblemReadinessPostgres(t *testing.T) {
 	if strings.Contains(f.request("GET", "/my/problems/"+ready.ID, "tester", nil, 200), "readiness") {
 		t.Fatal("tester received author readiness")
 	}
-	if !strings.Contains(f.request("GET", "/my/problems?role=tester", "tester", nil, 200), `"contest":["difficulty_missing","featured_applied"]`) {
+	if !strings.Contains(f.request("GET", "/my/problems?role=tester", "tester", nil, 200), `"contest":["difficulty_missing","editorial_missing","featured_applied"]`) {
 		t.Fatal("tested list lacks contest readiness")
 	}
 	// An application that loses its test cases is skipped at selection instead of being published.

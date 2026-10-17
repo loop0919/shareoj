@@ -43,7 +43,7 @@ export const issueSection = (code: string): EditorSection | undefined => section
 // Reasons about the problem itself; the rest describe where it already is.
 const stateIssues = new Set(['published', 'ever_published', 'in_contest', 'featured_limit', 'scheduled', 'featured_applied'])
 
-// Contests need a subset of 定期便's content, so the union is what "complete" means.
+// Every destination checks the same content (ADR 0021); the lists differ only in state reasons.
 export function contentIssues(readiness?: Readiness): string[] {
   if (!readiness) return []
   return [...new Set([...readiness.contest, ...readiness.featured])].filter(code => !stateIssues.has(code))
@@ -71,5 +71,5 @@ export function problemStatus(problem: ProblemStatusInput): ProblemStatus {
   const issues = contentIssues(problem.readiness)
   return issues.length
     ? { kind: 'incomplete', label: '準備中', summary: '準備中です。足りない項目があります', issues }
-    : { kind: 'ready', label: '準備中', summary: '準備中です。コンテストと定期便に出せます', issues: [] }
+    : { kind: 'ready', label: '準備中', summary: '準備中です。公開・コンテスト・定期便に出せます', issues: [] }
 }
