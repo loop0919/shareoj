@@ -97,4 +97,39 @@ test('a rejudged submission shows when it was rejudged', async ({ page }) => {
   await page.goto(`/contests/${shortId('88888888-8888-4888-8888-888888888888')}/submissions/${shortId('22222222-2222-4222-8222-222222222222')}`)
   const info = page.getByRole('table', { name: '提出情報' })
   await expect(info.getByRole('row', { name: /リジャッジ日時/ })).toContainText('2026/9/10')
+  // Viewers who cannot rejudge get no button.
+  await expect(page.getByRole('button', { name: 'この提出をリジャッジ' })).toHaveCount(0)
+})
+
+test('the submission page rejudges that submission and follows it until judged', async ({ page }) => {
+  const id = '22222222-2222-4222-8222-222222222222'
+  const requests: unknown[] = []
+  await page.route('**/api/my/problems/*/rejudge', route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { pending: 0 } })
+    requests.push(route.request().postDataJSON())
+    return route.fulfill({ status: 202, json: { queued: 1 } })
+  })
+  // After the request the submission waits once, then finishes with a new verdict.
+  let reads = 0
+  await page.route(`**/api/problems/*/submissions/${id}`, route => {
+    reads++
+    const rejudged = { ...done(id, 'WA'), source: 'int main(){}', rejudgedAt: '2026-10-17T03:00:00Z' }
+    return route.fulfill({ json: reads === 1 ? { ...rejudged, status: 'QUEUED', result: null } : rejudged })
+  })
+  await page.goto(`/problems/${shortId(problemId)}/submissions/${shortId(id)}`)
+  const button = page.getByRole('button', { name: 'この提出をリジャッジ' })
+  await expect(button).toBeEnabled()
+  for (const width of [320, 768]) {
+    await page.setViewportSize({ width, height: 900 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  }
+  page.once('dialog', dialog => void dialog.accept())
+  await button.click()
+  await expect(page.getByRole('status').filter({ hasText: '1件の提出をリジャッジしています。' })).toBeVisible()
+  expect(requests).toEqual([{ submissionIds: [id] }])
+  await expect(button).toBeDisabled()
+  const info = page.getByRole('table', { name: '提出情報' })
+  await expect(info.getByRole('row', { name: /^結果/ })).toContainText('不正解', { timeout: 10_000 })
+  await expect(info.getByRole('row', { name: /リジャッジ日時/ })).toBeVisible()
+  await expect(button).toBeEnabled()
 })

@@ -3,7 +3,13 @@ import { executionTime, memoryUsage } from '~/utils/submission-usage'
 import { runtimeLabel } from '~/utils/runtime-label'
 import { submissionProblemPath, type Submission } from '~~/shared/types/submission'
 const props = defineProps<{ item: Submission }>()
+const emit = defineEmits<{ rejudged: [] }>()
 const item = toRef(props, 'item')
+const { allowed: canRejudge, busy: rejudging, message: rejudgeMessage, rejudge } = useRejudge(() => item.value.problemId)
+async function rejudgeThis() {
+  if (!window.confirm('この提出をリジャッジしますか？\n保存済みの問題の内容で採点し直します。')) return
+  if (await rejudge([item.value.id])) emit('rejudged')
+}
 const expanded = ref(false)
 const copyMessage = ref('')
 const copying = ref(false)
@@ -21,7 +27,12 @@ const verdicts: Record<string, string> = { AC: '正解', WA: '不正解', CE: '�
 
 <template>
   <section class="submission-detail">
-    <header class="submission-header"><h1>{{ item.easyTest ? 'サンプル検証の結果' : '提出結果' }}</h1><p class="submission-id">ID: {{ item.id }}</p></header>
+    <header class="submission-header">
+      <div><h1>{{ item.easyTest ? 'サンプル検証の結果' : '提出結果' }}</h1><p class="submission-id">ID: {{ item.id }}</p></div>
+      <!-- Disabled until judged, which also blocks a second request for the same run. -->
+      <button v-if="canRejudge && !item.easyTest" type="button" class="editor-button" :disabled="item.status !== 'DONE' || rejudging" @click="rejudgeThis">{{ rejudging ? '依頼中…' : 'この提出をリジャッジ' }}</button>
+      <p v-if="rejudgeMessage" class="rejudge-message" role="status">{{ rejudgeMessage }}</p>
+    </header>
     <section class="submitted-source" :class="{ expanded }" aria-labelledby="source-title">
       <div class="section-heading">
         <h2 id="source-title">ソースコード</h2>
@@ -80,7 +91,10 @@ const verdicts: Record<string, string> = { AC: '正解', WA: '不正解', CE: '�
 <style scoped>
 /* Existing Plain theme: source viewer followed by striped submission metadata. */
 .submission-detail { padding-bottom: 64px; }
-.submission-header { padding-bottom: 24px; margin-bottom: 28px; border-bottom: 1px solid var(--color-line); }
+.submission-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 16px; padding-bottom: 24px; margin-bottom: 28px; border-bottom: 1px solid var(--color-line); }
+.submission-header > div { min-width: 0; }
+.submission-header button { min-height: 40px; padding-inline: 16px; white-space: nowrap; }
+.rejudge-message { flex-basis: 100%; margin: 0; color: var(--color-muted); font-size: .8125rem; }
 .submission-header h1 { margin: 0 0 8px; }
 .submission-id { margin: 0; color: var(--color-muted); font-family: var(--font-code); font-size: .8125rem; overflow-wrap: anywhere; }
 .submitted-source { margin-bottom: 28px; }
