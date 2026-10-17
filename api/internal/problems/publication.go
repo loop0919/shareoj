@@ -51,12 +51,16 @@ func (s *Store) Publish(ctx context.Context, owner, id string, version int64, pu
 		return Problem{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	var locked string
-	if err = tx.QueryRow(ctx, `SELECT id FROM problem_drafts WHERE id=$1 AND can_manage_problem(id,$2) FOR UPDATE`, id, owner).Scan(&locked); err != nil {
+	var author, published bool
+	if err = tx.QueryRow(ctx, `SELECT owner_id=$2,published_draft IS NOT NULL FROM problem_drafts WHERE id=$1 AND can_manage_problem(id,$2) FOR UPDATE`, id, owner).Scan(&author, &published); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			err = ErrNotFound
 		}
 		return Problem{}, err
+	}
+	// Testers may take a published problem down; publishing and reservations stay with the author.
+	if !author && (publish || !published) {
+		return Problem{}, ErrNotFound
 	}
 	var reserved bool
 	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=$1 AND NOT c.released)`, id).Scan(&reserved); err != nil {

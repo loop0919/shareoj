@@ -170,7 +170,11 @@ func TestTesterInvitationsPostgres(t *testing.T) {
 	if _, err = queue.CreateGeneration(ctx, submissions.GenerationInput{RunInput: submissions.RunInput{Owner: "bob", ID: newSubmissionID(), ProblemID: a, Source: "int main() {}", Runtime: "cpp17-local"}, ProblemVersion: 2, Job: submissions.Job{Generate: true}}); err != nil {
 		t.Fatal("tester generation: ", err)
 	}
-	request("PUT", path+"/publication", "bob", map[string]any{"version": 2, "publish": true}, 200)
+	// Only the author publishes or reserves; a tester may take a published problem down.
+	request("PUT", path+"/publication", "bob", map[string]any{"version": 2, "publish": true}, 404)
+	request("PUT", path+"/publication", "bob", map[string]any{"version": 2, "publish": true, "scheduledAt": time.Now().Add(time.Hour)}, 404)
+	request("PUT", path+"/publication", "bob", map[string]any{"version": 2, "publish": false}, 404)
+	request("PUT", path+"/publication", "alice", map[string]any{"version": 2, "publish": true}, 200)
 	public := request("GET", "/problems/"+a, "", nil, 200)
 	if !strings.Contains(public, `"testers":["bob"]`) {
 		t.Fatal("missing public tester attribution: " + public)
@@ -187,6 +191,27 @@ func TestTesterInvitationsPostgres(t *testing.T) {
 	exec(`UPDATE test_files SET owner_id='bob' WHERE id=$1`, file)
 	request("PUT", path, "alice", map[string]any{"version": 5, "draft": draft}, 200)
 	request("PUT", "/my/problems/"+b, "alice", map[string]any{"version": 1, "draft": draft}, 400)
+	// A tester may enter a tested problem in their own contest, but not someone else's problem.
+	const c = "33333333-3333-4333-8333-333333333333"
+	if _, err = store.Save(ctx, "alice", c, 0, problems.Draft{Difficulty: &difficulty, Title: "Tested C", Markdown: "statement", TimeLimitMS: "1000", MemoryLimitMB: "512", TestCases: []problems.TestCase{{Input: "1", Output: "2"}}}); err != nil {
+		t.Fatal(err)
+	}
+	exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'bob')`, c)
+	if tested := request("GET", "/my/problems?role=tester", "bob", nil, 200); !strings.Contains(tested, `"contest":[]`) {
+		t.Fatal("tested list lacks contest readiness: " + tested)
+	}
+	penalty := 5
+	entry := contests.Input{Title: "Tester contest", StartsAt: time.Now().Add(time.Hour), EndsAt: time.Now().Add(2 * time.Hour), PenaltyMinutes: &penalty, Problems: []contests.Problem{{ID: c, Points: 100}}}
+	request("PUT", "/my/contests/eeeeeeee-eeee-4eee-8eee-000000000001", "carol", entry, 409)
+	entry.Problems = []contests.Problem{{ID: b, Points: 100}}
+	request("PUT", "/my/contests/eeeeeeee-eeee-4eee-8eee-000000000001", "bob", entry, 409)
+	entry.Problems = []contests.Problem{{ID: c, Points: 100}}
+	request("PUT", "/my/contests/eeeeeeee-eeee-4eee-8eee-000000000001", "bob", entry, 200)
+	var registered string
+	if err = store.Pool().QueryRow(ctx, `SELECT contest_id::text FROM contest_problems WHERE problem_id=$1`, c).Scan(&registered); err != nil || registered != "eeeeeeee-eeee-4eee-8eee-000000000001" {
+		t.Fatalf("tester contest registration %q: %v", registered, err)
+	}
+
 	request("DELETE", path+"?version=6", "carol", nil, 404)
 	request("DELETE", path+"?version=6", "bob", nil, 204)
 	request("GET", invite, "bob", nil, 404)

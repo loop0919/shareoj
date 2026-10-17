@@ -140,7 +140,7 @@ func assess(ctx context.Context, q querier, owner, id string, d Draft, policy Ju
 	for i, p := range d.Problems {
 		ids[i] = p.ID
 	}
-	rows, err := q.Query(ctx, `SELECT d.draft FROM problem_drafts d WHERE d.id=ANY($1::uuid[]) AND d.owner_id=$2 AND d.published_draft IS NULL
+	rows, err := q.Query(ctx, `SELECT d.draft FROM problem_drafts d WHERE d.id=ANY($1::uuid[]) AND can_manage_problem(d.id,$2) AND d.published_draft IS NULL
  AND NOT EXISTS (SELECT 1 FROM contest_problems cp WHERE cp.problem_id=d.id AND cp.contest_id<>$3)`, ids, owner, id)
 	if err != nil {
 		return nil, err

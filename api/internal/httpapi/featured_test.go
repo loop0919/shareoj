@@ -491,11 +491,14 @@ func TestProblemReadinessPostgres(t *testing.T) {
 	if saved.FeaturedPreference != "soon" || !reflect.DeepEqual(saved.Readiness.Featured, []string{"difficulty_missing", "editorial_missing"}) {
 		t.Fatalf("saved readiness %+v", saved)
 	}
-	// Testers cannot publish or apply, so they receive no readiness at all.
+	// Testers cannot publish or apply, so the problem itself shows them no readiness.
+	// The tested list carries it because testers pick problems for their own contests from it.
 	f.exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'tester')`, ready.ID)
-	if strings.Contains(f.request("GET", "/my/problems/"+ready.ID, "tester", nil, 200), "readiness") ||
-		strings.Contains(f.request("GET", "/my/problems?role=tester", "tester", nil, 200), "readiness") {
+	if strings.Contains(f.request("GET", "/my/problems/"+ready.ID, "tester", nil, 200), "readiness") {
 		t.Fatal("tester received author readiness")
+	}
+	if !strings.Contains(f.request("GET", "/my/problems?role=tester", "tester", nil, 200), `"contest":["difficulty_missing"]`) {
+		t.Fatal("tested list lacks contest readiness")
 	}
 	// An application that loses its test cases is skipped at selection instead of being published.
 	f.exec(`UPDATE problem_drafts SET draft=jsonb_set(draft-'testCases','{difficulty}','3')||'{"editorial":"SECRET EDITORIAL"}' WHERE id=$1`, ready.ID)

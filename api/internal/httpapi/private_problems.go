@@ -198,7 +198,8 @@ func (p problemHandler) list(w http.ResponseWriter, r *http.Request, owner strin
 		last := items[49]
 		next = nextContentCursor(last.ID, last.UpdatedAt)
 	}
-	if store, ok := p.Store.(problemReadiness); ok && role != "tester" {
+	// Testers enter tested problems in their own contests, so their list needs readiness as well.
+	if store, ok := p.Store.(problemReadiness); ok {
 		applications, err := store.ApplicationCount(r.Context(), owner)
 		if err != nil {
 			problemError(w, err)
