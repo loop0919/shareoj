@@ -24,7 +24,7 @@ function elapsed(ms: number | null) {
     <nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink to="/featured">定期便</NuxtLink><span aria-hidden="true">/</span><span>順位表</span></nav>
     <header class="catalogue-heading">
       <h1>定期便の順位表</h1>
-      <button class="editor-button" :disabled="status === 'pending'" :aria-busy="status === 'pending'" @click="refresh()">{{ status === 'pending' ? '更新中…' : '今すぐ更新' }}</button>
+      <RefreshButton label="今すぐ更新" :busy="status === 'pending'" :disabled="status === 'pending'" @click="refresh()" />
     </header>
     <p v-if="error" class="notice notice-error" role="alert">{{ error.statusCode === 404 ? 'この回の順位表は見つかりません。' : '順位表を取得できませんでした。' }}<button class="editor-button" :disabled="status === 'pending'" @click="refresh()">再試行</button></p>
     <LoadingSpinner v-else-if="!data" label="順位表を読み込み中" />

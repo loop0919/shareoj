@@ -54,7 +54,7 @@ usePolling(load, 3000, () => canRejudge.value && !!data.value?.items.some(item =
       <div class="heading-actions">
         <!-- Appears only with a selection, so the list stays quiet until someone picks rows. -->
         <RejudgeButton v-if="canRejudge && selected.length" :busy="rejudging" :disabled="rejudging" :aria-label="`選択した${selected.length}件の提出をリジャッジ`" @click="rejudgeSelected" />
-        <button v-if="!mine || user" type="button" class="editor-button refresh-button" :disabled="loading" :aria-busy="loading || undefined" aria-label="更新" title="更新" @click="load"><svg :class="{ spinning: loading }" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg></button>
+        <RefreshButton v-if="!mine || user" :busy="loading" :disabled="loading" @click="load" />
       </div>
     </header>
     <p v-if="rejudgeMessage" class="rejudge-message" role="status">{{ rejudgeMessage }}</p>
@@ -81,13 +81,6 @@ usePolling(load, 3000, () => canRejudge.value && !!data.value?.items.some(item =
 .submission-heading h2 { margin: 0; }
 .submission-heading button { min-height: 40px; padding-inline: 16px; }
 .heading-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-/* Same stroke and size as the rejudge icon; two arrows tell a plain reload from a rejudge. */
-.submission-heading .refresh-button { display: inline-flex; align-items: center; justify-content: center; width: 40px; padding: 0; color: var(--color-muted); }
-.submission-heading .refresh-button:hover:not(:disabled) { color: var(--color-ink); }
-.submission-heading .refresh-button:disabled { cursor: progress; transform: none; }
-.spinning { animation: refresh-spin .9s linear infinite; }
-@keyframes refresh-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spinning { animation: none; } }
 .rejudge-message { margin: 0 0 16px; color: var(--color-muted); font-size: .8125rem; }
 .select-cell { width: 44px; text-align: center; }
 .select-cell input { width: 18px; height: 18px; margin: 0; accent-color: var(--color-accent); cursor: pointer; }

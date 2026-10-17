@@ -132,3 +132,20 @@ test('scheduled problems show points and labels without links', async ({ page })
   await expect(page.locator('.standings-table thead th')).toHaveText(['順位', 'ユーザー', '得点', '時間', 'A', 'B'])
   await expect(page.locator('.standings-table thead a')).toHaveCount(0)
 })
+
+test('the refresh button is an icon on the heading row at every width', async ({ page }, testInfo) => {
+  await page.route(`**/api/contests/${id}**`, route => route.fulfill({ json: route.request().url().includes('/standings') ? rows : contest }))
+  await page.goto(`/contests/${id}?view=standings`, { waitUntil: 'networkidle' })
+  const refresh = page.getByRole('button', { name: '今すぐ更新' })
+  await expect(refresh).toHaveText('')
+  await expect(refresh).toHaveAttribute('title', '今すぐ更新')
+  const heading = page.getByRole('heading', { name: '公式順位表' })
+  for (const width of [320, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 })
+    const [title, button] = [await heading.boundingBox(), await refresh.boundingBox()]
+    expect(Math.abs(title!.y + title!.height / 2 - (button!.y + button!.height / 2))).toBeLessThan(8)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  }
+  await page.setViewportSize({ width: 375, height: 900 })
+  await page.locator('.contest-section-heading').screenshot({ path: testInfo.outputPath('standings-heading.png') })
+})

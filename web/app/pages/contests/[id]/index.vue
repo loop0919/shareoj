@@ -105,7 +105,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       </div>
     </section>
     <section v-if="activeView === 'standings'" id="standings" class="contest-section" aria-labelledby="standings-title">
-      <header class="contest-section-heading"><h1 id="standings-title">公式順位表</h1><button class="editor-button" :disabled="updating" :aria-busy="updating" @click="update">{{ updating ? '更新中…' : '今すぐ更新' }}</button></header>
+      <header class="contest-section-heading"><h1 id="standings-title">公式順位表</h1><RefreshButton label="今すぐ更新" :busy="updating" :disabled="updating" @click="update" /></header>
       <p v-if="user && !contest.official" class="notice">作成者・テスターとしての提出は公式順位の対象外です。</p>
       <p v-if="standingsError" class="notice notice-error" role="alert">順位表を取得できませんでした。</p>
       <p v-if="!standingsError && !standings?.length" class="contest-empty muted">参加者はまだいません。</p>
@@ -178,8 +178,6 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 .contest-description { max-width: 52rem; }
 .contest-section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 .contest-section-heading h1 { margin: 0; }
-.contest-section-heading button { min-height: 40px; padding: 8px 12px; }
-.contest-section-heading button:disabled { opacity: .55; cursor: wait; }
 .contest-problems tr.solved { background: var(--color-accent-soft); }
 .contest-problems .problem-limits { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .contest-problems td:first-child, .contest-editorials td:first-child { width: 3rem; color: var(--color-muted); }
@@ -200,5 +198,5 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 .standing-fa { display: block; }
 .standings-table small { font-size: .75rem; }
 small { display: block; color: var(--color-muted); }
-@media (max-width: 39.999rem) { .contest-section-heading { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 39.999rem) { .contest-section-heading { flex-wrap: nowrap; } .contest-section-heading h1 { min-width: 0; } }
 </style>
