@@ -35,15 +35,26 @@ test('featured editions show two slots, revivals, vacancies and the Ultimate lab
   }
 })
 
-test('authors choose a preference, see validation failures, apply and withdraw', async ({ page }) => {
+test('authors choose a problem and preference, see where it lands, apply and withdraw', async ({ page }, testInfo) => {
   let applied = false
   let attempts = 0
   let withdrawals = 0
+  const plans: URLSearchParams[] = []
   await page.route('**/api/my/featured', route => route.fulfill({ json: { items: applied ? [{ problemId: id, title: '応募する問題', preference: 'later', enteredAt: updatedAt }] : [] } }))
+  await page.route('**/api/my/featured/schedule**', async route => {
+    const query = new URL(route.request().url()).searchParams
+    plans.push(query)
+    const json = await (await page.request.get('/api/featured/schedule')).json()
+    // The chosen problem lands in the second round when soon, the fourth when later.
+    const round = query.get('problem') === id ? query.get('preference') === 'later' ? 3 : 1 : -1
+    if (round >= 0) json.rounds[round].slots[0] = { slot: 'easy', kind: 'new', writer: 'ui_test', difficulty: 4, mine: applied, title: '応募する問題', trial: true }
+    return route.fulfill({ json })
+  })
   await page.route(/\/api\/my\/problems(?:\?.*)?$/, route => route.fulfill({ json: { items: [
-    { id, title: '応募する問題', featuredPreference: applied ? 'later' : '', updatedAt },
-    { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', title: '過去に公開済み', everPublished: true, updatedAt },
-    { id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', title: 'コンテスト用', contestId: 'contest', updatedAt },
+    { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', title: '過去に公開済み', everPublished: true, difficulty: 3, updatedAt, readiness: { publish: [], contest: [], featured: ['ever_published'] } },
+    { id, title: '応募する問題', featuredPreference: applied ? 'later' : '', difficulty: 4, updatedAt, readiness: { publish: [], contest: [], featured: [] } },
+    { id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', title: 'コンテスト用', contestId: 'contest', difficulty: 6, updatedAt, readiness: { publish: ['in_contest'], contest: ['in_contest'], featured: ['in_contest', 'editorial_missing'] } },
+    { id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', title: '公開中', publishedVersion: 1, difficulty: 5, updatedAt },
   ], nextCursor: '' } }))
   await page.route(`**/api/my/problems/${id}`, route => route.fulfill({ json: {
     id, version: 3, updatedAt, draft: { title: '応募する問題', markdown: '本文', editorial: '解説', difficulty: 4, timeLimitMs: '2000', memoryLimitMb: '256', testCases: [] },
@@ -62,24 +73,43 @@ test('authors choose a preference, see validation failures, apply and withdraw',
     return route.fulfill({ status: 204 })
   })
   await page.goto('/featured')
-  await page.getByRole('button', { name: '新作を応募' }).click()
-  const dialog = page.getByRole('dialog')
-  await expect(dialog.getByLabel('投稿する問題').locator('option')).toHaveText(['問題を選択してください', '応募する問題'])
-  await expect(dialog).not.toContainText('Ultimate')
-  const rules = dialog.locator('.application-details')
-  await expect(rules.locator('ul')).toBeHidden()
-  await rules.locator('summary').click()
-  await expect(rules.locator('li')).toHaveCount(6)
-  await expect(rules).toContainText('応募は作者ごとに3件まで')
-  await rules.locator('summary').click()
-  await expect(rules.locator('ul')).toBeHidden()
-  await dialog.getByLabel('投稿する問題').selectOption(id)
-  await dialog.getByLabel('公開の希望').selectOption('later')
-  await dialog.getByRole('button', { name: '応募する', exact: true }).click()
-  await expect(dialog.getByRole('alert')).toContainText('難易度・解説')
-  await dialog.getByRole('button', { name: '応募する', exact: true }).click()
-  await expect(dialog).not.toBeVisible()
-  await expect(page.getByRole('heading', { name: '応募中の問題', exact: true })).toHaveCount(0)
+  await page.getByRole('link', { name: '新作を応募' }).click()
+  await expect(page).toHaveURL('/featured/apply')
+  await expect(page.getByRole('heading', { name: '定期便に応募', level: 1 })).toBeVisible()
+  await expect(page.getByText('応募枠 0 / 3')).toBeVisible()
+  const choices = page.getByRole('group', { name: '問題' })
+  // Choosable problems come first; published ones are not listed; blocked ones say why.
+  await expect(choices.getByRole('radio')).toHaveCount(3)
+  await expect(choices.locator('li').first()).toContainText('応募する問題')
+  await expect(choices.getByRole('radio', { name: /過去に公開済み/ })).toBeDisabled()
+  await expect(choices.getByText('一度公開した問題は定期便に応募できません')).toBeVisible()
+  await expect(choices.getByText('コンテストに登録した問題は応募できません（ほか1件）')).toBeVisible()
+  await expect(choices).not.toContainText('公開中')
+  const submit = page.getByRole('button', { name: '応募する', exact: true })
+  await expect(submit).toBeDisabled()
+  await expect(page.getByRole('radio', { name: '早めに出したい' })).toBeDisabled()
+  await expect(page.locator('.apply-schedule tbody tr')).toHaveCount(6)
+  await expect(page.locator('.apply-schedule')).toContainText('確定')
+  await choices.getByRole('radio', { name: /応募する問題/ }).check()
+  await expect(page.locator('.apply-projection')).toContainText('10/5')
+  await expect(page.locator('.apply-schedule td[data-trial]')).toContainText('この問題')
+  await page.getByRole('radio', { name: 'ゆっくりで良い' }).check()
+  await expect(page.locator('.apply-projection')).toContainText('10/12')
+  expect(plans.at(-1)?.get('preference')).toBe('later')
+  expect(plans.at(-1)?.get('problem')).toBe(id)
+  for (const width of [320, 375, 414, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+    await page.screenshot({ path: testInfo.outputPath(`apply-${width}.png`), fullPage: true })
+  }
+  await submit.click()
+  await expect(page.getByRole('alert')).toContainText('難易度・解説')
+  await submit.click()
+  await expect(page.getByRole('status')).toContainText('応募しました。10/12')
+  await expect(page.getByRole('button', { name: '応募済み', exact: true })).toBeDisabled()
+  await expect(page.getByText('応募枠 1 / 3')).toBeVisible()
+  await page.getByRole('radio', { name: '早めに出したい' }).check()
+  await expect(page.getByRole('button', { name: '希望を変更', exact: true })).toBeEnabled()
   await page.goto('/my?tab=problems')
   const row = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: '応募する問題', exact: true }) })
   await expect(row).toContainText('応募中（定期便）')
@@ -113,6 +143,38 @@ test('authors choose a preference, see validation failures, apply and withdraw',
   expect(withdrawals).toBe(2)
   await expect(row).toContainText('準備中')
   await expect(row.getByRole('img')).toHaveCount(0)
+})
+
+test('the schedule lists coming rounds with writers and fits narrow screens', async ({ page }, testInfo) => {
+  await page.goto('/featured')
+  await page.getByRole('link', { name: '予定', exact: true }).click()
+  await expect(page).toHaveURL('/featured/schedule')
+  await expect(page.getByRole('heading', { name: '定期便の予定', level: 1 })).toBeVisible()
+  await expect(page.locator('.schedule-waiting')).toContainText('Easy 3問')
+  const rows = page.locator('.featured-schedule tbody tr')
+  await expect(rows).toHaveCount(8)
+  await expect(rows.first()).toContainText('確定')
+  await expect(rows.nth(1)).not.toContainText('確定')
+  await expect(rows.first().getByRole('link', { name: 'alice' })).toHaveAttribute('href', '/users/alice')
+  await expect(rows.nth(3)).toContainText('募集中')
+  await expect(rows.nth(3)).toContainText('復刻')
+  // No problem names reach the public schedule.
+  await expect(page.locator('.featured-schedule')).not.toContainText('A + B')
+  for (const width of [320, 375, 414, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+    await page.screenshot({ path: testInfo.outputPath(`schedule-${width}.png`), fullPage: true })
+  }
+  await page.getByRole('link', { name: '新作を応募' }).click()
+  await expect(page).toHaveURL('/featured/apply')
+})
+
+test('guests see the schedule on the application page and a login link back to it', async ({ page }) => {
+  await page.route('**/api/auth/me', route => route.fulfill({ json: { user: null } }))
+  await page.goto('/featured/apply')
+  await expect(page.locator('.apply-form').getByRole('link', { name: 'ログイン' })).toHaveAttribute('href', '/login?next=/featured/apply')
+  await expect(page.locator('.apply-schedule tbody tr')).toHaveCount(6)
+  await expect(page.getByText(/応募枠/)).toHaveCount(0)
 })
 
 test('hidden editorial and other submissions show the unlock time while own results stay accessible', async ({ page }) => {

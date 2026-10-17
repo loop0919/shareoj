@@ -5,14 +5,12 @@ useResponseHeader('Cache-Control').value = 'no-store'
 useSeoMeta({ title: '定期便 | ShareOJ', description: '毎週月曜・木曜23時（日本時間）にEasyとHardを一問ずつ出題します。新作の解説は翌22時に公開。' })
 const offset = ref(0)
 const { data, error, status, refresh } = await useFetch('/api/featured', { query: { offset } })
-const dialog = ref<{ open: () => Promise<void> }>()
 usePolling(() => refresh(), 60000)
 </script>
 
 <template>
   <div class="catalogue featured-page">
-    <ProblemPostDialog ref="dialog" featured @posted="refresh()" />
-    <header class="catalogue-heading"><h1>定期便</h1><button class="editor-button primary" @click="dialog?.open()">新作を応募</button></header>
+    <header class="catalogue-heading"><h1>定期便</h1><div class="featured-actions"><NuxtLink class="editor-button" to="/featured/schedule">予定</NuxtLink><NuxtLink class="editor-button primary" to="/featured/apply">新作を応募</NuxtLink></div></header>
     <FeaturedDelivery v-if="data" :page="data" />
     <p v-if="error" role="alert">定期便を取得できませんでした。<button class="editor-button" @click="refresh()">再試行</button></p>
     <section aria-labelledby="history-title" :aria-busy="status === 'pending'">
@@ -39,6 +37,8 @@ usePolling(() => refresh(), 60000)
 </template>
 
 <style scoped>
+.featured-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.featured-actions .editor-button { display: inline-flex; align-items: center; min-height: 40px; padding-inline: 16px; text-decoration: none; }
 .round { margin-block: 28px; }
 .round-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .round-heading a { font-size: .8125rem; min-height: 44px; display: inline-flex; align-items: center; }

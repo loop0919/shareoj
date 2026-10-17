@@ -34,6 +34,17 @@ const featured = {
     ] },
   ],
 }
+// Eight rounds: the announced one, then estimates with an open Easy slot and Hard revivals.
+const featuredSchedule = {
+  waiting: featured.waiting,
+  rounds: ['2099-10-01T14:00:00Z', '2099-10-05T14:00:00Z', '2099-10-08T14:00:00Z', '2099-10-12T14:00:00Z', '2099-10-15T14:00:00Z', '2099-10-19T14:00:00Z', '2099-10-22T14:00:00Z', '2099-10-26T14:00:00Z'].map((scheduledAt, index) => ({
+    scheduledAt, confirmed: index === 0,
+    slots: [
+      index < 3 ? { slot: 'easy', kind: 'new', writer: ['alice', 'bob', 'a_very_long_handle_for_narrow_screens'][index], difficulty: [4, 2, 3][index] } : { slot: 'easy', kind: 'missing', writer: '', difficulty: null },
+      index < 2 ? { slot: 'hard', kind: 'new', writer: ['carol', 'alice'][index], difficulty: [7, 10][index] } : { slot: 'hard', kind: 'revival', writer: '', difficulty: null },
+    ],
+  })),
+}
 const featuredResult = (timeMs = null, wrong = 0) => ({ accepted: timeMs !== null, timeMs, wrong })
 const featuredStandings = {
   round: featured.items[0], closesAt: '2099-09-29T13:00:00Z', closed: false, hasMore: false,
@@ -101,6 +112,7 @@ createServer(async (req, res) => {
     res.end(JSON.stringify({ ...featuredStandings, round }))
   }
   else if (path === '/featured') res.end(JSON.stringify(featured))
+  else if (path === '/featured/schedule') res.end(JSON.stringify(featuredSchedule))
   else if (path === `/problems/${featuredProblem.id}`) res.end(JSON.stringify(featuredProblem))
   else if (path === '/tags') res.end(JSON.stringify({ items: tags }))
   else if (path === '/problems') {

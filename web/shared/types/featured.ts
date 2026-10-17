@@ -26,6 +26,24 @@ export const featuredPageSchema = z.object({
   items: z.array(roundSchema),
 })
 export type FeaturedPage = z.infer<typeof featuredPageSchema>
+// Coming rounds: the next one as announced, later ones as estimates. Titles only for the viewer's own problems.
+export const featuredPlanSchema = z.object({
+  waiting: z.object({ easy: z.number().int().nonnegative(), hard: z.number().int().nonnegative() }),
+  rounds: z.array(z.object({
+    scheduledAt: z.string().datetime({ offset: true }),
+    confirmed: z.boolean(),
+    slots: z.array(z.object({
+      slot: z.enum(['easy', 'hard']),
+      kind: z.enum(['new', 'revival', 'missing']),
+      writer: z.string(),
+      difficulty: z.number().int().min(1).max(10).nullable(),
+      mine: z.boolean().default(false),
+      title: z.string().default(''),
+      trial: z.boolean().default(false),
+    })),
+  })),
+})
+export type FeaturedPlan = z.infer<typeof featuredPlanSchema>
 export const featuredApplicationsSchema = z.object({ items: z.array(z.object({
   problemId: z.string().uuid(), title: z.string(), preference: z.enum(['soon', 'later']),
   enteredAt: z.string().datetime({ offset: true }),
