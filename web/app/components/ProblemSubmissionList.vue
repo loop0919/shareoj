@@ -49,17 +49,21 @@ usePolling(load, 3000, () => canRejudge.value && !!data.value?.items.some(item =
 </script>
 <template>
   <section class="problem-submissions" :aria-label="title">
-    <header class="submission-heading"><h2>{{ title }}</h2><button v-if="!mine || user" class="editor-button" :disabled="loading" @click="load">{{ loading ? '更新中…' : '更新' }}</button></header>
+    <header class="submission-heading">
+      <h2>{{ title }}</h2>
+      <div class="heading-actions">
+        <!-- Appears only with a selection, so the list stays quiet until someone picks rows. -->
+        <RejudgeButton v-if="canRejudge && selected.length" :busy="rejudging" :disabled="rejudging" :aria-label="`選択した${selected.length}件の提出をリジャッジ`" @click="rejudgeSelected" />
+        <button v-if="!mine || user" type="button" class="editor-button refresh-button" :disabled="loading" :aria-busy="loading || undefined" aria-label="更新" title="更新" @click="load"><svg :class="{ spinning: loading }" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg></button>
+      </div>
+    </header>
+    <p v-if="rejudgeMessage" class="rejudge-message" role="status">{{ rejudgeMessage }}</p>
     <p v-if="mine && !user" class="notice"><NuxtLink :to="{ path: '/login', query: { next: route.fullPath } }">ログイン</NuxtLink>すると、この問題への自分の提出を確認できます。</p>
     <template v-else>
       <p v-if="message" class="notice notice-error" role="alert">{{ message }}</p>
       <LoadingSpinner v-if="loading && !data" label="提出一覧を読み込み中" />
       <template v-if="data">
         <p v-if="!data.items.length" class="muted">提出はまだありません。</p>
-        <div v-if="canRejudge && data.items.length" class="rejudge-bar">
-          <button type="button" class="editor-button" :disabled="!selected.length || rejudging" @click="rejudgeSelected">{{ rejudging ? '依頼中…' : `選択した提出をリジャッジ（${selected.length}件）` }}</button>
-          <p v-if="rejudgeMessage" role="status">{{ rejudgeMessage }}</p>
-        </div>
         <div v-if="data.items.length" class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0" :aria-busy="loading">
           <table class="content-table"><thead><tr><th v-if="canRejudge" scope="col" class="select-cell"><input type="checkbox" :checked="allSelected" :disabled="!selectable.length" aria-label="このページの提出をすべて選択" @change="selected = ($event.target as HTMLInputElement).checked ? [...selectable] : []"></th><th scope="col">提出日時（日本時間）</th><th scope="col">ユーザー</th><th scope="col">言語</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th scope="col">結果</th><th scope="col">詳細</th></tr></thead>
             <tbody><tr v-for="item in data.items" :key="item.id"><td v-if="canRejudge" class="select-cell"><input v-model="selected" type="checkbox" :value="item.id" :disabled="!selectable.includes(item.id)" :aria-label="`${contestDate(item.createdAt)}の提出を選択`"></td><td><time :datetime="item.createdAt">{{ contestDate(item.createdAt) }}</time></td><td><UserLink :handle="item.author" /></td><td>{{ runtimeLabel(item.runtime) }}</td><td class="submission-usage">{{ item.sourceBytes == null ? '—' : `${item.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage">{{ submissionUsage(item.result) }}</td><td><SubmissionStatus :item="item" /></td><td><NuxtLink :to="detail(item)">詳細</NuxtLink></td></tr></tbody>
@@ -76,9 +80,15 @@ usePolling(load, 3000, () => canRejudge.value && !!data.value?.items.some(item =
 .submission-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .submission-heading h2 { margin: 0; }
 .submission-heading button { min-height: 40px; padding-inline: 16px; }
-.rejudge-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 12px; }
-.rejudge-bar button { min-height: 40px; padding-inline: 16px; white-space: nowrap; }
-.rejudge-bar p { margin: 0; color: var(--color-muted); font-size: .8125rem; }
+.heading-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+/* Same stroke and size as the rejudge icon; two arrows tell a plain reload from a rejudge. */
+.submission-heading .refresh-button { display: inline-flex; align-items: center; justify-content: center; width: 40px; padding: 0; color: var(--color-muted); }
+.submission-heading .refresh-button:hover:not(:disabled) { color: var(--color-ink); }
+.submission-heading .refresh-button:disabled { cursor: progress; transform: none; }
+.spinning { animation: refresh-spin .9s linear infinite; }
+@keyframes refresh-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinning { animation: none; } }
+.rejudge-message { margin: 0 0 16px; color: var(--color-muted); font-size: .8125rem; }
 .select-cell { width: 44px; text-align: center; }
 .select-cell input { width: 18px; height: 18px; margin: 0; accent-color: var(--color-accent); cursor: pointer; }
 .select-cell input:disabled { cursor: not-allowed; }

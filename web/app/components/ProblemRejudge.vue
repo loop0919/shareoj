@@ -18,6 +18,6 @@ async function rejudgeAll() {
       <p v-if="!saved" class="muted">未保存の変更があります。保存してからリジャッジしてください。</p>
       <p v-if="message" role="status">{{ message }}</p>
     </div>
-    <button type="button" class="editor-button" :disabled="!saved || busy || disabled" @click="rejudgeAll">{{ busy ? '依頼中…' : 'すべてリジャッジ' }}</button>
+    <RejudgeButton :busy="busy" :disabled="!saved || busy || disabled" @click="rejudgeAll">すべてリジャッジ</RejudgeButton>
   </section>
 </template>

@@ -28,25 +28,30 @@ test('authors select finished submissions in the list and rejudge them together'
   const rows = list.getByRole('checkbox', { name: /の提出を選択$/ })
   await expect(rows).toHaveCount(3)
   await expect(rows.nth(2)).toBeDisabled()
-  const action = list.getByRole('button', { name: /選択した提出をリジャッジ/ })
-  await expect(action).toBeDisabled()
+  // The button appears only with a selection; its name carries the count.
+  const rejudgeButtons = list.getByRole('button', { name: /リジャッジ/ })
+  const action = list.getByRole('button', { name: /^選択した\d+件の提出をリジャッジ$/ })
+  await expect(rejudgeButtons).toHaveCount(0)
+  await expect(list.getByRole('button', { name: '更新', exact: true })).toHaveText('')
   await all.check()
-  await expect(action).toHaveText('選択した提出をリジャッジ（2件）')
+  await expect(action).toHaveAccessibleName('選択した2件の提出をリジャッジ')
+  await expect(action).toHaveText('リジャッジ')
   await rows.nth(1).uncheck()
   await expect(all).not.toBeChecked()
+  await expect(action).toHaveAccessibleName('選択した1件の提出をリジャッジ')
   await all.check()
   for (const width of [320, 768]) {
     await page.setViewportSize({ width, height: 900 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   }
-  await page.screenshot({ path: testInfo.outputPath('rejudge-list.png'), fullPage: true })
+  await list.screenshot({ path: testInfo.outputPath('rejudge-list.png') })
   let confirmation = ''
   page.once('dialog', dialog => { confirmation = dialog.message(); void dialog.accept() })
   await action.click()
   await expect(list.getByRole('status').filter({ hasText: '2件の提出をリジャッジしています。' })).toBeVisible()
   expect(confirmation).toContain('選択した2件の提出をリジャッジしますか？')
   expect(requests).toEqual([{ submissionIds: [first, second] }])
-  await expect(action).toHaveText('選択した提出をリジャッジ（0件）')
+  await expect(rejudgeButtons).toHaveCount(0)
   // Viewers who cannot rejudge see the plain list.
   allowed = false
   await page.reload()
@@ -55,7 +60,7 @@ test('authors select finished submissions in the list and rejudge them together'
   await expect(list.getByRole('button', { name: /リジャッジ/ })).toHaveCount(0)
 })
 
-test('problem management rejudges every saved submission and reports progress and errors', async ({ page }) => {
+test('problem management rejudges every saved submission and reports progress and errors', async ({ page }, testInfo) => {
   let pending = 0
   let failure = ''
   const requests: unknown[] = []
@@ -76,6 +81,7 @@ test('problem management rejudges every saved submission and reports progress an
   const row = page.getByRole('region', { name: 'リジャッジ' })
   const button = row.getByRole('button', { name: 'すべてリジャッジ', exact: true })
   await expect(button).toBeEnabled()
+  await row.screenshot({ path: testInfo.outputPath('rejudge-management.png') })
   page.once('dialog', dialog => void dialog.accept())
   await button.click()
   await expect(row.getByRole('status').filter({ hasText: '5件の提出をリジャッジしています。' })).toBeVisible()
@@ -101,7 +107,7 @@ test('a rejudged submission shows when it was rejudged', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'この提出をリジャッジ' })).toHaveCount(0)
 })
 
-test('the submission page rejudges that submission and follows it until judged', async ({ page }) => {
+test('the submission page rejudges that submission and follows it until judged', async ({ page }, testInfo) => {
   const id = '22222222-2222-4222-8222-222222222222'
   const requests: unknown[] = []
   await page.route('**/api/my/problems/*/rejudge', route => {
@@ -119,9 +125,11 @@ test('the submission page rejudges that submission and follows it until judged',
   await page.goto(`/problems/${shortId(problemId)}/submissions/${shortId(id)}`)
   const button = page.getByRole('button', { name: 'この提出をリジャッジ' })
   await expect(button).toBeEnabled()
+  await expect(button).toHaveText('リジャッジ')
   for (const width of [320, 768]) {
     await page.setViewportSize({ width, height: 900 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.locator('.submission-header').screenshot({ path: testInfo.outputPath(`rejudge-detail-${width}.png`) })
   }
   page.once('dialog', dialog => void dialog.accept())
   await button.click()

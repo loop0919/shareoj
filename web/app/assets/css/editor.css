@@ -1,6 +1,6 @@
 /* Hallmark · pre-emit critique: P4 H4 E4 S5 R5 V4
  * macrostructure: Workbench · existing Plain tokens · editor / live document */
-:root { --color-error: light-dark(#a12622, #ff9b96); --color-dialog-backdrop: #0008; --editor-control-size: 32px; }
+:root { --color-error: light-dark(#a12622, #ff9b96); --color-error-soft: light-dark(#fff3f2, #422a2a); --color-dialog-backdrop: #0008; --editor-control-size: 32px; }
 .site-header nav { display: flex; flex-wrap: wrap; gap: 4px 20px; }
 .author-page { padding-block: 40px 64px; }
 .author-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; }
