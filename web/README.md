@@ -63,6 +63,16 @@ UUID を含む旧 URL は 301 で短い形へ転送する。
 4つ以上のバッククォートで囲んだ `example` ブロックは、書き方と表示例を並べて表示する。
 ガイド間のリンクは `/docs/<slug>` と書く。
 
+画面の操作は、赤枠と番号を付けたスクリーンショットで示し、本文では①②の番号で指す。
+画像は `public/images/docs/<name>.png` に置き、`![説明](/images/docs/<name>.png)` で載せる。
+画像は `docs-screenshots/guides.spec.ts` が、テスト用の架空のデータと本番の言語一覧で撮影する。
+画面を変えたときは、ビルドしてから撮り直す。
+
+```console
+npm run build
+npm run docs:screenshots
+```
+
 以前の `/blog/*-guide` と `/blog/contest-rules` は、対応するガイドへ 301 で転送する（`legacyDocPaths`）。
 
 ## SSR とエラー応答

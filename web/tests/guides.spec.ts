@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { docPages, legacyDocPaths } from '../shared/docs'
 
-for (const [slug, codeBlocks, tables] of [['generator', 3, 1], ['checkers', 3, 1], ['languages', 0, 9]] as const) {
+for (const [slug, codeBlocks, tables] of [['generator', 3, 1], ['checkers', 3, 1], ['languages', 0, 11]] as const) {
   test(`${slug} renders Markdown, highlighted code and stable section links`, async ({ page, request }, testInfo) => {
     const path = `/docs/${slug}`
     const response = await request.get(path)
@@ -52,6 +52,18 @@ test('the guide index lists every guide and the sidebar follows the reader', asy
   await page.getByRole('navigation', { name: '前後のガイド' }).getByRole('link', { name: new RegExp(`次のガイド\\s*${next.label}`) }).click()
   await expect(page).toHaveURL(`/docs/${next.slug}`)
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(next.title)
+})
+
+test('every screenshot in the guides is served and has a description', async ({ page, request }) => {
+  for (const doc of docPages) {
+    await page.goto(`/docs/${doc.slug}`)
+    for (const image of await page.locator('article .markdown-body img').all()) {
+      expect(await image.getAttribute('alt')).toBeTruthy()
+      const src = (await image.getAttribute('src'))!
+      expect(src).toMatch(/^\/images\/docs\/[a-z-]+\.png$/)
+      expect((await request.get(src)).status()).toBe(200)
+    }
+  }
 })
 
 test('old guide URLs redirect permanently to the guides', async ({ request }) => {

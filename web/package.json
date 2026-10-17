@@ -15,7 +15,8 @@
     "test": "playwright test",
     "build:lambda": "OPENOJ_LAMBDA_BUILD=1 nuxt build",
     "package:lambda": "npm run build:lambda && python3 scripts/package-lambda.py",
-    "test:lambda": "node scripts/test-lambda.mjs"
+    "test:lambda": "node scripts/test-lambda.mjs",
+    "docs:screenshots": "playwright test -c playwright.docs.config.ts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.0",
