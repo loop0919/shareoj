@@ -31,7 +31,7 @@
 
 CとC++は`main`関数、Rustは`fn main()`を含めてください。
 
-Javaは`Main`クラスの`public static void main(String[] args)`から実行します。 C#は`static void Main()`またはトップレベルステートメント、Goは`package main`と`func main()`を含めてください。 C#のusingはソースに記述してください。プロジェクトファイルやモジュール定義の提出は不要です。
+Javaは`Main`クラスの`public static void main(String[] args)`から実行します。 C#は`static void Main()`またはトップレベルステートメント、Goは`package main`と`func main()`、Haskellは`main :: IO ()`を含めてください。 C#のusingはソースに記述してください。プロジェクトファイルやモジュール定義の提出は不要です。
 
 CPythonとPyPyは実行前に構文検査を行います。 Codonはネイティブコードへコンパイルする環境で、利用できるのはCodonが対応するPythonの機能です。 CPython連携やPyPIパッケージの追加には対応していません。
 
@@ -128,11 +128,74 @@ Goは上記のパッケージを`import`して使用します。モジュール�
 
 ### Haskell
 
-`Main.hs`の`main :: IO ()`を実行します。
-AtCoderの2025年10月一覧にあるHaskellパッケージを事前構築しています。
-GHC付属パッケージはGHC 9.10.3の版を使い、それ以外は同時に利用できる安定版を固定しています。
-`ac-library-hs`、`vector`、`massiv`、`lens`、`hmatrix`、`hmatrix-gsl`、`hmatrix-glpk`などを`import`できます。
-パッケージ定義ファイルの提出は不要です。
+| ライブラリ | バージョン |
+| --- | --- |
+| ac-library-hs | 1.5.3.2 |
+| adjunctions | 4.4.4 |
+| attoparsec | 0.14.4 |
+| bifunctors | 5.6.3 |
+| bitvec | 1.1.6.0 |
+| comonad | 5.0.10 |
+| contravariant | 1.5.6 |
+| distributive | 0.6.3 |
+| extra | 1.8.1 |
+| fgl | 5.8.3.1 |
+| flow | 2.0.0.11 |
+| free | 5.2 |
+| hashable | 1.5.1.0 |
+| heaps | 0.4.1 |
+| hmatrix | 0.20.2 |
+| hmatrix-glpk | 0.19.0.0 |
+| hmatrix-gsl | 0.19.0.1 |
+| hmatrix-special | 0.19.0.0 |
+| ilist | 0.3.1.0 |
+| indexed-traversable | 0.1.5 |
+| indexed-traversable-instances | 0.1.2.1 |
+| integer-logarithms | 1.0.5 |
+| kan-extensions | 5.2.8 |
+| lens | 5.3.6 |
+| linear-base | 0.8.1 |
+| list-t | 1.0.5.7 |
+| massiv | 1.0.5.0 |
+| megaparsec | 9.8.2 |
+| monad-memo | 0.5.4 |
+| mono-traversable | 1.0.21.0 |
+| mutable-containers | 0.3.4.1 |
+| mwc-random | 0.15.3.0 |
+| parallel | 3.3.0.0 |
+| parser-combinators | 1.3.1 |
+| primitive | 0.9.1.0 |
+| profunctors | 5.6.3 |
+| psqueues | 0.2.8.3 |
+| QuickCheck | 2.19.0.0 |
+| random | 1.3.1 |
+| reflection | 2.1.9 |
+| regex-tdfa | 1.3.2.6 |
+| safe-exceptions | 0.1.7.4 |
+| scientific | 0.3.8.1 |
+| semialign | 1.4 |
+| semigroupoids | 6.0.2 |
+| split | 0.2.5.1 |
+| strict | 0.5.1 |
+| strict-lens | 0.4.1 |
+| tagged | 0.8.10 |
+| tasty | 1.5.4 |
+| tf-random | 0.5 |
+| these | 1.2.1 |
+| these-lens | 1.0.2 |
+| trifecta | 2.1.4 |
+| unboxing-vector | 0.2.0.0 |
+| unordered-containers | 0.2.21 |
+| utility-ht | 0.0.17.2 |
+| vector | 0.13.2.0 |
+| vector-algorithms | 0.9.1.0 |
+| vector-split | 1.0.0.4 |
+| vector-stream | 0.1.0.1 |
+| vector-th-unbox | 0.2.2 |
+| wide-word | 0.1.9.0 |
+| witherable | 0.5 |
+
+GHC付属のパッケージ（`containers`、`bytestring`、`text`など）はGHC 9.10.3の版を使えます。 依存関係は設定済みで、`.cabal`ファイルの提出は不要です。 たとえば`import AtCoder.Dsu`や`import qualified Data.Vector.Unboxed as VU`で読み込めます。
 
 ### JavaScriptとTypeScript
 
@@ -158,17 +221,29 @@ Denoでは一覧にある`@std/*`も固定しており、`import { assertEquals 
 
 ### Ruby
 
-CRubyとTruffleRubyのライブラリは別々に構築しています。
-両方でACL、bit_utils、bitarray、faster_prime、ffi-geos、immutable-ruby、rbtree、rgl、sorted_containers、sorted_set、z3を利用できます。
-ACLのUnion-Findは`require "ac-library-rb/dsu"`と`AcLibraryRb::DSU.new(n)`で利用します。
+| ライブラリ | バージョン | 対応環境 |
+| --- | --- | --- |
+| ac-library-rb | 1.2.0 | CRuby・TruffleRuby |
+| bit_utils | 0.1.2 | CRuby・TruffleRuby |
+| bitarray | 1.3.2 | CRuby・TruffleRuby |
+| faster_prime | 1.0.2 | CRuby・TruffleRuby |
+| ffi-geos | 2.5.0 | CRuby・TruffleRuby |
+| immutable-ruby | 0.2.0 | CRuby・TruffleRuby |
+| rbtree | 0.4.7 | CRuby・TruffleRuby |
+| rgl | 0.6.7 | CRuby・TruffleRuby |
+| sorted_containers | 1.1.0 | CRuby・TruffleRuby |
+| sorted_set | 1.1.0 | CRuby・TruffleRuby |
+| z3 | 0.0.20260727 | CRuby・TruffleRuby |
+| fast_trie | 0.5.1 | CRubyのみ |
+| numo-linalg | 0.1.7 | CRubyのみ |
+| numo-narray | 0.9.2.1 | CRubyのみ |
+| numo-openblas | 0.5.5 | CRubyのみ |
+| or-tools | 0.18.0 | CRubyのみ |
+| polars-df | 0.27.1 | CRubyのみ |
 
-CRubyではOR-Tools、fast_trie、numo-narray、numo-linalg、numo-openblas、polars-dfも利用できます。
-TruffleRubyはOR-ToolsのC拡張と互換性がないため、OR-Toolsを含みません。
+ACLのUnion-Findは`require "ac-library-rb/dsu"`で読み込み、`AcLibraryRb::DSU.new(n)`で作成します。
 
-Rubyの対話判定では`STDIN.gets`で通信入力を読み、`$stdout.sync = true`または`STDOUT.flush`で出力を送ってください。
-引数なしの`gets`は、判定コードに渡されるファイル名を入力として扱います。
-Torch、LightGBM、Rumaleは導入していません。
-対話問題では`$stdout.sync = true`または`STDOUT.flush`を使用してください。
+インタラクティブ問題では、`$stdout.sync = true`または`STDOUT.flush`で出力をフラッシュしてください。 判定コードには入力ファイルなどの引数が渡されるため、引数なしの`gets`は標準入力ではなくそのファイルを読みます。 判定コードで標準入力を読むときは`STDIN.gets`を使ってください。
 
 ## 実行制限 {#limits}
 
