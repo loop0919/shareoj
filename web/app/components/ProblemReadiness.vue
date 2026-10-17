@@ -6,7 +6,7 @@ const sectionNames: Record<EditorSection, string> = { statement: '問題文', te
 const status = computed(() => problemStatus(props.problem))
 // What the author can fix, whatever the problem's state: publishing an update needs it too.
 const issues = computed(() => status.value.kind === 'featured' ? status.value.issues : contentIssues(props.problem.readiness))
-const stateCodes = new Set(['published', 'ever_published', 'in_contest', 'featured_limit'])
+const stateCodes = new Set(['published', 'ever_published', 'in_contest', 'featured_limit', 'featured_applied'])
 // Where the problem already is limits other destinations; say so once per message.
 const notes = computed(() => {
   const readiness = props.problem.readiness

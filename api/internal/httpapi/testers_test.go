@@ -206,6 +206,13 @@ func TestTesterInvitationsPostgres(t *testing.T) {
 	entry.Problems = []contests.Problem{{ID: b, Points: 100}}
 	request("PUT", "/my/contests/eeeeeeee-eeee-4eee-8eee-000000000001", "bob", entry, 409)
 	entry.Problems = []contests.Problem{{ID: c, Points: 100}}
+	// The first claim wins: an open 定期便 application keeps the problem out of contests.
+	exec(`INSERT INTO featured_applications(problem_id,preference) VALUES($1,'soon')`, c)
+	request("PUT", "/my/contests/eeeeeeee-eeee-4eee-8eee-000000000001", "bob", entry, 409)
+	if tested := request("GET", "/my/problems?role=tester", "bob", nil, 200); !strings.Contains(tested, `"contest":["featured_applied"]`) {
+		t.Fatal("tested list does not explain the application: " + tested)
+	}
+	exec(`DELETE FROM featured_applications WHERE problem_id=$1`, c)
 	request("PUT", "/my/contests/eeeeeeee-eeee-4eee-8eee-000000000001", "bob", entry, 200)
 	var registered string
 	if err = store.Pool().QueryRow(ctx, `SELECT contest_id::text FROM contest_problems WHERE problem_id=$1`, c).Scan(&registered); err != nil || registered != "eeeeeeee-eeee-4eee-8eee-000000000001" {

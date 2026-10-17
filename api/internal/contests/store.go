@@ -214,6 +214,14 @@ func save(ctx context.Context, tx pgx.Tx, owner, id string, in Input, policy Jud
 	if len(snapshots) != len(in.Problems) {
 		return ErrConflict
 	}
+	// A 定期便 application came first; its author withdraws it before the problem can enter a contest.
+	var applied bool
+	if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM featured_applications WHERE problem_id=ANY($1::uuid[]))`, ids).Scan(&applied); err != nil {
+		return err
+	}
+	if applied {
+		return ErrConflict
+	}
 	if _, err = tx.Exec(ctx, `DELETE FROM contest_problems WHERE contest_id=$1`, id); err != nil {
 		return err
 	}
@@ -225,9 +233,6 @@ func save(ctx context.Context, tx pgx.Tx, owner, id string, in Input, policy Jud
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO contest_problems(contest_id,problem_id,position,points,draft,problem_version) VALUES($1,$2,$3,$4,$5,$6)`, id, p.ID, i, p.Points, snap.data, snap.version)
 		if err != nil {
-			return err
-		}
-		if _, err = tx.Exec(ctx, `DELETE FROM featured_applications WHERE problem_id=$1`, p.ID); err != nil {
 			return err
 		}
 	}

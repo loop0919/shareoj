@@ -21,6 +21,7 @@ const messages: Record<string, string> = {
   published: '公開中の問題はコンテストに登録できません',
   ever_published: '一度公開した問題は定期便に応募できません',
   featured_limit: '定期便に応募できるのは作者ごとに3件までです',
+  featured_applied: '定期便に応募中のため、応募を取り下げるまで登録できません',
 }
 // The same state reads differently per destination.
 const destinationMessages: Partial<Record<Destination, Record<string, string>>> = {
@@ -40,7 +41,7 @@ const sections: Record<string, EditorSection> = {
 export const issueSection = (code: string): EditorSection | undefined => sections[code]
 
 // Reasons about the problem itself; the rest describe where it already is.
-const stateIssues = new Set(['published', 'ever_published', 'in_contest', 'featured_limit', 'scheduled'])
+const stateIssues = new Set(['published', 'ever_published', 'in_contest', 'featured_limit', 'scheduled', 'featured_applied'])
 
 // Contests need a subset of 定期便's content, so the union is what "complete" means.
 export function contentIssues(readiness?: Readiness): string[] {

@@ -147,11 +147,15 @@ func TestFeaturedApplicationsPostgres(t *testing.T) {
 	fourth.Version = 3
 	f.apply(fourth, "soon", 400) // Previously public remains ineligible after unpublishing.
 	f.apply(a, "soon", 204)
+	// The application came first, so the problem stays out of contests until it is withdrawn.
 	cid := newSubmissionID()
-	f.request("PUT", "/my/contests/"+cid, "alice", map[string]any{"version": 0, "title": "Contest", "description": "", "startsAt": time.Now().Add(time.Hour), "endsAt": time.Now().Add(2 * time.Hour), "penaltyMinutes": 5, "problems": []map[string]any{{"id": a.ID, "points": 100}}}, 200)
-	if strings.Contains(f.request("GET", "/my/featured", "alice", nil, 200), a.ID) {
-		t.Fatal("contest registration retained application")
+	contest := map[string]any{"version": 0, "title": "Contest", "description": "", "startsAt": time.Now().Add(time.Hour), "endsAt": time.Now().Add(2 * time.Hour), "penaltyMinutes": 5, "problems": []map[string]any{{"id": a.ID, "points": 100}}}
+	f.request("PUT", "/my/contests/"+cid, "alice", contest, 409)
+	if !strings.Contains(f.request("GET", "/my/featured", "alice", nil, 200), a.ID) {
+		t.Fatal("rejected contest registration withdrew the application")
 	}
+	f.apply(a, "", 204)
+	f.request("PUT", "/my/contests/"+cid, "alice", contest, 200)
 	f.apply(a, "soon", 400)
 }
 
@@ -471,7 +475,7 @@ func TestProblemReadinessPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]readiness{
-		ready.ID: {Publish: []string{}, Contest: []string{}, Featured: []string{}},
+		ready.ID: {Publish: []string{}, Contest: []string{"featured_applied"}, Featured: []string{}},
 		empty.ID: {Publish: []string{}, Contest: []string{"test_cases_missing"}, Featured: []string{"test_cases_missing"}},
 	}
 	for _, item := range list.Items {
@@ -497,7 +501,7 @@ func TestProblemReadinessPostgres(t *testing.T) {
 	if strings.Contains(f.request("GET", "/my/problems/"+ready.ID, "tester", nil, 200), "readiness") {
 		t.Fatal("tester received author readiness")
 	}
-	if !strings.Contains(f.request("GET", "/my/problems?role=tester", "tester", nil, 200), `"contest":["difficulty_missing"]`) {
+	if !strings.Contains(f.request("GET", "/my/problems?role=tester", "tester", nil, 200), `"contest":["difficulty_missing","featured_applied"]`) {
 		t.Fatal("tested list lacks contest readiness")
 	}
 	// An application that loses its test cases is skipped at selection instead of being published.

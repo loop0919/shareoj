@@ -83,9 +83,9 @@ func TestAssessListsEveryReason(t *testing.T) {
 			Readiness{Publish: []Issue{}, Contest: []Issue{}, Featured: []Issue{IssueFeaturedLimit}},
 		},
 		{
-			"applied problem keeps its place", ready,
+			"applied problem keeps its place and stays out of contests", ready,
 			ProblemState{OtherApplications: 3, FeaturedPreference: "soon"},
-			Readiness{Publish: []Issue{}, Contest: []Issue{}, Featured: []Issue{}},
+			Readiness{Publish: []Issue{}, Contest: []Issue{IssueFeaturedApplied}, Featured: []Issue{}},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

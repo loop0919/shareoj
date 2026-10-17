@@ -25,6 +25,7 @@ const (
 	IssueInContest         Issue = "in_contest"
 	IssueScheduled         Issue = "scheduled"
 	IssueFeaturedLimit     Issue = "featured_limit"
+	IssueFeaturedApplied   Issue = "featured_applied"
 )
 
 const featuredApplicationsPerAuthor = 3
@@ -117,6 +118,10 @@ func Assess(d Draft, s ProblemState, knownRuntimes, enabledRuntimes []string) Re
 	}
 	if s.InContest {
 		r.Contest = append(r.Contest, IssueInContest)
+	}
+	// Whoever claimed the problem first keeps it: a contest does not take over an application.
+	if s.FeaturedPreference != "" {
+		r.Contest = append(r.Contest, IssueFeaturedApplied)
 	}
 	if s.EverPublished {
 		r.Featured = append(r.Featured, IssueEverPublished)
