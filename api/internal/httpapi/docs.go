@@ -89,6 +89,16 @@ func offsetParameters() []*huma.Param {
 	return []*huma.Param{{Name: "offset", In: "query", Description: "先頭からスキップする件数。1ページ最大50件。", Schema: &huma.Schema{Type: "integer", Minimum: floatPointer(0), Maximum: floatPointer(1000000), Default: 0}}}
 }
 
+// onsiteParameter declares scope=onsite, which keeps the onsite division of a contest (ADR 0024).
+func onsiteParameter(description string) *huma.Param {
+	return &huma.Param{Name: "scope", In: "query", Description: description, Schema: &huma.Schema{Type: "string", Enum: []any{"onsite"}}}
+}
+
+// onsiteSubmissionParameters are the parameters of a contest's submission lists.
+func onsiteSubmissionParameters() []*huma.Param {
+	return append(offsetParameters(), onsiteParameter("onsiteを指定すると、表示した時点でオンサイト区分の参加者（チーム戦ではオンサイトのチームのメンバー）がこのコンテストに出した提出だけを返します。スタッフの提出と、参加登録していない人の練習の提出は含みません。"))
+}
+
 func intPointer(v int) *int           { return &v }
 func floatPointer(v float64) *float64 { return &v }
 

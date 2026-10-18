@@ -6,19 +6,43 @@ import (
 	"strconv"
 
 	"github.com/jackc/pgx/v5"
+
+	"judge/api/internal/submissions"
 )
 
-func submissionMine(w http.ResponseWriter, r *http.Request, owner string) (bool, bool) {
-	raw := r.URL.Query().Get("mine")
-	if raw != "" && raw != "0" && raw != "1" {
+// submissionScope reads mine: 1 lists the viewer's own submissions, and team, on a contest's problem, those of the
+// viewer's team as well (ADR 0024). Both need a viewer.
+func submissionScope(w http.ResponseWriter, r *http.Request, owner string, team bool) (submissions.Scope, bool) {
+	var scope submissions.Scope
+	switch raw := r.URL.Query().Get("mine"); {
+	case raw == "" || raw == "0":
+		return submissions.ScopeAll, true
+	case raw == "1":
+		scope = submissions.ScopeMine
+	case raw == "team" && team:
+		scope = submissions.ScopeTeam
+	default:
 		authError(w, 400, "invalid_request")
-		return false, false
+		return "", false
 	}
-	if raw == "1" && owner == "" {
+	if owner == "" {
 		authError(w, 401, "authentication_required")
-		return false, false
+		return "", false
 	}
-	return raw == "1", true
+	return scope, true
+}
+
+// onsiteScope reads scope: onsite keeps the onsite division's rows of the standings or of a contest's submission list
+// (ADR 0024).
+func onsiteScope(w http.ResponseWriter, r *http.Request) (bool, bool) {
+	switch r.URL.Query().Get("scope") {
+	case "":
+		return false, true
+	case "onsite":
+		return true, true
+	}
+	authError(w, 400, "invalid_request")
+	return false, false
 }
 
 func (p submissionHandler) publicProblemSubmissions(w http.ResponseWriter, r *http.Request) {
@@ -36,7 +60,7 @@ func (p submissionHandler) problemSubmissions(w http.ResponseWriter, r *http.Req
 		authError(w, 404, "submission_not_found")
 		return
 	}
-	mine, ok := submissionMine(w, r, owner)
+	scope, ok := submissionScope(w, r, owner, false)
 	if !ok {
 		return
 	}
@@ -55,7 +79,7 @@ func (p submissionHandler) problemSubmissions(w http.ResponseWriter, r *http.Req
 				return
 			}
 		}
-		result, err = p.Submissions.ProblemList(r.Context(), pid, "", owner, mine, offset)
+		result, err = p.Submissions.ProblemList(r.Context(), pid, "", owner, scope, false, offset)
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		authError(w, 404, "submission_not_found")

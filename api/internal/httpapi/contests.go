@@ -86,8 +86,12 @@ func (p contestHandler) contest(w http.ResponseWriter, r *http.Request, owner st
 		}
 		result, err = p.Contests.Problem(r.Context(), id, pid, owner)
 	case strings.HasSuffix(r.URL.Path, "/standings"):
+		onsite, ok := onsiteScope(w, r)
+		if !ok {
+			return
+		}
 		// The public route always serves the frozen table; staff ask for the live one through /my (ADR 0023).
-		result, err = p.Contests.Standings(r.Context(), id, owner, owner != "" && r.URL.Query().Get("live") == "1")
+		result, err = p.Contests.Standings(r.Context(), id, owner, owner != "" && r.URL.Query().Get("live") == "1", onsite)
 	case strings.Contains(r.URL.Path, "/submissions"):
 		if p.Submissions == nil {
 			authError(w, 503, "judging_unavailable")
@@ -110,13 +114,22 @@ func (p contestHandler) contest(w http.ResponseWriter, r *http.Request, owner st
 					authError(w, 404, "problem_not_found")
 					return
 				}
-				mine, ok := submissionMine(w, r, owner)
+				scope, ok := submissionScope(w, r, owner, true)
 				if !ok {
 					return
 				}
-				result, err = p.Submissions.ProblemList(r.Context(), pid, id, owner, mine, offset)
+				onsite, ok := onsiteScope(w, r)
+				if !ok {
+					return
+				}
+				// The viewer's own or team's list ignores the onsite filter.
+				result, err = p.Submissions.ProblemList(r.Context(), pid, id, owner, scope, onsite && scope == submissions.ScopeAll, offset)
 			} else {
-				result, err = p.Submissions.ContestList(r.Context(), id, owner, offset)
+				onsite, ok := onsiteScope(w, r)
+				if !ok {
+					return
+				}
+				result, err = p.Submissions.ContestList(r.Context(), id, owner, offset, onsite)
 			}
 		}
 	default:

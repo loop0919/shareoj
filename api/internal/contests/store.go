@@ -185,13 +185,15 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
 		c.Team = &TeamSummary{ID: *team.ID, Name: team.Name, Members: team.Members, Onsite: c.Onsite}
 	}
 	c.CanEdit = c.IsSetter && c.Status == "scheduled"
-	// Pre-freeze submissions become public at the end; frozen ones are filtered row by row.
-	c.CanViewSubmissions = c.Status == "ended" || c.Staff
+	// Pre-freeze submissions become public at the end; frozen ones are filtered row by row. Members of a team see their
+	// team's submissions during the contest (ADR 0024).
+	c.CanViewSubmissions = c.Status == "ended" || c.Staff || (c.Team != nil && c.Status == "running")
 	c.CanViewLiveStandings = c.Staff && c.FreezeMinutes != nil
 	c.CanRevealResults = c.IsSetter && c.Revealable()
+	// In a team contest a problem is solved when any member has solved it (ADR 0024).
 	rows, err := tx.Query(ctx, `SELECT cp.problem_id,cp.points,cp.draft->>'title',cp.draft->>'timeLimitMs',cp.draft->>'memoryLimitMb',
  EXISTS(SELECT 1 FROM submissions s WHERE s.contest_id=cp.contest_id AND s.problem_id=cp.problem_id
-  AND s.owner_id=$3 AND s.status='DONE' AND s.result->>'verdict'='AC'
+  AND (s.owner_id=$3 OR s.owner_id IN (SELECT unnest(contest_teammates($1::uuid,$3)))) AND s.status='DONE' AND s.result->>'verdict'='AC'
   AND NOT COALESCE((s.job->>'easyTest')::boolean,false)
   AND NOT COALESCE((s.job->>'generate')::boolean,false)
   AND NOT COALESCE((s.job->>'validate')::boolean,false)

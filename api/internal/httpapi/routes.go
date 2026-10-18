@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"judge/api/internal/accounts"
 	"judge/api/internal/contests"
 	"judge/api/internal/images"
@@ -138,9 +140,9 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	public("GET /contests", contests.publicContest, true, publicOperation{Summary: "コンテスト一覧", Description: "開始日時の降順。各要素のproblemsは空配列です。問題一覧は詳細APIで取得します。", Response: publicContestPage{}, Parameters: offsetParameters()})
 	public("GET /contests/{id}", contests.publicContest, true, publicOperation{Summary: "コンテスト詳細", Description: "開始前も出題順と配点を公開します。問題ID・タイトル・制限値は作成者と担当の作問者・テスターだけに返します。", Response: publicContestResponse{}})
 	public("GET /contests/{id}/problems/{problem}", contests.publicContest, true, publicOperation{Summary: "コンテストの問題", Description: "開始後に取得可能です。解説は終了後に公開されます。publishedAtはコンテスト終了日時です。authorはコンテストのオーナー、authorsはオーナーを先頭とするコンテストの作成者です。", Response: publicContestProblem{}})
-	public("GET /contests/{id}/problems/{problem}/submissions", contests.publicContest, true, publicOperation{Summary: "コンテストの問題別提出一覧", Description: "コンテスト終了後に取得可能です。順位表を凍結したコンテストでは、凍結後の提出を結果の公開まで含みません。ソースコードとケース別結果は含みません。mine=1は認証が必要なため公開APIでは利用できません。", Response: publicSubmissionPage{}, Parameters: offsetParameters()})
-	public("GET /contests/{id}/standings", contests.publicContest, true, publicOperation{Summary: "コンテスト順位表", Description: "順位表を凍結したコンテストでは、結果の公開まで凍結前の提出だけで計算し、凍結後の提出の件数をfrozenで返します。", Response: publicStandingsResponse{}})
-	public("GET /contests/{id}/submissions", contests.publicContest, true, publicOperation{Summary: "コンテスト提出一覧", Description: "コンテスト終了後に取得可能です。順位表を凍結したコンテストでは、凍結後の提出を結果の公開まで含みません。提出日時の降順。ソースコードとケース別結果は含みません。", Response: publicSubmissionPage{}, Parameters: offsetParameters()})
+	public("GET /contests/{id}/problems/{problem}/submissions", contests.publicContest, true, publicOperation{Summary: "コンテストの問題別提出一覧", Description: "コンテスト終了後に取得可能です。順位表を凍結したコンテストでは、凍結後の提出を結果の公開まで含みません。ソースコードとケース別結果は含みません。mine=1とmine=teamは認証が必要なため公開APIでは利用できません。", Response: publicSubmissionPage{}, Parameters: onsiteSubmissionParameters()})
+	public("GET /contests/{id}/standings", contests.publicContest, true, publicOperation{Summary: "コンテスト順位表", Description: "順位表を凍結したコンテストでは、結果の公開まで凍結前の提出だけで計算し、凍結後の提出の件数をfrozenで返します。チーム戦では行がチームで、teamにチーム名とメンバーを返し、handleは空文字です。onsiteはオンサイト区分の行です。", Response: publicStandingsResponse{}, Parameters: []*huma.Param{onsiteParameter("onsiteを指定すると、オンサイト区分の行だけを返します。rankはオンサイトの中で振り直した順位、overallRankは全体の順位です。区分のないコンテストでは空配列です。")}})
+	public("GET /contests/{id}/submissions", contests.publicContest, true, publicOperation{Summary: "コンテスト提出一覧", Description: "コンテスト終了後に取得可能です。順位表を凍結したコンテストでは、凍結後の提出を結果の公開まで含みません。提出日時の降順。ソースコードとケース別結果は含みません。", Response: publicSubmissionPage{}, Parameters: onsiteSubmissionParameters()})
 	public("GET /contests/{id}/editorials", posts.editorials, true, publicOperation{Summary: "コンテストのユーザー解説", Description: "コンテスト終了後に、各問題を解説する公開記事を公開日時の昇順で返します。problemIdで問題ごとにまとめてください。", Response: publicEditorialList{}})
 	public("GET /contests/{id}/submissions/{submission}", contests.publicContest, true, publicOperation{Summary: "コンテスト提出詳細", Description: "コンテスト終了後に取得可能です。凍結後の提出は結果の公開まで取得できません。非公開テストの入出力やチェッカー診断は返しません。", Response: publicSubmissionResponse{}})
 	public("GET /images/{id}", images.publicImage, true, publicOperation{Summary: "公開画像", Description: "公開コンテンツから参照される画像をPNGまたはJPEGで返します。", Image: true})
