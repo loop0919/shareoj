@@ -129,8 +129,9 @@ func TestBrowserFixture(t *testing.T) {
 	profileStore := profiles.New(store.Pool())
 	f := newSigningFixture(t)
 	cognito := &browserCognito{t: t, signer: f, users: make(map[string]*browserUser)}
-	// leaver exists so the account deletion test cannot take a shared user with it.
-	for _, name := range []string{"alice", "bob", "test_cases", "shared_submission", "leaver"} {
+	// leaver exists so the account deletion test cannot take a shared user with it; carol and dave join contests
+	// as further co-setters and participants.
+	for _, name := range []string{"alice", "bob", "carol", "dave", "test_cases", "shared_submission", "leaver"} {
 		if _, err := profileStore.Save(ctx, name+"@example.test", name, "", 0, profiles.Accounts{}); err != nil {
 			t.Fatal(err)
 		}
