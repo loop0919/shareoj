@@ -117,6 +117,31 @@ test('a co-setter cannot delete the draft and leaves after confirming', async ({
   expect(left).toBe('DELETE ui_test')
 })
 
+test('a removed co-setter is told saving cannot succeed instead of being asked to retry', async ({ page }) => {
+  await routeEditor(page, () => draftResult(['alice', 'ui_test'], false))
+  await page.route(`**/api/my/contests/${id}/draft`, route => route.request().method() === 'PUT' ? route.fulfill({ status: 404, json: { statusCode: 404 } }) : route.fallback())
+  await page.goto(`/my/contests/${shortId(id)}`)
+  await page.getByLabel('コンテストタイトル').fill('共同のコンテスト（改）')
+  await page.getByRole('button', { name: '下書きを保存' }).click()
+  await expect(page.getByRole('alert')).toHaveText('このコンテストの作成者ではなくなったため保存できません。入力内容をコピーしてください。')
+})
+
+test('someone who does not set the contest sees no setter list', async ({ page }) => {
+  const contest = {
+    id, title: '他人のコンテスト', author: 'alice', authors: ['alice', 'bob'], problemAuthors: [], testers: [], description: '',
+    startsAt: '2099-10-01T00:00:00Z', endsAt: '2099-10-01T02:00:00Z', penaltyMinutes: 5, version: 3, status: 'scheduled',
+    canEdit: false, participating: false, official: true, staff: false, setter: false, owner: false, canViewSubmissions: false,
+    problems: [{ id: own, title: '問題', points: 100 }],
+  }
+  await page.route('**/api/my/problems**', route => route.fulfill({ json: { items: [], nextCursor: '' } }))
+  await page.route(`**/api/my/contests/${id}/draft`, route => route.fulfill({ status: 404, json: {} }))
+  await page.route(`**/api/my/contests/${id}`, route => route.fulfill({ json: contest }))
+  await page.goto(`/my/contests/${shortId(id)}?section=manage`)
+  await expect(page.getByRole('alert')).toHaveText('開始後、または作成者以外は編集できません。')
+  await expect(page.getByRole('heading', { name: '共同作成者', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('list', { name: '作成者', exact: true })).toHaveCount(0)
+})
+
 test('after the start a setter still manages co-setters while the settings stay locked', async ({ page }) => {
   const contest = {
     id, title: '開催中の共同コンテスト', author: 'ui_test', authors: ['ui_test', 'bob'], problemAuthors: [], testers: [], description: '説明',

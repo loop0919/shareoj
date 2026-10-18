@@ -305,10 +305,12 @@ function draftBody(): ContestDraft {
     problems: selected.value.map(p => ({ id: p.id, points: integer(p.points) })),
   }
 }
+// A saved draft or a contest answers 404 once the viewer no longer sets it, so retrying cannot help.
+const noLongerSetter = 'このコンテストの作成者ではなくなったため保存できません。入力内容をコピーしてください。'
 function failure(error: unknown) {
   if ((error as { data?: { data?: { code?: string } } }).data?.data?.code === 'creation_quota_exceeded') return accountError(error)
   const status = (error as { statusCode?: number }).statusCode
-  return status === 409 ? '別の画面で更新されたか、すでに公開されています。入力内容をコピーしてから再読み込みしてください。' : status === 401 ? 'ログインし直してから保存してください。' : status === 400 ? '入力内容を確認してください。' : '保存を確認できませんでした。入力内容を残したまま、もう一度お試しください。'
+  return status === 409 ? '別の画面で更新されたか、すでに公開されています。入力内容をコピーしてから再読み込みしてください。' : status === 404 && version.value ? noLongerSetter : status === 401 ? 'ログインし直してから保存してください。' : status === 400 ? '入力内容を確認してください。' : '保存を確認できませんでした。入力内容を残したまま、もう一度お試しください。'
 }
 async function saveDraft() {
   if (busy.value || !ready.value || locked.value) return false
@@ -440,7 +442,7 @@ async function save() {
     if ((error as { data?: { data?: { code?: string } } }).data?.data?.code === 'contest_participant_problem') {
       section.value = 'problems'; message.value = '参加登録した人が作者・テスターである問題は出題できません。該当する問題を外してください。'; return
     }
-    message.value = status === 409 ? '保存できませんでした。問題の公開状態・他コンテストへの登録・テストケースを確認してください。参加登録した人が作者・テスターの問題と、作成者の誰も作者・テスターではない問題は出題できません。開催開始や別画面での更新があった場合は再読み込みが必要です。' : status === 400 ? '入力内容を確認してください。' : '保存を確認できませんでした。作成したコンテスト一覧を確認してから再度お試しください。'
+    message.value = status === 404 ? noLongerSetter : status === 409 ? '保存できませんでした。問題の公開状態・他コンテストへの登録・テストケースを確認してください。参加登録した人が作者・テスターの問題と、作成者の誰も作者・テスターではない問題は出題できません。開催開始や別画面での更新があった場合は再読み込みが必要です。' : status === 400 ? '入力内容を確認してください。' : '保存を確認できませんでした。作成したコンテスト一覧を確認してから再度お試しください。'
   } finally { busy.value = false }
 }
 </script>
@@ -572,7 +574,8 @@ async function save() {
             </div></section>
             <section v-if="!published" class="management-row"><div><h3>公開</h3><p>公開するまで、このコンテストは作成者だけが見られる下書きです。公開すると、保存した内容で条件を確かめてからコンテスト一覧に載せ、参加登録を受け付けます。</p></div><button type="button" class="editor-button primary" :disabled="!ready || locked || busy" @click="publish">公開する</button></section>
             <section v-else class="management-row"><div><h3>公開ページ</h3><p>参加者に見える内容を確認できます。</p><NuxtLink :to="`/contests/${shortId(id)}`" target="_blank">公開ページを見る</NuxtLink></div></section>
-            <section class="management-row setters-row" aria-labelledby="contest-setters-title"><div class="setters">
+            <!-- Only a setter sees who sets the contest; a locked editor of someone else's contest never loads them. -->
+            <section v-if="ready || settersOnly" class="management-row setters-row" aria-labelledby="contest-setters-title"><div class="setters">
               <h3 id="contest-setters-title">共同作成者</h3>
               <p>招待リンクから加わった共同作成者は、オーナーと同じように設定の編集、下書きの保存と公開、問題の追加と削除ができます。共同作成者を外すことと下書きの削除は、オーナーだけができます。</p>
               <ul class="setter-list" aria-label="作成者">
