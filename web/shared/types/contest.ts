@@ -1,26 +1,36 @@
 import type { PublicProblem } from './problem'
 import { shortId } from '../utils/short-id'
 // hasEditorial is present only when the viewer may read the editorial now. False means none is registered.
-export type ContestProblem = { id: string, points: number, title?: string, timeLimitMs?: string, memoryLimitMb?: string, solved?: boolean, hasEditorial?: boolean }
+// unmanaged tells setters before the start that no current setter authors or tests the problem, so saving fails.
+export type ContestProblem = { id: string, points: number, title?: string, timeLimitMs?: string, memoryLimitMb?: string, solved?: boolean, hasEditorial?: boolean, unmanaged?: boolean }
+// author is the owner; authors lists every setter, owner first. staff, setter and owner describe the viewer (ADR 0022).
 export type Contest = {
-  id: string, author: string, problemAuthors: string[], testers: string[], title: string, description: string,
+  id: string, author: string, authors?: string[], problemAuthors: string[], testers: string[], title: string, description: string,
   startsAt: string, endsAt: string, penaltyMinutes: number, version: number,
   status: 'scheduled' | 'running' | 'ended', canEdit: boolean, participating: boolean, official: boolean, canViewSubmissions: boolean,
+  staff?: boolean, setter?: boolean, owner?: boolean,
   problems: ContestProblem[],
 }
+// Setters, owner first; responses from before co-setters name the owner alone.
+export const contestAuthors = (contest: { author: string, authors?: string[] }) => contest.authors?.length ? contest.authors : [contest.author]
 export type ContestList = { items: Contest[], hasMore: boolean }
 // A contest before publication: any field may be missing until the server reports no issues.
 export type ContestDraft = {
   title: string, description: string, startsAt: string | null, durationMinutes: number | null, penaltyMinutes: number | null,
   problems: { id: string, points: number | null }[],
 }
-export type ContestDraftResult = { id: string, version: number, updatedAt: string, draft: ContestDraft, issues: string[] }
-export type ContestDraftList = { items: { id: string, title: string, startsAt: string | null, updatedAt: string }[], hasMore: boolean }
+// problems describes the listed problems some current setter authors or tests, so co-setters see each other's titles.
+export type DraftProblem = { id: string, title: string, author: string, issues: string[] }
+export type ContestDraftResult = { id: string, version: number, updatedAt: string, draft: ContestDraft, issues: string[], problems?: DraftProblem[], authors?: string[], owner?: boolean }
+export type ContestDraftList = { items: { id: string, title: string, author?: string, startsAt: string | null, updatedAt: string }[], hasMore: boolean }
+// A co-setter link preview; id is the draft's or contest's id, which the two share.
+export type SetterInvitation = { id: string, title: string, author: string, published: boolean, joined: boolean }
 export type Standing = {
   rank: number, handle: string, points: number, timeMs: number,
   problems: Record<string, { points: number, wrong: number, pending: number, acceptedAt?: string }>,
 }
-export type ContestProblemDetail = Omit<PublicProblem, 'timeLimitMs' | 'memoryLimitMb'> & { timeLimitMs: string, memoryLimitMb: string }
+// authors are the contest's setters; canReadEditorial is the server's answer for this viewer.
+export type ContestProblemDetail = Omit<PublicProblem, 'timeLimitMs' | 'memoryLimitMb'> & { timeLimitMs: string, memoryLimitMb: string, authors?: string[], canReadEditorial?: boolean }
 export const contestStatus = { scheduled: '開催予定', running: '開催中', ended: '終了' }
 export const contestViews = { overview: '概要', problems: '問題', standings: '順位表', submissions: '提出一覧', editorials: '解説一覧' }
 export type ContestView = keyof typeof contestViews
