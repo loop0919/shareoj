@@ -90,6 +90,12 @@ createServer(async (req, res) => {
     if (path === `/my/problems/${featuredProblem.id}/publication`) return res.end(JSON.stringify({ ...featuredProblem, editorial: '定期便の解説本文' }))
     if (path === `/my/problems/${featuredProblem.id}/submissions`) return res.end(JSON.stringify({ items: [{ ...submission, id: '33333333-3333-4333-8333-333333333333', problemId: featuredProblem.id, problemTitle: featuredProblem.title, author: 'carol' }], hasMore: false }))
     if (path.startsWith('/my/problems/')) return res.writeHead(404).end('{}')
+    // The private standings name the table the web server asked for; this contest still has runs to judge (ADR 0023).
+    if (path === '/my/contests/88888888-8888-4888-8888-888888888888/standings') {
+      const live = new URL(req.url, 'http://localhost').searchParams.get('live') === '1'
+      return res.end(JSON.stringify([{ rank: 1, handle: live ? 'live' : 'frozen', points: 0, timeMs: 0, problems: {} }]))
+    }
+    if (req.method === 'POST' && path === '/my/contests/88888888-8888-4888-8888-888888888888/reveal') return res.writeHead(409).end(JSON.stringify({ error: 'contest_results_pending' }))
     if (req.method === 'POST') {
       let raw = ''
       for await (const chunk of req) raw += chunk
