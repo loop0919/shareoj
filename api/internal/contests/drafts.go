@@ -396,7 +396,7 @@ func (s *Store) draftConflict(ctx context.Context, actor, id string, err error, 
 func (s *Store) Drafts(ctx context.Context, actor string, offset int) ([]DraftSummary, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT d.id,d.draft->>'title',u.handle,(d.draft->>'startsAt')::timestamptz,d.updated_at
  FROM contest_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id
- WHERE d.owner_id=$1 OR EXISTS(SELECT 1 FROM contest_setters s WHERE s.contest_id=d.id AND s.owner_id=$1 AND s.left_at IS NULL)
+ WHERE contest_setter(d.id,$1)
  ORDER BY d.updated_at DESC,d.id DESC LIMIT 51 OFFSET $2`, actor, offset)
 	if err != nil {
 		return nil, err
