@@ -51,6 +51,11 @@ func (s *Store) Rejudge(ctx context.Context, in RejudgeInput) (int64, error) {
 	// rejudge never mixes two versions.
 	var allowed bool
 	err = tx.QueryRow(ctx, `SELECT $3::boolean OR can_manage_problem(id,$2) FROM problem_drafts WHERE id=$1 FOR UPDATE`, in.ProblemID, in.Actor, in.Operator).Scan(&allowed)
+	// A setter's right ends when the results are final, and the lock may have waited past that moment, while
+	// can_manage_problem judged with the time the statement began. A new statement judges with the time after the wait.
+	if err == nil && allowed {
+		err = tx.QueryRow(ctx, `SELECT $3::boolean OR can_manage_problem($1,$2)`, in.ProblemID, in.Actor, in.Operator).Scan(&allowed)
+	}
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !allowed) {
 		return 0, problems.ErrNotFound
 	}
