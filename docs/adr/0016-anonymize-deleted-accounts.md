@@ -1,6 +1,6 @@
 # ADR 0016: アカウント削除では公開物を残し、作者を匿名にする
 
-- 状態：Accepted
+- 状態：Accepted（コンテストを持つ利用者の削除は[ADR 0022](0022-share-contests-among-setters.md)と[ADR 0023](0023-freeze-contest-standings.md)、参加登録の扱いは[ADR 0024](0024-team-and-onsite-participation.md)で一部変更）
 - 決定日：2026-10-11
 - 範囲：設定画面からのアカウント削除、削除済みアカウントの表示と認証
 

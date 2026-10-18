@@ -1,6 +1,6 @@
 # ADR 0012: EC2の常時稼働1台とコンテスト時の増設で採点する
 
-- 状態：Accepted
+- 状態：Accepted（配布は[ADR 0014](0014-roll-out-os-updates-without-stopping-judging.md)、採点時間の見積もりは[ADR 0025](0025-score-partially-with-test-groups.md)で一部変更）
 - 決定日：2026-09-29
 - 置き換え対象：[ADR 0006](0006-use-lightsail-and-isolate.md)の採点ホスト基盤（isolateによる隔離と計測の決定は引き継ぐ）
 - 範囲：採点ホストの種類と台数、台数の制御、配布の前提。実装済み（本番への切り替えは別途）

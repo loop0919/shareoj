@@ -1,6 +1,6 @@
 # ADR 0010: testlibとC#、Java 25、Nim、Goを採点環境へ追加する
 
-- 状態：Accepted
+- 状態：Accepted（testlibの部分点の扱いは[ADR 0025](0025-score-partially-with-test-groups.md)で一部変更）
 - 提案日：2026-09-14
 - 変更対象：ADR 0007の言語とライブラリの範囲、ADR 0008と0009の判定プロトコル、ADR 0009のJava公開保留方針
 - 範囲：実装と配布。本番公開は実機smokeと受付再開をもって完了する

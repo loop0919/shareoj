@@ -1,6 +1,6 @@
 # ADR 0021: 公開・コンテスト・定期便に、同じ内容の条件を求める
 
-- 状態：Accepted
+- 状態：Accepted（内容の条件と保存時に確かめる範囲は[ADR 0025](0025-score-partially-with-test-groups.md)で一部変更）
 - 決定日：2026-10-18
 - 一部変更：[ADR 0013](0013-assess-problem-readiness.md)の、出し先ごとに内容の条件を変える決定
 

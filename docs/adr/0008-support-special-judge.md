@@ -1,6 +1,6 @@
 # ADR 0008: 作問者の検証コードによるスペシャルジャッジを提供する
 
-- 状態: Accepted
+- 状態: Accepted（スコアファイルの扱いは[ADR 0025](0025-score-partially-with-test-groups.md)で一部変更）
 - 決定日: 2026-09-13
 
 ## 背景
