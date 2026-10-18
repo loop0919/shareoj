@@ -7,7 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// ErrResultsPending means a submission made during the contest is still queued or being judged (or rejudged).
+// ErrResultsPending means a participant's submission made during the contest is still queued or being judged (or rejudged).
 var ErrResultsPending = errors.New("contest submissions are still being judged")
 
 // Reveal makes the results of an ended frozen contest final (ADR 0023). Setters and operators may reveal; it cannot be
@@ -39,9 +39,12 @@ func (s *Store) Reveal(ctx context.Context, id, actor string, operator bool) err
  WHERE cp.contest_id=$1 ORDER BY d.id FOR SHARE OF d`, id); err != nil {
 		return err
 	}
+	// Only the runs the standings count can still move them: those of competing participants during the contest.
+	// Pending runs from before the freeze count too, since their verdicts would change the table after the reveal.
 	var pending bool
 	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM submissions s JOIN contests c ON c.id=s.contest_id
- WHERE c.id=$1 AND s.created_at>=c.starts_at AND s.created_at<c.ends_at AND s.status<>'DONE'
+ JOIN contest_participants p ON p.contest_id=c.id AND p.owner_id=s.owner_id
+ WHERE c.id=$1 AND s.created_at>=c.starts_at AND s.created_at<c.ends_at AND s.status<>'DONE' AND contest_competitor(c,s.owner_id)
  AND NOT COALESCE((s.job->>'easyTest')::boolean,false)
  AND NOT COALESCE((s.job->>'generate')::boolean,false)
  AND NOT COALESCE((s.job->>'validate')::boolean,false))`, id).Scan(&pending)

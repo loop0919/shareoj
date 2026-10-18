@@ -587,7 +587,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 - `GET /contests/{id}/standings`は、結果確定まで凍結前の提出だけで計算し、各セルの`frozen`に凍結後の提出の件数（CE、JE、判定待ちを含み、凍結前に正解した問題では0）を返す。
 - `GET /my/contests/{id}/standings`は同じ表を返し、スタッフが`?live=1`を付けたときだけ凍結なしの表を返す。
 - `POST /my/contests/{id}/reveal`：セッターか運営者（`OPERATOR_SUBJECTS`）が結果を公開し、コンテスト詳細を返す。取り消せず、公開済みなら何もせず200。
-  ほかの人は404、終了前か凍結のないコンテストは409 `contest_conflict`、コンテスト中の提出に判定待ち（リジャッジ中を含む）が残っていれば409 `contest_results_pending`。
+  ほかの人は404、終了前か凍結のないコンテストは409 `contest_conflict`、参加者のコンテスト中の提出に判定待ち（リジャッジ中を含む）が残っていれば409 `contest_results_pending`。スタッフの提出、サンプル検証、終了後の練習は待たない。
 - 配布時は`034_contest_freeze.sql`だけのコミットを先に配布して適用し、その後にAPIを配布する。
 
 ## 定期便

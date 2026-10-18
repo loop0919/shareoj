@@ -221,6 +221,7 @@ func TestRevealWaitsForRejudgePostgres(t *testing.T) {
 	pool := f.store.Pool()
 	const sid = "a0000000-0000-4000-8000-0000000000a1"
 	for _, statement := range []string{
+		`INSERT INTO contest_participants(contest_id,owner_id) VALUES('` + lockContest + `','bob')`,
 		`UPDATE contests SET freeze_minutes=10,starts_at=now()-interval '2 hours',ends_at=now()-interval '1 hour'`,
 		`INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,result,contest_id,created_at)
  VALUES('` + sid + `','bob','` + lockProblem + `',1,'Locked','cpp17','code','{}'::jsonb,'DONE','{"verdict":"AC"}'::jsonb,'` + lockContest + `',now()-interval '90 minutes')`,

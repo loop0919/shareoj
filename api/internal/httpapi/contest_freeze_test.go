@@ -218,6 +218,7 @@ func TestContestFreezePostgres(t *testing.T) {
 		carolSlow  = "a0000000-0000-4000-8000-000000000005" // pre-freeze, judged after the freeze
 		carolAC    = "a0000000-0000-4000-8000-000000000006" // frozen
 		carolQueue = "a0000000-0000-4000-8000-000000000007" // frozen, still queued
+		tessQueued = "a0000000-0000-4000-8000-00000000000d" // a tester's run during the contest, still queued
 	)
 	insert := func(id, owner, problem, status, verdict string, created, finished time.Duration) {
 		t.Helper()
@@ -370,11 +371,18 @@ func TestContestFreezePostgres(t *testing.T) {
 	exec(`UPDATE submissions SET status='RUNNING' WHERE id=$1`, carolQueue)
 	request("POST", "/my/contests/"+cid+"/reveal", "alice", nil, 409)
 	exec(`UPDATE submissions SET status='DONE',result='{"verdict":"WA","passed":0,"total":2}' WHERE id=$1`, carolQueue)
+	// A pending run from before the freeze would also move the table after the reveal.
+	exec(`UPDATE submissions SET status='QUEUED' WHERE id=$1`, carolSlow)
+	request("POST", "/my/contests/"+cid+"/reveal", "alice", nil, 409)
+	exec(`UPDATE submissions SET status='DONE' WHERE id=$1`, carolSlow)
+	// A staff run does not hold the reveal, since no table counts it.
+	insert(tessQueued, "tess", p1, "QUEUED", "", -5*time.Minute, -5*time.Minute)
 	var revealed contests.Contest
 	decode(request("POST", "/my/contests/"+cid+"/reveal", "ops", nil, 200), &revealed)
 	if !revealed.Revealed || revealed.RevealedAt == nil || !revealed.ResultsFinal || revealed.CanRevealResults {
 		t.Fatalf("revealed: %+v", revealed)
 	}
+	exec(`DELETE FROM submissions WHERE id=$1`, tessQueued)
 	var again contests.Contest
 	decode(request("POST", "/my/contests/"+cid+"/reveal", "alice", nil, 200), &again)
 	if again.RevealedAt == nil || !again.RevealedAt.Equal(*revealed.RevealedAt) {
