@@ -23,8 +23,8 @@ export type ContestDraft = {
 export type DraftProblem = { id: string, title: string, author: string, issues: string[] }
 export type ContestDraftResult = { id: string, version: number, updatedAt: string, draft: ContestDraft, issues: string[], problems?: DraftProblem[], authors?: string[], owner?: boolean }
 export type ContestDraftList = { items: { id: string, title: string, author?: string, startsAt: string | null, updatedAt: string }[], hasMore: boolean }
-// A co-setter link preview; id is the draft's or contest's id, which the two share.
-export type SetterInvitation = { id: string, title: string, author: string, published: boolean, joined: boolean }
+// A co-setter link preview; id is the draft's or contest's id, which the two share. closed: the results are final.
+export type SetterInvitation = { id: string, title: string, author: string, published: boolean, joined: boolean, closed?: boolean }
 export type Standing = {
   rank: number, handle: string, points: number, timeMs: number,
   problems: Record<string, { points: number, wrong: number, pending: number, acceptedAt?: string }>,

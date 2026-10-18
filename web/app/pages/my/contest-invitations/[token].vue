@@ -48,6 +48,7 @@ async function accept() {
       <p class="muted">{{ invitation.published ? '公開済みのコンテスト' : '下書き（未公開）のコンテスト' }}</p>
       <p>オーナー <UserLink :handle="invitation.author" /></p>
       <template v-if="invitation.joined"><p>このコンテストの作成者として、すでに操作できます。</p><NuxtLink class="editor-button primary" :to="editorPath(invitation.id)">コンテストを開く</NuxtLink></template>
+      <p v-else-if="invitation.closed">コンテストの結果が確定したため、この招待は締め切られました。</p>
       <template v-else>
         <p>共同作成者になると、オーナーと同じように、開始前の設定の編集、下書きの保存と公開、問題の追加と削除、招待リンクの発行ができます。共同作成者を外すことと、下書きの削除は、オーナーだけができます。</p>
         <p>公開済みのコンテストに入っている問題は、結果が確定するまで、テスターと同じように編集やリジャッジができます。</p>

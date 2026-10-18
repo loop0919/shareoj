@@ -137,6 +137,29 @@ test('after the start a setter still manages co-setters while the settings stay 
   await expect(page.getByLabel('誤答ペナルティ（分）')).toBeDisabled()
 })
 
+test('after the end invitations close while the owner can still remove co-setters', async ({ page }) => {
+  const contest = {
+    id, title: '終了した共同コンテスト', author: 'ui_test', authors: ['ui_test', 'bob'], problemAuthors: [], testers: [], description: '説明',
+    startsAt: '2026-10-01T00:00:00Z', endsAt: '2026-10-01T02:00:00Z', penaltyMinutes: 5, version: 3, status: 'ended',
+    canEdit: false, participating: false, official: false, staff: true, setter: true, owner: true, canViewSubmissions: true,
+    problems: [{ id: own, title: '自分の問題', points: 100 }],
+  }
+  let issued = 0
+  await page.route('**/api/my/problems**', route => route.fulfill({ json: { items: [], nextCursor: '' } }))
+  await page.route(`**/api/my/contests/${id}/draft`, route => route.fulfill({ status: 404, json: {} }))
+  await page.route(`**/api/my/contests/${id}`, route => route.fulfill({ json: contest }))
+  await page.route(`**/api/my/contests/${id}/setter-invitation`, route => { issued++; return route.fulfill({ status: 409, json: { statusCode: 409, data: { code: 'contest_invitation_closed' } } }) })
+  await page.goto(`/my/contests/${shortId(id)}`)
+  await expect(page.getByText('結果が確定したため、共同作成者の招待はできません。解除と脱退はできます。')).toBeVisible()
+  await expect(page.getByRole('button', { name: /^リンクを(発行|作り直す)$/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'bobを共同作成者から外す', exact: true })).toBeEnabled()
+  // The problems were published at the end; that is no issue once the problem set is fixed.
+  await page.getByRole('button', { name: '問題・配点', exact: true }).click()
+  await expect(page.locator('.selected li strong')).toHaveText(['自分の問題'])
+  await expect(page.locator('.selected .problem-issue')).toHaveCount(0)
+  expect(issued).toBe(0)
+})
+
 test('a published contest names the problems no setter manages before saving', async ({ page }) => {
   const contest = {
     id, title: '予定の共同コンテスト', author: 'alice', authors: ['alice', 'ui_test'], problemAuthors: [], testers: [], description: '',
@@ -199,6 +222,14 @@ test('the invitation page previews the contest, accepts, and explains refusals',
   // A renewed or unknown link says so instead of showing an empty invitation.
   await page.goto(`/my/contest-invitations/${renewed}`)
   await expect(page.getByRole('alert')).toHaveText('招待リンクが無効か、作り直されています。コンテストの作成者に今のリンクを確認してください。')
+  await expect(page.getByRole('button', { name: '共同作成者になる' })).toHaveCount(0)
+})
+
+test('a closed invitation says so instead of offering to join', async ({ page }) => {
+  await page.route(`**/api/my/setter-invitations/${token}`, route => route.fulfill({ json: { id, title: '終わったコンテスト', author: 'alice', published: true, joined: false, closed: true } }))
+  await page.goto(`/my/contest-invitations/${token}`)
+  await expect(page.getByRole('heading', { name: '終わったコンテスト', level: 2 })).toBeVisible()
+  await expect(page.getByText('コンテストの結果が確定したため、この招待は締め切られました。')).toBeVisible()
   await expect(page.getByRole('button', { name: '共同作成者になる' })).toHaveCount(0)
 })
 
