@@ -80,7 +80,7 @@ test('password users change their password; Google users are told why they canno
   await expect(page.getByLabel('現在のパスワード')).toHaveCount(0)
 })
 
-test('deletion asks for the handle and explains a contest that has not ended', async ({ page }) => {
+test('deletion asks for the handle and explains a contest whose results are not final', async ({ page }) => {
   let active = true
   await page.route('**/api/my/account', route => route.request().method() !== 'DELETE'
     ? route.fallback()
@@ -91,7 +91,7 @@ test('deletion asks for the handle and explains a contest that has not ended', a
   await expect(remove).toBeDisabled()
   await page.getByLabel(/確認のため/).fill('ui_test')
   await remove.click()
-  await expect(page.getByRole('alert')).toContainText('コンテストの終了後に削除してください')
+  await expect(page.getByRole('alert')).toHaveText('結果が確定していないコンテストがあるため削除できません。コンテストの終了後、順位表を凍結した場合は結果を公開してから削除してください。')
   active = false
   await remove.click()
   await expect(page).toHaveURL('/')
