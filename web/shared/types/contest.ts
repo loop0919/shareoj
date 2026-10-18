@@ -45,6 +45,18 @@ export function contestView(value: unknown): ContestView {
 export function contestDate(value: string) {
   return new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Tokyo' }).format(new Date(value))
 }
+// When the standings freeze starts, in Japan. A contest that crosses midnight there shows the date as well, since the
+// time alone could mean either day.
+export function contestFreezeTime(contest: Pick<Contest, 'startsAt' | 'endsAt' | 'freezeAt'>) {
+  if (!contest.freezeAt) return ''
+  const day = (value: string) => new Intl.DateTimeFormat('ja-JP', { dateStyle: 'short', timeZone: 'Asia/Tokyo' }).format(new Date(value))
+  const date = day(contest.startsAt) !== day(contest.endsAt) ? { month: 'long', day: 'numeric' } as const : {}
+  return new Intl.DateTimeFormat('ja-JP', { ...date, hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }).format(new Date(contest.freezeAt))
+}
+// Others do not see the frozen submissions until the results are published (ADR 0023); empty when nothing is hidden.
+export function frozenSubmissionsNote(contest: Pick<Contest, 'startsAt' | 'endsAt' | 'freezeAt' | 'resultsFinal'>) {
+  return contest.freezeAt && !contest.resultsFinal ? `${contestFreezeTime(contest)}以降の提出は、結果の公開まで本人とスタッフだけが見られます。` : ''
+}
 // A, B, …, Z, AA, AB, … in contest order.
 export function problemLabel(index: number): string {
   return index < 26 ? String.fromCharCode(65 + index) : problemLabel(Math.floor(index / 26) - 1) + problemLabel(index % 26)

@@ -327,7 +327,7 @@ test('scheduled problems open for submission, then publish with editorial and so
   await expect(bob.locator('.contest-clock')).toBeVisible()
   await bob.getByRole('link', { name: 'この問題の自分の提出', exact: true }).click()
   await bobMenu.getByRole('link', { name: 'すべての提出', exact: true }).click()
-  await expect(bob.getByText('すべての提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。')).toBeVisible()
+  await expect(bob.getByText('提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。')).toBeVisible()
   expect((await bob.request.get(`/api/contests/${id}/problems/${pid}/submissions`)).status()).toBe(404)
   await authorMenu.getByRole('link', { name: 'すべての提出', exact: true }).click()
   await expect(page.getByRole('region', { name: 'すべての提出', exact: true })).toContainText('bob')

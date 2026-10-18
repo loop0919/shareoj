@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { submissionUsage } from '~/utils/submission-usage'
-import { contestAuthors, contestDate, contestProblemPath, contestStatus, contestView, contestViews, problemLabel, type Standing } from '~~/shared/types/contest'
+import { contestAuthors, contestDate, contestFreezeTime, contestProblemPath, contestStatus, contestView, contestViews, frozenSubmissionsNote, problemLabel, type Standing } from '~~/shared/types/contest'
 import { fullId, shortId } from '~~/shared/utils/short-id'
 import type { Submission } from '~~/shared/types/submission'
 import type { UserEditorial } from '~~/shared/types/post'
@@ -79,14 +79,8 @@ watch([offset, activeView, canViewSubmissions], () => { void loadSubmissions() }
 watch([activeView, () => contest.value?.status], () => { void loadEditorials() })
 onMounted(() => { void loadSubmissions(); void loadEditorials() })
 usePolling(update, 15000)
-// A contest that crosses midnight in Japan shows the date as well, since the time alone could mean either day.
-const freezeTime = computed(() => {
-  const c = contest.value
-  if (!c?.freezeAt) return ''
-  const day = (value: string) => new Intl.DateTimeFormat('ja-JP', { dateStyle: 'short', timeZone: 'Asia/Tokyo' }).format(new Date(value))
-  const date = day(c.startsAt) !== day(c.endsAt) ? { month: 'long', day: 'numeric' } as const : {}
-  return new Intl.DateTimeFormat('ja-JP', { ...date, hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }).format(new Date(c.freezeAt))
-})
+const freezeTime = computed(() => contest.value ? contestFreezeTime(contest.value) : '')
+const frozenNote = computed(() => contest.value ? frozenSubmissionsNote(contest.value) : '')
 // Setters and operators publish the frozen results after the end; the server refuses while runs are still pending.
 const revealing = ref(false)
 const revealError = ref('')
@@ -198,8 +192,8 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
     </section>
     <section v-if="activeView === 'submissions'" id="submissions" class="contest-section" aria-labelledby="submissions-title">
       <h1 id="submissions-title">提出一覧</h1>
-      <p v-if="!canViewSubmissions" class="notice">提出一覧と提出コードはコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。</p>
-      <template v-else><p class="muted">提出コードを閲覧できます。練習提出も掲載します。</p>
+      <p v-if="!canViewSubmissions" class="notice">提出一覧と提出コードはコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。{{ frozenNote }}</p>
+      <template v-else><p class="muted">提出コードを閲覧できます。練習提出も掲載します。{{ frozenNote }}</p>
       <p v-if="submissionsError" class="notice notice-error" role="alert">{{ submissionsError }}</p>
       <LoadingSpinner v-if="!submissions && !submissionsError" label="提出一覧を読み込み中" />
       <template v-if="submissions"><p v-if="!submissions.items.length" class="contest-empty muted">提出はまだありません。</p><div v-else class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0"><table class="content-table"><thead><tr><th scope="col">問題</th><th scope="col">ユーザー</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th scope="col">結果</th><th scope="col">提出日時（日本時間）</th></tr></thead><tbody><tr v-for="s in submissions.items" :key="s.id"><th scope="row"><NuxtLink :to="`/contests/${shortId(contest.id)}/submissions/${shortId(s.id)}`">{{ s.problemTitle }}</NuxtLink></th><td><UserLink :handle="s.author" /></td><td class="submission-usage">{{ s.sourceBytes == null ? '—' : `${s.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage">{{ submissionUsage(s.result) }}</td><td><SubmissionStatus :item="s" /></td><td>{{ contestDate(s.createdAt) }}<span v-if="new Date(s.createdAt) >= new Date(contest.endsAt)"> · 練習</span></td></tr></tbody></table></div><ContentPagination :index="offset / 50" :has-next="submissions.hasMore" :loading="updating" @move="direction => offset += direction * 50" /></template>
