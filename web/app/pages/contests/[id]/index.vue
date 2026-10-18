@@ -69,7 +69,14 @@ const frozen = computed(() => {
   const at = contest.value?.freezeAt
   return !!at && !contest.value?.resultsFinal && (contest.value?.status === 'ended' || now.value >= Date.parse(at))
 })
-const freezeTime = computed(() => contest.value?.freezeAt ? new Intl.DateTimeFormat('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }).format(new Date(contest.value.freezeAt)) : '')
+// A contest that crosses midnight in Japan shows the date as well, since the time alone could mean either day.
+const freezeTime = computed(() => {
+  const c = contest.value
+  if (!c?.freezeAt) return ''
+  const day = (value: string) => new Intl.DateTimeFormat('ja-JP', { dateStyle: 'short', timeZone: 'Asia/Tokyo' }).format(new Date(value))
+  const date = day(c.startsAt) !== day(c.endsAt) ? { month: 'long', day: 'numeric' } as const : {}
+  return new Intl.DateTimeFormat('ja-JP', { ...date, hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }).format(new Date(c.freezeAt))
+})
 // Setters and operators publish the frozen results after the end; the server refuses while runs are still pending.
 const revealing = ref(false)
 const revealError = ref('')
