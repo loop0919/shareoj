@@ -13,7 +13,7 @@ async function remove() {
   } catch (e) {
     const failure = e as { data?: { data?: { code?: string } } }
     const code = failure.data?.data?.code
-    error.value = code === 'account_has_active_contest' ? '開催予定または開催中のコンテストがあるため削除できません。コンテストの終了後に削除してください。'
+    error.value = code === 'account_has_active_contest' ? '結果が確定していないコンテストがあるため削除できません。コンテストの終了後、順位表を凍結した場合は結果を公開してから削除してください。'
       : code === 'confirmation_mismatch' ? 'ユーザーIDが一致しません。'
         : '削除できませんでした。時間をおいて、もう一度お試しください。'
   } finally { busy.value = false }
@@ -38,7 +38,7 @@ async function remove() {
       <li>提出、コンテストへの参加登録、難易度の投票</li>
       <li>テスターとして担当した問題の記録</li>
     </ul>
-    <p class="note">共同作成者がいるコンテストと下書きは、最初に加わった共同作成者に引き継ぎます。共同作成者のいない開催予定・開催中のコンテストがある間と、公開していない自分の問題が終了前のコンテストに入っている間は、削除できません。今のユーザーIDは、削除後にほかの人が使えるようになります。</p>
+    <p class="note">共同作成者がいるコンテストと下書きは、最初に加わった共同作成者に引き継ぎます。共同作成者のいないコンテストが終了するまで（順位表を凍結した場合は結果を公開するまで）と、公開していない自分の問題が終了前のコンテストに入っている間は、削除できません。今のユーザーIDは、削除後にほかの人が使えるようになります。</p>
     <form @submit.prevent="remove">
       <label for="deletion-confirmation">確認のため、ユーザーID「{{ profile.handle }}」を入力してください</label>
       <input id="deletion-confirmation" v-model="confirmation" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" :disabled="busy">
