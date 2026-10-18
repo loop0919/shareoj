@@ -200,6 +200,25 @@ test('after the end invitations close while the owner can still remove co-setter
   expect(issued).toBe(0)
 })
 
+test('an ended frozen contest still takes co-setters until its results are published', async ({ page }) => {
+  const contest = {
+    id, title: '凍結した共同コンテスト', author: 'ui_test', authors: ['ui_test', 'bob'], problemAuthors: [], testers: [], description: '説明',
+    startsAt: '2026-10-01T00:00:00Z', endsAt: '2026-10-01T02:00:00Z', penaltyMinutes: 5, version: 3, status: 'ended',
+    canEdit: false, participating: false, official: false, staff: true, setter: true, owner: true, canViewSubmissions: true,
+    freezeMinutes: 30, freezeAt: '2026-10-01T01:30:00Z', revealed: false, revealedAt: null, resultsFinal: false, canRevealResults: true,
+    problems: [{ id: own, title: '自分の問題', points: 100 }],
+  }
+  await page.route('**/api/my/problems**', route => route.fulfill({ json: { items: [], nextCursor: '' } }))
+  await page.route(`**/api/my/contests/${id}/draft`, route => route.fulfill({ status: 404, json: {} }))
+  await page.route(`**/api/my/contests/${id}`, route => route.fulfill({ json: contest }))
+  await page.route(`**/api/my/contests/${id}/setter-invitation`, route => route.fulfill({ json: { token } }))
+  await page.goto(`/my/contests/${shortId(id)}`)
+  await expect(page.getByText('開始後は設定を変更できません。共同作成者の招待と解除はできます。')).toBeVisible()
+  await expect(page.getByText('結果が確定したため', { exact: false })).toHaveCount(0)
+  await page.getByRole('button', { name: 'リンクを発行', exact: true }).click()
+  await expect(page.getByLabel('招待リンク', { exact: true })).toHaveValue(new RegExp(`${token}$`))
+})
+
 test('a published contest names the problems no setter manages before saving', async ({ page }) => {
   const contest = {
     id, title: '予定の共同コンテスト', author: 'alice', authors: ['alice', 'ui_test'], problemAuthors: [], testers: [], description: '',

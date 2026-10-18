@@ -44,8 +44,9 @@ const authors = ref<string[]>([])
 const isOwner = ref(true)
 // After the start a setter can still manage co-setters, though every setting is locked.
 const settersOnly = ref(false)
-// Once the results are final (phase 1: at the end), invitations close; removing and leaving still work.
-const ended = ref(false)
+// Once the results are final (at the end, or at the reveal of a frozen contest), invitations close; removing and
+// leaving still work.
+const resultsFinal = ref(false)
 type EditorProblem = { id: string, title?: string, points: number | string | null }
 const selected = ref<EditorProblem[]>([])
 const id = ref(props.contestId ?? '')
@@ -177,7 +178,7 @@ async function open(contestId: string) {
   durationMinutes.value = Math.round((Date.parse(c.endsAt) - Date.parse(c.startsAt)) / 60000)
   penaltyMinutes.value = c.penaltyMinutes; freezeMinutes.value = c.freezeMinutes ?? ''; freezeOn.value = c.freezeMinutes != null; version.value = c.version
   selected.value = c.problems.map(p => ({ id: p.id, title: p.title, points: p.points }))
-  if (!c.canEdit) { locked.value = true; settersOnly.value = true; ended.value = c.status === 'ended'; section.value = 'manage' }
+  if (!c.canEdit) { locked.value = true; settersOnly.value = true; resultsFinal.value = c.resultsFinal ?? c.status === 'ended'; section.value = 'manage' }
 }
 // Who sets the contest, and which problems other setters bring; a draft and a contest describe them differently.
 function applySetters(result: ContestDraftResult | Contest) {
@@ -577,7 +578,7 @@ async function save() {
             <header><h2 id="contest-manage-title">コンテスト管理</h2><p class="manage-problem-title">{{ title.trim() || '無題のコンテスト' }}</p><p class="muted">{{ settersOnly ? '公開済み（開始後）' : published ? '公開済み（開催予定）' : '下書き（未公開）' }}</p></header>
             <section class="management-row readiness-row" aria-labelledby="contest-readiness-title"><div>
               <h3 id="contest-readiness-title">状態</h3>
-              <p v-if="settersOnly">{{ ended ? '結果が確定したため、共同作成者の招待はできません。解除と脱退はできます。' : '開始後は設定を変更できません。共同作成者の招待と解除はできます。' }}</p>
+              <p v-if="settersOnly">{{ resultsFinal ? '結果が確定したため、共同作成者の招待はできません。解除と脱退はできます。' : '開始後は設定を変更できません。共同作成者の招待と解除はできます。' }}</p>
               <p v-else-if="published">公開済みです。開始前なら内容を変更でき、保存すると公開ページに反映されます。</p>
               <p v-else-if="!version">保存すると、公開できるかを確認できます。</p>
               <template v-else>
@@ -603,7 +604,7 @@ async function save() {
               </ul>
               <template v-if="setterLink"><label for="setter-link">招待リンク</label><div class="setter-link-field"><input id="setter-link" :value="setterLink" readonly @focus="($event.target as HTMLInputElement).select()"><button type="button" class="editor-button setter-link-copy" :aria-label="setterLinkCopied ? 'コピーしました' : 'リンクをコピー'" :title="setterLinkCopied ? 'コピーしました' : 'リンクをコピー'" @click="copySetterLink"><svg v-if="setterLinkCopied" class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L19 8" /></svg><svg v-else class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V4H4v12h4" /></svg></button></div></template>
               <p v-if="setterMessage" role="status">{{ setterMessage }}</p>
-            </div><button v-if="!ended" type="button" class="editor-button" :disabled="!canManageSetters" :aria-busy="setterAction === 'link'" @click="setterInvitation(!!setterLink)">{{ setterAction === 'link' ? '発行中…' : setterLink ? 'リンクを作り直す' : 'リンクを発行' }}</button></section>
+            </div><button v-if="!resultsFinal" type="button" class="editor-button" :disabled="!canManageSetters" :aria-busy="setterAction === 'link'" @click="setterInvitation(!!setterLink)">{{ setterAction === 'link' ? '発行中…' : setterLink ? 'リンクを作り直す' : 'リンクを発行' }}</button></section>
             <section v-if="!published && version && isOwner" class="management-row"><div><h3>下書きの削除</h3><p>この下書きを削除します。この操作は取り消せません。</p></div><button type="button" class="editor-button danger" :disabled="busy" @click="removeDraft">下書きを削除</button></section>
           </div>
         </section>
