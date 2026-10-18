@@ -16,9 +16,16 @@ const base = `/api/contests/${encodeURIComponent(id)}`
 const { data: contest, error, refresh } = await useContest(id)
 if (error.value || !contest.value) throw createError({ statusCode: error.value?.statusCode === 404 ? 404 : 502, statusMessage: 'コンテストを取得できませんでした', fatal: true })
 useSeoMeta({ title: () => `${contest.value?.title} | ShareOJ` })
-// Staff may switch to the table without the freeze; everyone else always gets the frozen one.
+// Re-read on each poll so the banner appears once the freeze starts.
+const now = ref(Date.now())
+const frozen = computed(() => {
+  const at = contest.value?.freezeAt
+  return !!at && !contest.value?.resultsFinal && (contest.value?.status === 'ended' || now.value >= Date.parse(at))
+})
+// Staff may switch to the table without the freeze while it hides something; everyone else always gets the frozen one.
+const canSwitchStandings = computed(() => contest.value?.canViewLiveStandings === true && frozen.value)
 const standingsMode = ref<'frozen' | 'live'>('frozen')
-const showLive = computed(() => standingsMode.value === 'live' && contest.value?.canViewLiveStandings === true)
+const showLive = computed(() => standingsMode.value === 'live' && canSwitchStandings.value)
 const standingsModes = [{ value: 'frozen' as const, label: '凍結した順位表' }, { value: 'live' as const, label: '凍結なし' }]
 const { data: standings, error: standingsError, refresh: refreshStandings } = await useFetch<Standing[]>(`${base}/standings`, { query: computed(() => showLive.value ? { live: '1' } : {}) })
 const canViewSubmissions = computed(() => contest.value?.canViewSubmissions === true)
@@ -63,12 +70,6 @@ watch([offset, activeView, canViewSubmissions], () => { void loadSubmissions() }
 watch([activeView, () => contest.value?.status], () => { void loadEditorials() })
 onMounted(() => { void loadSubmissions(); void loadEditorials() })
 usePolling(update, 15000)
-// Re-read on each poll so the banner appears once the freeze starts.
-const now = ref(Date.now())
-const frozen = computed(() => {
-  const at = contest.value?.freezeAt
-  return !!at && !contest.value?.resultsFinal && (contest.value?.status === 'ended' || now.value >= Date.parse(at))
-})
 // A contest that crosses midnight in Japan shows the date as well, since the time alone could mean either day.
 const freezeTime = computed(() => {
   const c = contest.value
@@ -145,8 +146,8 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <header class="contest-section-heading"><h1 id="standings-title">公式順位表</h1><div class="standings-actions"><button v-if="contest.canRevealResults" type="button" class="editor-button contest-reveal" :disabled="revealing" @click="reveal">結果を公開</button><RefreshButton label="今すぐ更新" :busy="updating" :disabled="updating" @click="update" /></div></header>
       <p v-if="revealError" class="notice notice-error" role="alert">{{ revealError }}</p>
       <p v-if="user && (contest.excluded || contest.staff)" class="notice">{{ contest.excluded ? 'このコンテストのスタッフを務めたため、提出は公式順位の対象外です。' : 'スタッフ（作成者・作問者・テスター）としての提出は公式順位の対象外です。' }}</p>
-      <div v-if="contest.canViewLiveStandings" class="standings-mode"><SegmentedChoice v-model="standingsMode" legend="順位表の表示" name="standings-mode" :options="standingsModes" hide-legend /></div>
-      <p v-if="frozen && showLive" class="notice">凍結なしの順位表を表示しています。スタッフだけが見られます。</p>
+      <div v-if="canSwitchStandings" class="standings-mode"><SegmentedChoice v-model="standingsMode" legend="順位表の表示" name="standings-mode" :options="standingsModes" hide-legend /></div>
+      <p v-if="showLive" class="notice">凍結なしの順位表を表示しています。スタッフだけが見られます。</p>
       <p v-else-if="frozen" class="notice">{{ freezeTime }}以降の提出の結果は、結果発表まで伏せています。</p>
       <p v-if="standingsError" class="notice notice-error" role="alert">順位表を取得できませんでした。</p>
       <p v-if="!standingsError && !standings?.length" class="contest-empty muted">参加者はまだいません。</p>
