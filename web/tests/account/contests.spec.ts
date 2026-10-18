@@ -64,7 +64,7 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   await page.screenshot({ path: testInfo.outputPath('contest-editor-desktop.png'), fullPage: true })
   for (const width of [320, 375, 414, 768]) {
     await page.setViewportSize({ width, height: 900 })
-    for (const name of ['タイトル・説明', '問題・配点', '期間・ペナルティ', 'コンテスト管理']) {
+    for (const name of ['タイトル・説明', '問題・配点', '期間・ペナルティ', '参加形式', 'コンテスト管理']) {
       await page.getByRole('button', { name, exact: true }).click()
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
       if (width === 375) await page.screenshot({ path: testInfo.outputPath(`contest-${name}-mobile.png`), fullPage: true })
