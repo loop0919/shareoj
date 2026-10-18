@@ -21,6 +21,12 @@ const durationMinutes = ref<number | string>(120)
 const penaltyMinutes = ref<number | string>(5)
 // Empty means no standings freeze (ADR 0023).
 const freezeMinutes = ref<number | string>('')
+// The switch is off by default; turning it on fills in a starting value so that on never means no freeze.
+const freezeOn = ref(false)
+watch(freezeOn, (on) => {
+  if (!on) freezeMinutes.value = ''
+  else if (freezeMinutes.value === '') freezeMinutes.value = Math.min(60, Number(durationMinutes.value) || 60)
+})
 const version = ref(0)
 const available = ref<AccountSummary[]>([])
 const titles = new Map<string, string>()
@@ -81,7 +87,7 @@ const issueGuide: Record<string, [string, Section]> = {
   start_past: ['開始日時を現在より後にしてください', 'schedule'],
   duration_invalid: ['コンテスト時間を1分以上の整数で入力してください', 'schedule'],
   penalty_invalid: ['誤答ペナルティを0〜1440分の整数で入力してください', 'schedule'],
-  freeze_invalid: ['順位表の凍結は、コンテスト時間以内の1分以上の整数で入力するか、空欄にしてください', 'schedule'],
+  freeze_invalid: ['順位表を凍結する時間は、コンテスト時間以内の1分以上の整数で入力するか、凍結をオフにしてください', 'schedule'],
   problems_missing: ['問題を1問以上選んでください', 'problems'],
   points_invalid: ['配点を1〜1,000,000点の整数で入力してください', 'problems'],
   problem_unavailable: ['公開済み・削除済み・他のコンテストに登録済みの問題と、作成者の誰も作者・テスターではない問題を外してください', 'problems'],
@@ -157,7 +163,7 @@ async function open(contestId: string) {
     const d = result.draft
     version.value = result.version; draftIssues.value = result.issues; applySetters(result)
     title.value = d.title; description.value = d.description; startsAt.value = d.startsAt ? localDate(d.startsAt) : ''
-    durationMinutes.value = d.durationMinutes ?? ''; penaltyMinutes.value = d.penaltyMinutes ?? ''; freezeMinutes.value = d.freezeMinutes ?? ''
+    durationMinutes.value = d.durationMinutes ?? ''; penaltyMinutes.value = d.penaltyMinutes ?? ''; freezeMinutes.value = d.freezeMinutes ?? ''; freezeOn.value = d.freezeMinutes != null
     selected.value = d.problems.map(p => ({ id: p.id, title: titles.get(p.id) ?? shared.get(p.id)?.title ?? '表示できない問題', points: p.points }))
     return
   } catch (error) {
@@ -169,7 +175,7 @@ async function open(contestId: string) {
   applySetters(c)
   title.value = c.title; description.value = c.description; startsAt.value = localDate(c.startsAt)
   durationMinutes.value = Math.round((Date.parse(c.endsAt) - Date.parse(c.startsAt)) / 60000)
-  penaltyMinutes.value = c.penaltyMinutes; freezeMinutes.value = c.freezeMinutes ?? ''; version.value = c.version
+  penaltyMinutes.value = c.penaltyMinutes; freezeMinutes.value = c.freezeMinutes ?? ''; freezeOn.value = c.freezeMinutes != null; version.value = c.version
   selected.value = c.problems.map(p => ({ id: p.id, title: p.title, points: p.points }))
   if (!c.canEdit) { locked.value = true; settersOnly.value = true; ended.value = c.status === 'ended'; section.value = 'manage' }
 }
@@ -561,7 +567,7 @@ async function save() {
                 <p class="muted end-time">{{ endLabel }}</p>
               </section>
               <section class="settings-section"><h3>誤答ペナルティ</h3><p class="muted">正解した問題の、初回正解前の誤答だけに加算します。コンパイルエラーは対象外です。</p><label for="contest-penalty">誤答ペナルティ（分）</label><input id="contest-penalty" v-model.number="penaltyMinutes" type="number" required min="0" max="1440" step="1"><p class="muted penalty-note">0分でペナルティなしにできます。</p></section>
-              <section class="settings-section"><h3>順位表の凍結</h3><p class="muted">終了前の指定した時間の提出は、終了後に「結果を公開」を押すまで順位表で結果を伏せます。</p><label for="contest-freeze">凍結する時間（終了前の分）</label><input id="contest-freeze" v-model.number="freezeMinutes" type="number" min="1" :max="Number(durationMinutes) || undefined" step="1"><p class="muted penalty-note">空欄にすると凍結しません。</p></section>
+              <section class="settings-section"><h3>順位表の凍結</h3><InlineSwitch v-model="freezeOn" describedby="contest-freeze-note">順位表の凍結を行う</InlineSwitch><p id="contest-freeze-note" class="muted">終了前の指定した時間の提出は、終了後に「結果を公開」を押すまで順位表で結果を伏せます。</p><template v-if="freezeOn"><label for="contest-freeze">凍結する時間（終了前の分）</label><input id="contest-freeze" v-model.number="freezeMinutes" type="number" min="1" :max="Number(durationMinutes) || undefined" step="1" required></template></section>
             </fieldset>
             <p class="muted">開始後は問題セット・配点・開催期間・ペナルティ・凍結を変更できません。問題と解説は終了後に自動公開されます。</p>
           </div>
