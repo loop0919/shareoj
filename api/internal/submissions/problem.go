@@ -20,7 +20,7 @@ const problemSubmissionVisible = `problem_id=$1 AND ($2='' OR contest_id=NULLIF(
     OR (p.published_draft IS NOT NULL AND NOT COALESCE((submissions.job->>'privateDraft')::boolean,true)))))
   OR EXISTS(SELECT 1 FROM contests c WHERE c.id=contest_id
    AND (contest_submission_public(c,submissions.created_at) OR contest_staff(c.id,$3)
-    OR (owner_id=$3 AND submissions.created_at>=c.starts_at AND c.ends_at<=statement_timestamp())))
+    OR (submissions.owner_id=$3 AND submissions.created_at>=c.starts_at AND c.ends_at<=statement_timestamp())))
  )))
  AND (owner_id=$3 OR can_manage_problem(problem_id,$3) OR COALESCE(featured_reveal_at(problem_id),'-infinity')<=statement_timestamp())`
 

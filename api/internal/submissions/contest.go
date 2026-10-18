@@ -30,7 +30,7 @@ const contestPublic = `NOT COALESCE((job->>'easyTest')::boolean,false)
  AND NOT COALESCE((job->>'validate')::boolean,false)
  AND EXISTS(SELECT 1 FROM contests c WHERE c.id=$1 AND (
   (contest_id=c.id AND (contest_submission_public(c,submissions.created_at) OR (SELECT contest_staff($1::uuid,$3))
-   OR (owner_id=$3 AND submissions.created_at>=c.starts_at AND c.ends_at<=statement_timestamp())))
+   OR (submissions.owner_id=$3 AND submissions.created_at>=c.starts_at AND c.ends_at<=statement_timestamp())))
   OR (contest_id IS NULL AND (SELECT contest_staff($1::uuid,$3)) AND EXISTS(
    SELECT 1 FROM contest_problems cp WHERE cp.contest_id=c.id AND cp.problem_id=submissions.problem_id))))
  AND (owner_id=$3 OR COALESCE(featured_reveal_at(problem_id),'-infinity')<=statement_timestamp())`
