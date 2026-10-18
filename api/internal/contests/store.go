@@ -31,7 +31,8 @@ type Problem struct {
 }
 
 // Official means the viewer would count in the standings.
-// Staff means the viewer reviews every submission and never competes (ADR 0022).
+// Staff means the viewer reviews every submission and never competes (ADR 0022). Excluded means a signed-in viewer
+// who is not staff now but served as staff, so cannot compete; it is false for anyone signed out.
 // Authors are the setters, owner first; Author is the owner alone. IsSetter and IsOwner describe the viewer.
 type Contest struct {
 	ID                 string    `json:"id"`
@@ -52,6 +53,7 @@ type Contest struct {
 	Participating      bool      `json:"participating"`
 	Official           bool      `json:"official"`
 	Staff              bool      `json:"staff"`
+	Excluded           bool      `json:"excluded"`
 	IsSetter           bool      `json:"setter"`
 	IsOwner            bool      `json:"owner"`
 	Problems           []Problem `json:"problems"`
@@ -107,6 +109,7 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
 	}
 	var final bool
 	err = tx.QueryRow(ctx, `SELECT contest_setter(c.id,$2),c.owner_id=$2,contest_staff(c.id,$2),$2<>'' AND contest_competitor(c,$2),contest_results_final(c),
+ $2<>'' AND NOT contest_staff(c.id,$2) AND NOT contest_competitor(c,$2),
  EXISTS(SELECT 1 FROM contest_participants p WHERE p.contest_id=c.id AND p.owner_id=$2),
  COALESCE((SELECT array_agg(DISTINCT u.handle ORDER BY u.handle)
   FROM contest_problems cp JOIN problem_drafts d ON d.id=cp.problem_id JOIN user_profiles u ON u.owner_id=d.owner_id
@@ -114,7 +117,7 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
  COALESCE((SELECT array_agg(DISTINCT u.handle ORDER BY u.handle)
   FROM contest_problems cp JOIN problem_testers t ON t.problem_id=cp.problem_id JOIN user_profiles u ON u.owner_id=t.owner_id
   WHERE cp.contest_id=c.id), ARRAY[]::text[])
- FROM contests c WHERE c.id=$1`, id, viewer).Scan(&c.IsSetter, &c.IsOwner, &c.Staff, &c.Official, &final, &c.Participating, &c.ProblemAuthors, &c.Testers)
+ FROM contests c WHERE c.id=$1`, id, viewer).Scan(&c.IsSetter, &c.IsOwner, &c.Staff, &c.Official, &final, &c.Excluded, &c.Participating, &c.ProblemAuthors, &c.Testers)
 	if err != nil {
 		return c, err
 	}
