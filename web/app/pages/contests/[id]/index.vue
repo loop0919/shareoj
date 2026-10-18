@@ -70,6 +70,22 @@ const frozen = computed(() => {
   return !!at && !contest.value?.resultsFinal && (contest.value?.status === 'ended' || now.value >= Date.parse(at))
 })
 const freezeTime = computed(() => contest.value?.freezeAt ? new Intl.DateTimeFormat('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }).format(new Date(contest.value.freezeAt)) : '')
+// Setters and operators publish the frozen results after the end; the server refuses while runs are still pending.
+const revealing = ref(false)
+const revealError = ref('')
+async function reveal() {
+  if (revealing.value || !window.confirm('結果を公開します。凍結後の提出の結果が順位表に反映され、元に戻せません。よろしいですか？')) return
+  revealing.value = true; revealError.value = ''
+  try {
+    await $fetch(`/api/my/contests/${encodeURIComponent(id)}/reveal`, { method: 'POST' })
+    await Promise.all([refresh(), refreshStandings()])
+  } catch (error) {
+    const code = (error as { data?: { data?: { code?: string } } }).data?.data?.code
+    revealError.value = code === 'contest_results_pending' ? '判定待ちの提出が残っているため、まだ結果を公開できません。判定が終わってから、もう一度お試しください。'
+      : code === 'contest_conflict' ? '終了前のコンテストと、順位表を凍結しないコンテストでは結果を公開できません。'
+      : '結果を公開できませんでした。時間をおいてもう一度お試しください。'
+  } finally { revealing.value = false }
+}
 function elapsed(acceptedAt: string) { return duration(new Date(acceptedAt).getTime() - new Date(contest.value!.startsAt).getTime()) }
 const problemStats = computed(() => contest.value!.problems.map(problem => {
   let submitted = 0
@@ -119,7 +135,8 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       </div>
     </section>
     <section v-if="activeView === 'standings'" id="standings" class="contest-section" aria-labelledby="standings-title">
-      <header class="contest-section-heading"><h1 id="standings-title">公式順位表</h1><RefreshButton label="今すぐ更新" :busy="updating" :disabled="updating" @click="update" /></header>
+      <header class="contest-section-heading"><h1 id="standings-title">公式順位表</h1><div class="standings-actions"><button v-if="contest.canRevealResults" type="button" class="editor-button contest-reveal" :disabled="revealing" @click="reveal">結果を公開</button><RefreshButton label="今すぐ更新" :busy="updating" :disabled="updating" @click="update" /></div></header>
+      <p v-if="revealError" class="notice notice-error" role="alert">{{ revealError }}</p>
       <p v-if="user && (contest.excluded || contest.staff)" class="notice">{{ contest.excluded ? 'このコンテストのスタッフを務めたため、提出は公式順位の対象外です。' : 'スタッフ（作成者・作問者・テスター）としての提出は公式順位の対象外です。' }}</p>
       <div v-if="contest.canViewLiveStandings" class="standings-mode"><SegmentedChoice v-model="standingsMode" legend="順位表の表示" name="standings-mode" :options="standingsModes" hide-legend /></div>
       <p v-if="frozen && showLive" class="notice">凍結なしの順位表を表示しています。スタッフだけが見られます。</p>
@@ -182,7 +199,8 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 .contest-page { padding-bottom: 64px; }
 .contest-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 16px 24px; margin-bottom: 20px; }
 .contest-heading h1 { flex: 1 1 24rem; margin: 0; }
-.contest-edit { flex-shrink: 0; min-height: 44px; padding: 8px 16px; font-weight: 600; }
+.contest-edit, .contest-reveal { flex-shrink: 0; min-height: 44px; padding: 8px 16px; font-weight: 600; }
+.standings-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
 .contest-status { display: inline-flex; align-items: center; min-height: 28px; padding: 2px 10px; border: 1px solid var(--color-line); border-radius: 4px; color: var(--color-muted); background: var(--color-surface); white-space: nowrap; }
 .contest-status[data-status="running"] { color: var(--color-accent); background: var(--color-accent-soft); border-color: var(--color-accent); }
 .contest-schedule { gap: 12px 40px; }
