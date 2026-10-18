@@ -21,7 +21,6 @@ const volume = computed(() => props.page.current?.number || props.page.nextNumbe
         <span class="delivery-phase">{{ page.current ? '公開中の問題' : '次回予告' }}</span>
         <time :datetime="date">{{ contestDate(date) }}</time>
         <span v-if="page.current">次回 {{ contestDate(page.nextAt) }}</span>
-        <span v-else>問題名は公開時のお楽しみ。</span>
       </div>
     </header>
     <div class="delivery-problems">
