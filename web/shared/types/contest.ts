@@ -71,8 +71,10 @@ export function contestFreezeTime(contest: Pick<Contest, 'startsAt' | 'endsAt' |
   return new Intl.DateTimeFormat('ja-JP', { ...date, hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }).format(new Date(contest.freezeAt))
 }
 // Others do not see the frozen submissions until the results are published (ADR 0023); empty when nothing is hidden.
-export function frozenSubmissionsNote(contest: Pick<Contest, 'startsAt' | 'endsAt' | 'freezeAt' | 'resultsFinal'>) {
-  return contest.freezeAt && !contest.resultsFinal ? `${contestFreezeTime(contest)}以降の提出は、結果の公開まで本人とスタッフだけが見られます。` : ''
+// Teammates see them too (ADR 0024).
+export function frozenSubmissionsNote(contest: Pick<Contest, 'startsAt' | 'endsAt' | 'freezeAt' | 'resultsFinal' | 'teamMode'>) {
+  const viewers = contest.teamMode ? '本人とチームメイト、スタッフ' : '本人とスタッフ'
+  return contest.freezeAt && !contest.resultsFinal ? `${contestFreezeTime(contest)}以降の提出は、結果の公開まで${viewers}だけが見られます。` : ''
 }
 // A, B, …, Z, AA, AB, … in contest order.
 export function problemLabel(index: number): string {

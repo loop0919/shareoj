@@ -535,8 +535,12 @@ test('the contest submission list filters onsite participants in the URL, and te
   await expect(page.getByRole('group', { name: '表示する提出' })).toHaveCount(0)
   await expect.poll(() => state.lists.at(-1)!.query.get('scope')).toBeNull()
   await expect(page.locator('#submissions tbody tr a').first()).toHaveAttribute('href', `/contests/${shortId(id)}/submissions/${shortId('aaaaaaaa-0000-4000-8000-000000000001')}`)
+  // In a frozen team contest the note names teammates among those who see the frozen submissions.
+  state.contest = { ...state.contest, freezeMinutes: 30, freezeAt: '2099-09-15T13:30:00Z' }
+  await reread(page, 'submissions')
+  await expect(page.locator('#submissions > p.muted').first()).toContainText('以降の提出は、結果の公開まで本人とチームメイト、スタッフだけが見られます。')
   // Outside the team the list stays closed during the contest, and the notice says members see their team's.
-  state.contest = { ...state.contest, participating: false, team: null, canViewSubmissions: false }
+  state.contest = { ...state.contest, participating: false, team: null, canViewSubmissions: false, freezeMinutes: null, freezeAt: null }
   await reread(page, 'submissions')
   await expect(page.locator('#submissions .notice')).toHaveText('提出一覧と提出コードはコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。チームのメンバーは、開催中もチームの提出を閲覧できます。')
 })
