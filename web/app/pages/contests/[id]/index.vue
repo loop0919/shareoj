@@ -16,7 +16,11 @@ const base = `/api/contests/${encodeURIComponent(id)}`
 const { data: contest, error, refresh } = await useContest(id)
 if (error.value || !contest.value) throw createError({ statusCode: error.value?.statusCode === 404 ? 404 : 502, statusMessage: 'コンテストを取得できませんでした', fatal: true })
 useSeoMeta({ title: () => `${contest.value?.title} | ShareOJ` })
-const { data: standings, error: standingsError, refresh: refreshStandings } = await useFetch<Standing[]>(`${base}/standings`)
+// Staff may switch to the table without the freeze; everyone else always gets the frozen one.
+const standingsMode = ref<'frozen' | 'live'>('frozen')
+const showLive = computed(() => standingsMode.value === 'live' && contest.value?.canViewLiveStandings === true)
+const standingsModes = [{ value: 'frozen' as const, label: '凍結した順位表' }, { value: 'live' as const, label: '凍結なし' }]
+const { data: standings, error: standingsError, refresh: refreshStandings } = await useFetch<Standing[]>(`${base}/standings`, { query: computed(() => showLive.value ? { live: '1' } : {}) })
 const canViewSubmissions = computed(() => contest.value?.canViewSubmissions === true)
 const submissions = ref<{ items: Submission[], hasMore: boolean } | null>(null)
 const submissionsError = ref('')
@@ -117,7 +121,9 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
     <section v-if="activeView === 'standings'" id="standings" class="contest-section" aria-labelledby="standings-title">
       <header class="contest-section-heading"><h1 id="standings-title">公式順位表</h1><RefreshButton label="今すぐ更新" :busy="updating" :disabled="updating" @click="update" /></header>
       <p v-if="user && (contest.excluded || contest.staff)" class="notice">{{ contest.excluded ? 'このコンテストのスタッフを務めたため、提出は公式順位の対象外です。' : 'スタッフ（作成者・作問者・テスター）としての提出は公式順位の対象外です。' }}</p>
-      <p v-if="frozen" class="notice">{{ freezeTime }}以降の提出の結果は、結果発表まで伏せています。</p>
+      <div v-if="contest.canViewLiveStandings" class="standings-mode"><SegmentedChoice v-model="standingsMode" legend="順位表の表示" name="standings-mode" :options="standingsModes" hide-legend /></div>
+      <p v-if="frozen && showLive" class="notice">凍結なしの順位表を表示しています。スタッフだけが見られます。</p>
+      <p v-else-if="frozen" class="notice">{{ freezeTime }}以降の提出の結果は、結果発表まで伏せています。</p>
       <p v-if="standingsError" class="notice notice-error" role="alert">順位表を取得できませんでした。</p>
       <p v-if="!standingsError && !standings?.length" class="contest-empty muted">参加者はまだいません。</p>
       <div v-if="!standingsError && contest.problems.length" class="content-table-scroll" role="region" aria-label="順位表のスクロール領域" tabindex="0" :aria-busy="updating">
@@ -207,6 +213,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 .standing-pending { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; color: var(--color-muted); }
 .standing-accepted, .standing-fa { color: var(--color-accent); }
 .standing-wrong { color: var(--color-error); }
+.standings-mode { max-width: 24rem; margin-bottom: 16px; }
 .standing-frozen { color: var(--color-muted); font-weight: 600; }
 .standing-fa { display: block; }
 .standings-table small { font-size: .75rem; }
