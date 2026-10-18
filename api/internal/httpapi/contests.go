@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"judge/api/internal/contests"
+	"judge/api/internal/problems"
 	"judge/api/internal/submissions"
 )
 
@@ -190,6 +191,56 @@ func (p contestHandler) contestDraft(w http.ResponseWriter, r *http.Request, own
 	writeAuthJSON(w, 200, result)
 }
 
+// setterInvitation serves co-setter links. A setter's POST returns the contest's link, creating it on first use, and
+// PUT replaces it. With a token, GET previews the invitation and POST joins it.
+func (p contestHandler) setterInvitation(w http.ResponseWriter, r *http.Request, actor string) {
+	if p.Contests == nil {
+		authError(w, 503, "database_unavailable")
+		return
+	}
+	var result any
+	var err error
+	if token := r.PathValue("token"); token != "" {
+		if !testerToken.MatchString(token) {
+			authError(w, 404, "contest_not_found")
+			return
+		}
+		result, err = p.Contests.SetterInvitation(r.Context(), actor, token, r.Method == http.MethodPost)
+	} else {
+		id := r.PathValue("id")
+		if !problemID.MatchString(id) {
+			authError(w, 404, "contest_not_found")
+			return
+		}
+		var token string
+		token, err = p.Contests.SetterInvitationLink(r.Context(), actor, id, r.Method == http.MethodPut)
+		result = map[string]string{"token": token}
+	}
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, result)
+}
+
+// setter removes a co-setter: the owner removes anyone, and a co-setter removes themselves to leave.
+func (p contestHandler) setter(w http.ResponseWriter, r *http.Request, actor string) {
+	if p.Contests == nil {
+		authError(w, 503, "database_unavailable")
+		return
+	}
+	id, handle := r.PathValue("id"), r.PathValue("handle")
+	if !problemID.MatchString(id) || !userHandle.MatchString(handle) {
+		authError(w, 404, "setter_not_found")
+		return
+	}
+	if err := p.Contests.RemoveSetter(r.Context(), actor, id, handle); err != nil {
+		contestError(w, err)
+		return
+	}
+	w.WriteHeader(204)
+}
+
 func contestOffset(w http.ResponseWriter, r *http.Request) (int, bool) {
 	raw := r.URL.Query().Get("offset")
 	if raw == "" {
@@ -210,6 +261,12 @@ func contestError(w http.ResponseWriter, err error) {
 		authError(w, 404, "contest_not_found")
 	case errors.Is(err, contests.ErrParticipationUnavailable):
 		authError(w, 409, "contest_participation_unavailable")
+	case errors.Is(err, contests.ErrSetterNotFound):
+		authError(w, 404, "setter_not_found")
+	case errors.Is(err, contests.ErrInvitationClosed):
+		authError(w, 409, "contest_invitation_closed")
+	case errors.Is(err, problems.ErrParticipantLocked):
+		authError(w, 409, "contest_participant_locked")
 	case errors.Is(err, contests.ErrNotReady):
 		authError(w, 409, "contest_not_ready")
 	case errors.Is(err, contests.ErrConflict):

@@ -19,13 +19,14 @@ type TesterInvitation struct {
 	Joined bool   `json:"joined"`
 }
 
-// CreateTesterInvitation reuses the problem's link so repeated clicks are harmless.
+// CreateTesterInvitation reuses the problem's link so repeated clicks are harmless. Only the author and invited
+// testers see it: testers cannot be removed, so a setter's rights through a contest must not become tester rights.
 func (s *Store) CreateTesterInvitation(ctx context.Context, actor, id string) (string, error) {
 	var secret [20]byte
 	_, _ = rand.Read(secret[:])
 	var token string
 	err := s.pool.QueryRow(ctx, `INSERT INTO problem_tester_invitations(problem_id,token)
- SELECT id,$3 FROM problem_drafts WHERE id=$1 AND can_manage_problem(id,$2)
+ SELECT id,$3 FROM problem_drafts WHERE id=$1 AND can_manage_problem_directly(id,$2)
  ON CONFLICT(problem_id) DO UPDATE SET token=problem_tester_invitations.token RETURNING token`, id, actor, base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(secret[:])).Scan(&token)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = ErrNotFound
@@ -47,8 +48,9 @@ func (s *Store) TesterInvitation(ctx context.Context, actor, token string, accep
 			return TesterInvitation{}, err
 		}
 	}
+	// A setter who manages the problem through a contest becomes a real tester by accepting.
 	var invitation TesterInvitation
-	err = tx.QueryRow(ctx, `SELECT p.id,p.draft->>'title',u.handle,can_manage_problem(p.id,$2)
+	err = tx.QueryRow(ctx, `SELECT p.id,p.draft->>'title',u.handle,can_manage_problem_directly(p.id,$2)
  FROM problem_tester_invitations i JOIN problem_drafts p ON p.id=i.problem_id
  JOIN user_profiles u ON u.owner_id=p.owner_id WHERE i.token=$1 FOR SHARE OF i,p`, token, actor).Scan(&invitation.ID, &invitation.Title, &invitation.Author, &invitation.Joined)
 	if errors.Is(err, pgx.ErrNoRows) {

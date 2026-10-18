@@ -78,13 +78,29 @@ type Problem struct {
 	ContestScheduled   bool       `json:"contestScheduled,omitempty"`
 	EverPublished      bool       `json:"everPublished,omitempty"`
 	Testers            []string   `json:"testers,omitempty"`
-	ContestID          string     `json:"contestId,omitempty"`
-	Author             string     `json:"author"`
-	PublishedVersion   int64      `json:"publishedVersion"`
-	ID                 string     `json:"id"`
-	Version            int64      `json:"version"`
-	UpdatedAt          time.Time  `json:"updatedAt"`
-	Draft              Draft      `json:"draft"`
+	// ContestEditors manage the problem through its contest, apart from the invited testers.
+	ContestEditors   *ContestEditors `json:"contestEditors,omitempty"`
+	ContestID        string          `json:"contestId,omitempty"`
+	Author           string          `json:"author"`
+	PublishedVersion int64           `json:"publishedVersion"`
+	ID               string          `json:"id"`
+	Version          int64           `json:"version"`
+	UpdatedAt        time.Time       `json:"updatedAt"`
+	Draft            Draft           `json:"draft"`
+}
+
+// ContestEditors are the setters, owner first, of the published contest that holds a problem. Until the contest's
+// results are final they manage the problem like testers without an invitation, so the author can see who (ADR 0022).
+type ContestEditors struct {
+	ContestID string   `json:"contestId"`
+	Title     string   `json:"title"`
+	Setters   []string `json:"setters"`
+}
+
+// ContestRef names a contest whose setter manages the problem without being invited to test it.
+type ContestRef struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
 }
 
 type Summary struct {
@@ -95,11 +111,13 @@ type Summary struct {
 	ContestScheduled   bool       `json:"contestScheduled,omitempty"`
 	EverPublished      bool       `json:"everPublished"`
 	ContestID          string     `json:"contestId,omitempty"`
-	PublishedVersion   int64      `json:"publishedVersion"`
-	ID                 string     `json:"id"`
-	Title              string     `json:"title"`
-	Difficulty         *int       `json:"difficulty"`
-	UpdatedAt          time.Time  `json:"updatedAt"`
+	// ViaContest marks a tested problem that the viewer manages only as a setter of that contest.
+	ViaContest       *ContestRef `json:"viaContest,omitempty"`
+	PublishedVersion int64       `json:"publishedVersion"`
+	ID               string      `json:"id"`
+	Title            string      `json:"title"`
+	Difficulty       *int        `json:"difficulty"`
+	UpdatedAt        time.Time   `json:"updatedAt"`
 }
 
 type Cursor struct {
@@ -149,8 +167,28 @@ func (s *Store) Get(ctx context.Context, owner, id string) (Problem, error) {
 	if err != nil {
 		return p, err
 	}
-	p.Testers, err = s.Testers(ctx, id)
+	if p.Testers, err = s.Testers(ctx, id); err != nil {
+		return p, err
+	}
+	p.ContestEditors, err = s.contestEditors(ctx, id)
 	return p, err
+}
+
+func (s *Store) contestEditors(ctx context.Context, id string) (*ContestEditors, error) {
+	var e ContestEditors
+	var owner string
+	err := s.pool.QueryRow(ctx, `SELECT c.id::text,c.title,u.handle,ARRAY(SELECT su.handle FROM contest_setters cs JOIN user_profiles su ON su.owner_id=cs.owner_id
+  WHERE cs.contest_id=c.id AND cs.left_at IS NULL ORDER BY cs.created_at,cs.owner_id)
+ FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id JOIN user_profiles u ON u.owner_id=c.owner_id
+ WHERE cp.problem_id=$1 AND NOT contest_results_final(c)`, id).Scan(&e.ContestID, &e.Title, &owner, &e.Setters)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	e.Setters = append([]string{owner}, e.Setters...)
+	return &e, nil
 }
 
 // List returns at most 51 rows; the HTTP layer exposes 50 and a next cursor.
@@ -163,9 +201,15 @@ func (s *Store) ListTesting(ctx context.Context, owner string, cursor *Cursor) (
 }
 
 func (s *Store) list(ctx context.Context, owner string, cursor *Cursor, testing bool) ([]Summary, error) {
-	query := `SELECT id, draft, updated_at, published_version,ever_published,COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at,COALESCE((SELECT preference FROM featured_applications WHERE problem_id=problem_drafts.id),''),EXISTS(SELECT 1 FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=problem_drafts.id AND NOT c.released) FROM problem_drafts WHERE owner_id=$1`
+	query := `SELECT id, draft, updated_at, published_version,ever_published,COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at,COALESCE((SELECT preference FROM featured_applications WHERE problem_id=problem_drafts.id),''),EXISTS(SELECT 1 FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=problem_drafts.id AND NOT c.released),NULL::text,NULL::text FROM problem_drafts WHERE owner_id=$1`
 	if testing {
-		query = strings.Replace(query, "WHERE owner_id=$1", "WHERE owner_id<>$1 AND EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=problem_drafts.id AND t.owner_id=$1)", 1)
+		// Setters of a published contest test its problems until the results are final, without an invitation.
+		query = strings.Replace(query, "NULL::text,NULL::text FROM problem_drafts WHERE owner_id=$1", `via.via_id,via.via_title FROM problem_drafts
+ LEFT JOIN LATERAL (SELECT c.id::text AS via_id,c.title AS via_title FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id
+  WHERE cp.problem_id=problem_drafts.id AND NOT EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=problem_drafts.id AND t.owner_id=$1)) via ON true
+ WHERE owner_id<>$1 AND id IN (SELECT t.problem_id FROM problem_testers t WHERE t.owner_id=$1
+  UNION ALL SELECT cp.problem_id FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE NOT contest_results_final(c)
+   AND (c.owner_id=$1 OR EXISTS(SELECT 1 FROM contest_setters s WHERE s.contest_id=c.id AND s.owner_id=$1 AND s.left_at IS NULL)))`, 1)
 	}
 	args := []any{owner}
 	if cursor != nil {
@@ -179,8 +223,14 @@ func (s *Store) list(ctx context.Context, owner string, cursor *Cursor, testing 
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Summary, error) {
 		var p Summary
 		var data []byte
-		if err := row.Scan(&p.ID, &data, &p.UpdatedAt, &p.PublishedVersion, &p.EverPublished, &p.ContestID, &p.ScheduledAt, &p.FeaturedPreference, &p.ContestScheduled); err != nil {
+		var via ContestRef
+		var viaID, viaTitle *string
+		if err := row.Scan(&p.ID, &data, &p.UpdatedAt, &p.PublishedVersion, &p.EverPublished, &p.ContestID, &p.ScheduledAt, &p.FeaturedPreference, &p.ContestScheduled, &viaID, &viaTitle); err != nil {
 			return p, err
+		}
+		if viaID != nil && viaTitle != nil {
+			via.ID, via.Title = *viaID, *viaTitle
+			p.ViaContest = &via
 		}
 		err := json.Unmarshal(data, &p.Draft)
 		p.Title, p.Difficulty = p.Draft.Title, p.Draft.Difficulty

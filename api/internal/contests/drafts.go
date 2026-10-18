@@ -41,10 +41,23 @@ type DraftResult struct {
 	Draft     Draft     `json:"draft"`
 	// Issues lists why the saved draft cannot be published yet; empty means it can.
 	Issues []string `json:"issues"`
+	// Problems describes, in draft order, the listed problems that a current setter authors or tests. Problem routes
+	// show a setter only their own, so the editor learns the title and contest readiness of the others here.
+	Problems []ListedProblem `json:"problems"`
+	// Authors are the setters, owner first. IsOwner tells whether the viewer owns the draft.
+	Authors []string `json:"authors"`
+	IsOwner bool     `json:"owner"`
+}
+type ListedProblem struct {
+	ID     string           `json:"id"`
+	Title  string           `json:"title"`
+	Author string           `json:"author"`
+	Issues []problems.Issue `json:"issues"`
 }
 type DraftSummary struct {
 	ID        string     `json:"id"`
 	Title     string     `json:"title"`
+	Author    string     `json:"author"`
 	StartsAt  *time.Time `json:"startsAt"`
 	UpdatedAt time.Time  `json:"updatedAt"`
 }
@@ -132,45 +145,72 @@ type querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-// assess mirrors what publication checks, so the editor can show why it would fail.
-func assess(ctx context.Context, q querier, owner, id string, d Draft, policy JudgePolicy) ([]string, error) {
+// assess mirrors what publication checks, so the editor can show why it would fail. It judges the problems by
+// whether a current setter authors or tests them, never by the viewer, so every setter sees the same result.
+func assess(ctx context.Context, q querier, id string, d Draft, policy JudgePolicy) ([]string, []ListedProblem, error) {
 	issues := d.contentIssues(time.Now())
+	listed := []ListedProblem{}
 	if len(d.Problems) == 0 {
-		return issues, nil
+		return issues, listed, nil
 	}
 	ids := make([]string, len(d.Problems))
 	for i, p := range d.Problems {
 		ids[i] = p.ID
 	}
-	rows, err := q.Query(ctx, `SELECT d.draft FROM problem_drafts d WHERE d.id=ANY($1::uuid[]) AND can_manage_problem(d.id,$2) AND d.published_draft IS NULL
- AND NOT EXISTS (SELECT 1 FROM featured_applications a WHERE a.problem_id=d.id)
- AND NOT EXISTS (SELECT 1 FROM contest_problems cp WHERE cp.problem_id=d.id AND cp.contest_id<>$3)`, ids, owner, id)
+	rows, err := q.Query(ctx, `SELECT d.id,d.draft,u.handle,d.published_draft IS NOT NULL,d.scheduled_at IS NOT NULL,
+ EXISTS(SELECT 1 FROM contest_problems cp WHERE cp.problem_id=d.id AND cp.contest_id<>$2),
+ COALESCE((SELECT preference FROM featured_applications a WHERE a.problem_id=d.id),'')
+ FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id
+ WHERE d.id=ANY($1::uuid[]) AND (contest_setter($2,d.owner_id)
+  OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=d.id AND contest_setter($2,t.owner_id)))`, ids, id)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	drafts, err := pgx.CollectRows(rows, pgx.RowTo[[]byte])
+	found := map[string]ListedProblem{}
+	unavailable, incomplete := len(d.Problems), false
+	for rows.Next() {
+		var p ListedProblem
+		var raw []byte
+		var state problems.ProblemState
+		if err = rows.Scan(&p.ID, &raw, &p.Author, &state.Published, &state.Scheduled, &state.InContest, &state.FeaturedPreference); err != nil {
+			rows.Close()
+			return nil, nil, err
+		}
+		var draft problems.Draft
+		valid := json.Unmarshal(raw, &draft) == nil
+		p.Title = draft.Title
+		p.Issues = problems.Assess(draft, state, policy.KnownRuntimes, policy.EnabledRuntimes).Contest
+		found[p.ID] = p
+		if !state.Published && !state.Scheduled && !state.InContest && state.FeaturedPreference == "" {
+			unavailable--
+			incomplete = incomplete || !valid || !policy.validProblem(draft)
+		}
+	}
+	err = rows.Err()
+	rows.Close()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if len(drafts) != len(ids) {
+	for _, pid := range ids {
+		if p, ok := found[pid]; ok {
+			listed = append(listed, p)
+		}
+	}
+	if unavailable > 0 {
 		issues = append(issues, IssueUnavailable)
 	}
-	for _, raw := range drafts {
-		var p problems.Draft
-		if json.Unmarshal(raw, &p) != nil || !policy.validProblem(p) {
-			issues = append(issues, IssueIncomplete)
-			break
-		}
+	if incomplete {
+		issues = append(issues, IssueIncomplete)
 	}
 	// Mirrors save. A draft has no participants yet, so this shows only for a published contest.
 	joined, err := participantProblem(ctx, q, id, ids)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if joined {
 		issues = append(issues, IssueParticipant)
 	}
-	return issues, nil
+	return issues, listed, nil
 }
 
 const draftColumns = `id,version,updated_at,draft`
@@ -188,16 +228,28 @@ func scanDraft(row pgx.Row) (DraftResult, error) {
 	return r, err
 }
 
-func (s *Store) Draft(ctx context.Context, owner, id string, policy JudgePolicy) (DraftResult, error) {
-	r, err := scanDraft(s.Pool.QueryRow(ctx, `SELECT `+draftColumns+` FROM contest_drafts WHERE id=$1 AND owner_id=$2`, id, owner))
+// describe adds what the editor shows beside the saved draft: its issues, the setters' problems and the setters.
+func (s *Store) describe(ctx context.Context, actor string, r *DraftResult, policy JudgePolicy) (err error) {
+	r.Issues, r.Problems, err = assess(ctx, s.Pool, r.ID, r.Draft, policy)
+	if err != nil {
+		return err
+	}
+	var owner string
+	err = s.Pool.QueryRow(ctx, `SELECT u.handle,`+coSetters+`,c.owner_id=$2 FROM contest_drafts c JOIN user_profiles u ON u.owner_id=c.owner_id
+ WHERE c.id=$1`, r.ID, actor).Scan(&owner, &r.Authors, &r.IsOwner)
+	r.Authors = append([]string{owner}, r.Authors...)
+	return err
+}
+
+func (s *Store) Draft(ctx context.Context, actor, id string, policy JudgePolicy) (DraftResult, error) {
+	r, err := scanDraft(s.Pool.QueryRow(ctx, `SELECT `+draftColumns+` FROM contest_drafts WHERE id=$1 AND contest_setter(id,$2)`, id, actor))
 	if err != nil {
 		return r, err
 	}
-	r.Issues, err = assess(ctx, s.Pool, owner, id, r.Draft, policy)
-	return r, err
+	return r, s.describe(ctx, actor, &r, policy)
 }
 
-func (s *Store) SaveDraft(ctx context.Context, owner, id string, in DraftInput, policy JudgePolicy) (DraftResult, error) {
+func (s *Store) SaveDraft(ctx context.Context, actor, id string, in DraftInput, policy JudgePolicy) (DraftResult, error) {
 	if in.Draft.Problems == nil {
 		in.Draft.Problems = []DraftProblem{}
 	}
@@ -207,24 +259,46 @@ func (s *Store) SaveDraft(ctx context.Context, owner, id string, in DraftInput, 
 	}
 	var r DraftResult
 	if in.Version == 0 {
-		r, err = s.createDraft(ctx, owner, id, data)
+		r, err = s.createDraft(ctx, actor, id, in.Draft, data)
 	} else {
-		r, err = scanDraft(s.Pool.QueryRow(ctx, `UPDATE contest_drafts SET draft=$4,version=version+1,updated_at=clock_timestamp()
- WHERE id=$1 AND owner_id=$2 AND version=$3 RETURNING `+draftColumns, id, owner, in.Version, data))
+		r, err = s.updateDraft(ctx, actor, id, in, data)
 	}
-	if err = s.draftConflict(ctx, owner, id, err); err != nil {
+	if err = s.draftConflict(ctx, actor, id, err, false); err != nil {
 		return r, err
 	}
-	r.Issues, err = assess(ctx, s.Pool, owner, id, r.Draft, policy)
-	return r, err
+	return r, s.describe(ctx, actor, &r, policy)
 }
 
-func (s *Store) createDraft(ctx context.Context, owner, id string, data []byte) (DraftResult, error) {
+// addable refuses a problem that actor adds but neither authors nor tests. Drafts reserve nothing and may name any
+// problem, so without this a setter could add a problem that only another setter manages and gain rights to it once
+// the contest is published. Problems that do not exist stay allowed and are reported as unavailable.
+func addable(ctx context.Context, tx pgx.Tx, actor string, added []string) error {
+	if len(added) == 0 {
+		return nil
+	}
+	var refused bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM problem_drafts d WHERE d.id=ANY($1::uuid[]) AND NOT can_manage_problem_directly(d.id,$2))`, added, actor).Scan(&refused); err != nil {
+		return err
+	}
+	if refused {
+		return ErrConflict
+	}
+	return nil
+}
+
+func (s *Store) createDraft(ctx context.Context, owner, id string, d Draft, data []byte) (DraftResult, error) {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return DraftResult{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	added := make([]string, len(d.Problems))
+	for i, p := range d.Problems {
+		added[i] = p.ID
+	}
+	if err = addable(ctx, tx, owner, added); err != nil {
+		return DraftResult{}, err
+	}
 	if err = database.ConsumeCreationQuota(ctx, tx, owner, "contest"); err != nil {
 		return DraftResult{}, err
 	}
@@ -240,14 +314,50 @@ func (s *Store) createDraft(ctx context.Context, owner, id string, data []byte) 
 	return r, tx.Commit(ctx)
 }
 
-// draftConflict turns a missed write into 409 when the owner still has the draft or already published it.
-func (s *Store) draftConflict(ctx context.Context, owner, id string, err error) error {
+// updateDraft locks the draft so that the problems it already lists, which need no new check, stay those of in.Version.
+func (s *Store) updateDraft(ctx context.Context, actor, id string, in DraftInput, data []byte) (DraftResult, error) {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return DraftResult{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	current, err := scanDraft(tx.QueryRow(ctx, `SELECT `+draftColumns+` FROM contest_drafts WHERE id=$1 AND contest_setter(id,$2) FOR UPDATE`, id, actor))
+	if err != nil {
+		return current, err
+	}
+	if current.Version != in.Version {
+		return current, ErrConflict
+	}
+	listed := map[string]bool{}
+	for _, p := range current.Draft.Problems {
+		listed[p.ID] = true
+	}
+	added := []string{}
+	for _, p := range in.Draft.Problems {
+		if !listed[p.ID] {
+			added = append(added, p.ID)
+		}
+	}
+	if err = addable(ctx, tx, actor, added); err != nil {
+		return current, err
+	}
+	r, err := scanDraft(tx.QueryRow(ctx, `UPDATE contest_drafts SET draft=$2,version=version+1,updated_at=clock_timestamp()
+ WHERE id=$1 RETURNING `+draftColumns, id, data))
+	if err != nil {
+		return r, err
+	}
+	return r, tx.Commit(ctx)
+}
+
+// draftConflict turns a missed write into 409 when the actor is still a setter of the draft or of its published
+// contest, or, for owner-only actions, still owns it; otherwise the miss stays 404.
+func (s *Store) draftConflict(ctx context.Context, actor, id string, err error, ownerOnly bool) error {
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}
 	var exists bool
-	if e := s.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM contest_drafts WHERE id=$1 AND owner_id=$2)
- OR EXISTS (SELECT 1 FROM contests WHERE id=$1 AND owner_id=$2)`, id, owner).Scan(&exists); e != nil {
+	if e := s.Pool.QueryRow(ctx, `SELECT CASE WHEN $3 THEN EXISTS (SELECT 1 FROM contest_drafts WHERE id=$1 AND owner_id=$2)
+ OR EXISTS (SELECT 1 FROM contests WHERE id=$1 AND owner_id=$2) ELSE contest_setter($1,$2) END`, id, actor, ownerOnly).Scan(&exists); e != nil {
 		return e
 	}
 	if exists {
@@ -256,42 +366,78 @@ func (s *Store) draftConflict(ctx context.Context, owner, id string, err error) 
 	return err
 }
 
-func (s *Store) Drafts(ctx context.Context, owner string, offset int) ([]DraftSummary, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT id,draft->>'title',(draft->>'startsAt')::timestamptz,updated_at FROM contest_drafts
- WHERE owner_id=$1 ORDER BY updated_at DESC,id DESC LIMIT 51 OFFSET $2`, owner, offset)
+// Drafts lists the drafts the actor owns or co-sets.
+func (s *Store) Drafts(ctx context.Context, actor string, offset int) ([]DraftSummary, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT d.id,d.draft->>'title',u.handle,(d.draft->>'startsAt')::timestamptz,d.updated_at
+ FROM contest_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id
+ WHERE d.owner_id=$1 OR EXISTS(SELECT 1 FROM contest_setters s WHERE s.contest_id=d.id AND s.owner_id=$1 AND s.left_at IS NULL)
+ ORDER BY d.updated_at DESC,d.id DESC LIMIT 51 OFFSET $2`, actor, offset)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (DraftSummary, error) {
 		var d DraftSummary
-		err := row.Scan(&d.ID, &d.Title, &d.StartsAt, &d.UpdatedAt)
+		err := row.Scan(&d.ID, &d.Title, &d.Author, &d.StartsAt, &d.UpdatedAt)
 		return d, err
 	})
 }
 
-func (s *Store) DeleteDraft(ctx context.Context, owner, id string, version int64) error {
-	tag, err := s.Pool.Exec(ctx, `DELETE FROM contest_drafts WHERE id=$1 AND owner_id=$2 AND version=$3`, id, owner, version)
-	if err == nil && tag.RowsAffected() != 1 {
-		err = pgx.ErrNoRows
+// forgetContest removes what the id shares between a draft and its contest. A deleted draft takes its co-setters,
+// link, exclusions and notifications with it, so a new draft that reuses the id starts clean.
+func forgetContest(ctx context.Context, tx pgx.Tx, id string) error {
+	for _, statement := range []string{
+		`DELETE FROM contest_setters WHERE contest_id=$1`,
+		`DELETE FROM contest_setter_invitations WHERE contest_id=$1`,
+		`DELETE FROM contest_exclusions WHERE contest_id=$1`,
+		`DELETE FROM notifications WHERE contest_id=$1`,
+	} {
+		if _, err := tx.Exec(ctx, statement, id); err != nil {
+			return err
+		}
 	}
-	return s.draftConflict(ctx, owner, id, err)
+	return nil
 }
 
-// Publish turns the saved draft into a scheduled contest under the same id, with the same checks as saving one.
-func (s *Store) Publish(ctx context.Context, owner, id string, version int64, policy JudgePolicy) error {
+// DeleteDraft is for the owner only; co-setters leave instead.
+func (s *Store) DeleteDraft(ctx context.Context, owner, id string, version int64) error {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	r, err := scanDraft(tx.QueryRow(ctx, `SELECT `+draftColumns+` FROM contest_drafts WHERE id=$1 AND owner_id=$2 FOR UPDATE`, id, owner))
+	tag, err := tx.Exec(ctx, `DELETE FROM contest_drafts WHERE id=$1 AND owner_id=$2 AND version=$3`, id, owner, version)
+	if err == nil && tag.RowsAffected() != 1 {
+		err = pgx.ErrNoRows
+	}
+	if err == nil {
+		err = forgetContest(ctx, tx, id)
+	}
+	if err == nil {
+		err = tx.Commit(ctx)
+	}
+	return s.draftConflict(ctx, owner, id, err, true)
+}
+
+// Publish turns the saved draft into a scheduled contest under the same id, with the same checks as saving one.
+// Any setter may publish; the draft's owner stays the owner, and the co-setters and link carry over by the id.
+func (s *Store) Publish(ctx context.Context, actor, id string, version int64, policy JudgePolicy) error {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var owner string
+	if err = tx.QueryRow(ctx, `SELECT owner_id FROM contest_drafts WHERE id=$1 AND contest_setter(id,$2) FOR UPDATE`, id, actor).Scan(&owner); err != nil {
+		return err
+	}
+	r, err := scanDraft(tx.QueryRow(ctx, `SELECT `+draftColumns+` FROM contest_drafts WHERE id=$1`, id))
 	if err != nil {
 		return err
 	}
 	if r.Version != version {
 		return ErrConflict
 	}
-	issues, err := assess(ctx, tx, owner, id, r.Draft, policy)
+	issues, _, err := assess(ctx, tx, id, r.Draft, policy)
 	if err != nil {
 		return err
 	}
@@ -299,7 +445,7 @@ func (s *Store) Publish(ctx context.Context, owner, id string, version int64, po
 	if len(issues) > 0 || !ValidInput(in) {
 		return ErrNotReady
 	}
-	if err = save(ctx, tx, owner, id, in, policy, false); err != nil {
+	if err = save(ctx, tx, actor, id, in, policy, owner); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(ctx, `DELETE FROM contest_drafts WHERE id=$1`, id); err != nil {

@@ -318,17 +318,18 @@ DB接続先のURLや資格情報はエラー応答へ含めない。
 | --- | --- |
 | `GET /auth/me` | 検証済みユーザーのIDを取得 |
 | `GET /my/problems` | 自分の問題を更新日時の降順で50件取得 |
-| `GET /my/problems?role=tester` | テスト中の問題を更新日時の降順で50件取得 |
-| `GET /my/problems/{id}` | 作者またはテスターとして問題の本文と更新番号を取得 |
+| `GET /my/problems?role=tester` | テスト中の問題を更新日時の降順で50件取得。コンテストのセッターとしてだけ扱える問題には`viaContest`（`id`と`title`）を付ける |
+| `GET /my/problems/{id}` | 作者またはテスターとして問題の本文と更新番号を取得。コンテストのセッターとして扱える人は`contestEditors`に返す |
 | `PUT /my/problems/{id}` | UUID v4のIDを指定して作成または更新 |
 | `DELETE /my/problems/{id}?version=1` | 指定した更新番号の問題を削除 |
-| `POST /my/problems/{id}/tester-invitation` | 作者またはテスターが招待トークンを発行。同じ問題では同じトークンを返す |
+| `POST /my/problems/{id}/tester-invitation` | 作者または招待されたテスターが招待トークンを発行。同じ問題では同じトークンを返す。コンテストのセッターとしてだけ扱える人には404 |
 | `GET /my/tester-invitations/{token}` | 問題名、作者名、参加済みかどうかを取得 |
 | `POST /my/tester-invitations/{token}` | ログイン中のユーザーをテスターに登録。問題が入っているコンテストに参加登録していれば、結果確定まで409 `contest_participant_locked` |
 
 すべての要求に`Authorization: Bearer <access_token>`を付ける。
 ユーザーIDはリクエスト本文から受け取らず、検証済みトークンから取得する。
 問題の取得、編集、公開、削除、非公開問題への提出、テストケースの操作は、作者と登録済みテスターに許可する。
+公開済みのコンテストに入っている問題は、そのコンテストのセッターも、結果確定までテスターと同じく扱える（[ADR 0022](../docs/adr/0022-share-contests-among-setters.md)）。
 アクセス権のない問題と存在しない問題は同じ404を返す。
 招待の閲覧だけでは権限を付与せず、POSTでの同意時に登録する。
 参加済みユーザーの再送は成功として扱い、作者はテスター一覧に追加しない。
@@ -411,7 +412,9 @@ Lambda用バイナリでは、ビルド時に`CGO_ENABLED=0`と対象アーキ�
 
 - `GET /my/account`：Cognitoの`AdminGetUser`で`{"email":"...","provider":"password"}`を返す。Googleでログインしたユーザーは`provider`が`google`になる。
 - `POST /my/password`：`{"current":"...","proposed":"..."}`を受け取り、Cognitoの`ChangePassword`でパスワードを変更して204を返す。現在のパスワードの誤りは`400 incorrect_password`、パスワードの条件違反は`400 invalid_password`、Googleのユーザーは`409 password_unavailable`、試行回数の超過は429とする。
-- `DELETE /my/account`：確認として`{"handle":"現在のユーザーID"}`を受け取り、[ADR 0016](../docs/adr/0016-anonymize-deleted-accounts.md)に従ってアカウントを削除し、204を返す。ユーザーIDが違えば`400 confirmation_mismatch`、終了していない自分のコンテストがあれば`409 account_has_active_contest`とする。
+- `DELETE /my/account`：確認として`{"handle":"現在のユーザーID"}`を受け取り、[ADR 0016](../docs/adr/0016-anonymize-deleted-accounts.md)に従ってアカウントを削除し、204を返す。ユーザーIDが違えば`400 confirmation_mismatch`、共同作成者のいない終了していない自分のコンテストがあるか、終了していないコンテストに自分の未公開の問題が入っていれば`409 account_has_active_contest`とする。
+- [ADR 0022](../docs/adr/0022-share-contests-among-setters.md)に従い、共同作成者の削除は共同作成者から抜けたものとして扱う。
+  オーナーの結果確定していないコンテストと下書きのうち、共同作成者のいるものは、最も早く加わった共同作成者にオーナーを移す。
 - 削除では、公開していない問題・記事・コンテストの下書き、公開済みの問題・記事の未公開の編集内容、お気に入り、自分宛ての通知、残るコンテンツから参照されない画像を消す。公開済みの問題・記事、終了したコンテスト、提出、参加登録、難易度の投票、テスターの担当は残す。
 - プロフィールの行は残し、ユーザーIDを`deleted_`で始まる値に置き換え、アイコンと外部アカウントを消して`deleted_at`を記録する。Cognitoのユーザーは`AdminDeleteUser`で削除し、失敗した場合はDBの変更も取り消す。
 - Cognitoのアクセストークンは期限まで有効なため、削除済みアカウントのトークンはすべての認証付きAPIで`401 account_deleted`とする。
@@ -494,10 +497,13 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 - `PUT /my/contests/{id}/draft`：`{"version":0,"draft":{...}}`で下書きを作成し、以降は返された`version`で更新します。`draft`は`title`、`description`、`startsAt`（null可）、`durationMinutes`（null可）、`penaltyMinutes`（null可）、`problems`（`id`と、null可の`points`）です。
 - 下書きは未入力や範囲外の値を含んでいても保存できます。拒否するのは、タイトル120文字・説明100,000文字・問題100件の上限超過、不正または重複した問題ID、絶対値が10億を超える数値だけです（400 `invalid_contest`）。
 - 応答は`id`、`version`、`updatedAt`、`draft`と、公開できない理由のコード一覧`issues`を返します。コードは`title_missing`、`start_missing`、`start_past`、`duration_invalid`、`penalty_invalid`、`problems_missing`、`points_invalid`、`problem_unavailable`（公開済み・削除済み・他のコンテストに登録済み）、`problem_incomplete`（コンテストの内容の条件を満たさない）です。
-- `GET`で取得、`DELETE ?version=N`で削除し、`GET /my/contests/drafts?offset=0`で自分の下書きを更新日時の降順に50件ずつ返します。
+- `GET`で取得、`DELETE ?version=N`で削除し、`GET /my/contests/drafts?offset=0`で自分の下書きを更新日時の降順に50件ずつ返します。一覧の各要素の`author`はオーナーのユーザーIDです。
 - `PUT /my/contests/{id}/publication`に`{"version":N}`を送ると、保存済みの下書きを同じ`id`のコンテストとして公開し、コンテスト詳細を返します。終了日時は`startsAt`に`durationMinutes`を足した時刻です。`issues`が残っていれば409 `contest_not_ready`、古い`version`や問題の競合は409 `contest_conflict`です。
 - 下書きは`contests`とは別の`contest_drafts`に置くため、公開APIの一覧・詳細・順位表・参加登録からは見えません。他人の下書きは404です。
 - 新規作成枠は下書きの作成時に1件分消費し、公開では消費しません。公開済みで開始前のコンテストは、これまでどおり`PUT /my/contests/{id}`で検証してから保存します。
+- 共同作成者も下書きの取得、保存、公開ができ、下書きの一覧にも出ます。削除はオーナーだけができ、共同作成者には404を返します。誰が公開しても、オーナーは下書きのオーナーのままです。
+- 応答の`authors`はオーナーを先頭とするセッター、`owner`は閲覧者がオーナーかどうかです。`problems`は、今のセッターの誰かが作者か招待されたテスターである問題を下書きの順に並べ、`id`、`title`、`author`、コンテストに入れられない理由`issues`（問題の`readiness.contest`と同じコード）を返します。それ以外の問題は`problem_unavailable`になります。
+- 下書きに新しく加える問題のうち、存在する問題は、保存する人が作者か招待されたテスターでなければ409 `contest_conflict`です。存在しない問題IDはこれまでどおり保存し、`problem_unavailable`として示します。
 - 配布時はAPIを切り替える前に通常のDBマイグレーションを実行し、`025_contest_drafts.sql`を適用してください。
 
 ### コンテストへの参加
@@ -513,8 +519,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 [ADR 0022](../docs/adr/0022-share-contests-among-setters.md)に従い、コンテストに関わる人を次のように判定する。
 判定は`031_contest_roles.sql`のSQL関数にまとめ、各クエリはそれを呼ぶ。
 
-- セッター（`contest_setter`）：コンテストの作成者。
-  共同作成者は未対応である。
+- セッター（`contest_setter`）：コンテストか下書きのオーナーと、抜けていない共同作成者。
 - スタッフ（`contest_staff`）：セッター、コンテストの問題の作者、コンテストの問題のテスター。
   開催中もすべての提出を閲覧でき、参加登録できず、順位表に載らない。
 - 開始前に問題を見られる人（`contest_problem_access`）：セッターと、その問題の作者とテスター。
@@ -533,6 +538,42 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 - 結果確定の後にテスターになった参加者は、順位表に残る。
 - 問題の作者もスタッフになるため、作者が参加していた終了済みのコンテストの順位表からは、その行が消える。
 - 配布時は`031_contest_roles.sql`だけのコミットを先に配布して適用し、その後にAPIを配布する。
+
+### 共同作成者
+
+[ADR 0022](../docs/adr/0022-share-contests-among-setters.md)に従い、セッターは招待リンクで共同作成者を加えられる。
+共同作成者と招待リンクは下書きと公開済みのコンテストに共通のIDで`032_contest_setters.sql`の表に記録し、公開しても引き継ぐ。
+
+| API | 動作 |
+| --- | --- |
+| `POST /my/contests/{id}/setter-invitation` | セッターが招待リンクのトークンを`{"token":"..."}`で取得する。初回に発行し、以降は同じトークンを返す |
+| `PUT /my/contests/{id}/setter-invitation` | トークンを作り直して返す。古いリンクは404になる |
+| `GET /my/setter-invitations/{token}` | `id`、`title`、`author`（オーナー）、`published`（公開済みか）、`joined`（閲覧者がセッターか）を返す |
+| `POST /my/setter-invitations/{token}` | 共同作成者に加わり、同じ形で返す。セッターの再送は何もしない |
+| `DELETE /my/contests/{id}/setters/{handle}` | オーナーが共同作成者を外すか、共同作成者が自分で抜ける。204を返す |
+
+- 招待を受けられるのは結果確定までで、その後は409 `contest_invitation_closed`とする。
+  参加登録した人は409 `contest_participant_locked`とする。
+- 招待を受けると、オーナーに`kind: "contest_setter"`の通知を送る。
+  この通知は`problemId`を持たず、`contestId`と、コンテストか下書きの`title`を返す。
+- 外す相手が共同作成者でない場合や、共同作成者がほかの人を外そうとした場合は404 `setter_not_found`とする。
+  オーナーは抜けられない。
+- 抜けた人と外された人は`contest_exclusions`に記録し、そのコンテストに参加できない。
+  オーナーが外したときは、招待リンクを作り直す。
+- 招待リンクのトークンは、公開の`Contest`を含む公開APIの型には載せない。
+- コンテストの詳細と一覧は`authors`（オーナーを先頭とするセッター）、`setter`（閲覧者がセッターか）、`owner`（閲覧者がオーナーか）を返す。
+  `author`はこれまでどおりオーナーである。
+  開始前のセッターには、今のセッターの誰も作者でもテスターでもない問題に`unmanaged: true`を付ける。
+  その問題を外すまで保存は409 `contest_conflict`になる。
+- コンテストの問題は`authors`と、閲覧者が今解説を受け取れるかどうかの`canReadEditorial`を返す。
+- コンテストに入れられるのは、今のセッターの誰かが作者か招待されたテスターである問題で、新しく加えられるのは、保存する人が作者か招待されたテスターである問題に限る。
+  コンテストのセッターとして扱えることは、この判定に数えない。
+- 公開済みのコンテストのセッターは、結果確定まで、コンテストの問題を編集、リジャッジ、テストファイルの取得などでテスターと同じく扱える（`can_manage_problem`）。
+  問題に行は作らず、問題のテスター欄にも出さない。
+  問題のテスター招待リンクの発行と、コンテストに入れてよいかの判定は、作者と招待されたテスターだけを見る`can_manage_problem_directly`を使う。
+- 説明の画像は、セッターの誰がアップロードしたものでも使え、下書きの説明の画像は今のセッターが見られる。
+  抜けた人がアップロードした画像も、そのコンテストではそのまま使える。
+- 配布時は`032_contest_setters.sql`だけのコミットを先に配布して適用し、その後にAPIを配布する。
 
 ## 定期便
 

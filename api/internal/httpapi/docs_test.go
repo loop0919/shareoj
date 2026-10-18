@@ -77,6 +77,21 @@ func TestPublicDocumentation(t *testing.T) {
 				t.Fatal("missing generated model", name)
 			}
 		}
+		for name, fields := range map[string][]string{"Contest": {"authors", "setter", "owner"}, "ContestProblem": {"authors", "canReadEditorial", "author", "markdown"}} {
+			for _, field := range fields {
+				if _, ok := doc.Components.Schemas[name].Properties[field]; !ok {
+					t.Fatal("missing field", name, field)
+				}
+			}
+		}
+		// Invitation links and passphrases are for setters and members only, never in a public type (ADR 0022).
+		for name, schema := range doc.Components.Schemas {
+			for field := range schema.Properties {
+				if lower := strings.ToLower(field); strings.Contains(lower, "token") || strings.Contains(lower, "invitation") || strings.Contains(lower, "passphrase") {
+					t.Fatal("secret documented", name, field)
+				}
+			}
+		}
 		for _, name := range []string{"Result", "CaseResult"} {
 			for _, hidden := range []string{"checkerLog", "compileLog", "sampleDetails", "outputFile", "output"} {
 				if _, ok := doc.Components.Schemas[name].Properties[hidden]; ok {
