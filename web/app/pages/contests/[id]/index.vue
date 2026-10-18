@@ -179,9 +179,9 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
                   <span class="standing-result">
                     <strong v-if="row.problems[p.id]!.acceptedAt" class="standing-accepted">{{ row.problems[p.id]!.points }}</strong>
                     <span v-else-if="!row.problems[p.id]!.wrong && !row.problems[p.id]!.pending && !row.problems[p.id]!.frozen" class="muted">—</span>
-                    <span v-if="row.problems[p.id]!.wrong" class="standing-wrong" :aria-label="`誤答 ${row.problems[p.id]!.wrong} 回`">({{ row.problems[p.id]!.wrong }})</span>
+                    <span v-if="row.problems[p.id]!.wrong" class="standing-wrong"><span aria-hidden="true">({{ row.problems[p.id]!.wrong }})</span><span class="visually-hidden">誤答 {{ row.problems[p.id]!.wrong }} 回</span></span>
                     <svg v-if="row.problems[p.id]!.pending" class="standing-pending" viewBox="0 0 24 24" role="img" aria-label="判定待ち"><path d="M5 3h14M5 21h14M7 3v4l5 5-5 5v4M17 3v4l-5 5 5 5v4" /></svg>
-                    <span v-if="row.problems[p.id]!.frozen" class="standing-frozen" :aria-label="`凍結後の提出 ${row.problems[p.id]!.frozen} 件`">?{{ row.problems[p.id]!.frozen }}</span>
+                    <span v-if="row.problems[p.id]!.frozen" class="standing-frozen"><span aria-hidden="true">?{{ row.problems[p.id]!.frozen }}</span><span class="visually-hidden">凍結後の提出 {{ row.problems[p.id]!.frozen }} 件</span></span>
                   </span>
                   <small v-if="row.problems[p.id]!.acceptedAt">{{ elapsed(row.problems[p.id]!.acceptedAt!) }}</small>
                 </template>

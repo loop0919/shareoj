@@ -91,13 +91,14 @@ test('frozen submissions show as ?n beside, not instead of, the pending hourglas
   const cell = (handle: string, index: number) => table.locator('tbody tr').filter({ hasText: handle }).locator('td').nth(3 + index)
   // An accepted problem stays as it was; the frozen count sits after the wrong answers.
   await expect(cell('alice', 0)).toHaveText('10010:00')
-  await expect(cell('alice', 1)).toHaveText('(1)?2')
-  await expect(cell('alice', 1).getByLabel('凍結後の提出 2 件', { exact: true })).toHaveText('?2')
+  // Screen readers hear the counts as words; the marks themselves are hidden from them.
+  await expect(cell('alice', 1).locator('[aria-hidden="true"]')).toHaveText(['(1)', '?2'])
+  await expect(cell('alice', 1).locator('.visually-hidden')).toHaveText(['誤答 1 回', '凍結後の提出 2 件'])
   // A pending run before the freeze keeps its hourglass; the frozen one is counted apart.
   await expect(cell('bob', 0).getByRole('img', { name: '判定待ち' })).toBeVisible()
-  await expect(cell('bob', 0).getByLabel('凍結後の提出 1 件', { exact: true })).toHaveText('?1')
+  await expect(cell('bob', 0).locator('.standing-frozen')).toHaveText('?1凍結後の提出 1 件')
   // Frozen submissions alone replace the dash.
-  await expect(cell('carol', 0)).toHaveText('?3')
+  await expect(cell('carol', 0)).toHaveText('?3凍結後の提出 3 件')
   await expect(table.getByRole('img', { name: '判定待ち' })).toHaveCount(1)
   await expect(table.locator('.standing-frozen')).toHaveCount(3)
   await expect(notice(page)).toHaveText('22:00以降の提出の結果は、結果発表まで伏せています。')
