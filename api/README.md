@@ -415,7 +415,7 @@ Lambda用バイナリでは、ビルド時に`CGO_ENABLED=0`と対象アーキ�
 - `DELETE /my/account`：確認として`{"handle":"現在のユーザーID"}`を受け取り、[ADR 0016](../docs/adr/0016-anonymize-deleted-accounts.md)に従ってアカウントを削除し、204を返す。ユーザーIDが違えば`400 confirmation_mismatch`、共同作成者のいない結果確定していない自分のコンテスト（凍結のあるコンテストでは結果の公開まで）があるか、終了していないコンテストに自分の未公開の問題が入っていれば`409 account_has_active_contest`とする。
 - [ADR 0022](../docs/adr/0022-share-contests-among-setters.md)に従い、共同作成者の削除は共同作成者から抜けたものとして扱う。
   オーナーの結果確定していないコンテストと下書きのうち、共同作成者のいるものは、最も早く加わった共同作成者にオーナーを移す。
-- 削除では、公開していない問題・記事・コンテストの下書き、公開済みの問題・記事の未公開の編集内容、お気に入り、自分宛ての通知、残るコンテンツから参照されない画像を消す。公開済みの問題・記事、終了したコンテスト、提出、参加登録、難易度の投票、テスターの担当は残す。
+- 削除では、公開していない問題・記事・コンテストの下書き、公開済みの問題・記事の未公開の編集内容、お気に入り、自分宛ての通知、残るコンテンツから参照されない画像を消す。公開済みの問題・記事、終了したコンテスト、提出、開始したコンテストの参加登録とチームの所属、難易度の投票、テスターの担当は残す。開始前のコンテストの参加登録とチームの所属は外す（[ADR 0024](../docs/adr/0024-team-and-onsite-participation.md)）。
 - プロフィールの行は残し、ユーザーIDを`deleted_`で始まる値に置き換え、アイコンと外部アカウントを消して`deleted_at`を記録する。Cognitoのユーザーは`AdminDeleteUser`で削除し、失敗した場合はDBの変更も取り消す。
 - Cognitoのアクセストークンは期限まで有効なため、削除済みアカウントのトークンはすべての認証付きAPIで`401 account_deleted`とする。
 - `AdminGetUser`と`AdminDeleteUser`は、APIのLambdaロールの権限（`infra/api/main.tf`の`cognito_users`）で呼ぶ。Googleでログインしたトークンには、トークンで呼ぶ操作に必要なスコープがないためである。
@@ -494,7 +494,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 
 [ADR 0015](../docs/adr/0015-save-contests-as-drafts.md)に従い、新しいコンテストは下書きとして保存し、公開時に検証する。
 
-- `PUT /my/contests/{id}/draft`：`{"version":0,"draft":{...}}`で下書きを作成し、以降は返された`version`で更新します。`draft`は`title`、`description`、`startsAt`（null可）、`durationMinutes`（null可）、`penaltyMinutes`（null可）、`freezeMinutes`（null で凍結なし、省くと保存済みの値を保つ）、`problems`（`id`と、null可の`points`）です。
+- `PUT /my/contests/{id}/draft`：`{"version":0,"draft":{...}}`で下書きを作成し、以降は返された`version`で更新します。`draft`は`title`、`description`、`startsAt`（null可）、`durationMinutes`（null可）、`penaltyMinutes`（null可）、`freezeMinutes`（null で凍結なし、省くと保存済みの値を保つ）、`teamMode`、`maxTeamSize`、`onsiteDivision`、`onsitePassphrase`（下の「チーム戦とオンサイト」、省くと保存済みの値を保つ）、`problems`（`id`と、null可の`points`）です。
 - 下書きは未入力や範囲外の値を含んでいても保存できます。拒否するのは、タイトル120文字・説明100,000文字・問題100件の上限超過、不正または重複した問題ID、絶対値が10億を超える数値だけです（400 `invalid_contest`）。
 - 応答は`id`、`version`、`updatedAt`、`draft`と、公開できない理由のコード一覧`issues`を返します。コードは`title_missing`、`start_missing`、`start_past`、`duration_invalid`、`penalty_invalid`、`freeze_invalid`（1分からコンテスト時間までの範囲外）、`problems_missing`、`points_invalid`、`problem_unavailable`（公開済み・削除済み・他のコンテストに登録済み）、`problem_incomplete`（コンテストの内容の条件を満たさない）です。
 - `GET`で取得、`DELETE ?version=N`で削除し、`GET /my/contests/drafts?offset=0`で自分の下書きを更新日時の降順に50件ずつ返します。一覧の各要素の`author`はオーナーのユーザーIDです。
@@ -509,6 +509,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 ### コンテストへの参加
 
 - `POST /my/contests/{id}/participation`：認証・プロフィール登録が必要。開始前または開催中に参加登録し、更新後のコンテスト詳細を返します。同じユーザーの再登録は重複しません。
+  本文が空なら個人戦のオープン参加です。チーム戦とオンサイト区分の本文は下の「チーム戦とオンサイト」にあります。
 - 詳細の `participating` は閲覧ユーザーの登録状態です。`official` は公式順位の対象になれるかどうかで、スタッフとスタッフだった人は対象外です。`staff` は閲覧ユーザーがスタッフかどうかです。
 - 登録者は未提出でも0点で順位表に表示されます。開催中の提出には登録が必要です（スタッフを除く）。終了後の練習提出には登録不要です。
 - 終了後の新規登録・対象外ユーザーの登録は409 `contest_participation_unavailable`、未登録での提出は409 `contest_participation_required` です。
@@ -589,6 +590,53 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 - `POST /my/contests/{id}/reveal`：セッターか運営者（`OPERATOR_SUBJECTS`）が結果を公開し、コンテスト詳細を返す。取り消せず、公開済みなら何もせず200。
   ほかの人は404、終了前か凍結のないコンテストは409 `contest_conflict`、参加者のコンテスト中の提出に判定待ち（リジャッジ中を含む）が残っていれば409 `contest_results_pending`。スタッフの提出、サンプル検証、終了後の練習は待たない。
 - 配布時は`034_contest_freeze.sql`だけのコミットを先に配布して適用し、その後にAPIを配布する。
+
+### チーム戦とオンサイト
+
+[ADR 0024](../docs/adr/0024-team-and-onsite-participation.md)に従い、コンテストを個人戦かチーム戦にし、オンサイト区分を設けられる。
+
+- `PUT /my/contests/{id}`と下書きの設定は次のとおり。省くと保存済みの値を保ち、開始後は変えられない。
+  - `teamMode`：チーム戦かどうか。
+  - `maxTeamSize`：チーム戦の最大人数で、2〜50かnull（無制限。内部の上限は50人）。個人戦では保存しない。
+  - `onsiteDivision`：オンサイト区分の有無。
+  - `onsitePassphrase`：会場の合言葉。`onsiteDivision`をtrueで送るときは必須で、前後の空白を除きNFKCで正規化して4〜64文字にする。それ以外のときは読まない。
+- 範囲外は400 `invalid_contest`で、下書きでは`issues`に`team_size_invalid`か`venue_passphrase_invalid`を入れる。
+- 参加登録があると、個人戦とチーム戦は切り替えられず（409 `contest_team_mode_locked`）、最大人数は最も大きいチームの人数より下げられない（409 `contest_team_size_locked`）。
+- 開始前に区分をなしにすると、記録したオンサイトを消し、合言葉も消す。
+- コンテストの詳細と一覧は`teamMode`、`maxTeamSize`、`onsiteDivision`を返す。
+  閲覧者向けに、`team`（自分のチームの`id`、`name`、`members`、`onsite`）と`onsite`（自分かチームがオンサイトか）を返す。
+- 会場の合言葉と参加コードは、公開の`Contest`を含む公開APIの型に載せない。
+
+参加の本文は`{"team":{"action":"create","name":"..."}}`か`{"team":{"action":"join","code":"..."}}`と、任意の`onsitePassphrase`である。
+
+- チーム戦ではチームの指定が必要で（409 `contest_team_required`）、個人戦では指定できない（409 `contest_team_unavailable`）。
+- チーム名はNFKCで正規化して空白をまとめ、1〜40文字にする。制御文字と書式文字を含む名前は400 `invalid_team_name`、大文字と小文字だけが違う名前を含めて同じ名前は409 `team_name_taken`。
+- 1人が入れるチームは1つで、2つ目は409 `team_already_joined`とする。自分のチームのコードを再び送っても何も変えない。満員のチームは409 `team_full`。
+- 参加コードはサーバーが作る10文字で、0、O、1、I、L、Uを使わない。大文字と小文字、全角、空白とハイフンの違いは無視し、誤りは400 `incorrect_team_code`。
+- 会場の合言葉が正しければ本人（チーム戦ではチーム）をオンサイトにし、誤りは400 `incorrect_venue_passphrase`として何も登録しない。区分のないコンテストでは409 `contest_onsite_unavailable`。
+- 登録済みの人は、終了まで`onsitePassphrase`だけを送ってオンサイトになれる。チームの誰か1人が入れればチーム全体がオンサイトになる。
+- 参加コードと合言葉の誤りはアカウントとコンテストの組ごとに数え、10分に10回に達すると、以後の試行を429 `contest_attempts_limited`と`Retry-After`で断る。
+
+| API | 動作 |
+| --- | --- |
+| `GET /my/contests/{id}/team` | メンバーに自分のチームの`id`、`name`、`members`、`onsite`と参加コード`code`を返す |
+| `PUT /my/contests/{id}/team/code` | 参加コードを作り直してチームを返す。終了まで |
+| `PUT /my/contests/{id}/team/name` | `{"name":"..."}`でチーム名を変えてチームを返す。終了まで |
+| `DELETE /my/contests/{id}/team/members/{handle}` | 開始前に、ほかのメンバーを外すか、自分のハンドルで抜ける。204を返す |
+| `GET /my/contests/{id}/onsite` | セッターに`{"onsiteDivision":true,"passphrase":"..."}`を返す |
+| `PUT /my/contests/{id}/onsite` | セッターが`{"passphrase":"..."}`で合言葉を差し替える。終了まで |
+| `GET /my/contests/{id}/participants` | セッターに参加者（チーム戦ではチーム）を`{"items":[...]}`で返す |
+| `PUT /my/contests/{id}/participants/{handle}/onsite` | セッターが個人戦の参加者の区分を`{"onsite":true}`か`false`で切り替える。結果確定まで |
+| `PUT /my/contests/{id}/teams/{team}/onsite` | セッターがチームの区分を切り替える。結果確定まで |
+| `PUT /my/contests/{id}/teams/{team}/name` | セッターがチーム名を直す。結果確定まで |
+
+- メンバーの操作は、チームがなければ404 `team_not_found`、チームにいないハンドルは404 `team_member_not_found`、期間外は409 `team_locked`とする。
+- ほかのメンバーを外すと参加コードを作り直す。最後の1人が抜けるとチームを消す。
+- セッターの操作は、セッター以外に404 `contest_not_found`、期間外に409 `contest_conflict`、該当する参加者やチームがなければ404 `participant_not_found`か`team_not_found`を返す。
+- 参加者一覧の各要素は、個人戦では`handle`、チーム戦では`team`を持ち、`onsite`、`onsiteAt`、`onsiteVia`（`passphrase`か`setter`、オープンなら空）、`createdAt`を返す。
+- 合言葉の差し替えはコンテストの`version`を進めるので、古い合言葉を持つ編集画面の保存は409 `contest_conflict`になる。
+- 開始前の退会では、そのコンテストの参加登録とチームの所属を外し、空になったチームを消す。
+- 配布時は`035_contest_teams.sql`だけのコミットを先に配布して適用し、その後にAPIを配布する。
 
 ## 定期便
 
