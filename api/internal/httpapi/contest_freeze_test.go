@@ -71,6 +71,7 @@ func TestContestFreezePostgres(t *testing.T) {
 	const (
 		p1  = "11111111-1111-4111-8111-111111111111"
 		p2  = "22222222-2222-4222-8222-222222222222"
+		p3  = "33333333-3333-4333-8333-333333333333"
 		cid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 		did = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
 	)
@@ -303,6 +304,10 @@ func TestContestFreezePostgres(t *testing.T) {
 	checkTable("ended public", standings("/contests/"+cid+"/standings", ""), frozen)
 	checkTable("ended setter live", standings("/my/contests/"+cid+"/standings?live=1", "alice"), live)
 
+	// Participants stay out of the staff until the reveal, so they cannot see the live table through a tester link.
+	if body := request("POST", "/my/tester-invitations/"+link.Token, "bob", nil, 409); !strings.Contains(body, "contest_participant_locked") {
+		t.Fatal(body)
+	}
 	// The last setter of an unrevealed frozen contest cannot delete the account.
 	deleteAccount := func(owner string) error {
 		return (&accounts.Store{Pool: store.Pool()}).Delete(ctx, owner, owner, func(context.Context) error { return nil })
@@ -363,6 +368,9 @@ func TestContestFreezePostgres(t *testing.T) {
 		"carol": {"total": {points: 300}, p1: {points: 100}, p2: {points: 200}},
 	}
 	checkTable("revealed public", standings("/contests/"+cid+"/standings", ""), final)
+	// A participant who tests only after the reveal keeps the row.
+	request("POST", "/my/tester-invitations/"+link.Token, "bob", nil, 200)
+	checkTable("revealed public with a late tester", standings("/contests/"+cid+"/standings", ""), final)
 	if c := view("alice"); c.CanRevealResults || !c.ResultsFinal {
 		t.Fatalf("revealed setter view: %+v", c)
 	}
@@ -371,6 +379,21 @@ func TestContestFreezePostgres(t *testing.T) {
 		t.Fatal("co-setter keeps rights after the reveal")
 	}
 	if body := request("POST", "/my/setter-invitations/"+invite.Token, "dan", nil, 409); !strings.Contains(body, "contest_invitation_closed") {
+		t.Fatal(body)
+	}
+	// Without a freeze the results are final at the end and there is nothing to reveal.
+	const plain = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+	if _, err = store.Save(ctx, "alice", p3, 0, draft); err != nil {
+		t.Fatal(err)
+	}
+	request("PUT", "/my/contests/"+plain, "alice", contests.Input{Title: "Plain", StartsAt: start, EndsAt: start.Add(time.Hour), PenaltyMinutes: &penalty, Problems: []contests.Problem{{ID: p3, Points: 100}}}, 200)
+	exec(`UPDATE contests SET starts_at=$2,ends_at=$3 WHERE id=$1`, plain, time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour))
+	var ended contests.Contest
+	decode(request("GET", "/my/contests/"+plain, "alice", nil, 200), &ended)
+	if ended.FreezeMinutes != nil || ended.FreezeAt != nil || !ended.ResultsFinal || ended.Revealed || ended.CanRevealResults || ended.CanViewLiveStandings {
+		t.Fatalf("contest without a freeze: %+v", ended)
+	}
+	if body := request("POST", "/my/contests/"+plain+"/reveal", "ops", nil, 409); !strings.Contains(body, "contest_conflict") {
 		t.Fatal(body)
 	}
 	if err := deleteAccount("alice"); err != nil {
