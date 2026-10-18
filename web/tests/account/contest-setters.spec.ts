@@ -151,3 +151,41 @@ test('co-setters join through a link, publish together, and leave or are removed
   expect((await unread.json()).notifications).toEqual([expect.objectContaining({ contestId: id, actor: 'dave', kind: 'contest_setter', title: '共同作成のコンテスト' })])
   await Promise.all([bobContext.close(), carol.context().close(), dave.context().close()])
 })
+
+test('a newcomer opens a co-setter link, creates a profile, and returns to the invitation', async ({ page, browser }) => {
+  await page.goto('/login')
+  await login(page, 'alice')
+  await expect(page).toHaveURL('/my')
+  const id = randomUUID()
+  const created = await page.request.put(`/api/my/contests/${id}/draft`, { headers: { origin }, data: { version: 0, draft: { title: '新しい人を招くコンテスト', description: '', startsAt: null, durationMinutes: 60, penaltyMinutes: 5, problems: [] } } })
+  expect(created.status()).toBe(200)
+  const issued = await page.request.post(`/api/my/contests/${id}/setter-invitation`, { headers: { origin } })
+  expect(issued.status()).toBe(200)
+  const link = `${origin}/my/contest-invitations/${(await issued.json()).token}`
+  const newcomerContext = await browser.newContext({ baseURL: origin })
+  try {
+    const newcomer = await newcomerContext.newPage()
+    const email = `setter-${Date.now()}@example.test`
+    for (const [action, data] of [
+      ['signup', { email, password: 'ValidPassword123!' }],
+      ['confirm-signup', { email, code: '123456' }],
+    ] as const) {
+      expect((await newcomer.request.post(`/api/auth/${action}`, { headers: { origin }, data })).ok()).toBe(true)
+    }
+    await newcomer.goto(link)
+    await expect(newcomer).toHaveURL(/\/login\?next=/)
+    await newcomer.getByLabel('メールアドレス').fill(email)
+    await newcomer.getByLabel('パスワード', { exact: true }).fill('ValidPassword123!')
+    await newcomer.getByRole('button', { name: 'ログイン', exact: true }).click()
+    // Without a profile the link waits behind onboarding, then opens again.
+    await expect(newcomer).toHaveURL(/\/onboarding\?next=/)
+    await newcomer.getByLabel('ユーザーID', { exact: true }).fill(`setter_${Date.now()}`)
+    await newcomer.getByRole('button', { name: '登録してはじめる' }).click()
+    await expect(newcomer).toHaveURL(link)
+    await expect(newcomer.getByRole('heading', { name: '新しい人を招くコンテスト', level: 2 })).toBeVisible()
+    await expect(newcomer.getByRole('button', { name: '共同作成者になる', exact: true })).toBeVisible()
+  } finally {
+    await newcomerContext.close()
+    await page.request.delete(`/api/my/contests/${id}/draft?version=1`, { headers: { origin } })
+  }
+})

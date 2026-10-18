@@ -297,6 +297,20 @@ test('the invitation page previews the contest, accepts, and explains refusals',
   await expect(page.getByRole('button', { name: '共同作成者になる' })).toHaveCount(0)
 })
 
+test('the tester invitation page explains why a registered participant cannot join', async ({ page }) => {
+  let accepted = 0
+  await page.route(`**/api/my/tester-invitations/${token}`, route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { id: own, title: 'コンテストの問題', author: 'alice', joined: false } })
+    accepted++
+    return route.fulfill({ status: 409, json: { statusCode: 409, data: { code: 'contest_participant_locked' } } })
+  })
+  await page.goto(`/my/tester-invitations/${token}`)
+  await page.getByRole('button', { name: '許可する', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('この問題が入っているコンテストに参加登録しているため、結果が確定するまで招待を受けられません。')
+  await expect(page).toHaveURL(`/my/tester-invitations/${token}`)
+  expect(accepted).toBe(1)
+})
+
 test('a closed invitation says so instead of offering to join', async ({ page }) => {
   await page.route(`**/api/my/setter-invitations/${token}`, route => route.fulfill({ json: { id, title: '終わったコンテスト', author: 'alice', published: true, joined: false, closed: true } }))
   await page.goto(`/my/contest-invitations/${token}`)
