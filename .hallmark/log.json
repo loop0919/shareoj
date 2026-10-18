@@ -1,5 +1,14 @@
 [
   {
+    "date": "2026-10-19",
+    "macrostructure": "Workbench (in-app pages inside the existing system)",
+    "theme": "Plain (existing ShareOJ system)",
+    "nav": "N1a (shared site navigation)",
+    "footer": "Ft1 (shared site footer)",
+    "enrichment": "none",
+    "brief": "ShareOJ team and onsite participation: the contest participation form (create or join a team, venue passphrase), the team panel with join code and members, the setters' participant tools on the contest overview, team rows and the 全員/オンサイトのみ filter on standings and submission lists, and the 参加形式 section of the contest editor"
+  },
+  {
     "date": "2026-10-18",
     "macrostructure": "Workbench (in-app pages inside the existing system)",
     "theme": "Plain (existing ShareOJ system)",

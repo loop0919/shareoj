@@ -155,7 +155,7 @@ test('contest editor', async ({ page }) => {
   await expandSidebar(page)
   const nav = page.getByRole('navigation', { name: 'コンテスト作成メニュー' })
   await annotate(page, [
-    ...['タイトル・説明', '問題・配点', '期間・ペナルティ', 'コンテスト管理'].map(name => ({ target: nav.getByRole('button', { name, exact: true }), pad: 2, badge: 'right' as const })),
+    ...['タイトル・説明', '問題・配点', '期間・ペナルティ', '参加形式', 'コンテスト管理'].map(name => ({ target: nav.getByRole('button', { name, exact: true }), pad: 2, badge: 'right' as const })),
     { target: page.getByRole('button', { name: /下書きを保存|変更を保存/ }), badge: 'bottom' },
     { target: page.getByRole('button', { name: 'コンテストを公開' }), badge: 'bottom' },
   ])
@@ -232,10 +232,28 @@ test('generator and checker', async ({ page }) => {
 })
 
 test('contest participation', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 800 })
-  await page.goto(`/contests/${shortId('99999999-9999-4999-8999-999999999999')}`)
+  // Tall enough that the fixed contest clock stays below the form.
+  await page.setViewportSize({ width: 1280, height: 1400 })
+  // The guide shows a team contest with an onsite division, which names every field (ADR 0024).
+  const contestId = '99999999-9999-4999-8999-999999999999'
+  await page.route(`**/api/contests/${contestId}`, async route => {
+    const response = await route.fetch()
+    return route.fulfill({ response, json: { ...await response.json(), teamMode: true, maxTeamSize: 3, onsiteDivision: true } })
+  })
+  // The server render reads the fixture as it is; the refresh reads the routed contest.
+  await page.goto(`/contests/${shortId(contestId)}?view=standings`, { waitUntil: 'networkidle' })
+  await page.getByRole('button', { name: '今すぐ更新' }).click()
+  await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '概要', exact: true }).click()
+  await page.getByLabel('チーム名', { exact: true }).fill('ShareOJ Lovers')
+  await page.getByLabel('会場の合言葉（オンサイト参加者のみ）', { exact: true }).fill('ShareOJ-2026')
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
   const join = page.getByRole('button', { name: '参加する' })
-  await annotate(page, [join])
+  await annotate(page, [
+    { target: page.getByRole('group', { name: '参加のしかた' }), badge: 'right' },
+    { target: page.getByLabel('チーム名', { exact: true }), badge: 'right' },
+    { target: page.getByLabel('会場の合言葉（オンサイト参加者のみ）', { exact: true }), badge: 'right' },
+    join,
+  ])
   await shoot(page, 'contest-join', [page.getByRole('heading', { level: 1 }), join.locator('..')])
 })
 
