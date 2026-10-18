@@ -108,7 +108,7 @@ test('co-setters join through a link, publish together, and leave or are removed
   expect((await carol.request.post(`/api/my/contests/${id}/setter-invitation`, { headers: { origin } })).status()).toBe(404)
   await carol.goto(link)
   await carol.getByRole('button', { name: '共同作成者になる', exact: true }).click()
-  await expect(carol.getByRole('alert')).toHaveText('このコンテストに参加登録しているため、結果が確定するまで共同作成者に加われません。')
+  await expect(carol.getByRole('alert')).toHaveText('このコンテストに参加登録しているため、共同作成者になれません。')
   await expect(carol).toHaveURL(link)
 
   // dave joins and leaves; having seen the problems, he may not compete.

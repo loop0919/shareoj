@@ -184,7 +184,7 @@ test('the invitation page previews the contest, accepts, and explains refusals',
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   }
   for (const [code, text] of [
-    ['contest_participant_locked', 'このコンテストに参加登録しているため、結果が確定するまで共同作成者に加われません。'],
+    ['contest_participant_locked', 'このコンテストに参加登録しているため、共同作成者になれません。'],
     ['contest_invitation_closed', 'コンテストの結果が確定したため、作成者に加われません。'],
   ] as const) {
     refusal = code

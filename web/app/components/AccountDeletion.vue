@@ -26,7 +26,7 @@ async function remove() {
     <h3>削除されるもの</h3>
     <ul>
       <li>プロフィール（ユーザーID・アイコン・外部サービス）とログイン情報</li>
-      <li>公開していない問題・記事と、コンテストの下書き</li>
+      <li>公開していない問題・記事と、共同作成者のいないコンテストの下書き</li>
       <li>公開済みの問題・記事の、公開していない編集内容</li>
       <li>お気に入りと通知</li>
       <li>残る問題・記事・コンテストで使っていない画像</li>
@@ -38,7 +38,7 @@ async function remove() {
       <li>提出、コンテストへの参加登録、難易度の投票</li>
       <li>テスターとして担当した問題の記録</li>
     </ul>
-    <p class="note">開催予定または開催中のコンテストがある間は削除できません。今のユーザーIDは、削除後にほかの人が使えるようになります。</p>
+    <p class="note">共同作成者がいるコンテストと下書きは、最初に加わった共同作成者に引き継ぎます。共同作成者のいない開催予定・開催中のコンテストがある間と、公開していない自分の問題が終了前のコンテストに入っている間は、削除できません。今のユーザーIDは、削除後にほかの人が使えるようになります。</p>
     <form @submit.prevent="remove">
       <label for="deletion-confirmation">確認のため、ユーザーID「{{ profile.handle }}」を入力してください</label>
       <input id="deletion-confirmation" v-model="confirmation" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" :disabled="busy">
