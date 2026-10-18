@@ -39,8 +39,11 @@ test('the owner sees co-setters\' problems, issues and renews the link, and remo
     requests.push(route.request().method())
     return route.fulfill({ json: { token: route.request().method() === 'PUT' ? renewed : token } })
   })
-  await page.route(`**/api/my/contests/${id}/setters/*`, route => {
+  let releaseRemoval = () => {}
+  const removal = new Promise<void>(resolve => { releaseRemoval = resolve })
+  await page.route(`**/api/my/contests/${id}/setters/*`, async route => {
     requests.push(`${route.request().method()} ${new URL(route.request().url()).pathname.split('/').pop()}`)
+    await removal
     authors = ['ui_test']
     return route.fulfill({ status: 204 })
   })
@@ -80,7 +83,14 @@ test('the owner sees co-setters\' problems, issues and renews the link, and remo
   let message = ''
   page.once('dialog', dialog => { message = dialog.message(); void dialog.accept() })
   await page.getByRole('button', { name: 'bobを共同作成者から外す', exact: true }).click()
+  // Removing is not issuing a link, so the link button keeps its label and is not busy.
+  const linkButton = page.getByRole('button', { name: 'リンクを作り直す', exact: true })
+  await expect(linkButton).toBeDisabled()
+  await expect(linkButton).not.toHaveAttribute('aria-busy', 'true')
+  releaseRemoval()
   await expect(setters.getByRole('listitem')).toHaveText([/ui_test\s*オーナー/])
+  // The focused button left with its row, so focus moves to the list.
+  await expect(setters).toBeFocused()
   expect(message).toContain('外した人は、このコンテストに参加できなくなります。')
   // Removal renews the link on the server, so the old one disappears from the screen.
   await expect(link).toHaveCount(0)

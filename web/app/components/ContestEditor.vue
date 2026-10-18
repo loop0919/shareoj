@@ -353,7 +353,10 @@ async function removeDraft() {
 const me = computed(() => profile.value?.handle ?? '')
 const setterList = computed(() => authors.value.length ? authors.value : me.value ? [me.value] : [])
 const setterLink = ref('')
-const setterBusy = ref(false)
+// The running setter action, so only link issuance reads 「発行中…」.
+const setterAction = ref<'' | 'link' | 'remove' | 'leave'>('')
+const setterBusy = computed(() => !!setterAction.value)
+const setterListElement = ref<HTMLUListElement>()
 const setterMessage = ref('')
 const setterLinkCopied = ref(false)
 let setterCopiedTimer: ReturnType<typeof setTimeout> | undefined
@@ -376,7 +379,7 @@ async function refreshSetters() {
 }
 async function setterInvitation(renew: boolean) {
   if (!canManageSetters.value || (renew && !window.confirm('招待リンクを作り直しますか？今のリンクは使えなくなります。'))) return
-  setterBusy.value = true; setterMessage.value = ''
+  setterAction.value = 'link'; setterMessage.value = ''
   try {
     // The link belongs to the saved draft, so a contest that was never saved is saved first.
     if (!published.value && !version.value && !await saveDraft()) return
@@ -384,7 +387,7 @@ async function setterInvitation(renew: boolean) {
     setterLink.value = new URL(`/my/contest-invitations/${result.token}`, window.location.origin).href
     if (renew) setterMessage.value = '招待リンクを作り直しました。前のリンクは使えません。'
   } catch (error) { setterMessage.value = setterError(error) }
-  finally { setterBusy.value = false }
+  finally { setterAction.value = '' }
 }
 async function copySetterLink() {
   try {
@@ -397,27 +400,30 @@ async function copySetterLink() {
 }
 async function removeSetter(handle: string) {
   if (!canManageSetters.value || !window.confirm(`${handle}を共同作成者から外しますか？外した人は、このコンテストに参加できなくなります。招待リンクは作り直され、今のリンクは使えなくなります。`)) return
-  setterBusy.value = true; setterMessage.value = ''
+  setterAction.value = 'remove'; setterMessage.value = ''
   try {
     await $fetch(`/api/my/contests/${id.value}/setters/${encodeURIComponent(handle)}`, { method: 'DELETE' })
     authors.value = authors.value.filter(author => author !== handle)
     // Removal renews the link, so the one on screen no longer works.
     setterLink.value = ''
     setterMessage.value = `${handle}を共同作成者から外しました。招待リンクは作り直されました。`
+    // The focused 「外す」 button is gone with its row, so focus stays in the list instead of falling to the page.
+    await nextTick()
+    setterListElement.value?.focus()
     await refreshSetters()
   } catch (error) { setterMessage.value = setterError(error) }
-  finally { setterBusy.value = false }
+  finally { setterAction.value = '' }
 }
 async function leaveContest() {
   if (!canManageSetters.value || !window.confirm('このコンテストの共同作成者から抜けますか？抜けると編集できなくなり、このコンテストに参加することもできません。保存していない変更は失われます。')) return
-  setterBusy.value = true; setterMessage.value = ''
+  setterAction.value = 'leave'; setterMessage.value = ''
   try {
     await $fetch(`/api/my/contests/${id.value}/setters/${encodeURIComponent(me.value)}`, { method: 'DELETE' })
     leaving = true
     await navigateTo('/my?tab=contests')
     showToast('共同作成者から抜けました')
   } catch (error) { setterMessage.value = setterError(error) }
-  finally { setterBusy.value = false }
+  finally { setterAction.value = '' }
 }
 async function save() {
   if (!published.value) return saveDraft()
@@ -578,7 +584,7 @@ async function save() {
             <section v-if="ready || settersOnly" class="management-row setters-row" aria-labelledby="contest-setters-title"><div class="setters">
               <h3 id="contest-setters-title">共同作成者</h3>
               <p>招待リンクから加わった共同作成者は、オーナーと同じように設定の編集、下書きの保存と公開、問題の追加と削除ができます。共同作成者を外すことと下書きの削除は、オーナーだけができます。</p>
-              <ul class="setter-list" aria-label="作成者">
+              <ul ref="setterListElement" class="setter-list" aria-label="作成者" tabindex="-1">
                 <li v-for="(handle, index) in setterList" :key="handle">
                   <span class="setter-name"><UserLink :handle="handle" /><span class="problem-role">{{ index ? '共同作成者' : 'オーナー' }}</span></span>
                   <button v-if="isOwner && index" type="button" class="editor-button" :disabled="!canManageSetters" :aria-label="`${handle}を共同作成者から外す`" @click="removeSetter(handle)">外す</button>
@@ -587,7 +593,7 @@ async function save() {
               </ul>
               <template v-if="setterLink"><label for="setter-link">招待リンク</label><div class="setter-link-field"><input id="setter-link" :value="setterLink" readonly @focus="($event.target as HTMLInputElement).select()"><button type="button" class="editor-button setter-link-copy" :aria-label="setterLinkCopied ? 'コピーしました' : 'リンクをコピー'" :title="setterLinkCopied ? 'コピーしました' : 'リンクをコピー'" @click="copySetterLink"><svg v-if="setterLinkCopied" class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L19 8" /></svg><svg v-else class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V4H4v12h4" /></svg></button></div></template>
               <p v-if="setterMessage" role="status">{{ setterMessage }}</p>
-            </div><button v-if="!ended" type="button" class="editor-button" :disabled="!canManageSetters" :aria-busy="setterBusy" @click="setterInvitation(!!setterLink)">{{ setterBusy ? '発行中…' : setterLink ? 'リンクを作り直す' : 'リンクを発行' }}</button></section>
+            </div><button v-if="!ended" type="button" class="editor-button" :disabled="!canManageSetters" :aria-busy="setterAction === 'link'" @click="setterInvitation(!!setterLink)">{{ setterAction === 'link' ? '発行中…' : setterLink ? 'リンクを作り直す' : 'リンクを発行' }}</button></section>
             <section v-if="!published && version && isOwner" class="management-row"><div><h3>下書きの削除</h3><p>この下書きを削除します。この操作は取り消せません。</p></div><button type="button" class="editor-button danger" :disabled="busy" @click="removeDraft">下書きを削除</button></section>
           </div>
         </section>
