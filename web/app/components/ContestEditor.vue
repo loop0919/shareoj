@@ -19,7 +19,7 @@ const startsAt = ref('')
 // Number inputs hold '' while empty; drafts save that as null.
 const durationMinutes = ref<number | string>(120)
 const penaltyMinutes = ref<number | string>(5)
-// Empty means no standings freeze (ADR 0023).
+// The length of the standings freeze (ADR 0023), used only while the switch is on.
 const freezeMinutes = ref<number | string>('')
 // The switch is off by default; turning it on fills in a starting value so that on never means no freeze.
 const freezeOn = ref(false)
@@ -97,7 +97,7 @@ const issueGuide: Record<string, [string, Section]> = {
 const issueText = (code: string) => issueGuide[code]?.[0] ?? `確認が必要な項目があります（${code}）`
 const sectionNames: Record<Section, string> = { description: 'タイトル・説明', problems: '問題・配点', schedule: '期間・ペナルティ', manage: 'コンテスト管理' }
 const issueSection = (code: string): Section => issueGuide[code]?.[1] ?? 'manage'
-const snapshot = () => JSON.stringify([title.value, description.value, startsAt.value, durationMinutes.value, penaltyMinutes.value, freezeMinutes.value, selected.value])
+const snapshot = () => JSON.stringify([title.value, description.value, startsAt.value, durationMinutes.value, penaltyMinutes.value, freezeOn.value, freezeMinutes.value, selected.value])
 const saved = ref('')
 let leaving = false
 const dirty = computed(() => ready.value && snapshot() !== saved.value)
@@ -311,7 +311,8 @@ function draftBody(): ContestDraft {
   const start = new Date(startsAt.value)
   return {
     title: title.value, description: description.value, startsAt: Number.isFinite(start.getTime()) ? start.toISOString() : null,
-    durationMinutes: integer(durationMinutes.value), penaltyMinutes: integer(penaltyMinutes.value), freezeMinutes: integer(freezeMinutes.value),
+    // With the switch on, a length that is not a whole number goes as 0, so the draft keeps the freeze and lists the issue.
+    durationMinutes: integer(durationMinutes.value), penaltyMinutes: integer(penaltyMinutes.value), freezeMinutes: freezeOn.value ? integer(freezeMinutes.value) ?? 0 : null,
     problems: selected.value.map(p => ({ id: p.id, points: integer(p.points) })),
   }
 }
@@ -450,7 +451,7 @@ async function save() {
   }
   busy.value = true; message.value = ''
   try {
-    await $fetch(`/api/my/contests/${id.value}`, { method: 'PUT', body: { title: title.value, description: description.value, startsAt: start.toISOString(), endsAt: end.toISOString(), penaltyMinutes: penaltyMinutes.value, freezeMinutes: freezeMinutes.value === '' ? null : freezeMinutes.value, version: version.value, problems: selected.value.map(({ id, points }) => ({ id, points })) } })
+    await $fetch(`/api/my/contests/${id.value}`, { method: 'PUT', body: { title: title.value, description: description.value, startsAt: start.toISOString(), endsAt: end.toISOString(), penaltyMinutes: penaltyMinutes.value, freezeMinutes: freezeOn.value ? freezeMinutes.value : null, version: version.value, problems: selected.value.map(({ id, points }) => ({ id, points })) } })
     leaving = true
     await navigateTo(`/contests/${shortId(id.value)}`)
   } catch (error) {

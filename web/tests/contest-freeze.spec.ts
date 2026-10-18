@@ -301,6 +301,40 @@ test('a draft with a freeze opens with the switch on and points to an invalid le
   await expect(page.locator('.readiness-badge')).toHaveText('×公開できません（1 項目）')
 })
 
+test('a draft saved with the switch on and no whole length keeps the freeze and reports it', async ({ page }) => {
+  let draft = draftResult({ freezeMinutes: null })
+  const saved: unknown[] = []
+  await page.route('**/api/my/problems**', route => route.fulfill({ json: { items: [], nextCursor: '' } }))
+  await page.route(`**/api/my/contests/${editorId}/draft`, route => {
+    if (route.request().method() !== 'PUT') return route.fulfill({ json: draft })
+    const body = route.request().postDataJSON()
+    saved.push(body.draft.freezeMinutes)
+    // The server reports a length outside 1 to the contest's length, as it does for any freeze that is not null.
+    const length = body.draft.freezeMinutes
+    draft = { ...draftResult(body.draft, ['start_missing', ...length != null && length < 1 ? ['freeze_invalid'] : []]), version: body.version + 1 }
+    return route.fulfill({ json: draft })
+  })
+  await page.goto(`/my/contests/${shortId(editorId)}`)
+  await page.getByRole('button', { name: '期間・ペナルティ', exact: true }).click()
+  const freeze = page.getByRole('switch', { name: '順位表の凍結を行う', exact: true })
+  const minutes = page.getByLabel('凍結する時間（終了前の分）', { exact: true })
+  await freeze.check()
+  // Neither an empty box nor a fraction is saved as no freeze.
+  await minutes.fill('1.5')
+  await page.getByRole('button', { name: '下書きを保存' }).click()
+  await expect.poll(() => saved).toEqual([0])
+  await minutes.fill('')
+  await page.getByRole('button', { name: '下書きを保存' }).click()
+  await expect.poll(() => saved).toEqual([0, 0])
+  await expect(page.locator('.readiness-badge')).toHaveText('×公開できません（2 項目）')
+  // Reopened later, the draft still has the switch on and names the length to fix.
+  await page.goto(`/my/contests/${shortId(editorId)}?section=manage`)
+  await expect(page.getByRole('list', { name: '足りない項目' })).toContainText('順位表を凍結する時間は、コンテスト時間以内の1分以上の整数で入力するか、凍結をオフにしてください')
+  await page.getByRole('button', { name: '期間・ペナルティ', exact: true }).click()
+  await expect(freeze).toBeChecked()
+  await expect(minutes).toHaveValue('0')
+})
+
 test('a published contest sends freezeMinutes as a number or null and refuses a freeze longer than the contest', async ({ page }) => {
   const contestId = id
   let contest: Contest = {
@@ -343,7 +377,7 @@ test('a published contest sends freezeMinutes as a number or null and refuses a 
   await freeze.uncheck()
   await save.click()
   await expect(page).toHaveURL(`/contests/${shortId(contestId)}`)
-  // Always sent, since the API reads a missing freezeMinutes as no freeze.
+  // Always sent: the API keeps the stored freeze when the field is missing.
   expect(bodies.map(body => body.freezeMinutes)).toEqual([45, null])
   expect(bodies.every(body => 'freezeMinutes' in body)).toBe(true)
   await open()
