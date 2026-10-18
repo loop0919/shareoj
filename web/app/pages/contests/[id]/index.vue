@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { submissionUsage } from '~/utils/submission-usage'
-import { contestDate, contestProblemPath, contestStatus, contestView, contestViews, problemLabel, type Standing } from '~~/shared/types/contest'
+import { contestAuthors, contestDate, contestProblemPath, contestStatus, contestView, contestViews, problemLabel, type Standing } from '~~/shared/types/contest'
 import { fullId, shortId } from '~~/shared/utils/short-id'
 import type { Submission } from '~~/shared/types/submission'
 import type { UserEditorial } from '~~/shared/types/post'
@@ -86,8 +86,9 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <div class="contest-heading">
         <h1>{{ contest.title }}</h1>
         <NuxtLink v-if="contest.canEdit" class="editor-button contest-edit" :to="`/my/contests/${shortId(contest.id)}`"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4 5 5M4 20l4-1L20 7a2 2 0 0 0-4-4L4 15Z" /></svg>コンテストを編集</NuxtLink>
+        <NuxtLink v-else-if="contest.setter" class="editor-button contest-edit" :to="`/my/contests/${shortId(contest.id)}?section=manage`"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3" /><path d="M3 20a6 6 0 0 1 12 0M16 4a3 3 0 0 1 0 6M21 20a6 6 0 0 0-4-5.7" /></svg>共同作成者を管理</NuxtLink>
       </div>
-      <div class="problem-summary"><div class="problem-meta muted"><span class="contest-status" :data-status="contest.status">{{ contestStatus[contest.status] }}</span><p>作成者 <UserLink :handle="contest.author" /></p><p v-if="contest.problemAuthors?.length">作問者 <template v-for="(author, index) in contest.problemAuthors" :key="author"><span v-if="index">、</span><UserLink :handle="author" /></template></p><p v-if="contest.testers?.length">テスター <template v-for="(tester, index) in contest.testers" :key="tester"><span v-if="index">、</span><UserLink :handle="tester" /></template></p></div></div>
+      <div class="problem-summary"><div class="problem-meta muted"><span class="contest-status" :data-status="contest.status">{{ contestStatus[contest.status] }}</span><p>作成者 <template v-for="(author, index) in contestAuthors(contest)" :key="author"><span v-if="index">、</span><UserLink :handle="author" /></template></p><p v-if="contest.problemAuthors?.length">作問者 <template v-for="(author, index) in contest.problemAuthors" :key="author"><span v-if="index">、</span><UserLink :handle="author" /></template></p><p v-if="contest.testers?.length">テスター <template v-for="(tester, index) in contest.testers" :key="tester"><span v-if="index">、</span><UserLink :handle="tester" /></template></p></div></div>
       <dl class="limits contest-schedule"><div><dt>開始日時</dt><dd><time :datetime="contest.startsAt">{{ contestDate(contest.startsAt) }}</time></dd></div><div><dt>終了日時</dt><dd><time :datetime="contest.endsAt">{{ contestDate(contest.endsAt) }}</time></dd></div></dl>
       <p class="schedule-timezone muted">日時は日本時間で表示しています。</p>
       <p class="contest-scoring muted">誤答ペナルティ {{ contest.penaltyMinutes }} 分 · 部分点なし</p>
@@ -106,7 +107,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
     </section>
     <section v-if="activeView === 'standings'" id="standings" class="contest-section" aria-labelledby="standings-title">
       <header class="contest-section-heading"><h1 id="standings-title">公式順位表</h1><RefreshButton label="今すぐ更新" :busy="updating" :disabled="updating" @click="update" /></header>
-      <p v-if="user && !contest.official" class="notice">作成者・テスターとしての提出は公式順位の対象外です。</p>
+      <p v-if="user && !contest.official" class="notice">{{ contest.staff === false ? 'このコンテストのスタッフを務めたため、提出は公式順位の対象外です。' : 'スタッフ（作成者・作問者・テスター）としての提出は公式順位の対象外です。' }}</p>
       <p v-if="standingsError" class="notice notice-error" role="alert">順位表を取得できませんでした。</p>
       <p v-if="!standingsError && !standings?.length" class="contest-empty muted">参加者はまだいません。</p>
       <div v-if="!standingsError && contest.problems.length" class="content-table-scroll" role="region" aria-label="順位表のスクロール領域" tabindex="0" :aria-busy="updating">
@@ -138,7 +139,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
     </section>
     <section v-if="activeView === 'submissions'" id="submissions" class="contest-section" aria-labelledby="submissions-title">
       <h1 id="submissions-title">提出一覧</h1>
-      <p v-if="!canViewSubmissions" class="notice">提出一覧と提出コードはコンテスト終了後に公開されます。終了前はコンテストセッターとテスターが閲覧できます。</p>
+      <p v-if="!canViewSubmissions" class="notice">提出一覧と提出コードはコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。</p>
       <template v-else><p class="muted">提出コードを閲覧できます。練習提出も掲載します。</p>
       <p v-if="submissionsError" class="notice notice-error" role="alert">{{ submissionsError }}</p>
       <LoadingSpinner v-if="!submissions && !submissionsError" label="提出一覧を読み込み中" />
@@ -147,7 +148,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
     </section>
     <section v-if="activeView === 'editorials'" id="editorials" class="contest-section" aria-labelledby="editorials-title">
       <h1 id="editorials-title">解説一覧</h1>
-      <p v-if="contest.status !== 'ended'" class="notice">解説はコンテスト終了後に公開されます。終了前はコンテストセッターと各問題のテスターが閲覧できます。</p>
+      <p v-if="contest.status !== 'ended'" class="notice">解説はコンテスト終了後に公開されます。終了前は作成者と、各問題の作者・テスターが閲覧できます。</p>
       <p v-if="userEditorialsError" class="notice notice-error" role="alert">{{ userEditorialsError }}</p>
       <LoadingSpinner v-else-if="contest.status === 'ended' && !userEditorials" label="ユーザー解説を読み込み中" />
       <div v-if="contest.problems.length" class="content-table-scroll" role="region" aria-label="解説一覧のスクロール領域" tabindex="0">

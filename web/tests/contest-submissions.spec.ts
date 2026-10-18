@@ -36,7 +36,7 @@ for (const allowed of [true, false]) {
       await expect(page.getByRole('textbox', { name: 'ソースコード', exact: true })).toHaveText(item.source)
       await page.getByRole('navigation', { name: '提出メニュー' }).getByRole('link', { name: '問題', exact: true }).click()
     } else {
-      await expect(page.getByText('提出一覧と提出コードはコンテスト終了後に公開されます。終了前はコンテストセッターとテスターが閲覧できます。')).toBeVisible()
+      await expect(page.getByText('提出一覧と提出コードはコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。')).toBeVisible()
       await expect(page.locator('tbody')).toHaveCount(0)
       await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '問題', exact: true }).click()
       await page.getByRole('link', { name: 'A + B', exact: true }).click()
@@ -49,7 +49,7 @@ for (const allowed of [true, false]) {
       await page.getByRole('link', { name: '詳細', exact: true }).click()
       await expect(page.getByRole('textbox', { name: 'ソースコード', exact: true })).toHaveText(item.source)
     } else {
-      await expect(page.getByText('すべての提出はコンテスト終了後に公開されます。終了前はコンテストセッターとテスターが閲覧できます。')).toBeVisible()
+      await expect(page.getByText('すべての提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。')).toBeVisible()
       await expect(page.locator('tbody')).toHaveCount(0)
     }
   })

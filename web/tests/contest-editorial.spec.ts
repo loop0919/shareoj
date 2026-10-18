@@ -1,16 +1,22 @@
 import { expect, test } from '@playwright/test'
 import { shortId } from '../shared/utils/short-id'
 
-// The fixture contest is running. Its problem is by alice and tested by bob and carol.
+// The fixture contest is running. The server tells each viewer whether the editorial is readable before the end,
+// so co-setters get the tab as well as the problem's author and testers.
 const path = `/contests/${shortId('88888888-8888-4888-8888-888888888888')}/A`
 
-for (const [handle, visible] of [['alice', true], ['bob', true], ['dave', false]] as const) {
-  test(`running contest editorial tab for ${handle}: ${visible}`, async ({ page }) => {
-    await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: handle } } }))
-    await page.route('**/api/my/profile', route => route.fulfill({ json: { profile: { handle, avatar: '', version: 1, createdAt: '2026-09-01T00:00:00Z' } } }))
-    const profile = page.waitForResponse('**/api/my/profile')
+for (const visible of [true, false]) {
+  test(`running contest editorial tab follows the server: ${visible}`, async ({ page }) => {
+    await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'viewer' } } }))
+    await page.route('**/api/my/profile', route => route.fulfill({ json: { profile: { handle: 'viewer', avatar: '', version: 1, createdAt: '2026-09-01T00:00:00Z' } } }))
+    await page.route('**/api/contests/88888888-8888-4888-8888-888888888888/problems/**', async route => {
+      const response = await route.fetch()
+      await route.fulfill({ response, json: { ...await response.json(), canReadEditorial: visible } })
+    })
+    // Logging in refetches the problem, so the menu follows this viewer's answer.
+    const refreshed = page.waitForResponse('**/api/contests/88888888-8888-4888-8888-888888888888/problems/**')
     await page.goto(path)
-    await profile
+    await refreshed
     const menu = page.getByRole('navigation', { name: '問題メニュー' })
     if (!visible) {
       await expect(menu.getByRole('link')).toHaveText(['問題文', '自分の提出', 'すべての提出'])
@@ -37,7 +43,7 @@ for (const status of ['running', 'ended'] as const) {
       const path = new URL(route.request().url()).pathname
       if (path.endsWith('/standings')) return route.fulfill({ json: [] })
       if (path.endsWith('/editorials')) return route.fulfill({ json: { items: [{ problemId: a, id: '44444444-4444-4444-8444-444444444444', title: '別解の記事', author: 'bob', publishedAt: '2026-09-15T15:00:00Z', isOperator: false }] } })
-      if (path.includes('/problems/')) return route.fulfill({ json: { id: a, title: 'A + B', author: 'setter', testers: [], markdown: '足し算', editorial: '## 解説\n\n足すだけです。', timeLimitMs: '2000', memoryLimitMb: '512' } })
+      if (path.includes('/problems/')) return route.fulfill({ json: { id: a, title: 'A + B', author: 'setter', testers: [], markdown: '足し算', editorial: '## 解説\n\n足すだけです。', timeLimitMs: '2000', memoryLimitMb: '512', canReadEditorial: true } })
       return route.fulfill({ json: contest })
     })
     // The server render reads the fixture API, so refresh in the browser to use the routed contest.

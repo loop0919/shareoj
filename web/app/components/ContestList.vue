@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { contestDate, contestStatus, type ContestDraftList, type ContestList } from '~~/shared/types/contest'
+import { contestAuthors, contestDate, contestStatus, type ContestDraftList, type ContestList } from '~~/shared/types/contest'
 import { shortId } from '~~/shared/utils/short-id'
 const props = defineProps<{ mine?: boolean }>()
 const endpoint = props.mine ? '/api/my/contests' : '/api/contests'
 const offset = ref(0)
 const { data, error, status } = await useFetch<ContestList>(endpoint, { query: { offset }, server: !props.mine })
-// Drafts are private, so only the author's list asks for them.
+// Drafts are private, so only the setters' list asks for them; it includes drafts shared by other owners.
 const draftOffset = ref(0)
 const { data: drafts, status: draftStatus } = await useFetch<ContestDraftList>('/api/my/contests/drafts', { query: { offset: draftOffset }, server: false, immediate: props.mine })
 
@@ -31,8 +31,8 @@ const complete = computed(() => !offset.value && !draftOffset.value && !!data.va
       <template v-if="mine && filter !== 'published' && drafts && (drafts.items.length || draftOffset)">
         <h3 v-if="!filter" class="contest-list-heading">下書き（未公開）</h3>
         <div class="content-table-scroll" role="region" aria-label="コンテストの下書き" tabindex="0" :aria-busy="draftStatus === 'pending'">
-          <table class="content-table"><thead><tr><th scope="col">下書き</th><th scope="col">開始予定（日本時間）</th><th scope="col">更新（日本時間）</th><th scope="col">操作</th></tr></thead>
-            <tbody><tr v-for="d in drafts.items" :key="d.id"><th scope="row"><NuxtLink :to="`/my/contests/${shortId(d.id)}`">{{ d.title.trim() || '無題のコンテスト' }}</NuxtLink></th><td>{{ d.startsAt ? contestDate(d.startsAt) : '未設定' }}</td><td>{{ contestDate(d.updatedAt) }}</td><td><NuxtLink class="editor-button edit-link" :to="`/my/contests/${shortId(d.id)}`" :aria-label="`${d.title.trim() || '無題のコンテスト'}を編集`" title="編集"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6Z" /><path d="m13 6 5 5" /></svg></NuxtLink></td></tr></tbody>
+          <table class="content-table"><thead><tr><th scope="col">下書き</th><th scope="col">開始予定（日本時間）</th><th scope="col">更新（日本時間）</th><th scope="col">オーナー</th><th scope="col">操作</th></tr></thead>
+            <tbody><tr v-for="d in drafts.items" :key="d.id"><th scope="row"><NuxtLink :to="`/my/contests/${shortId(d.id)}`">{{ d.title.trim() || '無題のコンテスト' }}</NuxtLink></th><td>{{ d.startsAt ? contestDate(d.startsAt) : '未設定' }}</td><td>{{ contestDate(d.updatedAt) }}</td><td><UserLink :handle="d.author" /></td><td><NuxtLink class="editor-button edit-link" :to="`/my/contests/${shortId(d.id)}`" :aria-label="`${d.title.trim() || '無題のコンテスト'}を編集`" title="編集"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6Z" /><path d="m13 6 5 5" /></svg></NuxtLink></td></tr></tbody>
           </table>
         </div>
         <ContentPagination v-if="drafts.hasMore || draftOffset" :index="draftOffset / 50" :has-next="drafts.hasMore" :loading="draftStatus === 'pending'" @move="direction => draftOffset += direction * 50" />
@@ -44,7 +44,7 @@ const complete = computed(() => !offset.value && !draftOffset.value && !!data.va
         <EmptyState v-else-if="!data.items.length" kind="contest" title="コンテストはまだありません。" :description="mine ? '「新規コンテスト」から作成すると、ここに表示されます。' : ''" />
         <div v-else class="content-table-scroll" role="region" aria-label="コンテスト一覧" tabindex="0" :aria-busy="status === 'pending'">
           <table class="content-table"><thead><tr><th scope="col">コンテスト</th><th scope="col">状態</th><th scope="col">開始（日本時間）</th><th scope="col">終了（日本時間）</th><th scope="col">作成者</th><th v-if="mine" scope="col">操作</th></tr></thead>
-            <tbody><tr v-for="c in data.items" :key="c.id"><th scope="row"><NuxtLink :to="`/contests/${shortId(c.id)}`">{{ c.title }}</NuxtLink></th><td>{{ contestStatus[c.status] }}</td><td>{{ contestDate(c.startsAt) }}</td><td>{{ contestDate(c.endsAt) }}</td><td><UserLink :handle="c.author" /></td><td v-if="mine"><NuxtLink v-if="c.status === 'scheduled'" class="editor-button edit-link" :to="`/my/contests/${shortId(c.id)}`" :aria-label="`${c.title}を編集`" title="編集"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6Z" /><path d="m13 6 5 5" /></svg></NuxtLink><span v-else class="muted">—</span></td></tr></tbody>
+            <tbody><tr v-for="c in data.items" :key="c.id"><th scope="row"><NuxtLink :to="`/contests/${shortId(c.id)}`">{{ c.title }}</NuxtLink></th><td>{{ contestStatus[c.status] }}</td><td>{{ contestDate(c.startsAt) }}</td><td>{{ contestDate(c.endsAt) }}</td><td><template v-for="(author, index) in contestAuthors(c)" :key="author"><span v-if="index">、</span><UserLink :handle="author" /></template></td><td v-if="mine"><NuxtLink v-if="c.status === 'scheduled'" class="editor-button edit-link" :to="`/my/contests/${shortId(c.id)}`" :aria-label="`${c.title}を編集`" title="編集"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6Z" /><path d="m13 6 5 5" /></svg></NuxtLink><span v-else class="muted">—</span></td></tr></tbody>
           </table>
         </div>
         <ContentPagination v-if="data.items.length || offset" :index="offset / 50" :has-next="data.hasMore" :loading="status === 'pending'" @move="direction => offset += direction * 50" />
