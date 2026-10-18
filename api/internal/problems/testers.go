@@ -9,6 +9,9 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// ErrParticipantLocked keeps a contest participant off the staff until the results are final (ADR 0022).
+var ErrParticipantLocked = errors.New("contest participant cannot join the staff yet")
+
 type TesterInvitation struct {
 	ID     string `json:"id"`
 	Title  string `json:"title"`
@@ -36,6 +39,14 @@ func (s *Store) TesterInvitation(ctx context.Context, actor, token string, accep
 		return TesterInvitation{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	// Lock the problem's contest before the problem, as contest saves do, so registration waits for the check below.
+	lockContest := `SELECT c.id FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id
+ WHERE cp.problem_id=(SELECT problem_id FROM problem_tester_invitations WHERE token=$1) FOR NO KEY UPDATE OF c`
+	if accept {
+		if _, err = tx.Exec(ctx, lockContest, token); err != nil {
+			return TesterInvitation{}, err
+		}
+	}
 	var invitation TesterInvitation
 	err = tx.QueryRow(ctx, `SELECT p.id,p.draft->>'title',u.handle,can_manage_problem(p.id,$2)
  FROM problem_tester_invitations i JOIN problem_drafts p ON p.id=i.problem_id
@@ -47,6 +58,20 @@ func (s *Store) TesterInvitation(ctx context.Context, actor, token string, accep
 		return invitation, err
 	}
 	if accept && !invitation.Joined {
+		// Lock again in case the problem entered a contest in between; with both locks held, its contest stays.
+		if _, err = tx.Exec(ctx, lockContest, token); err != nil {
+			return invitation, err
+		}
+		var participant bool
+		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id
+ JOIN contest_participants p ON p.contest_id=c.id
+ WHERE cp.problem_id=$1 AND p.owner_id=$2 AND NOT COALESCE(contest_results_final_at(c)<=clock_timestamp(),false))`, invitation.ID, actor).Scan(&participant)
+		if err != nil {
+			return invitation, err
+		}
+		if participant {
+			return invitation, ErrParticipantLocked
+		}
 		_, err = tx.Exec(ctx, `INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, invitation.ID, actor)
 		if err != nil {
 			return invitation, err

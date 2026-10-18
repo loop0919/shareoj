@@ -27,6 +27,9 @@ type Problem struct {
 	TimeLimitMS   string `json:"timeLimitMs,omitempty"`
 	MemoryLimitMB string `json:"memoryLimitMb,omitempty"`
 }
+
+// Official means the viewer would count in the standings.
+// Staff means the viewer reviews every submission and never competes (ADR 0022).
 type Contest struct {
 	ID                 string    `json:"id"`
 	Owner              string    `json:"-"`
@@ -44,6 +47,7 @@ type Contest struct {
 	CanViewSubmissions bool      `json:"canViewSubmissions"`
 	Participating      bool      `json:"participating"`
 	Official           bool      `json:"official"`
+	Staff              bool      `json:"staff"`
 	Problems           []Problem `json:"problems"`
 }
 type Input struct {
@@ -71,7 +75,7 @@ func scan(row pgx.Row) (Contest, error) {
 
 func (s *Store) List(ctx context.Context, owner string, offset int) ([]Contest, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT `+fields+` FROM contests c JOIN user_profiles u ON u.owner_id=c.owner_id
- WHERE ($1='' OR c.owner_id=$1) ORDER BY c.starts_at DESC,c.created_at DESC,c.id DESC LIMIT 51 OFFSET $2`, owner, offset)
+ WHERE ($1='' OR contest_setter(c.id,$1)) ORDER BY c.starts_at DESC,c.created_at DESC,c.id DESC LIMIT 51 OFFSET $2`, owner, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -89,9 +93,8 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
 	if err != nil {
 		return c, err
 	}
-	c.CanEdit = viewer == c.Owner && c.Status == "scheduled"
-	err = tx.QueryRow(ctx, `SELECT $2<>'' AND $2<>c.owner_id AND NOT EXISTS (
- SELECT 1 FROM contest_problems cp JOIN problem_testers t ON t.problem_id=cp.problem_id WHERE cp.contest_id=c.id AND t.owner_id=$2),
+	var setter, final bool
+	err = tx.QueryRow(ctx, `SELECT contest_setter(c.id,$2),contest_staff(c.id,$2),$2<>'' AND contest_competitor(c,$2),contest_results_final(c),
  EXISTS(SELECT 1 FROM contest_participants p WHERE p.contest_id=c.id AND p.owner_id=$2),
  COALESCE((SELECT array_agg(DISTINCT u.handle ORDER BY u.handle)
   FROM contest_problems cp JOIN problem_drafts d ON d.id=cp.problem_id JOIN user_profiles u ON u.owner_id=d.owner_id
@@ -99,11 +102,12 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
  COALESCE((SELECT array_agg(DISTINCT u.handle ORDER BY u.handle)
   FROM contest_problems cp JOIN problem_testers t ON t.problem_id=cp.problem_id JOIN user_profiles u ON u.owner_id=t.owner_id
   WHERE cp.contest_id=c.id), ARRAY[]::text[])
- FROM contests c WHERE c.id=$1`, id, viewer).Scan(&c.Official, &c.Participating, &c.ProblemAuthors, &c.Testers)
+ FROM contests c WHERE c.id=$1`, id, viewer).Scan(&setter, &c.Staff, &c.Official, &final, &c.Participating, &c.ProblemAuthors, &c.Testers)
 	if err != nil {
 		return c, err
 	}
-	c.CanViewSubmissions = c.Status == "ended" || (viewer != "" && !c.Official)
+	c.CanEdit = setter && c.Status == "scheduled"
+	c.CanViewSubmissions = final || c.Staff
 	rows, err := tx.Query(ctx, `SELECT cp.problem_id,cp.points,cp.draft->>'title',cp.draft->>'timeLimitMs',cp.draft->>'memoryLimitMb',
  EXISTS(SELECT 1 FROM submissions s WHERE s.contest_id=cp.contest_id AND s.problem_id=cp.problem_id
   AND s.owner_id=$3 AND s.status='DONE' AND s.result->>'verdict'='AC'
@@ -111,11 +115,11 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
   AND NOT COALESCE((s.job->>'generate')::boolean,false)
   AND NOT COALESCE((s.job->>'validate')::boolean,false)
   AND s.created_at>=$4),
- ($2 OR $3=$5 OR d.owner_id=$3 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3)),
- CASE WHEN ($6 OR $3=$5 OR d.owner_id=$3 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3))
+ ($2 OR contest_problem_access(cp.contest_id,cp.problem_id,$3)),
+ CASE WHEN ($5 OR contest_problem_access(cp.contest_id,cp.problem_id,$3))
   AND NOT COALESCE(statement_timestamp()<featured_reveal_at(d.id),false) THEN COALESCE(cp.draft->>'editorial','')<>'' END
  FROM contest_problems cp JOIN problem_drafts d ON d.id=cp.problem_id
- WHERE cp.contest_id=$1 ORDER BY cp.position`, id, c.Status != "scheduled", viewer, c.StartsAt, c.Owner, c.Status == "ended")
+ WHERE cp.contest_id=$1 ORDER BY cp.position`, id, c.Status != "scheduled", viewer, c.StartsAt, c.Status == "ended")
 	if err != nil {
 		return c, err
 	}
@@ -165,7 +169,7 @@ func save(ctx context.Context, tx pgx.Tx, owner, id string, in Input, policy Jud
 	} else {
 		// Serialize schedule edits and release against the contest row.
 		var current int64
-		err = tx.QueryRow(ctx, `SELECT version FROM contests WHERE id=$1 AND owner_id=$2 FOR UPDATE`, id, owner).Scan(&current)
+		err = tx.QueryRow(ctx, `SELECT version FROM contests WHERE id=$1 AND contest_setter(id,$2) FOR UPDATE`, id, owner).Scan(&current)
 		if err != nil {
 			return err
 		}
@@ -173,7 +177,7 @@ func save(ctx context.Context, tx pgx.Tx, owner, id string, in Input, policy Jud
 			return ErrConflict
 		}
 		tag, e := tx.Exec(ctx, `UPDATE contests SET title=$3,description=$4,starts_at=$5,ends_at=$6,penalty_minutes=$7,version=version+1
-  WHERE id=$1 AND owner_id=$2 AND starts_at>clock_timestamp() AND $5>clock_timestamp()`, id, owner, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes)
+  WHERE id=$1 AND contest_setter(id,$2) AND starts_at>clock_timestamp() AND $5>clock_timestamp()`, id, owner, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes)
 		err = e
 		if err == nil && tag.RowsAffected() != 1 {
 			return ErrConflict
@@ -221,6 +225,20 @@ func save(ctx context.Context, tx pgx.Tx, owner, id string, in Input, policy Jud
 	}
 	if applied {
 		return ErrConflict
+	}
+	joined, err := participantProblem(ctx, tx, id, ids)
+	if err != nil {
+		return err
+	}
+	if joined {
+		return ErrConflict
+	}
+	// The author and testers of a removed problem have seen it, so they stay out of the contest.
+	if _, err = tx.Exec(ctx, `INSERT INTO contest_exclusions(contest_id,owner_id)
+ SELECT cp.contest_id,x.owner_id FROM contest_problems cp JOIN problem_drafts d ON d.id=cp.problem_id
+ CROSS JOIN LATERAL (SELECT d.owner_id UNION SELECT t.owner_id FROM problem_testers t WHERE t.problem_id=cp.problem_id) x
+ WHERE cp.contest_id=$1 AND cp.problem_id<>ALL($2::uuid[]) ON CONFLICT DO NOTHING`, id, ids); err != nil {
+		return err
 	}
 	if _, err = tx.Exec(ctx, `DELETE FROM contest_problems WHERE contest_id=$1`, id); err != nil {
 		return err
@@ -283,9 +301,9 @@ func (s *Store) Problem(ctx context.Context, id, pid, viewer string) (problems.P
 	var raw []byte
 	var editorial bool
 	err := s.Pool.QueryRow(ctx, `SELECT cp.problem_id,cp.draft,u.handle,c.ends_at,featured_reveal_at(d.id),COALESCE(statement_timestamp()<featured_reveal_at(d.id),false),
- (statement_timestamp()>=c.ends_at OR c.owner_id=$3 OR d.owner_id=$3 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3))
+ (statement_timestamp()>=c.ends_at OR contest_problem_access(c.id,cp.problem_id,$3))
  FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id JOIN problem_drafts d ON d.id=cp.problem_id JOIN user_profiles u ON u.owner_id=c.owner_id
- WHERE c.id=$1 AND cp.problem_id=$2 AND (statement_timestamp()>=c.starts_at OR c.owner_id=$3 OR d.owner_id=$3 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3))`, id, pid, viewer).Scan(&p.ID, &raw, &p.Author, &p.PublishedAt, &p.EditorialRevealAt, &p.EditorialHidden, &editorial)
+ WHERE c.id=$1 AND cp.problem_id=$2 AND (statement_timestamp()>=c.starts_at OR contest_problem_access(c.id,cp.problem_id,$3))`, id, pid, viewer).Scan(&p.ID, &raw, &p.Author, &p.PublishedAt, &p.EditorialRevealAt, &p.EditorialHidden, &editorial)
 	if err != nil {
 		return p, err
 	}

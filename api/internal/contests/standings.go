@@ -95,25 +95,28 @@ func (s *Store) Standings(ctx context.Context, id string) ([]Standing, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT u.handle FROM contest_participants p
+	// Staff and former staff are left out. A participant who became a tester after the results were final keeps the final rank.
+	rows, err := s.Pool.Query(ctx, `SELECT p.owner_id,u.handle FROM contest_participants p
  JOIN contests c ON c.id=p.contest_id JOIN user_profiles u ON u.owner_id=p.owner_id
- WHERE c.id=$1 AND p.owner_id<>c.owner_id
- AND NOT EXISTS(SELECT 1 FROM contest_problems cp JOIN problem_testers t ON t.problem_id=cp.problem_id WHERE cp.contest_id=c.id AND t.owner_id=p.owner_id)`, id)
+ WHERE c.id=$1 AND contest_competitor(c,p.owner_id)`, id)
 	if err != nil {
 		return nil, err
 	}
-	participants, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	var owners, participants []string
+	var owner, handle string
+	_, err = pgx.ForEachRow(rows, []any{&owner, &handle}, func() error {
+		owners, participants = append(owners, owner), append(participants, handle)
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
 	rows, err = s.Pool.Query(ctx, `SELECT u.handle,s.problem_id,COALESCE(s.result->>'verdict',''),cp.points,s.created_at
  FROM submissions s JOIN contests c ON c.id=s.contest_id JOIN contest_problems cp ON cp.contest_id=c.id AND cp.problem_id=s.problem_id
  JOIN user_profiles u ON u.owner_id=s.owner_id
- JOIN contest_participants p ON p.contest_id=c.id AND p.owner_id=s.owner_id
- WHERE c.id=$1 AND s.created_at>=c.starts_at AND s.created_at<c.ends_at AND s.owner_id<>c.owner_id
+ WHERE c.id=$1 AND s.owner_id=ANY($2::text[]) AND s.created_at>=c.starts_at AND s.created_at<c.ends_at
  AND NOT COALESCE((s.job->>'easyTest')::boolean,false)
- AND NOT EXISTS(SELECT 1 FROM contest_problems other JOIN problem_testers t ON t.problem_id=other.problem_id WHERE other.contest_id=c.id AND t.owner_id=s.owner_id)
- ORDER BY s.created_at,s.id`, id)
+ ORDER BY s.created_at,s.id`, id, owners)
 	if err != nil {
 		return nil, err
 	}

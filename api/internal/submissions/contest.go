@@ -22,17 +22,14 @@ func publicSubmission(s Submission) Submission {
 	return s
 }
 
-// A tester on any problem can review submissions throughout that contest.
-const contestStaff = `(c.owner_id=$3 OR EXISTS (
- SELECT 1 FROM contest_problems cp JOIN problem_testers t ON t.problem_id=cp.problem_id
- WHERE cp.contest_id=c.id AND t.owner_id=$3))`
-
+// Staff, including the author and testers of any problem, review submissions throughout the contest.
+// The viewer's role is a subquery so that it is checked once, not for every row.
 const contestPublic = `NOT COALESCE((job->>'easyTest')::boolean,false)
  AND NOT COALESCE((job->>'generate')::boolean,false)
  AND NOT COALESCE((job->>'validate')::boolean,false)
  AND EXISTS(SELECT 1 FROM contests c WHERE c.id=$1 AND (
-  (contest_id=c.id AND (` + contestStaff + ` OR (statement_timestamp()>=c.ends_at AND submissions.created_at>=c.starts_at)))
-  OR (contest_id IS NULL AND ` + contestStaff + ` AND EXISTS(
+  (contest_id=c.id AND (contest_submission_public(c,submissions.created_at) OR (SELECT contest_staff($1::uuid,$3))))
+  OR (contest_id IS NULL AND (SELECT contest_staff($1::uuid,$3)) AND EXISTS(
    SELECT 1 FROM contest_problems cp WHERE cp.contest_id=c.id AND cp.problem_id=submissions.problem_id))))
  AND (owner_id=$3 OR COALESCE(featured_reveal_at(problem_id),'-infinity')<=statement_timestamp())`
 
@@ -48,9 +45,7 @@ type ContestSubmissionList struct {
 
 func (s *Store) ContestList(ctx context.Context, contestID, viewer string, offset int) (ContestSubmissionList, error) {
 	var allowed bool
-	err := s.Pool.QueryRow(ctx, `SELECT statement_timestamp()>=c.ends_at OR c.owner_id=$2 OR EXISTS (
- SELECT 1 FROM contest_problems cp JOIN problem_testers t ON t.problem_id=cp.problem_id
- WHERE cp.contest_id=c.id AND t.owner_id=$2) FROM contests c WHERE c.id=$1`, contestID, viewer).Scan(&allowed)
+	err := s.Pool.QueryRow(ctx, `SELECT contest_results_final(c) OR contest_staff(c.id,$2) FROM contests c WHERE c.id=$1`, contestID, viewer).Scan(&allowed)
 	if err != nil {
 		return ContestSubmissionList{}, err
 	}

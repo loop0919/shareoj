@@ -228,6 +228,8 @@ func problemError(w http.ResponseWriter, err error) {
 		authError(w, 409, "featured_limit")
 	case errors.Is(err, problems.ErrContestLocked):
 		authError(w, 409, "contest_problem_locked")
+	case errors.Is(err, problems.ErrParticipantLocked):
+		authError(w, 409, "contest_participant_locked")
 	case errors.Is(err, problems.ErrNotFound):
 		authError(w, 404, "problem_not_found")
 	case errors.Is(err, problems.ErrConflict):

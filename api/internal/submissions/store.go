@@ -168,9 +168,9 @@ func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) 
 			return Submission{}, err
 		}
 		var eligible bool
-		err = tx.QueryRow(ctx, `SELECT clock_timestamp()>=c.ends_at OR c.owner_id=$2
-   OR EXISTS(SELECT 1 FROM contest_problems cp JOIN problem_testers t ON t.problem_id=cp.problem_id WHERE cp.contest_id=c.id AND t.owner_id=$2)
-   OR EXISTS(SELECT 1 FROM contest_participants p WHERE p.contest_id=c.id AND p.owner_id=$2)
+		// Former staff stay out even if they registered before leaving the staff.
+		err = tx.QueryRow(ctx, `SELECT clock_timestamp()>=c.ends_at OR contest_staff(c.id,$2)
+   OR (EXISTS(SELECT 1 FROM contest_participants p WHERE p.contest_id=c.id AND p.owner_id=$2) AND contest_competitor(c,$2))
    FROM contests c WHERE c.id=$1`, contestID, owner).Scan(&eligible)
 		if err != nil {
 			return Submission{}, err
@@ -193,7 +193,7 @@ func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) 
     UNION ALL
     SELECT cp.problem_id,cp.draft,cp.problem_version FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id CROSS JOIN moment
     WHERE $9<>'' AND c.id=NULLIF($9,'')::uuid AND cp.problem_id=$3 AND
-    (moment.now>=c.starts_at OR c.owner_id=$2 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$2))
+    (moment.now>=c.starts_at OR contest_problem_access(c.id,cp.problem_id,$2))
   ) problem CROSS JOIN moment
   CROSS JOIN LATERAL (
     SELECT COALESCE(jsonb_agg(c ORDER BY ordinal), '[]'::jsonb) AS selected_cases

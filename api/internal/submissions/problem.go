@@ -8,17 +8,18 @@ import (
 // Staff can review ordinary draft submissions from the contest problem page.
 // Public views still hide draft runs and ongoing contests.
 // The author and testers also review a featured problem's submissions before they unlock.
+// Roles in the requested contest are subqueries so that they are checked once, not for every row.
 const problemSubmissionVisible = `problem_id=$1 AND ($2='' OR contest_id=NULLIF($2,'')::uuid OR
- (contest_id IS NULL AND EXISTS(SELECT 1 FROM contests c WHERE c.id=NULLIF($2,'')::uuid AND ` + contestStaff + `)))
+ (contest_id IS NULL AND (SELECT contest_staff(NULLIF($2,'')::uuid,$3))))
  AND NOT COALESCE((job->>'easyTest')::boolean,false)
  AND NOT COALESCE((job->>'generate')::boolean,false)
  AND NOT COALESCE((job->>'validate')::boolean,false)
  AND (($4 AND owner_id=$3) OR (NOT $4 AND (
   (contest_id IS NULL AND EXISTS(SELECT 1 FROM problem_drafts p WHERE p.id=problem_id
-   AND (can_manage_problem(p.id,$3) OR ($2<>'' AND EXISTS(SELECT 1 FROM contests c WHERE c.id=NULLIF($2,'')::uuid AND ` + contestStaff + `))
+   AND (can_manage_problem(p.id,$3) OR (SELECT contest_staff(NULLIF($2,'')::uuid,$3))
     OR (p.published_draft IS NOT NULL AND NOT COALESCE((submissions.job->>'privateDraft')::boolean,true)))))
   OR EXISTS(SELECT 1 FROM contests c WHERE c.id=contest_id
-   AND (` + contestStaff + ` OR (statement_timestamp()>=c.ends_at AND submissions.created_at>=c.starts_at)))
+   AND (contest_submission_public(c,submissions.created_at) OR contest_staff(c.id,$3)))
  )))
  AND (owner_id=$3 OR can_manage_problem(problem_id,$3) OR COALESCE(featured_reveal_at(problem_id),'-infinity')<=statement_timestamp())`
 
@@ -28,8 +29,8 @@ func (s *Store) problemSubmissionsAccess(ctx context.Context, problemID, contest
 	if contestID == "" {
 		err = s.Pool.QueryRow(ctx, `SELECT published_draft IS NOT NULL OR can_manage_problem(id,$2) FROM problem_drafts WHERE id=$1`, problemID, viewer).Scan(&allowed)
 	} else {
-		err = s.Pool.QueryRow(ctx, `SELECT `+contestStaff+` OR statement_timestamp()>=c.ends_at OR
-   ($4 AND (statement_timestamp()>=c.starts_at OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=cp.problem_id AND t.owner_id=$3)))
+		// Staff already cover each problem's own testers before the start.
+		err = s.Pool.QueryRow(ctx, `SELECT contest_results_final(c) OR contest_staff(c.id,$3) OR ($4 AND statement_timestamp()>=c.starts_at)
    FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=$1 AND c.id=$2`, problemID, contestID, viewer, mine).Scan(&allowed)
 	}
 	if err != nil {

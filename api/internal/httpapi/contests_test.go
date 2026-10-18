@@ -237,13 +237,20 @@ func TestContestsPostgres(t *testing.T) {
 	if len(registered) != 1 || registered[0].Handle != "bob" || registered[0].Points != 0 || registered[0].TimeMS != 0 || len(registered[0].Problems) != 0 {
 		t.Fatalf("zero submission participant: %+v", registered)
 	}
-	// Becoming a tester excludes a previously registered contestant too.
-	exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'bob')`, a)
-	if body := request("GET", "/contests/"+cid+"/standings", "", nil, 200); strings.TrimSpace(body) != "[]" {
+	// A registered contestant cannot join the staff through a tester invitation before the results are final (ADR 0022).
+	var invitation struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal([]byte(request("POST", "/my/problems/"+a+"/tester-invitation", "alice", nil, 200)), &invitation); err != nil {
+		t.Fatal(err)
+	}
+	if body := request("POST", "/my/tester-invitations/"+invitation.Token, "bob", nil, 409); !strings.Contains(body, "contest_participant_locked") {
 		t.Fatal(body)
 	}
-	request("POST", joinPath, "bob", nil, 409)
-	exec(`DELETE FROM problem_testers WHERE problem_id=$1 AND owner_id='bob'`, a)
+	if body := request("GET", "/contests/"+cid+"/standings", "", nil, 200); !strings.Contains(body, `"handle":"bob"`) {
+		t.Fatal("refused tester left the standings", body)
+	}
+	request("POST", joinPath, "bob", nil, 200)
 	submit := func(owner, pid string, easy bool) submissions.Submission {
 		t.Helper()
 		var s submissions.Submission
@@ -634,10 +641,13 @@ func TestContestsPostgres(t *testing.T) {
 	request("GET", "/problems/"+a+"/submissions/"+pre.ID, "", nil, 404)
 	request("GET", "/problems/"+b+"/submissions/"+easy.ID, "", nil, 404)
 	request("GET", "/problems/"+a+"/submissions?mine=1", "", nil, 401)
-	// Becoming a tester on either problem removes the user from the entire official table.
-	exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'bob')`, b)
-	if rows = rank(); len(rows) != 1 || rows[0].Handle != "carol" {
-		t.Fatal(rows)
+	// After the results are final, a contestant may become a tester and keeps the final rank (ADR 0022).
+	if err := json.Unmarshal([]byte(request("POST", "/my/problems/"+b+"/tester-invitation", "alice", nil, 200)), &invitation); err != nil {
+		t.Fatal(err)
+	}
+	request("POST", "/my/tester-invitations/"+invitation.Token, "bob", nil, 200)
+	if rows = rank(); len(rows) != 2 || rows[0].Handle != "carol" || rows[1].Handle != "bob" || rows[1].Points != 100 {
+		t.Fatal("late tester left the final standings", rows)
 	}
 	// Ordinary practice works after automatic publication, without contest context.
 	normal := request("POST", "/my/submissions", "bob", map[string]any{"problemId": a, "runtime": "cpp17", "source": "practice"}, 202)

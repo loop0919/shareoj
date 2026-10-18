@@ -89,8 +89,7 @@ const publicAcceptedSubmission = `s.status='DONE' AND s.result->>'verdict'='AC'
  AND NOT COALESCE((s.job->>'generate')::boolean,false)
  AND NOT COALESCE((s.job->>'validate')::boolean,false)
  AND ((s.contest_id IS NULL AND NOT COALESCE((s.job->>'privateDraft')::boolean,true))
-  OR EXISTS(SELECT 1 FROM contests c WHERE c.id=s.contest_id
-   AND statement_timestamp()>=c.ends_at AND s.created_at>=c.starts_at))`
+  OR EXISTS(SELECT 1 FROM contests c WHERE c.id=s.contest_id AND contest_submission_public(c,s.created_at)))`
 
 const publicSolverCount = `(SELECT count(DISTINCT s.owner_id) FROM submissions s WHERE s.problem_id=d.id AND ` + publicAcceptedSubmission + `)`
 

@@ -59,6 +59,7 @@ const (
 	IssuePoints      = "points_invalid"
 	IssueUnavailable = "problem_unavailable"
 	IssueIncomplete  = "problem_incomplete"
+	IssueParticipant = "problem_participant"
 )
 
 // About 190 years; the bound keeps the end-time arithmetic from overflowing.
@@ -128,6 +129,7 @@ func (d Draft) contentIssues(now time.Time) []string {
 
 type querier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
 // assess mirrors what publication checks, so the editor can show why it would fail.
@@ -159,6 +161,14 @@ func assess(ctx context.Context, q querier, owner, id string, d Draft, policy Ju
 			issues = append(issues, IssueIncomplete)
 			break
 		}
+	}
+	// Mirrors save. A draft has no participants yet, so this shows only for a published contest.
+	joined, err := participantProblem(ctx, q, id, ids)
+	if err != nil {
+		return nil, err
+	}
+	if joined {
+		issues = append(issues, IssueParticipant)
 	}
 	return issues, nil
 }
