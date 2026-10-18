@@ -34,6 +34,9 @@ export function useProblemDraft() {
   const contestScheduled = ref(false)
   // The author's handle; another handle means the viewer is a tester.
   const author = ref('')
+  // Saves answer without these, so only opening the problem sets them.
+  const testers = ref<string[]>([])
+  const contestEditors = ref<AccountProblem['contestEditors']>()
   function applyServerState(problem: AccountProblem) {
     author.value = problem.author
     scheduledAt.value = problem.scheduledAt
@@ -203,6 +206,7 @@ export function useProblemDraft() {
         if (Number(draft.memoryLimitMb) > 512) draft.memoryLimitMb = '512'
         cloudVersion.value = entry.version
         applyServerState(entry)
+        testers.value = entry.testers; contestEditors.value = entry.contestEditors
         saveState.value = 'saved'
       } catch (error) {
         removeProblemCache(cloudOwner, cloudId.value)
@@ -290,7 +294,7 @@ export function useProblemDraft() {
 
   return {
     user, draft, ready, cloudId, cloudVersion, saving, publishing, publishedVersion, scheduledAt, contestId, readiness, featuredPreference, contestScheduled, manualSaveOnly,
-    author, publicationError, saveLocation, saveState, status, storageError, leaveDialog, leaveError,
+    author, testers, contestEditors, publicationError, saveLocation, saveState, status, storageError, leaveDialog, leaveError,
     manageDialog, generating, deleteError, errors, saveDraft, unpublishProblem, finishLeave,
     openDeleteConfirmation, closeDeleteConfirmation, removeProblem,
   }

@@ -90,7 +90,7 @@ onMounted(() => { void loadAccount() })
         <table class="content-table" :aria-label="heading">
           <thead><tr><th scope="col">タイトル</th><th scope="col">状態</th><th scope="col">更新日時</th><th scope="col">操作</th></tr></thead>
           <tbody><tr v-for="entry in visibleEntries" :key="entry.id">
-            <th scope="row">{{ entry.title.trim() || '無題の問題' }}</th>
+            <th scope="row">{{ entry.title.trim() || '無題の問題' }}<span v-if="entry.viaContest" class="via-contest">コンテスト「{{ entry.viaContest.title.trim() || '無題のコンテスト' }}」の作成者として</span></th>
             <td>
               <span class="problem-state">
                 <ProblemStatus :problem="entry" />
@@ -137,5 +137,7 @@ onMounted(() => { void loadAccount() })
 .preference-tooltip { display: none; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); padding: 4px 8px; border-radius: 4px; background: var(--color-ink); color: var(--color-paper); font-size: .75rem; font-weight: 400; z-index: 1; }
 .featured-preference:hover .preference-tooltip, .featured-preference:focus .preference-tooltip { display: block; }
 .problem-actions { display: flex; align-items: center; gap: 8px; }
+/* Rights through a contest end with its results, unlike an invitation, so the row says where they come from. */
+.via-contest { display: block; margin-top: 2px; color: var(--color-muted); font-size: .8125rem; font-weight: 400; }
 .withdraw-featured { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; }
 </style>

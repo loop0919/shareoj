@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { notificationLink, notificationMessages, type Notification } from '~~/shared/types/notification'
+import { notificationLink, notificationMessages, notificationTitle, type Notification } from '~~/shared/types/notification'
 const { user } = useAccount()
 const route = useRoute()
 const menu = ref<HTMLDetailsElement>()
@@ -69,7 +69,7 @@ usePolling(refresh, 30_000, () => !!user.value)
       <ul v-if="items.length">
         <li v-for="item in items" :key="item.id">
           <NuxtLink :to="notificationLink(item)" @click="close">
-            <span class="notification-title">{{ item.title }}</span>
+            <span class="notification-title">{{ notificationTitle(item) }}</span>
             <span>{{ item.actor }}{{ notificationMessages[item.kind] }}</span>
             <time :datetime="item.createdAt">{{ new Date(item.createdAt).toLocaleString('ja-JP') }}</time>
           </NuxtLink>
