@@ -10,9 +10,10 @@ export default defineEventHandler(async event => {
   const query = getQuery(event)
   if (query.mine === '1' && !hasSession(event)) throw createError({ statusCode: 401 })
   const search = new URLSearchParams({ offset: typeof query.offset === 'string' ? query.offset : '0', mine: typeof query.mine === 'string' ? query.mine : '0' })
-  // Staff may ask for the live table while the standings are frozen; the private route answers others with the frozen one.
-  if (hasSession(event) && path.endsWith('/standings')) {
-    try { return await privateAPI(event, `/my/contests/${path}${query.live === '1' ? '?live=1' : ''}`) }
+  // Only staff who chose the table without the freeze go to the private route (ADR 0023); it answers others with the
+  // frozen table, which everyone else gets from the public route, so the default view never depends on a session.
+  if (hasSession(event) && path.endsWith('/standings') && query.live === '1') {
+    try { return await privateAPI(event, `/my/contests/${path}?live=1`) }
     catch (error) { if (![401, 403].includes((error as { statusCode?: number }).statusCode ?? 0)) throw error }
   }
   if (hasSession(event) && (!path.includes('/') || path.includes('/problems/') || path.includes('/submissions'))) {

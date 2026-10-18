@@ -205,10 +205,11 @@ test('the standings heading keeps every control on screen at each width', async 
 test('the web server asks for the live standings only for a session that chose them, and passes on the pending refusal', async ({ request }) => {
   const session = { Cookie: 'openoj_access=valid-access' }
   const handles = async (query: string, headers?: Record<string, string>) => (await (await request.get(`/api/contests/${id}/standings${query}`, { headers })).json() as Standing[]).map(row => row.handle)
-  // Without a session the public route answers, and it never takes live.
+  // The public route answers without a session and for the default view, and it never takes live.
   expect(await handles('?live=1')).toEqual([])
-  expect(await handles('', session)).toEqual(['frozen'])
-  expect(await handles('?live=true', session)).toEqual(['frozen'])
+  expect(await handles('', session)).toEqual([])
+  expect(await handles('?live=true', session)).toEqual([])
+  // Only a session that chose the live table reaches the private route.
   expect(await handles('?live=1', session)).toEqual(['live'])
   const reveal = (path: string, headers: Record<string, string>) => request.post(`/api/my/contests/${path}/reveal`, { headers })
   expect((await reveal(id, { Origin: 'https://judge.example' })).status()).toBe(401)
