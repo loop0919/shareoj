@@ -30,14 +30,17 @@ const liveRows: Standing[] = [
   { rank: 1, handle: 'carol', points: 100, timeMs: 3900000, problems: { a: { points: 100, wrong: 2, pending: 0, frozen: 0, acceptedAt: '2026-09-15T13:05:00Z' } } },
 ]
 
-// Serves the contest and its standings; live is set when the page asked for the table without the freeze.
-async function routeContest(page: Page, state: { contest: Contest, rows: (live: boolean) => Standing[] }) {
+// Serves the contest and its standings; live is set when the page asked for the table without the freeze. While hold
+// is set, the standings wait for it.
+async function routeContest(page: Page, state: { contest: Contest, rows: (live: boolean) => Standing[], hold?: Promise<void> }) {
   const standings: (string | null)[] = []
-  await page.route(`**/api/contests/${id}**`, route => {
+  await page.route(`**/api/contests/${id}**`, async route => {
     const url = new URL(route.request().url())
     if (!url.pathname.endsWith('/standings')) return route.fulfill({ json: url.pathname.endsWith(id) ? state.contest : { items: [], hasMore: false } })
     standings.push(url.searchParams.get('live'))
-    return route.fulfill({ json: state.rows(url.searchParams.get('live') === '1') })
+    const live = url.searchParams.get('live') === '1'
+    await state.hold
+    return route.fulfill({ json: state.rows(live) })
   })
   return standings
 }
@@ -101,7 +104,7 @@ test('frozen submissions show as ?n beside, not instead of, the pending hourglas
 })
 
 test('staff switch to the standings without the freeze only when they choose it', async ({ page }) => {
-  const state = { contest: { ...contest, status: 'running' as const, staff: true, setter: true }, rows: (live: boolean) => live ? liveRows : frozenRows }
+  const state: { contest: Contest, rows: (live: boolean) => Standing[], hold?: Promise<void> } = { contest: { ...contest, status: 'running' as const, staff: true, setter: true }, rows: live => live ? liveRows : frozenRows }
   const requests = await routeContest(page, state)
   await openStandings(page)
   // Participants and strangers get no choice, and staff get none while the freeze hides nothing.
@@ -127,8 +130,18 @@ test('staff switch to the standings without the freeze only when they choose it'
   await page.getByRole('button', { name: '今すぐ更新' }).click()
   await expect(page.locator('.standings-table tbody tr')).toHaveCount(1)
   expect(requests.at(-1)).toBe('1')
+  // Until the frozen table arrives the live rows give way to a spinner, so they never sit under the frozen notice.
+  let release = () => {}
+  state.hold = new Promise(resolve => { release = resolve })
   await modes.getByRole('radio', { name: '凍結した順位表' }).check()
+  await expect(page.locator('#standings .loading-spinner')).toHaveText('順位表を読み込み中')
+  await expect(page.locator('.standings-table')).toHaveCount(0)
+  await expect(page.getByText('参加者はまだいません。')).toHaveCount(0)
+  await expect(notice(page).last()).toHaveText('22:00以降の提出の結果は、結果発表まで伏せています。')
+  state.hold = undefined
+  release()
   await expect(page.locator('.standings-table tbody tr')).toHaveCount(3)
+  await expect(page.locator('#standings .loading-spinner')).toHaveCount(0)
   expect(requests.at(-1)).toBeNull()
   await expect(notice(page).last()).toHaveText('22:00以降の提出の結果は、結果発表まで伏せています。')
   // Once the results are published both tables match, so the choice goes away even if live was chosen.

@@ -27,7 +27,15 @@ const canSwitchStandings = computed(() => contest.value?.canViewLiveStandings ==
 const standingsMode = ref<'frozen' | 'live'>('frozen')
 const showLive = computed(() => standingsMode.value === 'live' && canSwitchStandings.value)
 const standingsModes = [{ value: 'frozen' as const, label: '凍結した順位表' }, { value: 'live' as const, label: '凍結なし' }]
-const { data: standings, error: standingsError, refresh: refreshStandings } = await useFetch<Standing[]>(`${base}/standings`, { query: computed(() => showLive.value ? { live: '1' } : {}) })
+// The rows carry the view they were read for. While a switch loads, the other view's rows are hidden, so the live table
+// never sits under the frozen notice (ADR 0023) nor the frozen one under the live notice.
+const requestFetch = useRequestFetch()
+const { data: standingsData, error: standingsError, refresh: refreshStandings } = await useAsyncData(`contest-standings:${id}`, async (_, { signal }) => {
+  const live = showLive.value
+  return { live, rows: await requestFetch<Standing[]>(`${base}/standings`, { query: live ? { live: '1' } : {}, signal }) }
+}, { watch: [showLive] })
+const switchingStandings = computed(() => !!standingsData.value && standingsData.value.live !== showLive.value)
+const standings = computed(() => switchingStandings.value ? undefined : standingsData.value?.rows)
 const canViewSubmissions = computed(() => contest.value?.canViewSubmissions === true)
 const submissions = ref<{ items: Submission[], hasMore: boolean } | null>(null)
 const submissionsError = ref('')
@@ -150,8 +158,9 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <p v-if="showLive" class="notice">凍結なしの順位表を表示しています。スタッフだけが見られます。</p>
       <p v-else-if="frozen" class="notice">{{ freezeTime }}以降の提出の結果は、結果発表まで伏せています。</p>
       <p v-if="standingsError" class="notice notice-error" role="alert">順位表を取得できませんでした。</p>
-      <p v-if="!standingsError && !standings?.length" class="contest-empty muted">参加者はまだいません。</p>
-      <div v-if="!standingsError && contest.problems.length" class="content-table-scroll" role="region" aria-label="順位表のスクロール領域" tabindex="0" :aria-busy="updating">
+      <LoadingSpinner v-if="!standingsError && switchingStandings" label="順位表を読み込み中" />
+      <p v-else-if="!standingsError && !standings?.length" class="contest-empty muted">参加者はまだいません。</p>
+      <div v-if="!standingsError && !switchingStandings && contest.problems.length" class="content-table-scroll" role="region" aria-label="順位表のスクロール領域" tabindex="0" :aria-busy="updating">
         <table class="content-table standings-table">
           <thead><tr><th scope="col">順位</th><th scope="col">ユーザー</th><th scope="col">得点</th><th scope="col">時間</th><th v-for="(p, i) in contest.problems" :key="p.id || i" scope="col"><NuxtLink v-if="contest.status !== 'scheduled' && p.id" :to="contestProblemPath(contest.id, i)">{{ problemLabel(i) }}</NuxtLink><span v-else>{{ problemLabel(i) }}</span></th></tr></thead>
           <tbody>
