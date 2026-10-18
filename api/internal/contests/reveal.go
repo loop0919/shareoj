@@ -34,6 +34,11 @@ func (s *Store) Reveal(ctx context.Context, id, actor string, operator bool) err
 	if !frozen || !ended {
 		return ErrConflict
 	}
+	// Rejudges hold the problem row while they queue submissions; waiting for them lets the check below see theirs.
+	if _, err = tx.Exec(ctx, `SELECT 1 FROM problem_drafts d JOIN contest_problems cp ON cp.problem_id=d.id
+ WHERE cp.contest_id=$1 ORDER BY d.id FOR SHARE OF d`, id); err != nil {
+		return err
+	}
 	var pending bool
 	err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM submissions s JOIN contests c ON c.id=s.contest_id
  WHERE c.id=$1 AND s.created_at>=c.starts_at AND s.created_at<c.ends_at AND s.status<>'DONE'
