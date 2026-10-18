@@ -77,17 +77,18 @@ func TestPublicDocumentation(t *testing.T) {
 				t.Fatal("missing generated model", name)
 			}
 		}
-		for name, fields := range map[string][]string{"Contest": {"authors", "setter", "owner"}, "ContestProblem": {"authors", "canReadEditorial", "author", "markdown"}} {
+		for name, fields := range map[string][]string{"Contest": {"authors", "setter", "owner", "teamMode", "maxTeamSize", "onsiteDivision", "team", "onsite"}, "ContestProblem": {"authors", "canReadEditorial", "author", "markdown"}, "TeamSummary": {"id", "name", "members", "onsite"}} {
 			for _, field := range fields {
 				if _, ok := doc.Components.Schemas[name].Properties[field]; !ok {
 					t.Fatal("missing field", name, field)
 				}
 			}
 		}
-		// Invitation links and passphrases are for setters and members only, never in a public type (ADR 0022).
+		// Invitation links, venue passphrases and team join codes are for setters and members only, never in a public
+		// type (ADR 0022, ADR 0024).
 		for name, schema := range doc.Components.Schemas {
 			for field := range schema.Properties {
-				if lower := strings.ToLower(field); strings.Contains(lower, "token") || strings.Contains(lower, "invitation") || strings.Contains(lower, "passphrase") {
+				if lower := strings.ToLower(field); strings.Contains(lower, "token") || strings.Contains(lower, "invitation") || strings.Contains(lower, "passphrase") || lower == "code" || strings.Contains(lower, "joincode") {
 					t.Fatal("secret documented", name, field)
 				}
 			}
