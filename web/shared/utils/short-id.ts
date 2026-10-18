@@ -2,7 +2,9 @@
 const alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const shortPattern = /^[0-9A-Za-z]{22}$/
-const limit = 1n << 128n
+// BigInt() instead of 62n-style literals: the Nitro server build targets es2019, where esbuild warns on them.
+const base = BigInt(62)
+const limit = BigInt(1) << BigInt(128)
 
 export const isUuid = (value: string) => uuidPattern.test(value)
 
@@ -12,8 +14,8 @@ export function shortId(id: string) {
   let n = BigInt(`0x${id.replaceAll('-', '')}`)
   let out = ''
   for (let i = 0; i < 22; i++) {
-    out = alphabet[Number(n % 62n)] + out
-    n /= 62n
+    out = alphabet[Number(n % base)] + out
+    n /= base
   }
   return out
 }
@@ -22,8 +24,8 @@ export function shortId(id: string) {
 export function fullId(value: unknown) {
   const text = String(value ?? '')
   if (!shortPattern.test(text)) return text
-  let n = 0n
-  for (const char of text) n = n * 62n + BigInt(alphabet.indexOf(char))
+  let n = BigInt(0)
+  for (const char of text) n = n * base + BigInt(alphabet.indexOf(char))
   if (n >= limit) return text
   const hex = n.toString(16).padStart(32, '0')
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
