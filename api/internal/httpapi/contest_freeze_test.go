@@ -72,6 +72,7 @@ func TestContestFreezePostgres(t *testing.T) {
 		p1  = "11111111-1111-4111-8111-111111111111"
 		p2  = "22222222-2222-4222-8222-222222222222"
 		p3  = "33333333-3333-4333-8333-333333333333"
+		p4  = "44444444-4444-4444-8444-444444444444"
 		cid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 		did = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
 	)
@@ -161,6 +162,20 @@ func TestContestFreezePostgres(t *testing.T) {
 	decode(request("PUT", "/my/contests/"+did+"/draft", "alice", map[string]any{"version": 0, "draft": contests.Draft{Title: "Draft", StartsAt: &start, DurationMinutes: &duration, PenaltyMinutes: &penalty, FreezeMinutes: &long, Problems: []contests.DraftProblem{{ID: p1, Points: &duration}}}}, 200), &saved)
 	if !slices.Contains(saved.Issues, contests.IssueFreeze) || saved.Draft.FreezeMinutes == nil || *saved.Draft.FreezeMinutes != 61 {
 		t.Fatalf("draft issues: %+v", saved)
+	}
+	// A draft publishes its freeze with it.
+	if _, err = store.Save(ctx, "alice", p4, 0, draft); err != nil {
+		t.Fatal(err)
+	}
+	short := 15
+	decode(request("PUT", "/my/contests/"+did+"/draft", "alice", map[string]any{"version": saved.Version, "draft": contests.Draft{Title: "Draft", StartsAt: &start, DurationMinutes: &duration, PenaltyMinutes: &penalty, FreezeMinutes: &short, Problems: []contests.DraftProblem{{ID: p4, Points: &duration}}}}, 200), &saved)
+	if len(saved.Issues) != 0 {
+		t.Fatalf("draft issues: %+v", saved.Issues)
+	}
+	var published contests.Contest
+	decode(request("PUT", "/my/contests/"+did+"/publication", "alice", map[string]any{"version": saved.Version}, 200), &published)
+	if published.FreezeMinutes == nil || *published.FreezeMinutes != 15 || published.FreezeAt == nil || !published.FreezeAt.Equal(published.EndsAt.Add(-15*time.Minute)) {
+		t.Fatalf("published draft: %+v", published)
 	}
 	in.FreezeMinutes = &freeze
 	request("PUT", "/my/contests/"+cid, "alice", in, 200)
@@ -396,6 +411,12 @@ func TestContestFreezePostgres(t *testing.T) {
 	if body := request("POST", "/my/contests/"+plain+"/reveal", "ops", nil, 409); !strings.Contains(body, "contest_conflict") {
 		t.Fatal(body)
 	}
+	// The published draft is still frozen once it ends, until alice reveals it.
+	exec(`UPDATE contests SET starts_at=$2,ends_at=$3 WHERE id=$1`, did, time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour))
+	if err := deleteAccount("alice"); !errors.Is(err, accounts.ErrActiveContest) {
+		t.Fatalf("delete with an ended unrevealed contest: %v", err)
+	}
+	request("POST", "/my/contests/"+did+"/reveal", "alice", nil, 200)
 	if err := deleteAccount("alice"); err != nil {
 		t.Fatalf("delete after the reveal: %v", err)
 	}
