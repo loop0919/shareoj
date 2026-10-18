@@ -8,6 +8,7 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"judge/api/internal/profiles"
@@ -48,7 +49,21 @@ var cleanup = []string{
 }
 
 // Delete runs removeIdentity before committing, so a failure to delete the sign-in leaves the account untouched.
+// Two owners who co-set each other's contests lock each other's rows in opposite order when both delete at once, so
+// the one PostgreSQL aborts tries again; by then the other has finished, and the hand-over sees it as gone.
 func (s *Store) Delete(ctx context.Context, owner, handle string, removeIdentity func(context.Context) error) error {
+	var err error
+	for range 3 {
+		err = s.delete(ctx, owner, handle, removeIdentity)
+		var pg *pgconn.PgError
+		if !errors.As(err, &pg) || pg.Code != "40P01" {
+			return err
+		}
+	}
+	return err
+}
+
+func (s *Store) delete(ctx context.Context, owner, handle string, removeIdentity func(context.Context) error) error {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -68,7 +83,7 @@ func (s *Store) Delete(ctx context.Context, owner, handle string, removeIdentity
 		return ErrMismatch
 	}
 	// A co-setter's deletion is leaving (ADR 0022). It runs first, so that an owner handing over at the same time
-	// waits on these rows and passes over this account.
+	// waits on these rows and passes over this account. Delete retries the deadlock when both co-set each other's.
 	if _, err = tx.Exec(ctx, `WITH gone AS (UPDATE contest_setters SET left_at=clock_timestamp() WHERE owner_id=$1 AND left_at IS NULL RETURNING contest_id)
  INSERT INTO contest_exclusions(contest_id,owner_id) SELECT contest_id,$1 FROM gone ON CONFLICT DO NOTHING`, owner); err != nil {
 		return err
