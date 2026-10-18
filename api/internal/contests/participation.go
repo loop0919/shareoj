@@ -7,6 +7,10 @@ import (
 
 var ErrParticipationUnavailable = errors.New("contest participation unavailable")
 
+// ErrParticipantProblem refuses a save that adds a problem a registered participant authors or tests, so the editor
+// can name that cause instead of every reason a save may fail (ADR 0022).
+var ErrParticipantProblem = errors.New("a participant authors or tests the problem")
+
 func (s *Store) Join(ctx context.Context, id, owner string) error {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {

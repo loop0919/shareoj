@@ -267,6 +267,8 @@ func contestError(w http.ResponseWriter, err error) {
 		authError(w, 409, "contest_invitation_closed")
 	case errors.Is(err, problems.ErrParticipantLocked):
 		authError(w, 409, "contest_participant_locked")
+	case errors.Is(err, contests.ErrParticipantProblem):
+		authError(w, 409, "contest_participant_problem")
 	case errors.Is(err, contests.ErrNotReady):
 		authError(w, 409, "contest_not_ready")
 	case errors.Is(err, contests.ErrConflict):

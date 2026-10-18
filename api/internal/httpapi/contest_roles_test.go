@@ -209,7 +209,7 @@ func TestContestRolesPostgres(t *testing.T) {
 	for _, extra := range []string{p3, p4} {
 		attempt := in
 		attempt.Problems = append(slices.Clone(in.Problems), contests.Problem{ID: extra, Points: 300})
-		if body := request("PUT", "/my/contests/"+cid, "alice", attempt, 409); !strings.Contains(body, "contest_conflict") {
+		if body := request("PUT", "/my/contests/"+cid, "alice", attempt, 409); !strings.Contains(body, "contest_participant_problem") {
 			t.Fatal(body)
 		}
 	}

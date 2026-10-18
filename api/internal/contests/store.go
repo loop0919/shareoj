@@ -263,7 +263,7 @@ func save(ctx context.Context, tx pgx.Tx, actor, id string, in Input, policy Jud
 		return err
 	}
 	if joined {
-		return ErrConflict
+		return ErrParticipantProblem
 	}
 	// The author and testers of a removed problem have seen it, so they stay out of the contest.
 	if _, err = tx.Exec(ctx, `INSERT INTO contest_exclusions(contest_id,owner_id)
