@@ -18,12 +18,14 @@ var (
 	ErrSetterNotFound = errors.New("co-setter not found")
 )
 
-// SetterInvitation previews a co-setter link. Published is false while the contest is still a draft.
+// SetterInvitation previews a co-setter link. Published is false while the contest is still a draft, and Closed means
+// the results are final, so the link can no longer be accepted.
 type SetterInvitation struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`
 	Author    string `json:"author"`
 	Published bool   `json:"published"`
+	Closed    bool   `json:"closed"`
 	Joined    bool   `json:"joined"`
 }
 
@@ -35,13 +37,36 @@ func newToken() string {
 }
 
 // SetterInvitationLink returns the contest's link for a setter, creating it on first use, so repeated clicks are
-// harmless. Renewing replaces the token, and the old link stops working.
+// harmless. Renewing replaces the token, and the old link stops working. It takes the lock that removal holds and then
+// checks the role, so a co-setter being removed never gets the link that the removal renews. Once the results are
+// final nobody can accept, so no link is handed out.
 func (s *Store) SetterInvitationLink(ctx context.Context, actor, id string, renew bool) (string, error) {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	target, err := lockSetters(ctx, tx, id, true)
+	if err != nil {
+		return "", err
+	}
+	var setter bool
+	if err = tx.QueryRow(ctx, `SELECT contest_setter($1,$2)`, id, actor).Scan(&setter); err != nil {
+		return "", err
+	}
+	if !setter {
+		return "", pgx.ErrNoRows
+	}
+	if target.final {
+		return "", ErrInvitationClosed
+	}
 	var token string
-	err := s.Pool.QueryRow(ctx, `INSERT INTO contest_setter_invitations(contest_id,token) SELECT $1::uuid,$3 WHERE contest_setter($1::uuid,$2)
- ON CONFLICT(contest_id) DO UPDATE SET token=CASE WHEN $4 THEN EXCLUDED.token ELSE contest_setter_invitations.token END,
-  created_at=CASE WHEN $4 THEN clock_timestamp() ELSE contest_setter_invitations.created_at END RETURNING token`, id, actor, newToken(), renew).Scan(&token)
-	return token, err
+	if err = tx.QueryRow(ctx, `INSERT INTO contest_setter_invitations(contest_id,token) VALUES($1,$2)
+ ON CONFLICT(contest_id) DO UPDATE SET token=CASE WHEN $3 THEN EXCLUDED.token ELSE contest_setter_invitations.token END,
+  created_at=CASE WHEN $3 THEN clock_timestamp() ELSE contest_setter_invitations.created_at END RETURNING token`, id, newToken(), renew).Scan(&token); err != nil {
+		return "", err
+	}
+	return token, tx.Commit(ctx)
 }
 
 type setterTarget struct {
@@ -95,7 +120,7 @@ func (s *Store) SetterInvitation(ctx context.Context, actor, token string, accep
 	if err != nil {
 		return invitation, err
 	}
-	invitation.Title, invitation.Published = target.title, target.published
+	invitation.Title, invitation.Published, invitation.Closed = target.title, target.published, target.final
 	if !accept || invitation.Joined {
 		return invitation, tx.Commit(ctx)
 	}
