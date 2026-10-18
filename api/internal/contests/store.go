@@ -76,11 +76,25 @@ type Input struct {
 	StartsAt       time.Time `json:"startsAt"`
 	EndsAt         time.Time `json:"endsAt"`
 	PenaltyMinutes *int      `json:"penaltyMinutes"`
-	FreezeMinutes  *int      `json:"freezeMinutes"`
+	FreezeMinutes  Minutes   `json:"freezeMinutes"`
 	Version        int64     `json:"version"`
 	Problems       []Problem `json:"problems"`
 }
 type Store struct{ Pool *pgxpool.Pool }
+
+// Minutes is a nullable number of minutes that remembers whether the client sent it. A client from before the setting
+// existed leaves it out, and its saves keep the stored value instead of clearing it; null clears it.
+type Minutes struct {
+	Value *int
+	Sent  bool
+}
+
+func (m *Minutes) UnmarshalJSON(data []byte) error {
+	m.Sent = true
+	return json.Unmarshal(data, &m.Value)
+}
+
+func (m Minutes) MarshalJSON() ([]byte, error) { return json.Marshal(m.Value) }
 
 // Revealable reports whether the contest has ended with its results frozen and not yet revealed.
 func (c Contest) Revealable() bool {
@@ -214,7 +228,7 @@ func save(ctx context.Context, tx pgx.Tx, actor, id string, in Input, policy Jud
 		}
 		var tag pgconn.CommandTag
 		tag, err = tx.Exec(ctx, `INSERT INTO contests(id,owner_id,title,description,starts_at,ends_at,penalty_minutes,freeze_minutes)
- SELECT $1,$2,$3,$4,$5,$6,$7,$9 WHERE $5>clock_timestamp() AND ($8 OR NOT EXISTS (SELECT 1 FROM contest_drafts WHERE id=$1))`, id, owner, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes, publishing, in.FreezeMinutes)
+ SELECT $1,$2,$3,$4,$5,$6,$7,$9 WHERE $5>clock_timestamp() AND ($8 OR NOT EXISTS (SELECT 1 FROM contest_drafts WHERE id=$1))`, id, owner, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes, publishing, in.FreezeMinutes.Value)
 		if err == nil && tag.RowsAffected() != 1 {
 			return ErrConflict
 		}
@@ -228,8 +242,11 @@ func save(ctx context.Context, tx pgx.Tx, actor, id string, in Input, policy Jud
 		if current != in.Version {
 			return ErrConflict
 		}
-		tag, e := tx.Exec(ctx, `UPDATE contests SET title=$3,description=$4,starts_at=$5,ends_at=$6,penalty_minutes=$7,freeze_minutes=$8,version=version+1
-  WHERE id=$1 AND contest_setter(id,$2) AND starts_at>clock_timestamp() AND $5>clock_timestamp()`, id, actor, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes, in.FreezeMinutes)
+		// A save without freezeMinutes keeps the freeze, which must still fit the new schedule.
+		tag, e := tx.Exec(ctx, `UPDATE contests SET title=$3,description=$4,starts_at=$5,ends_at=$6,penalty_minutes=$7,
+  freeze_minutes=CASE WHEN $9 THEN $8 ELSE freeze_minutes END,version=version+1
+  WHERE id=$1 AND contest_setter(id,$2) AND starts_at>clock_timestamp() AND $5>clock_timestamp()
+  AND ($9 OR freeze_minutes IS NULL OR make_interval(mins => freeze_minutes)<=$6-$5)`, id, actor, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes, in.FreezeMinutes.Value, in.FreezeMinutes.Sent)
 		err = e
 		if err == nil && tag.RowsAffected() != 1 {
 			return ErrConflict

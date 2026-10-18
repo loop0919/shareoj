@@ -21,7 +21,7 @@ func ValidInput(in Input) bool {
 	if strings.TrimSpace(in.Title) == "" || utf8.RuneCountInString(in.Title) > 120 || utf8.RuneCountInString(in.Description) > 100000 || strings.ContainsRune(in.Title+in.Description, 0) || !utf8.ValidString(in.Title+in.Description) || in.StartsAt.IsZero() || !in.EndsAt.After(in.StartsAt) || in.EndsAt.Year() > 9999 || in.Version < 0 || in.Version > 9007199254740990 || in.PenaltyMinutes == nil || *in.PenaltyMinutes < 0 || *in.PenaltyMinutes > 1440 || len(in.Problems) == 0 || len(in.Problems) > 100 {
 		return false
 	}
-	if in.FreezeMinutes != nil && (*in.FreezeMinutes < 1 || int64(*in.FreezeMinutes) > int64(in.EndsAt.Sub(in.StartsAt)/time.Minute)) {
+	if f := in.FreezeMinutes.Value; f != nil && (*f < 1 || int64(*f) > int64(in.EndsAt.Sub(in.StartsAt)/time.Minute)) {
 		return false
 	}
 	seen := map[string]bool{}

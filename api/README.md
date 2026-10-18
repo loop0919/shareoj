@@ -494,7 +494,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 
 [ADR 0015](../docs/adr/0015-save-contests-as-drafts.md)に従い、新しいコンテストは下書きとして保存し、公開時に検証する。
 
-- `PUT /my/contests/{id}/draft`：`{"version":0,"draft":{...}}`で下書きを作成し、以降は返された`version`で更新します。`draft`は`title`、`description`、`startsAt`（null可）、`durationMinutes`（null可）、`penaltyMinutes`（null可）、`freezeMinutes`（null で凍結なし）、`problems`（`id`と、null可の`points`）です。
+- `PUT /my/contests/{id}/draft`：`{"version":0,"draft":{...}}`で下書きを作成し、以降は返された`version`で更新します。`draft`は`title`、`description`、`startsAt`（null可）、`durationMinutes`（null可）、`penaltyMinutes`（null可）、`freezeMinutes`（null で凍結なし、省くと保存済みの値を保つ）、`problems`（`id`と、null可の`points`）です。
 - 下書きは未入力や範囲外の値を含んでいても保存できます。拒否するのは、タイトル120文字・説明100,000文字・問題100件の上限超過、不正または重複した問題ID、絶対値が10億を超える数値だけです（400 `invalid_contest`）。
 - 応答は`id`、`version`、`updatedAt`、`draft`と、公開できない理由のコード一覧`issues`を返します。コードは`title_missing`、`start_missing`、`start_past`、`duration_invalid`、`penalty_invalid`、`freeze_invalid`（1分からコンテスト時間までの範囲外）、`problems_missing`、`points_invalid`、`problem_unavailable`（公開済み・削除済み・他のコンテストに登録済み）、`problem_incomplete`（コンテストの内容の条件を満たさない）です。
 - `GET`で取得、`DELETE ?version=N`で削除し、`GET /my/contests/drafts?offset=0`で自分の下書きを更新日時の降順に50件ずつ返します。一覧の各要素の`author`はオーナーのユーザーIDです。
@@ -580,6 +580,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 [ADR 0023](../docs/adr/0023-freeze-contest-standings.md)に従い、終了前の一定時間の提出の結果を、結果の公開まで伏せられる。
 
 - `PUT /my/contests/{id}`と下書きの`freezeMinutes`：null で凍結なし、1分からコンテスト時間までの分数。開始後は変えられない。範囲外は400 `invalid_contest`。
+  省くと保存済みの値を保つ（凍結を知らない古いクライアントの保存で凍結が消えないように）。保つ凍結が新しいコンテスト時間を超える保存は409 `contest_conflict`。
 - コンテストの詳細と一覧は`freezeMinutes`、`freezeAt`（凍結を始める時刻、凍結なしはnull）、`revealed`、`revealedAt`、`resultsFinal`を返す。
   閲覧者向けに`canViewLiveStandings`（凍結のあるコンテストのスタッフ）と`canRevealResults`（終了して結果を公開していない凍結コンテストのセッターと運営者）を返す。
 - 凍結後の提出（`freezeAt`から終了までに作られた提出）は、結果確定まで、本人とスタッフ以外には一覧にも詳細にも出さない。凍結前の提出と終了後の練習の提出は終了時に公開する。解いた人数も同じ条件で数え、`GET /my/solved-problems`は凍結に関係なく本人の結果を返す。

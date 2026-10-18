@@ -154,13 +154,13 @@ func TestContestFreezePostgres(t *testing.T) {
 	start := time.Now().Add(time.Hour)
 	in := contests.Input{Title: "Frozen", StartsAt: start, EndsAt: start.Add(time.Hour), PenaltyMinutes: &penalty, Problems: []contests.Problem{{ID: p1, Points: 100}, {ID: p2, Points: 200}}}
 	for _, bad := range []*int{&zero, &long} {
-		in.FreezeMinutes = bad
+		in.FreezeMinutes = contests.Minutes{Value: bad}
 		request("PUT", "/my/contests/"+cid, "alice", in, 400)
 	}
 	duration := 60
 	var saved contests.DraftResult
-	decode(request("PUT", "/my/contests/"+did+"/draft", "alice", map[string]any{"version": 0, "draft": contests.Draft{Title: "Draft", StartsAt: &start, DurationMinutes: &duration, PenaltyMinutes: &penalty, FreezeMinutes: &long, Problems: []contests.DraftProblem{{ID: p1, Points: &duration}}}}, 200), &saved)
-	if !slices.Contains(saved.Issues, contests.IssueFreeze) || saved.Draft.FreezeMinutes == nil || *saved.Draft.FreezeMinutes != 61 {
+	decode(request("PUT", "/my/contests/"+did+"/draft", "alice", map[string]any{"version": 0, "draft": contests.Draft{Title: "Draft", StartsAt: &start, DurationMinutes: &duration, PenaltyMinutes: &penalty, FreezeMinutes: contests.Minutes{Value: &long}, Problems: []contests.DraftProblem{{ID: p1, Points: &duration}}}}, 200), &saved)
+	if !slices.Contains(saved.Issues, contests.IssueFreeze) || saved.Draft.FreezeMinutes.Value == nil || *saved.Draft.FreezeMinutes.Value != 61 {
 		t.Fatalf("draft issues: %+v", saved)
 	}
 	// A draft publishes its freeze with it.
@@ -168,17 +168,29 @@ func TestContestFreezePostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	short := 15
-	decode(request("PUT", "/my/contests/"+did+"/draft", "alice", map[string]any{"version": saved.Version, "draft": contests.Draft{Title: "Draft", StartsAt: &start, DurationMinutes: &duration, PenaltyMinutes: &penalty, FreezeMinutes: &short, Problems: []contests.DraftProblem{{ID: p4, Points: &duration}}}}, 200), &saved)
+	decode(request("PUT", "/my/contests/"+did+"/draft", "alice", map[string]any{"version": saved.Version, "draft": contests.Draft{Title: "Draft", StartsAt: &start, DurationMinutes: &duration, PenaltyMinutes: &penalty, FreezeMinutes: contests.Minutes{Value: &short}, Problems: []contests.DraftProblem{{ID: p4, Points: &duration}}}}, 200), &saved)
 	if len(saved.Issues) != 0 {
 		t.Fatalf("draft issues: %+v", saved.Issues)
+	}
+	// A client from before the freeze leaves freezeMinutes out, and the draft keeps it.
+	decode(request("PUT", "/my/contests/"+did+"/draft", "alice", map[string]any{"version": saved.Version, "draft": map[string]any{"title": "Draft", "startsAt": start, "durationMinutes": duration, "penaltyMinutes": penalty, "problems": []map[string]any{{"id": p4, "points": duration}}}}, 200), &saved)
+	if saved.Draft.FreezeMinutes.Value == nil || *saved.Draft.FreezeMinutes.Value != 15 || len(saved.Issues) != 0 {
+		t.Fatalf("draft saved without freezeMinutes: %+v", saved)
 	}
 	var published contests.Contest
 	decode(request("PUT", "/my/contests/"+did+"/publication", "alice", map[string]any{"version": saved.Version}, 200), &published)
 	if published.FreezeMinutes == nil || *published.FreezeMinutes != 15 || published.FreezeAt == nil || !published.FreezeAt.Equal(published.EndsAt.Add(-15*time.Minute)) {
 		t.Fatalf("published draft: %+v", published)
 	}
-	in.FreezeMinutes = &freeze
-	request("PUT", "/my/contests/"+cid, "alice", in, 200)
+	in.FreezeMinutes = contests.Minutes{Value: &freeze}
+	var kept contests.Contest
+	decode(request("PUT", "/my/contests/"+cid, "alice", in, 200), &kept)
+	// Such a client's save keeps the freeze too, and is refused when the freeze no longer fits the contest.
+	legacy := func(end time.Time) map[string]any {
+		return map[string]any{"title": "Frozen", "description": "", "startsAt": start, "endsAt": end, "penaltyMinutes": penalty, "version": kept.Version, "problems": in.Problems}
+	}
+	request("PUT", "/my/contests/"+cid, "alice", legacy(start.Add(20*time.Minute)), 409)
+	decode(request("PUT", "/my/contests/"+cid, "alice", legacy(start.Add(time.Hour)), 200), &kept)
 	c := view("")
 	if c.FreezeMinutes == nil || *c.FreezeMinutes != 30 || c.FreezeAt == nil || !c.FreezeAt.Equal(c.EndsAt.Add(-30*time.Minute)) || c.Revealed || c.RevealedAt != nil || c.ResultsFinal || c.CanRevealResults || c.CanViewLiveStandings {
 		t.Fatalf("public view: %+v", c)

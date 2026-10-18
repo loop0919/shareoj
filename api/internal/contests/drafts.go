@@ -24,7 +24,7 @@ type Draft struct {
 	StartsAt        *time.Time     `json:"startsAt"`
 	DurationMinutes *int           `json:"durationMinutes"`
 	PenaltyMinutes  *int           `json:"penaltyMinutes"`
-	FreezeMinutes   *int           `json:"freezeMinutes"`
+	FreezeMinutes   Minutes        `json:"freezeMinutes"`
 	Problems        []DraftProblem `json:"problems"`
 }
 type DraftProblem struct {
@@ -87,7 +87,7 @@ func ValidDraft(in DraftInput) bool {
 	if in.Version < 0 || in.Version > 9007199254740990 || utf8.RuneCountInString(d.Title) > 120 || utf8.RuneCountInString(d.Description) > 100000 || strings.ContainsRune(text, 0) || !utf8.ValidString(text) || len(d.Problems) > 100 {
 		return false
 	}
-	numbers := []*int{d.DurationMinutes, d.PenaltyMinutes, d.FreezeMinutes}
+	numbers := []*int{d.DurationMinutes, d.PenaltyMinutes, d.FreezeMinutes.Value}
 	seen := map[string]bool{}
 	for _, p := range d.Problems {
 		if !problems.ValidID(p.ID) || seen[p.ID] {
@@ -131,7 +131,7 @@ func (d Draft) contentIssues(now time.Time) []string {
 		issues = append(issues, IssuePenalty)
 	}
 	// Null means no freeze; otherwise it must fit in the contest.
-	if f := d.FreezeMinutes; f != nil && (*f < 1 || d.DurationMinutes != nil && *f > *d.DurationMinutes) {
+	if f := d.FreezeMinutes.Value; f != nil && (*f < 1 || d.DurationMinutes != nil && *f > *d.DurationMinutes) {
 		issues = append(issues, IssueFreeze)
 	}
 	if len(d.Problems) == 0 {
@@ -259,15 +259,12 @@ func (s *Store) SaveDraft(ctx context.Context, actor, id string, in DraftInput, 
 	if in.Draft.Problems == nil {
 		in.Draft.Problems = []DraftProblem{}
 	}
-	data, err := json.Marshal(in.Draft)
-	if err != nil {
-		return DraftResult{}, err
-	}
 	var r DraftResult
+	var err error
 	if in.Version == 0 {
-		r, err = s.createDraft(ctx, actor, id, in.Draft, data)
+		r, err = s.createDraft(ctx, actor, id, in.Draft)
 	} else {
-		r, err = s.updateDraft(ctx, actor, id, in, data)
+		r, err = s.updateDraft(ctx, actor, id, in)
 	}
 	if err = s.draftConflict(ctx, actor, id, err, false); err != nil {
 		return r, err
@@ -292,7 +289,11 @@ func addable(ctx context.Context, tx pgx.Tx, actor string, added []string) error
 	return nil
 }
 
-func (s *Store) createDraft(ctx context.Context, owner, id string, d Draft, data []byte) (DraftResult, error) {
+func (s *Store) createDraft(ctx context.Context, owner, id string, d Draft) (DraftResult, error) {
+	data, err := json.Marshal(d)
+	if err != nil {
+		return DraftResult{}, err
+	}
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return DraftResult{}, err
@@ -324,7 +325,7 @@ func (s *Store) createDraft(ctx context.Context, owner, id string, d Draft, data
 }
 
 // updateDraft locks the draft so that the problems it already lists, which need no new check, stay those of in.Version.
-func (s *Store) updateDraft(ctx context.Context, actor, id string, in DraftInput, data []byte) (DraftResult, error) {
+func (s *Store) updateDraft(ctx context.Context, actor, id string, in DraftInput) (DraftResult, error) {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return DraftResult{}, err
@@ -351,6 +352,14 @@ func (s *Store) updateDraft(ctx context.Context, actor, id string, in DraftInput
 		}
 	}
 	if err = addable(ctx, tx, actor, added); err != nil {
+		return current, err
+	}
+	// A draft saved without freezeMinutes keeps the freeze, as a contest save does.
+	if !in.Draft.FreezeMinutes.Sent {
+		in.Draft.FreezeMinutes = current.Draft.FreezeMinutes
+	}
+	data, err := json.Marshal(in.Draft)
+	if err != nil {
 		return current, err
 	}
 	r, err := scanDraft(tx.QueryRow(ctx, `UPDATE contest_drafts SET draft=$2,version=version+1,updated_at=clock_timestamp()
