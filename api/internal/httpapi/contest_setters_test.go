@@ -418,6 +418,19 @@ func TestContestSettersPostgres(t *testing.T) {
 	if renewed == invite {
 		t.Fatal("removal kept the link")
 	}
+	// Any current setter may renew the link on purpose, and the old one then stops working.
+	put := link(cid, "cora", "PUT")
+	if put == renewed {
+		t.Fatal("renewal kept the link")
+	}
+	request("GET", renewed, "sam", nil, 404)
+	request("POST", renewed, "sam", nil, 404)
+	request("GET", put, "sam", nil, 200)
+	request("PUT", "/my/contests/"+cid+"/setter-invitation", "rex", nil, 404)
+	if again := link(cid, "olive", "POST"); again != put {
+		t.Fatal("link changed without renewal", put, again)
+	}
+	renewed = put
 
 	// Permissions by role: stranger, participant, co-setter, removed co-setter, owner.
 	roles := []string{"sam", "pat", "cora", "rex", "olive"}
@@ -501,6 +514,20 @@ func TestContestSettersPostgres(t *testing.T) {
 	// A problem that no current setter authors or tests blocks saving until it is removed.
 	request("DELETE", "/my/contests/"+cid+"/setters/carl", "carl", nil, 204)
 	request("POST", "/my/contests/"+cid+"/participation", "carl", nil, 409)
+	// Someone who left may rejoin through the current link; the owner hears of it again, and they still cannot compete.
+	request("GET", "/my/problems/"+pO, "carl", nil, 404)
+	if rejoined := accept(renewed, "carl", 200); !rejoined.Joined || !rejoined.Published {
+		t.Fatalf("rejoined: %+v", rejoined)
+	}
+	if c := contestOf(cid, "carl"); !c.IsSetter || !c.Staff || !slices.Equal(c.Authors, []string{"olive", "cora", "carl"}) {
+		t.Fatalf("rejoined setter view: %+v", c)
+	}
+	request("GET", "/my/problems/"+pO, "carl", nil, 200)
+	if n := count(`SELECT count(*) FROM notifications WHERE owner_id='olive' AND contest_id=$1 AND actor_id='carl' AND kind='contest_setter'`, cid); n != 2 {
+		t.Fatal("rejoin notifications", n)
+	}
+	request("POST", "/my/contests/"+cid+"/participation", "carl", nil, 409)
+	request("DELETE", "/my/contests/"+cid+"/setters/carl", "carl", nil, 204)
 	unmanaged := []string{}
 	for _, p := range contestOf(cid, "cora").Problems {
 		if p.Unmanaged {
