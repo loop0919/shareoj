@@ -1,5 +1,14 @@
 [
   {
+    "date": "2026-10-18",
+    "macrostructure": "Workbench (in-app pages inside the existing system)",
+    "theme": "Plain (existing ShareOJ system)",
+    "nav": "N1a (shared site navigation)",
+    "footer": "Ft1 (shared site footer)",
+    "enrichment": "none",
+    "brief": "ShareOJ co-setter invitation page (/my/contest-invitations), the 共同作成者 panel in the contest editor's management area with link issue/renew, removal and leaving, and the setters-only management view after a contest starts"
+  },
+  {
     "date": "2026-10-17",
     "macrostructure": "Workbench (in-app pages inside the existing system)",
     "theme": "Plain (existing ShareOJ system)",

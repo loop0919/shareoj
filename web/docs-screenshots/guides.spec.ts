@@ -162,6 +162,27 @@ test('contest editor', async ({ page }) => {
   await shoot(page, 'contest-editor')
 })
 
+test('contest setters', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 900 })
+  const contestId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+  await page.route(`**/api/my/contests/${contestId}/draft`, route => route.fulfill({ json: {
+    id: contestId, version: 2, updatedAt, issues: [], authors: ['alice', 'bob'], owner: true, problems: [],
+    draft: { title: 'ShareOJ Beginner Contest 001', description: '', startsAt: '2026-11-01T12:00:00Z', durationMinutes: 100, penaltyMinutes: 5, problems: [] },
+  } }))
+  await page.route(`**/api/my/contests/${contestId}/setter-invitation`, route => route.fulfill({ json: { token: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567' } }))
+  await page.goto(`/my/contests/${shortId(contestId)}?section=manage`)
+  await page.getByRole('button', { name: 'リンクを発行', exact: true }).click()
+  const row = page.locator('.setters-row')
+  // The link uses the page origin; show the production one.
+  await row.locator('#setter-link').evaluate((input: HTMLInputElement) => { input.value = input.value.replace(location.origin, 'https://www.share-oj.net') })
+  await annotate(page, [
+    { target: row.getByRole('button', { name: 'リンクをコピー', exact: true }), badge: 'top-right' },
+    { target: row.getByRole('button', { name: 'リンクを作り直す', exact: true }), badge: 'top-right' },
+    { target: row.getByRole('button', { name: 'bobを共同作成者から外す', exact: true }), badge: 'top-right' },
+  ])
+  await shoot(page, 'contest-setters', [row])
+})
+
 test('featured application', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.route('**/api/my/featured', route => route.fulfill({ json: { items: [] } }))
