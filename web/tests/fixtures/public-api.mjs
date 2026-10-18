@@ -91,7 +91,11 @@ createServer(async (req, res) => {
     if (path === `/my/problems/${featuredProblem.id}/submissions`) return res.end(JSON.stringify({ items: [{ ...submission, id: '33333333-3333-4333-8333-333333333333', problemId: featuredProblem.id, problemTitle: featuredProblem.title, author: 'carol' }], hasMore: false }))
     if (path.startsWith('/my/problems/')) return res.writeHead(404).end('{}')
     // This contest echoes what the web server forwarded, so tests can check the query it built (ADR 0024).
-    if (path.startsWith('/my/contests/66666666-6666-4666-8666-666666666666/')) return res.end(JSON.stringify({ route: 'private', path, query: new URL(req.url, 'http://localhost').search }))
+    if (path.startsWith('/my/contests/66666666-6666-4666-8666-666666666666/')) {
+      let body = ''
+      for await (const chunk of req) body += chunk
+      return res.end(JSON.stringify({ route: 'private', path, query: new URL(req.url, 'http://localhost').search, method: req.method, type: req.headers['content-type'] ?? '', body }))
+    }
     // The private standings name the table the web server asked for; this contest still has runs to judge (ADR 0023).
     if (path === '/my/contests/88888888-8888-4888-8888-888888888888/standings') {
       const live = new URL(req.url, 'http://localhost').searchParams.get('live') === '1'
