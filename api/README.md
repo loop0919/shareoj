@@ -412,7 +412,7 @@ Lambda用バイナリでは、ビルド時に`CGO_ENABLED=0`と対象アーキ�
 
 - `GET /my/account`：Cognitoの`AdminGetUser`で`{"email":"...","provider":"password"}`を返す。Googleでログインしたユーザーは`provider`が`google`になる。
 - `POST /my/password`：`{"current":"...","proposed":"..."}`を受け取り、Cognitoの`ChangePassword`でパスワードを変更して204を返す。現在のパスワードの誤りは`400 incorrect_password`、パスワードの条件違反は`400 invalid_password`、Googleのユーザーは`409 password_unavailable`、試行回数の超過は429とする。
-- `DELETE /my/account`：確認として`{"handle":"現在のユーザーID"}`を受け取り、[ADR 0016](../docs/adr/0016-anonymize-deleted-accounts.md)に従ってアカウントを削除し、204を返す。ユーザーIDが違えば`400 confirmation_mismatch`、共同作成者のいない終了していない自分のコンテストがあるか、終了していないコンテストに自分の未公開の問題が入っていれば`409 account_has_active_contest`とする。
+- `DELETE /my/account`：確認として`{"handle":"現在のユーザーID"}`を受け取り、[ADR 0016](../docs/adr/0016-anonymize-deleted-accounts.md)に従ってアカウントを削除し、204を返す。ユーザーIDが違えば`400 confirmation_mismatch`、共同作成者のいない結果確定していない自分のコンテスト（凍結のあるコンテストでは結果の公開まで）があるか、終了していないコンテストに自分の未公開の問題が入っていれば`409 account_has_active_contest`とする。
 - [ADR 0022](../docs/adr/0022-share-contests-among-setters.md)に従い、共同作成者の削除は共同作成者から抜けたものとして扱う。
   オーナーの結果確定していないコンテストと下書きのうち、共同作成者のいるものは、最も早く加わった共同作成者にオーナーを移す。
 - 削除では、公開していない問題・記事・コンテストの下書き、公開済みの問題・記事の未公開の編集内容、お気に入り、自分宛ての通知、残るコンテンツから参照されない画像を消す。公開済みの問題・記事、終了したコンテスト、提出、参加登録、難易度の投票、テスターの担当は残す。
@@ -494,9 +494,9 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 
 [ADR 0015](../docs/adr/0015-save-contests-as-drafts.md)に従い、新しいコンテストは下書きとして保存し、公開時に検証する。
 
-- `PUT /my/contests/{id}/draft`：`{"version":0,"draft":{...}}`で下書きを作成し、以降は返された`version`で更新します。`draft`は`title`、`description`、`startsAt`（null可）、`durationMinutes`（null可）、`penaltyMinutes`（null可）、`problems`（`id`と、null可の`points`）です。
+- `PUT /my/contests/{id}/draft`：`{"version":0,"draft":{...}}`で下書きを作成し、以降は返された`version`で更新します。`draft`は`title`、`description`、`startsAt`（null可）、`durationMinutes`（null可）、`penaltyMinutes`（null可）、`freezeMinutes`（null で凍結なし）、`problems`（`id`と、null可の`points`）です。
 - 下書きは未入力や範囲外の値を含んでいても保存できます。拒否するのは、タイトル120文字・説明100,000文字・問題100件の上限超過、不正または重複した問題ID、絶対値が10億を超える数値だけです（400 `invalid_contest`）。
-- 応答は`id`、`version`、`updatedAt`、`draft`と、公開できない理由のコード一覧`issues`を返します。コードは`title_missing`、`start_missing`、`start_past`、`duration_invalid`、`penalty_invalid`、`problems_missing`、`points_invalid`、`problem_unavailable`（公開済み・削除済み・他のコンテストに登録済み）、`problem_incomplete`（コンテストの内容の条件を満たさない）です。
+- 応答は`id`、`version`、`updatedAt`、`draft`と、公開できない理由のコード一覧`issues`を返します。コードは`title_missing`、`start_missing`、`start_past`、`duration_invalid`、`penalty_invalid`、`freeze_invalid`（1分からコンテスト時間までの範囲外）、`problems_missing`、`points_invalid`、`problem_unavailable`（公開済み・削除済み・他のコンテストに登録済み）、`problem_incomplete`（コンテストの内容の条件を満たさない）です。
 - `GET`で取得、`DELETE ?version=N`で削除し、`GET /my/contests/drafts?offset=0`で自分の下書きを更新日時の降順に50件ずつ返します。一覧の各要素の`author`はオーナーのユーザーIDです。
 - `PUT /my/contests/{id}/publication`に`{"version":N}`を送ると、保存済みの下書きを同じ`id`のコンテストとして公開し、コンテスト詳細を返します。終了日時は`startsAt`に`durationMinutes`を足した時刻です。`issues`が残っていれば409 `contest_not_ready`、古い`version`や問題の競合は409 `contest_conflict`です。
 - 下書きは`contests`とは別の`contest_drafts`に置くため、公開APIの一覧・詳細・順位表・参加登録からは見えません。他人の下書きは404です。
@@ -524,8 +524,8 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
   開催中もすべての提出を閲覧でき、参加登録できず、順位表に載らない。
 - 開始前に問題を見られる人（`contest_problem_access`）：セッターと、その問題の作者とテスター。
   開始前のコンテストでの提出も、この人に限る。
-- 結果確定（`contest_results_final`）：今は終了と同じである。
-  コンテストの提出の公開（提出一覧と提出詳細、公開問題の提出一覧、解いた人数）と`canViewSubmissions`は、この判定を使う。
+- 結果確定（`contest_results_final`）：凍結のないコンテストでは終了、凍結のあるコンテストでは結果の公開（下の「順位表の凍結と結果の公開」）。
+  コンテストの提出の公開（提出一覧と提出詳細、公開問題の提出一覧、解いた人数）は、提出ごとの`contest_submission_public`を使う。
   問題と解説は、これまでどおり終了時に公開する。
 
 参加者とスタッフは兼ねられない。
@@ -574,6 +574,20 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 - 説明の画像は、セッターの誰がアップロードしたものでも使え、下書きの説明の画像は今のセッターが見られる。
   抜けた人がアップロードした画像も、そのコンテストではそのまま使える。
 - 配布時は`032_contest_setters.sql`だけのコミットを先に配布して適用し、その後にAPIを配布する。
+
+### 順位表の凍結と結果の公開
+
+[ADR 0023](../docs/adr/0023-freeze-contest-standings.md)に従い、終了前の一定時間の提出の結果を、結果の公開まで伏せられる。
+
+- `PUT /my/contests/{id}`と下書きの`freezeMinutes`：null で凍結なし、1分からコンテスト時間までの分数。開始後は変えられない。範囲外は400 `invalid_contest`。
+- コンテストの詳細と一覧は`freezeMinutes`、`freezeAt`（凍結を始める時刻、凍結なしはnull）、`revealed`、`revealedAt`、`resultsFinal`を返す。
+  閲覧者向けに`canViewLiveStandings`（凍結のあるコンテストのスタッフ）と`canRevealResults`（終了して結果を公開していない凍結コンテストのセッターと運営者）を返す。
+- 凍結後の提出（`freezeAt`から終了までに作られた提出）は、結果確定まで、本人とスタッフ以外には一覧にも詳細にも出さない。凍結前の提出と終了後の練習の提出は終了時に公開する。解いた人数も同じ条件で数え、`GET /my/solved-problems`は凍結に関係なく本人の結果を返す。
+- `GET /contests/{id}/standings`は、結果確定まで凍結前の提出だけで計算し、各セルの`frozen`に凍結後の提出の件数（CE、JE、判定待ちを含み、凍結前に正解した問題では0）を返す。
+- `GET /my/contests/{id}/standings`は同じ表を返し、スタッフが`?live=1`を付けたときだけ凍結なしの表を返す。
+- `POST /my/contests/{id}/reveal`：セッターか運営者（`OPERATOR_SUBJECTS`）が結果を公開し、コンテスト詳細を返す。取り消せず、公開済みなら何もせず200。
+  ほかの人は404、終了前か凍結のないコンテストは409 `contest_conflict`、コンテスト中の提出に判定待ち（リジャッジ中を含む）が残っていれば409 `contest_results_pending`。
+- 配布時は`034_contest_freeze.sql`だけのコミットを先に配布して適用し、その後にAPIを配布する。
 
 ## 定期便
 
