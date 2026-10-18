@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	// ErrActiveContest keeps an organizer without co-setters until contests that others may join or be competing in
-	// have ended, and the author of an unpublished problem until the contest holding it has ended.
+	// ErrActiveContest keeps an organizer without co-setters until the results of their contests are final (for a
+	// frozen contest, revealed; ADR 0023), and the author of an unpublished problem until the contest holding it has ended.
 	ErrActiveContest = errors.New("account has a contest that has not ended")
 	// ErrMismatch means the typed confirmation is not the current handle.
 	ErrMismatch = errors.New("confirmation does not match the handle")
@@ -92,7 +92,7 @@ func (s *Store) delete(ctx context.Context, owner, handle string, removeIdentity
 		return err
 	}
 	var active bool
-	if err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM contests WHERE owner_id=$1 AND ends_at>clock_timestamp())
+	if err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM contests c WHERE owner_id=$1 AND NOT COALESCE(contest_results_final_at(c)<=clock_timestamp(),false))
  OR EXISTS (SELECT 1 FROM problem_drafts d JOIN contest_problems cp ON cp.problem_id=d.id JOIN contests c ON c.id=cp.contest_id
   WHERE d.owner_id=$1 AND d.published_draft IS NULL AND c.ends_at>clock_timestamp())`, owner).Scan(&active); err != nil {
 		return err

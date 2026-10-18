@@ -63,6 +63,7 @@ type (
 		Contests    *contests.Store
 		Submissions *submissions.Store
 		Judging     submissions.Config
+		Operators   map[string]bool
 	}
 )
 
@@ -109,7 +110,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	posts := postHandler{Posts: d.Posts, Operators: d.Operators}
 	profiles := profileHandler{Profiles: d.Profiles}
 	submissions := submissionHandler{Service: submissions.Service{Config: judging, Submissions: d.Submissions, Problems: d.Store, DispatchJudge: d.DispatchJudge}, Operators: d.Operators}
-	contests := contestHandler{Contests: d.Contests, Submissions: d.Submissions, Judging: judging}
+	contests := contestHandler{Contests: d.Contests, Submissions: d.Submissions, Judging: judging, Operators: d.Operators}
 	images := imageHandler{Store: d.Images}
 	notifications := notificationHandler{Store: d.Notifications}
 	tagList := tagHandler{Store: d.Tags}
@@ -137,11 +138,11 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	public("GET /contests", contests.publicContest, true, publicOperation{Summary: "コンテスト一覧", Description: "開始日時の降順。各要素のproblemsは空配列です。問題一覧は詳細APIで取得します。", Response: publicContestPage{}, Parameters: offsetParameters()})
 	public("GET /contests/{id}", contests.publicContest, true, publicOperation{Summary: "コンテスト詳細", Description: "開始前も出題順と配点を公開します。問題ID・タイトル・制限値は作成者と担当の作問者・テスターだけに返します。", Response: publicContestResponse{}})
 	public("GET /contests/{id}/problems/{problem}", contests.publicContest, true, publicOperation{Summary: "コンテストの問題", Description: "開始後に取得可能です。解説は終了後に公開されます。publishedAtはコンテスト終了日時です。authorはコンテストのオーナー、authorsはオーナーを先頭とするコンテストの作成者です。", Response: publicContestProblem{}})
-	public("GET /contests/{id}/problems/{problem}/submissions", contests.publicContest, true, publicOperation{Summary: "コンテストの問題別提出一覧", Description: "コンテスト終了後に取得可能です。ソースコードとケース別結果は含みません。mine=1は認証が必要なため公開APIでは利用できません。", Response: publicSubmissionPage{}, Parameters: offsetParameters()})
-	public("GET /contests/{id}/standings", contests.publicContest, true, publicOperation{Summary: "コンテスト順位表", Response: publicStandingsResponse{}})
-	public("GET /contests/{id}/submissions", contests.publicContest, true, publicOperation{Summary: "コンテスト提出一覧", Description: "コンテスト終了後に取得可能です。提出日時の降順。ソースコードとケース別結果は含みません。", Response: publicSubmissionPage{}, Parameters: offsetParameters()})
+	public("GET /contests/{id}/problems/{problem}/submissions", contests.publicContest, true, publicOperation{Summary: "コンテストの問題別提出一覧", Description: "コンテスト終了後に取得可能です。順位表を凍結したコンテストでは、凍結後の提出を結果の公開まで含みません。ソースコードとケース別結果は含みません。mine=1は認証が必要なため公開APIでは利用できません。", Response: publicSubmissionPage{}, Parameters: offsetParameters()})
+	public("GET /contests/{id}/standings", contests.publicContest, true, publicOperation{Summary: "コンテスト順位表", Description: "順位表を凍結したコンテストでは、結果の公開まで凍結前の提出だけで計算し、凍結後の提出の件数をfrozenで返します。", Response: publicStandingsResponse{}})
+	public("GET /contests/{id}/submissions", contests.publicContest, true, publicOperation{Summary: "コンテスト提出一覧", Description: "コンテスト終了後に取得可能です。順位表を凍結したコンテストでは、凍結後の提出を結果の公開まで含みません。提出日時の降順。ソースコードとケース別結果は含みません。", Response: publicSubmissionPage{}, Parameters: offsetParameters()})
 	public("GET /contests/{id}/editorials", posts.editorials, true, publicOperation{Summary: "コンテストのユーザー解説", Description: "コンテスト終了後に、各問題を解説する公開記事を公開日時の昇順で返します。problemIdで問題ごとにまとめてください。", Response: publicEditorialList{}})
-	public("GET /contests/{id}/submissions/{submission}", contests.publicContest, true, publicOperation{Summary: "コンテスト提出詳細", Description: "コンテスト終了後に取得可能です。非公開テストの入出力やチェッカー診断は返しません。", Response: publicSubmissionResponse{}})
+	public("GET /contests/{id}/submissions/{submission}", contests.publicContest, true, publicOperation{Summary: "コンテスト提出詳細", Description: "コンテスト終了後に取得可能です。凍結後の提出は結果の公開まで取得できません。非公開テストの入出力やチェッカー診断は返しません。", Response: publicSubmissionResponse{}})
 	public("GET /images/{id}", images.publicImage, true, publicOperation{Summary: "公開画像", Description: "公開コンテンツから参照される画像をPNGまたはJPEGで返します。", Image: true})
 	public("GET /runtimes", submissions.runtimes, false, publicOperation{Summary: "利用可能な言語", Response: runtimesResponse{}})
 	public("GET /submissions/{submission}", submissions.publicProblemSubmissions, true, publicOperation{Summary: "提出IDから公開提出を取得", Description: "問題・コンテストの提出詳細と同じ公開範囲です。非公開の提出や公開待ちの提出は404を返します。", Response: publicSubmissionResponse{}})
@@ -185,6 +186,8 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	private("GET /my/contests/{id}/problems/{problem}/submissions", contests.contest, true)
 	private("GET /my/contests/{id}/submissions", contests.contest, true)
 	private("GET /my/contests/{id}/submissions/{submission}", contests.contest, true)
+	private("GET /my/contests/{id}/standings", contests.contest, true)
+	private("POST /my/contests/{id}/reveal", contests.contest, true)
 	private("GET /my/solved-problems", problems.solvedProblems, true)
 	private("GET /my/difficulty-votes/{id}", problems.difficultyVote, true)
 	private("PUT /my/difficulty-votes/{id}", problems.difficultyVote, true)

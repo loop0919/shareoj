@@ -24,6 +24,7 @@ type Draft struct {
 	StartsAt        *time.Time     `json:"startsAt"`
 	DurationMinutes *int           `json:"durationMinutes"`
 	PenaltyMinutes  *int           `json:"penaltyMinutes"`
+	FreezeMinutes   *int           `json:"freezeMinutes"`
 	Problems        []DraftProblem `json:"problems"`
 }
 type DraftProblem struct {
@@ -68,6 +69,7 @@ const (
 	IssueStartPast   = "start_past"
 	IssueDuration    = "duration_invalid"
 	IssuePenalty     = "penalty_invalid"
+	IssueFreeze      = "freeze_invalid"
 	IssueProblems    = "problems_missing"
 	IssuePoints      = "points_invalid"
 	IssueUnavailable = "problem_unavailable"
@@ -85,7 +87,7 @@ func ValidDraft(in DraftInput) bool {
 	if in.Version < 0 || in.Version > 9007199254740990 || utf8.RuneCountInString(d.Title) > 120 || utf8.RuneCountInString(d.Description) > 100000 || strings.ContainsRune(text, 0) || !utf8.ValidString(text) || len(d.Problems) > 100 {
 		return false
 	}
-	numbers := []*int{d.DurationMinutes, d.PenaltyMinutes}
+	numbers := []*int{d.DurationMinutes, d.PenaltyMinutes, d.FreezeMinutes}
 	seen := map[string]bool{}
 	for _, p := range d.Problems {
 		if !problems.ValidID(p.ID) || seen[p.ID] {
@@ -127,6 +129,10 @@ func (d Draft) contentIssues(now time.Time) []string {
 	}
 	if d.PenaltyMinutes == nil || *d.PenaltyMinutes < 0 || *d.PenaltyMinutes > 1440 {
 		issues = append(issues, IssuePenalty)
+	}
+	// Null means no freeze; otherwise it must fit in the contest.
+	if f := d.FreezeMinutes; f != nil && (*f < 1 || d.DurationMinutes != nil && *f > *d.DurationMinutes) {
+		issues = append(issues, IssueFreeze)
 	}
 	if len(d.Problems) == 0 {
 		issues = append(issues, IssueProblems)
@@ -492,7 +498,7 @@ func (s *Store) Publish(ctx context.Context, actor, id string, version int64, po
 }
 
 func (d Draft) input() Input {
-	in := Input{Title: d.Title, Description: d.Description, PenaltyMinutes: d.PenaltyMinutes, Problems: make([]Problem, len(d.Problems))}
+	in := Input{Title: d.Title, Description: d.Description, PenaltyMinutes: d.PenaltyMinutes, FreezeMinutes: d.FreezeMinutes, Problems: make([]Problem, len(d.Problems))}
 	if end, ok := d.endsAt(); ok {
 		in.StartsAt, in.EndsAt = *d.StartsAt, end
 	}

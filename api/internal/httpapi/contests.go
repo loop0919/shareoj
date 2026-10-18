@@ -41,6 +41,11 @@ func (p contestHandler) contest(w http.ResponseWriter, r *http.Request, owner st
 			list = list[:50]
 		}
 		result = offsetResponse[contests.Contest]{Items: list, HasMore: more}
+	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/reveal"):
+		err = p.Contests.Reveal(r.Context(), id, owner, p.Operators[owner])
+		if err == nil {
+			result, err = p.get(r, id, owner)
+		}
 	case r.Method == http.MethodPost:
 		err = p.Contests.Join(r.Context(), id, owner)
 		if err == nil {
@@ -71,7 +76,8 @@ func (p contestHandler) contest(w http.ResponseWriter, r *http.Request, owner st
 		}
 		result, err = p.Contests.Problem(r.Context(), id, pid, owner)
 	case strings.HasSuffix(r.URL.Path, "/standings"):
-		result, err = p.Contests.Standings(r.Context(), id)
+		// The public route always serves the frozen table; staff ask for the live one through /my (ADR 0023).
+		result, err = p.Contests.Standings(r.Context(), id, owner, owner != "" && r.URL.Query().Get("live") == "1")
 	case strings.Contains(r.URL.Path, "/submissions"):
 		if p.Submissions == nil {
 			authError(w, 503, "judging_unavailable")
@@ -104,13 +110,22 @@ func (p contestHandler) contest(w http.ResponseWriter, r *http.Request, owner st
 			}
 		}
 	default:
-		result, err = p.Contests.Get(r.Context(), id, owner)
+		result, err = p.get(r, id, owner)
 	}
 	if err != nil {
 		contestError(w, err)
 		return
 	}
 	writeAuthJSON(w, 200, result)
+}
+
+// get adds what only the handler knows: operators may also reveal results.
+func (p contestHandler) get(r *http.Request, id, viewer string) (contests.Contest, error) {
+	c, err := p.Contests.Get(r.Context(), id, viewer)
+	if err == nil && p.Operators[viewer] && c.Revealable() {
+		c.CanRevealResults = true
+	}
+	return c, err
 }
 
 // contestDraft serves unpublished contests. They live in their own table, so contest routes never see them.
@@ -269,6 +284,8 @@ func contestError(w http.ResponseWriter, err error) {
 		authError(w, 409, "contest_participant_locked")
 	case errors.Is(err, contests.ErrParticipantProblem):
 		authError(w, 409, "contest_participant_problem")
+	case errors.Is(err, contests.ErrResultsPending):
+		authError(w, 409, "contest_results_pending")
 	case errors.Is(err, contests.ErrNotReady):
 		authError(w, 409, "contest_not_ready")
 	case errors.Is(err, contests.ErrConflict):

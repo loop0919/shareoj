@@ -83,13 +83,20 @@ func (s *Store) Publish(ctx context.Context, owner, id string, version int64, pu
 	return p, err
 }
 
-// Accepted submissions visible on the public problem page.
-const publicAcceptedSubmission = `s.status='DONE' AND s.result->>'verdict'='AC'
+const acceptedRun = `s.status='DONE' AND s.result->>'verdict'='AC'
  AND NOT COALESCE((s.job->>'easyTest')::boolean,false)
  AND NOT COALESCE((s.job->>'generate')::boolean,false)
- AND NOT COALESCE((s.job->>'validate')::boolean,false)
+ AND NOT COALESCE((s.job->>'validate')::boolean,false)`
+
+// Accepted submissions visible on the public problem page.
+const publicAcceptedSubmission = acceptedRun + `
  AND ((s.contest_id IS NULL AND NOT COALESCE((s.job->>'privateDraft')::boolean,true))
   OR EXISTS(SELECT 1 FROM contests c WHERE c.id=s.contest_id AND contest_submission_public(c,s.created_at)))`
+
+// The viewer's own solved marks ignore the freeze (ADR 0023), so contest runs count from the end.
+const ownAcceptedSubmission = acceptedRun + `
+ AND ((s.contest_id IS NULL AND NOT COALESCE((s.job->>'privateDraft')::boolean,true))
+  OR EXISTS(SELECT 1 FROM contests c WHERE c.id=s.contest_id AND s.created_at>=c.starts_at AND c.ends_at<=statement_timestamp()))`
 
 const publicSolverCount = `(SELECT count(DISTINCT s.owner_id) FROM submissions s WHERE s.problem_id=d.id AND ` + publicAcceptedSubmission + `)`
 
@@ -150,7 +157,7 @@ func (s *Store) PublicList(ctx context.Context, cursor *Cursor, filter ListFilte
 func (s *Store) SolvedProblems(ctx context.Context, owner string) ([]string, error) {
 	rows, err := s.pool.Query(ctx, `SELECT DISTINCT s.problem_id::text FROM submissions s
  JOIN problem_drafts d ON d.id=s.problem_id
- WHERE s.owner_id=$1 AND d.published_draft IS NOT NULL AND `+publicAcceptedSubmission, owner)
+ WHERE s.owner_id=$1 AND d.published_draft IS NOT NULL AND `+ownAcceptedSubmission, owner)
 	if err != nil {
 		return nil, err
 	}

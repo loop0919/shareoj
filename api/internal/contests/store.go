@@ -35,17 +35,29 @@ type Problem struct {
 // who is not staff now but served as staff, so cannot compete; it is false for anyone signed out.
 // Authors are the setters, owner first; Author is the owner alone. IsSetter and IsOwner describe the viewer.
 type Contest struct {
-	ID                 string    `json:"id"`
-	Owner              string    `json:"-"`
-	Author             string    `json:"author"`
-	Authors            []string  `json:"authors"`
-	ProblemAuthors     []string  `json:"problemAuthors"`
-	Testers            []string  `json:"testers"`
-	Title              string    `json:"title"`
-	Description        string    `json:"description"`
-	StartsAt           time.Time `json:"startsAt"`
-	EndsAt             time.Time `json:"endsAt"`
-	PenaltyMinutes     int       `json:"penaltyMinutes"`
+	ID             string    `json:"id"`
+	Owner          string    `json:"-"`
+	Author         string    `json:"author"`
+	Authors        []string  `json:"authors"`
+	ProblemAuthors []string  `json:"problemAuthors"`
+	Testers        []string  `json:"testers"`
+	Title          string    `json:"title"`
+	Description    string    `json:"description"`
+	StartsAt       time.Time `json:"startsAt"`
+	EndsAt         time.Time `json:"endsAt"`
+	PenaltyMinutes int       `json:"penaltyMinutes"`
+	// FreezeMinutes freezes the public standings for the last minutes of the contest (ADR 0023); null means no freeze.
+	// Submissions created from FreezeAt until the end stay hidden from others until the results are revealed.
+	FreezeMinutes *int       `json:"freezeMinutes"`
+	FreezeAt      *time.Time `json:"freezeAt"`
+	Revealed      bool       `json:"revealed"`
+	RevealedAt    *time.Time `json:"revealedAt"`
+	// ResultsFinal is true after the end without a freeze, and after the reveal with one.
+	ResultsFinal bool `json:"resultsFinal"`
+	// CanViewLiveStandings lets staff request the unfrozen standings from GET /my/contests/{id}/standings?live=1.
+	CanViewLiveStandings bool `json:"canViewLiveStandings"`
+	// CanRevealResults lets a setter or an operator reveal an ended frozen contest (POST /my/contests/{id}/reveal).
+	CanRevealResults   bool      `json:"canRevealResults"`
 	Version            int64     `json:"version"`
 	Status             string    `json:"status"`
 	CanEdit            bool      `json:"canEdit"`
@@ -64,22 +76,30 @@ type Input struct {
 	StartsAt       time.Time `json:"startsAt"`
 	EndsAt         time.Time `json:"endsAt"`
 	PenaltyMinutes *int      `json:"penaltyMinutes"`
+	FreezeMinutes  *int      `json:"freezeMinutes"`
 	Version        int64     `json:"version"`
 	Problems       []Problem `json:"problems"`
 }
 type Store struct{ Pool *pgxpool.Pool }
 
+// Revealable reports whether the contest has ended with its results frozen and not yet revealed.
+func (c Contest) Revealable() bool {
+	return c.FreezeMinutes != nil && !c.Revealed && c.Status == "ended"
+}
+
 // coSetters lists the co-setters of contest c in the order they joined.
 const coSetters = `ARRAY(SELECT su.handle FROM contest_setters s JOIN user_profiles su ON su.owner_id=s.owner_id
  WHERE s.contest_id=c.id AND s.left_at IS NULL ORDER BY s.created_at,s.owner_id)`
 
-const fields = `c.id,c.owner_id,u.handle,` + coSetters + `,c.title,c.description,c.starts_at,c.ends_at,c.penalty_minutes,c.version,
+const fields = `c.id,c.owner_id,u.handle,` + coSetters + `,c.title,c.description,c.starts_at,c.ends_at,c.penalty_minutes,c.freeze_minutes,
+ contest_freeze_at(c),c.revealed_at,contest_results_final(c),c.version,
  CASE WHEN statement_timestamp()<c.starts_at THEN 'scheduled' WHEN statement_timestamp()<c.ends_at THEN 'running' ELSE 'ended' END`
 
 func scan(row pgx.Row) (Contest, error) {
 	var c Contest
 	var others []string
-	err := row.Scan(&c.ID, &c.Owner, &c.Author, &others, &c.Title, &c.Description, &c.StartsAt, &c.EndsAt, &c.PenaltyMinutes, &c.Version, &c.Status)
+	err := row.Scan(&c.ID, &c.Owner, &c.Author, &others, &c.Title, &c.Description, &c.StartsAt, &c.EndsAt, &c.PenaltyMinutes, &c.FreezeMinutes, &c.FreezeAt, &c.RevealedAt, &c.ResultsFinal, &c.Version, &c.Status)
+	c.Revealed = c.RevealedAt != nil
 	c.Authors = append([]string{c.Author}, others...)
 	c.Problems = []Problem{}
 	c.ProblemAuthors = []string{}
@@ -107,8 +127,7 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
 	if err != nil {
 		return c, err
 	}
-	var final bool
-	err = tx.QueryRow(ctx, `SELECT contest_setter(c.id,$2),c.owner_id=$2,contest_staff(c.id,$2),$2<>'' AND contest_competitor(c,$2),contest_results_final(c),
+	err = tx.QueryRow(ctx, `SELECT contest_setter(c.id,$2),c.owner_id=$2,contest_staff(c.id,$2),$2<>'' AND contest_competitor(c,$2),
  $2<>'' AND NOT contest_staff(c.id,$2) AND NOT contest_competitor(c,$2),
  EXISTS(SELECT 1 FROM contest_participants p WHERE p.contest_id=c.id AND p.owner_id=$2),
  COALESCE((SELECT array_agg(DISTINCT u.handle ORDER BY u.handle)
@@ -117,12 +136,15 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
  COALESCE((SELECT array_agg(DISTINCT u.handle ORDER BY u.handle)
   FROM contest_problems cp JOIN problem_testers t ON t.problem_id=cp.problem_id JOIN user_profiles u ON u.owner_id=t.owner_id
   WHERE cp.contest_id=c.id), ARRAY[]::text[])
- FROM contests c WHERE c.id=$1`, id, viewer).Scan(&c.IsSetter, &c.IsOwner, &c.Staff, &c.Official, &final, &c.Excluded, &c.Participating, &c.ProblemAuthors, &c.Testers)
+ FROM contests c WHERE c.id=$1`, id, viewer).Scan(&c.IsSetter, &c.IsOwner, &c.Staff, &c.Official, &c.Excluded, &c.Participating, &c.ProblemAuthors, &c.Testers)
 	if err != nil {
 		return c, err
 	}
 	c.CanEdit = c.IsSetter && c.Status == "scheduled"
-	c.CanViewSubmissions = final || c.Staff
+	// Pre-freeze submissions become public at the end; frozen ones are filtered row by row.
+	c.CanViewSubmissions = c.Status == "ended" || c.Staff
+	c.CanViewLiveStandings = c.Staff && c.FreezeMinutes != nil
+	c.CanRevealResults = c.IsSetter && c.Revealable()
 	rows, err := tx.Query(ctx, `SELECT cp.problem_id,cp.points,cp.draft->>'title',cp.draft->>'timeLimitMs',cp.draft->>'memoryLimitMb',
  EXISTS(SELECT 1 FROM submissions s WHERE s.contest_id=cp.contest_id AND s.problem_id=cp.problem_id
   AND s.owner_id=$3 AND s.status='DONE' AND s.result->>'verdict'='AC'
@@ -191,8 +213,8 @@ func save(ctx context.Context, tx pgx.Tx, actor, id string, in Input, policy Jud
 			return err
 		}
 		var tag pgconn.CommandTag
-		tag, err = tx.Exec(ctx, `INSERT INTO contests(id,owner_id,title,description,starts_at,ends_at,penalty_minutes)
- SELECT $1,$2,$3,$4,$5,$6,$7 WHERE $5>clock_timestamp() AND ($8 OR NOT EXISTS (SELECT 1 FROM contest_drafts WHERE id=$1))`, id, owner, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes, publishing)
+		tag, err = tx.Exec(ctx, `INSERT INTO contests(id,owner_id,title,description,starts_at,ends_at,penalty_minutes,freeze_minutes)
+ SELECT $1,$2,$3,$4,$5,$6,$7,$9 WHERE $5>clock_timestamp() AND ($8 OR NOT EXISTS (SELECT 1 FROM contest_drafts WHERE id=$1))`, id, owner, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes, publishing, in.FreezeMinutes)
 		if err == nil && tag.RowsAffected() != 1 {
 			return ErrConflict
 		}
@@ -206,8 +228,8 @@ func save(ctx context.Context, tx pgx.Tx, actor, id string, in Input, policy Jud
 		if current != in.Version {
 			return ErrConflict
 		}
-		tag, e := tx.Exec(ctx, `UPDATE contests SET title=$3,description=$4,starts_at=$5,ends_at=$6,penalty_minutes=$7,version=version+1
-  WHERE id=$1 AND contest_setter(id,$2) AND starts_at>clock_timestamp() AND $5>clock_timestamp()`, id, actor, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes)
+		tag, e := tx.Exec(ctx, `UPDATE contests SET title=$3,description=$4,starts_at=$5,ends_at=$6,penalty_minutes=$7,freeze_minutes=$8,version=version+1
+  WHERE id=$1 AND contest_setter(id,$2) AND starts_at>clock_timestamp() AND $5>clock_timestamp()`, id, actor, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes, in.FreezeMinutes)
 		err = e
 		if err == nil && tag.RowsAffected() != 1 {
 			return ErrConflict

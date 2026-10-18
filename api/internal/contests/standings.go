@@ -8,10 +8,13 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// Frozen counts the submissions made after the freeze, whatever their verdict (ADR 0023); it stays 0 on a
+// problem accepted before the freeze, and without a freeze or after the results are final.
 type Score struct {
 	Points     int        `json:"points"`
 	Wrong      int        `json:"wrong"`
 	Pending    int        `json:"pending"`
+	Frozen     int        `json:"frozen"`
 	AcceptedAt *time.Time `json:"acceptedAt,omitempty"`
 }
 type Standing struct {
@@ -29,6 +32,12 @@ type Attempt struct {
 
 // Attempts must be ordered by acceptance time, never judge completion time.
 func Rank(participants []string, attempts []Attempt, start time.Time, penaltyMinutes int) []Standing {
+	return RankFrozen(participants, attempts, start, penaltyMinutes, time.Time{})
+}
+
+// RankFrozen ranks only the attempts created before freezeAt and counts the later ones in Score.Frozen.
+// A zero freezeAt ranks every attempt, like Rank.
+func RankFrozen(participants []string, attempts []Attempt, start time.Time, penaltyMinutes int, freezeAt time.Time) []Standing {
 	users := map[string]*Standing{}
 	for _, handle := range participants {
 		users[handle] = &Standing{Handle: handle, Problems: map[string]*Score{}}
@@ -46,6 +55,10 @@ func Rank(participants []string, attempts []Attempt, start time.Time, penaltyMin
 			u.Problems[a.ProblemID] = p
 		}
 		if p.AcceptedAt != nil {
+			continue
+		}
+		if !freezeAt.IsZero() && !a.CreatedAt.Before(freezeAt) {
+			p.Frozen++
 			continue
 		}
 		switch a.Verdict {
@@ -90,10 +103,15 @@ func Rank(participants []string, attempts []Attempt, start time.Time, penaltyMin
 	return result
 }
 
-func (s *Store) Standings(ctx context.Context, id string) ([]Standing, error) {
-	c, err := s.Get(ctx, id, "")
+// Standings returns the frozen table until the results are final. Only staff may ask for the live one (ADR 0023).
+func (s *Store) Standings(ctx context.Context, id, viewer string, live bool) ([]Standing, error) {
+	c, err := s.Get(ctx, id, viewer)
 	if err != nil {
 		return nil, err
+	}
+	var freezeAt time.Time
+	if c.FreezeAt != nil && !c.ResultsFinal && !(live && c.Staff) {
+		freezeAt = *c.FreezeAt
 	}
 	// Staff and former staff are left out. A participant who became a tester after the results were final keeps the final rank.
 	rows, err := s.Pool.Query(ctx, `SELECT p.owner_id,u.handle FROM contest_participants p
@@ -128,5 +146,5 @@ func (s *Store) Standings(ctx context.Context, id string) ([]Standing, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Rank(participants, attempts, c.StartsAt, c.PenaltyMinutes), nil
+	return RankFrozen(participants, attempts, c.StartsAt, c.PenaltyMinutes, freezeAt), nil
 }
