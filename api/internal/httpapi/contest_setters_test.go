@@ -77,7 +77,7 @@ func TestContestSettersPostgres(t *testing.T) {
 		}
 		return n
 	}
-	people := []string{"olive", "cora", "carl", "rex", "sam", "pat", "ann", "late"}
+	people := []string{"olive", "cora", "carl", "rex", "sam", "pat", "ann", "late", "dan", "eve"}
 	for _, handle := range people {
 		exec(`INSERT INTO user_profiles(owner_id,handle) VALUES($1,$1)`, handle)
 	}
@@ -91,6 +91,7 @@ func TestContestSettersPostgres(t *testing.T) {
 		pK2 = "10000000-0000-4000-8000-000000000008" // by olive
 		pZ  = "10000000-0000-4000-8000-000000000009" // never created
 		pO2 = "10000000-0000-4000-8000-00000000000a" // by olive, outside any contest at first
+		pD  = "10000000-0000-4000-8000-00000000000b" // by dan
 		cid = "d0000000-0000-4000-8000-000000000001"
 		d2  = "d0000000-0000-4000-8000-000000000002"
 		hid = "d0000000-0000-4000-8000-000000000003"
@@ -100,7 +101,7 @@ func TestContestSettersPostgres(t *testing.T) {
 		k2  = "d0000000-0000-4000-8000-000000000007"
 	)
 	difficulty := 3
-	for id, owner := range map[string]string{pO: "olive", pC: "cora", pA: "ann", pY: "ann", pX: "sam", pL: "ann", pK2: "olive", pO2: "olive"} {
+	for id, owner := range map[string]string{pO: "olive", pC: "cora", pA: "ann", pY: "ann", pX: "sam", pL: "ann", pK2: "olive", pO2: "olive", pD: "dan"} {
 		draft := problems.Draft{Difficulty: &difficulty, Title: "Title of " + id[len(id)-2:], Markdown: "statement", Editorial: "editorial", TimeLimitMS: "1000", MemoryLimitMB: "256", TestCases: []problems.TestCase{{Input: "1", Output: "2", IsSample: true}}}
 		if _, err = store.Save(ctx, owner, id, 0, draft); err != nil {
 			t.Fatal(err)
@@ -377,9 +378,46 @@ func TestContestSettersPostgres(t *testing.T) {
 	image(draftImage, "rex", 404)
 	image(draftImage, "", 404)
 
+	// A co-setter who leaves the draft loses it and its private images, and their problem in it becomes unavailable.
+	accept(invite, "dan", 200)
+	image(draftImage, "dan", 200)
+	withLeaver := draftBody("Shared", pO, pC, pA, pY, pD)
+	withLeaver["description"] = described["description"]
+	saveDraft(cid, "dan", 4, withLeaver, 200)
+	request("DELETE", "/my/contests/"+cid+"/setters/dan", "dan", nil, 204)
+	image(draftImage, "dan", 404)
+	request("GET", "/my/contests/"+cid+"/draft", "dan", nil, 404)
+	request("PUT", "/my/contests/"+cid+"/draft", "dan", map[string]any{"version": 5, "draft": withLeaver}, 404)
+	request("PUT", "/my/contests/"+cid+"/publication", "dan", map[string]any{"version": 5}, 404)
+	var leftDrafts offsetResponse[contests.DraftSummary]
+	decode(request("GET", "/my/contests/drafts", "dan", nil, 200), &leftDrafts)
+	if len(leftDrafts.Items) != 0 {
+		t.Fatalf("drafts after leaving: %+v", leftDrafts)
+	}
+	if body := request("GET", "/my/contests/"+cid+"/draft", "olive", nil, 200); strings.Contains(body, "Title of 0b") || !strings.Contains(body, "problem_unavailable") {
+		t.Fatal("draft after its setter left", body)
+	}
+	if body := request("PUT", "/my/contests/"+cid+"/publication", "olive", map[string]any{"version": 5}, 409); !strings.Contains(body, "contest_not_ready") {
+		t.Fatal(body)
+	}
+	saveDraft(cid, "olive", 5, described, 200)
+	// The owner removes a co-setter from the draft; the link is renewed, as after publication.
+	accept(invite, "eve", 200)
+	request("DELETE", "/my/contests/"+cid+"/setters/eve", "eve", nil, 204)
+	accept(invite, "eve", 200)
+	request("DELETE", "/my/contests/"+cid+"/setters/eve", "cora", nil, 404)
+	request("DELETE", "/my/contests/"+cid+"/setters/eve", "olive", nil, 204)
+	request("GET", invite, "sam", nil, 404)
+	request("GET", "/my/contests/"+cid+"/draft", "eve", nil, 404)
+	image(draftImage, "eve", 404)
+	invite = link(cid, "olive", "POST")
+	if !slices.Equal(draftOf(cid, "cora").Authors, []string{"olive", "cora", "carl"}) {
+		t.Fatal("authors after leaving the draft")
+	}
+
 	// A co-setter publishes, and the draft's owner stays the owner; the setters and link carry over.
 	var published contests.Contest
-	decode(request("PUT", "/my/contests/"+cid+"/publication", "cora", map[string]any{"version": 4}, 200), &published)
+	decode(request("PUT", "/my/contests/"+cid+"/publication", "cora", map[string]any{"version": 6}, 200), &published)
 	if published.Author != "olive" || !slices.Equal(published.Authors, []string{"olive", "cora", "carl"}) || !published.IsSetter || published.IsOwner || !published.CanEdit {
 		t.Fatalf("published by a co-setter: %+v", published)
 	}
@@ -387,6 +425,18 @@ func TestContestSettersPostgres(t *testing.T) {
 		t.Fatal("owner changed on publication")
 	}
 	image(draftImage, "", 200)
+	// Those who left or were removed at the draft stage stay out of the published contest.
+	for _, gone := range []string{"dan", "eve"} {
+		if body := request("POST", "/my/contests/"+cid+"/participation", gone, nil, 409); !strings.Contains(body, "contest_participation_unavailable") {
+			t.Fatal(gone, body)
+		}
+		if c := contestOf(cid, gone); c.IsSetter || c.Staff || c.Official {
+			t.Fatalf("contest view for %s: %+v", gone, c)
+		}
+	}
+	if got := excluded(cid); !slices.Equal(got, []string{"dan", "eve"}) {
+		t.Fatal("exclusions after publication", got)
+	}
 	if joined := accept(invite, "rex", 200); !joined.Published || !joined.Joined {
 		t.Fatalf("published invitation: %+v", joined)
 	}
@@ -556,7 +606,7 @@ func TestContestSettersPostgres(t *testing.T) {
 	request("PUT", "/my/contests/"+cid, "cora", edit, 409)
 	edit.Problems = slices.DeleteFunc(edit.Problems, func(p contests.Problem) bool { return p.ID == pY })
 	decode(request("PUT", "/my/contests/"+cid, "cora", edit, 200), &published)
-	if got := excluded(cid); !slices.Equal(got, []string{"ann", "carl", "rex"}) {
+	if got := excluded(cid); !slices.Equal(got, []string{"ann", "carl", "dan", "eve", "rex"}) {
 		t.Fatal("exclusions", got)
 	}
 
