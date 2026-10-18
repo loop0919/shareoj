@@ -184,6 +184,28 @@ test('a published contest names the problems no setter manages before saving', a
   await expect(page.locator('#problem-candidates li').filter({ hasText: '抜けた人の問題' }).locator('.problem-role')).toHaveCount(0)
 })
 
+test('saving a published contest names a refused participant problem apart from other conflicts', async ({ page }) => {
+  const contest = {
+    id, title: '予定のコンテスト', author: 'ui_test', authors: ['ui_test'], problemAuthors: [], testers: [], description: '',
+    startsAt: '2099-10-01T00:00:00Z', endsAt: '2099-10-01T02:00:00Z', penaltyMinutes: 5, version: 3, status: 'scheduled',
+    canEdit: true, participating: false, official: false, staff: true, setter: true, owner: true, canViewSubmissions: true,
+    problems: [{ id: own, title: '自分の問題', points: 100 }],
+  }
+  let refusal = 'contest_participant_problem'
+  await page.route('**/api/my/problems**', route => route.fulfill({ json: { items: new URL(route.request().url()).searchParams.get('role') === 'tester' ? [] : [{ id: own, title: '自分の問題', updatedAt, contestId: id, readiness: ready }], nextCursor: '' } }))
+  await page.route(`**/api/my/contests/${id}/draft`, route => route.fulfill({ status: 404, json: {} }))
+  await page.route(`**/api/my/contests/${id}`, route => route.request().method() === 'PUT'
+    ? route.fulfill({ status: 409, json: { statusCode: 409, data: { code: refusal } } })
+    : route.fulfill({ json: contest }))
+  await page.goto(`/my/contests/${shortId(id)}`)
+  await page.getByRole('button', { name: '変更を保存' }).click()
+  await expect(page.getByRole('alert')).toHaveText('参加登録した人が作者・テスターである問題は出題できません。該当する問題を外してください。')
+  await expect(page.getByRole('button', { name: '問題・配点', exact: true })).toHaveAttribute('aria-current', 'page')
+  refusal = 'contest_conflict'
+  await page.getByRole('button', { name: '変更を保存' }).click()
+  await expect(page.getByRole('alert')).toContainText('保存できませんでした。問題の公開状態・他コンテストへの登録・テストケースを確認してください。')
+})
+
 test('the invitation page previews the contest, accepts, and explains refusals', async ({ page }) => {
   const invitation = { id, title: '共同のコンテスト', author: 'alice', published: false, joined: false }
   let refusal: string | undefined

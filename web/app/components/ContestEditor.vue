@@ -426,6 +426,9 @@ async function save() {
     await navigateTo(`/contests/${shortId(id.value)}`)
   } catch (error) {
     const status = (error as { statusCode?: number }).statusCode
+    if ((error as { data?: { data?: { code?: string } } }).data?.data?.code === 'contest_participant_problem') {
+      section.value = 'problems'; message.value = '参加登録した人が作者・テスターである問題は出題できません。該当する問題を外してください。'; return
+    }
     message.value = status === 409 ? '保存できませんでした。問題の公開状態・他コンテストへの登録・テストケースを確認してください。参加登録した人が作者・テスターの問題と、作成者の誰も作者・テスターではない問題は出題できません。開催開始や別画面での更新があった場合は再読み込みが必要です。' : status === 400 ? '入力内容を確認してください。' : '保存を確認できませんでした。作成したコンテスト一覧を確認してから再度お試しください。'
   } finally { busy.value = false }
 }
