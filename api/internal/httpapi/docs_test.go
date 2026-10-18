@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -77,11 +78,22 @@ func TestPublicDocumentation(t *testing.T) {
 				t.Fatal("missing generated model", name)
 			}
 		}
-		for name, fields := range map[string][]string{"Contest": {"authors", "setter", "owner", "teamMode", "maxTeamSize", "onsiteDivision", "team", "onsite"}, "ContestProblem": {"authors", "canReadEditorial", "author", "markdown"}, "TeamSummary": {"id", "name", "members", "onsite"}} {
+		for name, fields := range map[string][]string{"Contest": {"authors", "setter", "owner", "teamMode", "maxTeamSize", "onsiteDivision", "team", "onsite"}, "ContestProblem": {"authors", "canReadEditorial", "author", "markdown"}, "TeamSummary": {"id", "name", "members", "onsite"}, "Standing": {"handle", "team", "onsite", "overallRank"}} {
 			for _, field := range fields {
 				if _, ok := doc.Components.Schemas[name].Properties[field]; !ok {
 					t.Fatal("missing field", name, field)
 				}
+			}
+		}
+		// The onsite division filters the standings and the contest's submission lists (ADR 0024).
+		for _, path := range []string{"/contests/{id}/standings", "/contests/{id}/submissions", "/contests/{id}/problems/{problem}/submissions"} {
+			if !slices.ContainsFunc(doc.Paths[path]["get"].Parameters, func(p struct {
+				Name, In string
+				Required bool
+			}) bool {
+				return p.Name == "scope" && p.In == "query" && !p.Required
+			}) {
+				t.Fatal("missing scope parameter", path)
 			}
 		}
 		// Invitation links, venue passphrases and team join codes are for setters and members only, never in a public

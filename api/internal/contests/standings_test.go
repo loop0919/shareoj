@@ -81,3 +81,45 @@ func TestRankFrozenHidesSubmissionsFromTheFreeze(t *testing.T) {
 		t.Fatalf("live: %+v", live)
 	}
 }
+
+func TestRankRowsCountsMembersTowardTheirTeam(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	at := func(minutes int) time.Time { return start.Add(time.Duration(minutes) * time.Minute) }
+	teams := []Standing{
+		{Team: &TeamSummary{ID: "t1", Name: "Zeta", Members: []string{"a", "b"}, Onsite: true}, Onsite: true},
+		{Team: &TeamSummary{ID: "t2", Name: "Alpha", Members: []string{"c"}}},
+		{Team: &TeamSummary{ID: "t3", Name: "Beta", Members: []string{"d"}, Onsite: true}, Onsite: true},
+	}
+	attempts := []Attempt{
+		{Handle: "a", Team: "t1", ProblemID: "A", Verdict: "WA", Points: 100, CreatedAt: at(1)},
+		{Handle: "b", Team: "t1", ProblemID: "A", Verdict: "AC", Points: 100, CreatedAt: at(4)},
+		{Handle: "a", Team: "t1", ProblemID: "A", Verdict: "WA", Points: 100, CreatedAt: at(5)},
+		{Handle: "c", Team: "t2", ProblemID: "A", Verdict: "AC", Points: 100, CreatedAt: at(9)},
+		{Handle: "a", Team: "t1", ProblemID: "B", Verdict: "AC", Points: 200, CreatedAt: at(70)},
+	}
+	rows := RankRows(teams, attempts, start, 5, at(60))
+	// One member's wrong answer costs the team the penalty another member's acceptance then pays; ties go by name.
+	if len(rows) != 3 || rows[0].Team.Name != "Alpha" || rows[1].Team.Name != "Zeta" || rows[2].Team.Name != "Beta" ||
+		rows[0].Rank != 1 || rows[1].Rank != 1 || rows[2].Rank != 3 || rows[2].OverallRank != 3 {
+		t.Fatalf("teams: %+v", rows)
+	}
+	zeta := rows[1]
+	if zeta.Handle != "" || zeta.Points != 100 || zeta.TimeMS != 9*60000 || zeta.Problems["A"].Wrong != 1 || zeta.Problems["B"].Frozen != 1 ||
+		!zeta.Onsite || len(zeta.Team.Members) != 2 {
+		t.Fatalf("zeta: %+v %+v", zeta, zeta.Problems)
+	}
+	// The onsite rows are ranked again among themselves and keep the overall rank.
+	onsite := OnsiteRows(rows)
+	if len(onsite) != 2 || onsite[0].Team.Name != "Zeta" || onsite[0].Rank != 1 || onsite[0].OverallRank != 1 ||
+		onsite[1].Team.Name != "Beta" || onsite[1].Rank != 2 || onsite[1].OverallRank != 3 || rows[2].Rank != 3 {
+		t.Fatalf("onsite: %+v", onsite)
+	}
+	if none := OnsiteRows(Rank([]string{"a"}, nil, start, 5)); none == nil || len(none) != 0 {
+		t.Fatalf("no onsite rows: %#v", none)
+	}
+	// An attempt of a team not listed still gets a team row.
+	if extra := RankRows(nil, []Attempt{{Handle: "e", Team: "t9", ProblemID: "A", Verdict: "AC", Points: 100, CreatedAt: at(3)}}, start, 5, time.Time{}); len(extra) != 1 ||
+		extra[0].Team == nil || extra[0].Team.ID != "t9" || extra[0].Handle != "" || extra[0].Points != 100 {
+		t.Fatalf("unlisted team: %+v", extra)
+	}
+}
