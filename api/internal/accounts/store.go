@@ -24,8 +24,8 @@ var (
 
 type Store struct{ Pool *pgxpool.Pool }
 
-// Published problems, posts and ended contests stay, as do submissions, contest registrations, difficulty votes and tester credits,
-// because other users' standings, submission lists and pages refer to them.
+// Published problems, posts and ended contests stay, as do submissions, registrations for started contests, difficulty
+// votes and tester credits, because other users' standings, submission lists and pages refer to them.
 var cleanup = []string{
 	// Unpublished problems take their testers, favorites, invitations and featured applications with them.
 	// One that an ended contest holds stays, since contest problems are never deleted.
@@ -44,6 +44,7 @@ var cleanup = []string{
 	`DELETE FROM problem_favorites WHERE owner_id=$1`,
 	`DELETE FROM notifications WHERE owner_id=$1`,
 	`DELETE FROM creation_quotas WHERE owner_id=$1`,
+	`DELETE FROM contest_attempt_failures WHERE owner_id=$1`,
 	// Images still shown in what stays remain; the rest were only visible to the owner.
 	`DELETE FROM content_images WHERE owner_id=$1 AND NOT content_image_access(id,owner_id,'',true)`,
 }
@@ -100,6 +101,9 @@ func (s *Store) delete(ctx context.Context, owner, handle string, removeIdentity
 	if active {
 		return ErrActiveContest
 	}
+	if err = leaveUpcoming(ctx, tx, owner); err != nil {
+		return err
+	}
 	for _, statement := range cleanup {
 		if _, err = tx.Exec(ctx, statement, owner); err != nil {
 			return err
@@ -118,6 +122,35 @@ func (s *Store) delete(ctx context.Context, owner, handle string, removeIdentity
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// leaveUpcoming takes the account out of contests that have not started, with its teams; a team left empty goes too
+// (ADR 0024). Those registrations hold no results, and a member who stayed would keep a place in the team.
+// It locks the contests as joining does, then the teams, so a member leaving meanwhile cannot leave an empty team.
+func leaveUpcoming(ctx context.Context, tx pgx.Tx, owner string) error {
+	rows, err := tx.Query(ctx, `SELECT c.id::text FROM contests c JOIN contest_participants p ON p.contest_id=c.id
+ WHERE p.owner_id=$1 AND c.starts_at>clock_timestamp() ORDER BY c.id FOR SHARE OF c`, owner)
+	if err != nil {
+		return err
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil || len(ids) == 0 {
+		return err
+	}
+	rows, err = tx.Query(ctx, `SELECT t.id::text FROM contest_teams t JOIN contest_participants p ON p.team_id=t.id
+ WHERE p.owner_id=$1 AND p.contest_id=ANY($2::uuid[]) ORDER BY t.id FOR UPDATE OF t`, owner, ids)
+	if err != nil {
+		return err
+	}
+	teams, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `DELETE FROM contest_participants WHERE owner_id=$1 AND contest_id=ANY($2::uuid[])`, owner, ids); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `DELETE FROM contest_teams t WHERE t.id=ANY($1::uuid[]) AND NOT EXISTS(SELECT 1 FROM contest_participants p WHERE p.team_id=t.id)`, teams)
+	return err
 }
 
 // handOver gives the owner's drafts and contests whose results are not final to the co-setter who joined first.

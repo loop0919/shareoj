@@ -57,18 +57,28 @@ type Contest struct {
 	// CanViewLiveStandings lets staff request the unfrozen standings from GET /my/contests/{id}/standings?live=1.
 	CanViewLiveStandings bool `json:"canViewLiveStandings"`
 	// CanRevealResults lets a setter or an operator reveal an ended frozen contest (POST /my/contests/{id}/reveal).
-	CanRevealResults   bool      `json:"canRevealResults"`
-	Version            int64     `json:"version"`
-	Status             string    `json:"status"`
-	CanEdit            bool      `json:"canEdit"`
-	CanViewSubmissions bool      `json:"canViewSubmissions"`
-	Participating      bool      `json:"participating"`
-	Official           bool      `json:"official"`
-	Staff              bool      `json:"staff"`
-	Excluded           bool      `json:"excluded"`
-	IsSetter           bool      `json:"setter"`
-	IsOwner            bool      `json:"owner"`
-	Problems           []Problem `json:"problems"`
+	CanRevealResults bool `json:"canRevealResults"`
+	// TeamMode makes every standings row a team (ADR 0024). MaxTeamSize is null in individual contests and in team
+	// contests without a limit of their own; MaxTeamMembers still caps every team. OnsiteDivision tells whether the
+	// venue passphrase can make participants onsite; the passphrase itself is only in setter responses.
+	TeamMode           bool   `json:"teamMode"`
+	MaxTeamSize        *int   `json:"maxTeamSize"`
+	OnsiteDivision     bool   `json:"onsiteDivision"`
+	Version            int64  `json:"version"`
+	Status             string `json:"status"`
+	CanEdit            bool   `json:"canEdit"`
+	CanViewSubmissions bool   `json:"canViewSubmissions"`
+	Participating      bool   `json:"participating"`
+	Official           bool   `json:"official"`
+	Staff              bool   `json:"staff"`
+	Excluded           bool   `json:"excluded"`
+	IsSetter           bool   `json:"setter"`
+	IsOwner            bool   `json:"owner"`
+	// Team is the viewer's team in a team contest, without its join code. Onsite tells whether the viewer, or their
+	// team, is in the onsite division.
+	Team     *TeamSummary `json:"team"`
+	Onsite   bool         `json:"onsite"`
+	Problems []Problem    `json:"problems"`
 }
 type Input struct {
 	Title          string    `json:"title"`
@@ -77,24 +87,33 @@ type Input struct {
 	EndsAt         time.Time `json:"endsAt"`
 	PenaltyMinutes *int      `json:"penaltyMinutes"`
 	FreezeMinutes  Minutes   `json:"freezeMinutes"`
-	Version        int64     `json:"version"`
-	Problems       []Problem `json:"problems"`
+	// The participation settings (ADR 0024). A client from before them leaves them out, and its saves keep the stored
+	// values. OnsitePassphrase is read only when OnsiteDivision is sent as true, and is then required.
+	TeamMode         *bool         `json:"teamMode"`
+	MaxTeamSize      Nullable[int] `json:"maxTeamSize"`
+	OnsiteDivision   *bool         `json:"onsiteDivision"`
+	OnsitePassphrase *string       `json:"onsitePassphrase"`
+	Version          int64         `json:"version"`
+	Problems         []Problem     `json:"problems"`
 }
 type Store struct{ Pool *pgxpool.Pool }
 
-// Minutes is a nullable number of minutes that remembers whether the client sent it. A client from before the setting
-// existed leaves it out, and its saves keep the stored value instead of clearing it; null clears it.
-type Minutes struct {
-	Value *int
+// Nullable is a nullable value that remembers whether the client sent it. A client from before the setting existed
+// leaves it out, and its saves keep the stored value instead of clearing it; null clears it.
+type Nullable[T any] struct {
+	Value *T
 	Sent  bool
 }
 
-func (m *Minutes) UnmarshalJSON(data []byte) error {
+// Minutes is a nullable number of minutes.
+type Minutes = Nullable[int]
+
+func (m *Nullable[T]) UnmarshalJSON(data []byte) error {
 	m.Sent = true
 	return json.Unmarshal(data, &m.Value)
 }
 
-func (m Minutes) MarshalJSON() ([]byte, error) { return json.Marshal(m.Value) }
+func (m Nullable[T]) MarshalJSON() ([]byte, error) { return json.Marshal(m.Value) }
 
 // Revealable reports whether the contest has ended with its results frozen and not yet revealed.
 func (c Contest) Revealable() bool {
@@ -106,13 +125,13 @@ const coSetters = `ARRAY(SELECT su.handle FROM contest_setters s JOIN user_profi
  WHERE s.contest_id=c.id AND s.left_at IS NULL ORDER BY s.created_at,s.owner_id)`
 
 const fields = `c.id,c.owner_id,u.handle,` + coSetters + `,c.title,c.description,c.starts_at,c.ends_at,c.penalty_minutes,c.freeze_minutes,
- contest_freeze_at(c),c.revealed_at,contest_results_final(c),c.version,
+ contest_freeze_at(c),c.revealed_at,contest_results_final(c),c.team_mode,c.max_team_size,c.onsite_division,c.version,
  CASE WHEN statement_timestamp()<c.starts_at THEN 'scheduled' WHEN statement_timestamp()<c.ends_at THEN 'running' ELSE 'ended' END`
 
 func scan(row pgx.Row) (Contest, error) {
 	var c Contest
 	var others []string
-	err := row.Scan(&c.ID, &c.Owner, &c.Author, &others, &c.Title, &c.Description, &c.StartsAt, &c.EndsAt, &c.PenaltyMinutes, &c.FreezeMinutes, &c.FreezeAt, &c.RevealedAt, &c.ResultsFinal, &c.Version, &c.Status)
+	err := row.Scan(&c.ID, &c.Owner, &c.Author, &others, &c.Title, &c.Description, &c.StartsAt, &c.EndsAt, &c.PenaltyMinutes, &c.FreezeMinutes, &c.FreezeAt, &c.RevealedAt, &c.ResultsFinal, &c.TeamMode, &c.MaxTeamSize, &c.OnsiteDivision, &c.Version, &c.Status)
 	c.Revealed = c.RevealedAt != nil
 	c.Authors = append([]string{c.Author}, others...)
 	c.Problems = []Problem{}
@@ -141,18 +160,29 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
 	if err != nil {
 		return c, err
 	}
+	var team struct {
+		ID      *string
+		Name    string
+		Members []string
+	}
 	err = tx.QueryRow(ctx, `SELECT contest_setter(c.id,$2),c.owner_id=$2,contest_staff(c.id,$2),$2<>'' AND contest_competitor(c,$2),
  $2<>'' AND NOT contest_staff(c.id,$2) AND NOT contest_competitor(c,$2),
- EXISTS(SELECT 1 FROM contest_participants p WHERE p.contest_id=c.id AND p.owner_id=$2),
+ vp.owner_id IS NOT NULL,c.onsite_division AND COALESCE(CASE WHEN c.team_mode THEN vt.onsite_at ELSE vp.onsite_at END IS NOT NULL,false),
+ vt.id,COALESCE(vt.name,''),`+members("vt")+`,
  COALESCE((SELECT array_agg(DISTINCT u.handle ORDER BY u.handle)
   FROM contest_problems cp JOIN problem_drafts d ON d.id=cp.problem_id JOIN user_profiles u ON u.owner_id=d.owner_id
   WHERE cp.contest_id=c.id), ARRAY[]::text[]),
  COALESCE((SELECT array_agg(DISTINCT u.handle ORDER BY u.handle)
   FROM contest_problems cp JOIN problem_testers t ON t.problem_id=cp.problem_id JOIN user_profiles u ON u.owner_id=t.owner_id
   WHERE cp.contest_id=c.id), ARRAY[]::text[])
- FROM contests c WHERE c.id=$1`, id, viewer).Scan(&c.IsSetter, &c.IsOwner, &c.Staff, &c.Official, &c.Excluded, &c.Participating, &c.ProblemAuthors, &c.Testers)
+ FROM contests c LEFT JOIN contest_participants vp ON vp.contest_id=c.id AND vp.owner_id=$2
+ LEFT JOIN contest_teams vt ON vt.id=vp.team_id AND c.team_mode
+ WHERE c.id=$1`, id, viewer).Scan(&c.IsSetter, &c.IsOwner, &c.Staff, &c.Official, &c.Excluded, &c.Participating, &c.Onsite, &team.ID, &team.Name, &team.Members, &c.ProblemAuthors, &c.Testers)
 	if err != nil {
 		return c, err
+	}
+	if team.ID != nil {
+		c.Team = &TeamSummary{ID: *team.ID, Name: team.Name, Members: team.Members, Onsite: c.Onsite}
 	}
 	c.CanEdit = c.IsSetter && c.Status == "scheduled"
 	// Pre-freeze submissions become public at the end; frozen ones are filtered row by row.
@@ -226,30 +256,48 @@ func save(ctx context.Context, tx pgx.Tx, actor, id string, in Input, policy Jud
 		if err = lockID(ctx, tx, id); err != nil {
 			return err
 		}
+		teamMode, division := in.TeamMode != nil && *in.TeamMode, in.OnsiteDivision != nil && *in.OnsiteDivision
+		var size *int
+		if teamMode {
+			size = in.MaxTeamSize.Value
+		}
 		var tag pgconn.CommandTag
-		tag, err = tx.Exec(ctx, `INSERT INTO contests(id,owner_id,title,description,starts_at,ends_at,penalty_minutes,freeze_minutes)
- SELECT $1,$2,$3,$4,$5,$6,$7,$9 WHERE $5>clock_timestamp() AND ($8 OR NOT EXISTS (SELECT 1 FROM contest_drafts WHERE id=$1))`, id, owner, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes, publishing, in.FreezeMinutes.Value)
+		tag, err = tx.Exec(ctx, `INSERT INTO contests(id,owner_id,title,description,starts_at,ends_at,penalty_minutes,freeze_minutes,
+ team_mode,max_team_size,onsite_division,onsite_passphrase)
+ SELECT $1,$2,$3,$4,$5,$6,$7,$9,$10,$11,$12,$13 WHERE $5>clock_timestamp() AND ($8 OR NOT EXISTS (SELECT 1 FROM contest_drafts WHERE id=$1))`, id, owner, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes, publishing, in.FreezeMinutes.Value,
+			teamMode, size, division, in.passphrase())
 		if err == nil && tag.RowsAffected() != 1 {
 			return ErrConflict
 		}
 	} else {
 		// Serialize schedule edits and release against the contest row.
 		var current int64
-		err = tx.QueryRow(ctx, `SELECT version FROM contests WHERE id=$1 AND contest_setter(id,$2) FOR UPDATE`, id, actor).Scan(&current)
+		var teamMode bool
+		err = tx.QueryRow(ctx, `SELECT version,team_mode FROM contests WHERE id=$1 AND contest_setter(id,$2) FOR UPDATE`, id, actor).Scan(&current, &teamMode)
 		if err != nil {
 			return err
 		}
 		if current != in.Version {
 			return ErrConflict
 		}
-		// A save without freezeMinutes keeps the freeze, which must still fit the new schedule.
+		// A save without freezeMinutes keeps the freeze, which must still fit the new schedule. Participation settings
+		// left out are kept too; an individual contest has no team size, and a contest without the division no passphrase.
 		tag, e := tx.Exec(ctx, `UPDATE contests SET title=$3,description=$4,starts_at=$5,ends_at=$6,penalty_minutes=$7,
-  freeze_minutes=CASE WHEN $9 THEN $8 ELSE freeze_minutes END,version=version+1
+  freeze_minutes=CASE WHEN $9 THEN $8 ELSE freeze_minutes END,
+  team_mode=COALESCE($10,team_mode),
+  max_team_size=CASE WHEN NOT COALESCE($10,team_mode) THEN NULL WHEN $12 THEN $11 ELSE max_team_size END,
+  onsite_division=COALESCE($13,onsite_division),
+  onsite_passphrase=CASE WHEN COALESCE($13,onsite_division) THEN COALESCE($14,onsite_passphrase) END,
+  version=version+1
   WHERE id=$1 AND contest_setter(id,$2) AND starts_at>clock_timestamp() AND $5>clock_timestamp()
-  AND ($9 OR freeze_minutes IS NULL OR make_interval(mins => freeze_minutes)<=$6-$5)`, id, actor, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes, in.FreezeMinutes.Value, in.FreezeMinutes.Sent)
+  AND ($9 OR freeze_minutes IS NULL OR make_interval(mins => freeze_minutes)<=$6-$5)`, id, actor, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes, in.FreezeMinutes.Value, in.FreezeMinutes.Sent,
+			in.TeamMode, in.MaxTeamSize.Value, in.MaxTeamSize.Sent, in.OnsiteDivision, in.passphrase())
 		err = e
 		if err == nil && tag.RowsAffected() != 1 {
 			return ErrConflict
+		}
+		if err == nil {
+			err = keepRegistrations(ctx, tx, id, teamMode, in)
 		}
 	}
 	if err != nil {

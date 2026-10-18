@@ -19,13 +19,18 @@ var ErrNotReady = errors.New("contest draft is not ready to publish")
 
 // Draft is a contest being written. Any field may be missing or out of range until publication.
 type Draft struct {
-	Title           string         `json:"title"`
-	Description     string         `json:"description"`
-	StartsAt        *time.Time     `json:"startsAt"`
-	DurationMinutes *int           `json:"durationMinutes"`
-	PenaltyMinutes  *int           `json:"penaltyMinutes"`
-	FreezeMinutes   Minutes        `json:"freezeMinutes"`
-	Problems        []DraftProblem `json:"problems"`
+	Title           string     `json:"title"`
+	Description     string     `json:"description"`
+	StartsAt        *time.Time `json:"startsAt"`
+	DurationMinutes *int       `json:"durationMinutes"`
+	PenaltyMinutes  *int       `json:"penaltyMinutes"`
+	FreezeMinutes   Minutes    `json:"freezeMinutes"`
+	// The participation settings (ADR 0024). Only setters read drafts, so the venue passphrase is kept here as typed.
+	TeamMode         *bool          `json:"teamMode"`
+	MaxTeamSize      Nullable[int]  `json:"maxTeamSize"`
+	OnsiteDivision   *bool          `json:"onsiteDivision"`
+	OnsitePassphrase *string        `json:"onsitePassphrase"`
+	Problems         []DraftProblem `json:"problems"`
 }
 type DraftProblem struct {
 	ID     string `json:"id"`
@@ -70,6 +75,8 @@ const (
 	IssueDuration    = "duration_invalid"
 	IssuePenalty     = "penalty_invalid"
 	IssueFreeze      = "freeze_invalid"
+	IssueTeamSize    = "team_size_invalid"
+	IssuePassphrase  = "venue_passphrase_invalid"
 	IssueProblems    = "problems_missing"
 	IssuePoints      = "points_invalid"
 	IssueUnavailable = "problem_unavailable"
@@ -84,10 +91,16 @@ const maxDurationMinutes = 100_000_000
 func ValidDraft(in DraftInput) bool {
 	d := in.Draft
 	text := d.Title + d.Description
+	if d.OnsitePassphrase != nil {
+		text += *d.OnsitePassphrase
+		if utf8.RuneCountInString(*d.OnsitePassphrase) > 1000 {
+			return false
+		}
+	}
 	if in.Version < 0 || in.Version > 9007199254740990 || utf8.RuneCountInString(d.Title) > 120 || utf8.RuneCountInString(d.Description) > 100000 || strings.ContainsRune(text, 0) || !utf8.ValidString(text) || len(d.Problems) > 100 {
 		return false
 	}
-	numbers := []*int{d.DurationMinutes, d.PenaltyMinutes, d.FreezeMinutes.Value}
+	numbers := []*int{d.DurationMinutes, d.PenaltyMinutes, d.FreezeMinutes.Value, d.MaxTeamSize.Value}
 	seen := map[string]bool{}
 	for _, p := range d.Problems {
 		if !problems.ValidID(p.ID) || seen[p.ID] {
@@ -133,6 +146,13 @@ func (d Draft) contentIssues(now time.Time) []string {
 	// Null means no freeze; otherwise it must fit in the contest.
 	if f := d.FreezeMinutes.Value; f != nil && (*f < 1 || d.DurationMinutes != nil && *f > *d.DurationMinutes) {
 		issues = append(issues, IssueFreeze)
+	}
+	// Null is no limit of the contest's own; an individual contest ignores the size.
+	if size := d.MaxTeamSize.Value; d.teamMode() && size != nil && (*size < MinTeamSize || *size > MaxTeamMembers) {
+		issues = append(issues, IssueTeamSize)
+	}
+	if d.onsiteDivision() && (d.OnsitePassphrase == nil || !ValidPassphrase(*d.OnsitePassphrase)) {
+		issues = append(issues, IssuePassphrase)
 	}
 	if len(d.Problems) == 0 {
 		issues = append(issues, IssueProblems)
@@ -230,6 +250,14 @@ func scanDraft(row pgx.Row) (DraftResult, error) {
 	err := json.Unmarshal(raw, &r.Draft)
 	if r.Draft.Problems == nil {
 		r.Draft.Problems = []DraftProblem{}
+	}
+	// Drafts saved before the participation settings read as an individual contest without the division.
+	off := false
+	if r.Draft.TeamMode == nil {
+		r.Draft.TeamMode = &off
+	}
+	if r.Draft.OnsiteDivision == nil {
+		r.Draft.OnsiteDivision = &off
 	}
 	return r, err
 }
@@ -354,9 +382,21 @@ func (s *Store) updateDraft(ctx context.Context, actor, id string, in DraftInput
 	if err = addable(ctx, tx, actor, added); err != nil {
 		return current, err
 	}
-	// A draft saved without freezeMinutes keeps the freeze, as a contest save does.
+	// A draft saved without freezeMinutes keeps the freeze, as a contest save does; so do the participation settings.
 	if !in.Draft.FreezeMinutes.Sent {
 		in.Draft.FreezeMinutes = current.Draft.FreezeMinutes
+	}
+	if in.Draft.TeamMode == nil {
+		in.Draft.TeamMode = current.Draft.TeamMode
+	}
+	if !in.Draft.MaxTeamSize.Sent {
+		in.Draft.MaxTeamSize = current.Draft.MaxTeamSize
+	}
+	if in.Draft.OnsiteDivision == nil {
+		in.Draft.OnsiteDivision = current.Draft.OnsiteDivision
+	}
+	if in.Draft.OnsitePassphrase == nil {
+		in.Draft.OnsitePassphrase = current.Draft.OnsitePassphrase
 	}
 	data, err := json.Marshal(in.Draft)
 	if err != nil {
@@ -506,8 +546,20 @@ func (s *Store) Publish(ctx context.Context, actor, id string, version int64, po
 	return tx.Commit(ctx)
 }
 
+func (d Draft) teamMode() bool       { return d.TeamMode != nil && *d.TeamMode }
+func (d Draft) onsiteDivision() bool { return d.OnsiteDivision != nil && *d.OnsiteDivision }
+
 func (d Draft) input() Input {
-	in := Input{Title: d.Title, Description: d.Description, PenaltyMinutes: d.PenaltyMinutes, FreezeMinutes: d.FreezeMinutes, Problems: make([]Problem, len(d.Problems))}
+	team, division := d.teamMode(), d.onsiteDivision()
+	in := Input{Title: d.Title, Description: d.Description, PenaltyMinutes: d.PenaltyMinutes, FreezeMinutes: d.FreezeMinutes,
+		TeamMode: &team, OnsiteDivision: &division, Problems: make([]Problem, len(d.Problems))}
+	// The draft keeps a size or passphrase while its setting is off; the contest takes them only when it is on.
+	if team {
+		in.MaxTeamSize = Nullable[int]{Value: d.MaxTeamSize.Value, Sent: true}
+	}
+	if division {
+		in.OnsitePassphrase = d.OnsitePassphrase
+	}
 	if end, ok := d.endsAt(); ok {
 		in.StartsAt, in.EndsAt = *d.StartsAt, end
 	}

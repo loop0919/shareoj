@@ -428,9 +428,11 @@ func TestContestsPostgres(t *testing.T) {
 	if len(rows) != 2 || rows[0].Points != 100 || rows[0].TimeMS != 40*60000 || rows[0].Rank != 1 || rows[1].Rank != 1 {
 		t.Fatalf("rank: %+v", rows)
 	}
-	// Simulate upgrading a database with pre-registration submissions and a used migration 19.
-	exec(`DROP TABLE contest_participants`)
-	exec(`DELETE FROM schema_migrations WHERE version=20`)
+	// Simulate upgrading a database with pre-registration submissions and a used migration 19. Migration 35 adds
+	// teams to contest_participants, so it runs again as well.
+	exec(`DROP TABLE contest_attempt_failures; DROP TABLE contest_participants; DROP TABLE contest_teams;
+ ALTER TABLE contests DROP COLUMN team_mode, DROP COLUMN max_team_size, DROP COLUMN onsite_division, DROP COLUMN onsite_passphrase`)
+	exec(`DELETE FROM schema_migrations WHERE version IN (20,35)`)
 	if err := store.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}

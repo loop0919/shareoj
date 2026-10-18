@@ -24,6 +24,13 @@ func ValidInput(in Input) bool {
 	if f := in.FreezeMinutes.Value; f != nil && (*f < 1 || int64(*f) > int64(in.EndsAt.Sub(in.StartsAt)/time.Minute)) {
 		return false
 	}
+	if size := in.MaxTeamSize.Value; size != nil && (*size < MinTeamSize || *size > MaxTeamMembers) {
+		return false
+	}
+	// Turning the onsite division on needs its passphrase; otherwise the passphrase is not read.
+	if in.OnsiteDivision != nil && *in.OnsiteDivision && (in.OnsitePassphrase == nil || !ValidPassphrase(*in.OnsitePassphrase)) {
+		return false
+	}
 	seen := map[string]bool{}
 	for _, p := range in.Problems {
 		if !problems.ValidID(p.ID) || seen[p.ID] || p.Points < 1 || p.Points > 1000000 {

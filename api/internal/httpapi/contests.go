@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"bytes"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -47,7 +49,15 @@ func (p contestHandler) contest(w http.ResponseWriter, r *http.Request, owner st
 			result, err = p.get(r, id, owner)
 		}
 	case r.Method == http.MethodPost:
-		err = p.Contests.Join(r.Context(), id, owner)
+		var in contests.JoinInput
+		if !optionalJSON(w, r, &in) {
+			return
+		}
+		if err = contests.ValidJoin(in); err != nil {
+			joinInputError(w, err)
+			return
+		}
+		err = p.Contests.Join(r.Context(), id, owner, in)
 		if err == nil {
 			result, err = p.Contests.Get(r.Context(), id, owner)
 		}
@@ -256,6 +266,175 @@ func (p contestHandler) setter(w http.ResponseWriter, r *http.Request, actor str
 	w.WriteHeader(204)
 }
 
+// optionalJSON reads a JSON body that may be empty. Clients from before the participation body send none (ADR 0024).
+func optionalJSON(w http.ResponseWriter, r *http.Request, target any) bool {
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 8<<10))
+	var large *http.MaxBytesError
+	switch {
+	case errors.As(err, &large):
+		authError(w, 413, "request_too_large")
+		return false
+	case err != nil:
+		authError(w, 400, "invalid_request")
+		return false
+	case len(bytes.TrimSpace(data)) == 0:
+		return true
+	}
+	r.Body = io.NopCloser(bytes.NewReader(data))
+	return contentJSON(w, r, target)
+}
+
+func joinInputError(w http.ResponseWriter, err error) {
+	if errors.Is(err, contests.ErrInvalidTeamName) {
+		authError(w, 400, "invalid_team_name")
+		return
+	}
+	authError(w, 400, "invalid_request")
+}
+
+// team serves the viewer's own team: its join code, a new code, a new name, and leaving or removing a member.
+func (p contestHandler) team(w http.ResponseWriter, r *http.Request, actor string) {
+	if p.Contests == nil {
+		authError(w, 503, "database_unavailable")
+		return
+	}
+	id := r.PathValue("id")
+	if !problemID.MatchString(id) {
+		authError(w, 404, "team_not_found")
+		return
+	}
+	var result any
+	var err error
+	switch {
+	case r.Method == http.MethodDelete:
+		handle := r.PathValue("handle")
+		if !userHandle.MatchString(handle) {
+			authError(w, 404, "team_member_not_found")
+			return
+		}
+		if err = p.Contests.RemoveTeamMember(r.Context(), id, actor, handle); err == nil {
+			w.WriteHeader(204)
+			return
+		}
+	case strings.HasSuffix(r.URL.Path, "/code"):
+		result, err = p.Contests.RenewTeamCode(r.Context(), id, actor)
+	case strings.HasSuffix(r.URL.Path, "/name"):
+		name, ok := teamName(w, r)
+		if !ok {
+			return
+		}
+		result, err = p.Contests.RenameTeam(r.Context(), id, actor, name)
+	default:
+		result, err = p.Contests.MyTeam(r.Context(), id, actor)
+	}
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, result)
+}
+
+func teamName(w http.ResponseWriter, r *http.Request) (string, bool) {
+	var in struct {
+		Name string `json:"name"`
+	}
+	if !contentJSON(w, r, &in) {
+		return "", false
+	}
+	if !contests.ValidTeamName(in.Name) {
+		authError(w, 400, "invalid_team_name")
+		return "", false
+	}
+	return in.Name, true
+}
+
+// venue shows setters the onsite division and its passphrase, and replaces the passphrase until the end.
+func (p contestHandler) venue(w http.ResponseWriter, r *http.Request, actor string) {
+	if p.Contests == nil {
+		authError(w, 503, "database_unavailable")
+		return
+	}
+	id := r.PathValue("id")
+	if !problemID.MatchString(id) {
+		authError(w, 404, "contest_not_found")
+		return
+	}
+	var result contests.Venue
+	var err error
+	if r.Method == http.MethodPut {
+		var in struct {
+			Passphrase string `json:"passphrase"`
+		}
+		if !contentJSON(w, r, &in) {
+			return
+		}
+		if !contests.ValidPassphrase(in.Passphrase) {
+			authError(w, 400, "invalid_venue_passphrase")
+			return
+		}
+		result, err = p.Contests.RotatePassphrase(r.Context(), id, actor, in.Passphrase)
+	} else {
+		result, err = p.Contests.Venue(r.Context(), id, actor)
+	}
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, result)
+}
+
+// entrants serves the setters' participant list and their changes: the onsite division of a participant or a team,
+// and a team's name.
+func (p contestHandler) entrants(w http.ResponseWriter, r *http.Request, actor string) {
+	if p.Contests == nil {
+		authError(w, 503, "database_unavailable")
+		return
+	}
+	id, handle, team := r.PathValue("id"), r.PathValue("handle"), r.PathValue("team")
+	switch {
+	case !problemID.MatchString(id):
+		authError(w, 404, "contest_not_found")
+		return
+	case handle != "" && !userHandle.MatchString(handle):
+		authError(w, 404, "participant_not_found")
+		return
+	case team != "" && !problemID.MatchString(team):
+		authError(w, 404, "team_not_found")
+		return
+	}
+	var result any
+	var err error
+	switch {
+	case r.Method == http.MethodGet:
+		var list []contests.Entrant
+		list, err = p.Contests.Entrants(r.Context(), id, actor)
+		result = itemsResponse[contests.Entrant]{Items: list}
+	case strings.HasSuffix(r.URL.Path, "/name"):
+		name, ok := teamName(w, r)
+		if !ok {
+			return
+		}
+		result, err = p.Contests.RenameEntrantTeam(r.Context(), id, actor, team, name)
+	default:
+		var in struct {
+			Onsite *bool `json:"onsite"`
+		}
+		if !contentJSON(w, r, &in) {
+			return
+		}
+		if in.Onsite == nil {
+			authError(w, 400, "invalid_request")
+			return
+		}
+		result, err = p.Contests.SetOnsite(r.Context(), id, actor, handle, team, *in.Onsite)
+	}
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, result)
+}
+
 func contestOffset(w http.ResponseWriter, r *http.Request) (int, bool) {
 	raw := r.URL.Query().Get("offset")
 	if raw == "" {
@@ -270,8 +449,12 @@ func contestOffset(w http.ResponseWriter, r *http.Request) (int, bool) {
 }
 
 func contestError(w http.ResponseWriter, err error) {
+	var attempts *contests.AttemptsError
 	switch {
 	case creationQuotaError(w, err):
+	case errors.As(err, &attempts):
+		w.Header().Set("Retry-After", strconv.Itoa(attempts.RetryAfter))
+		authError(w, 429, "contest_attempts_limited")
 	case errors.Is(err, pgx.ErrNoRows):
 		authError(w, 404, "contest_not_found")
 	case errors.Is(err, contests.ErrParticipationUnavailable):
@@ -286,6 +469,34 @@ func contestError(w http.ResponseWriter, err error) {
 		authError(w, 409, "contest_participant_problem")
 	case errors.Is(err, contests.ErrResultsPending):
 		authError(w, 409, "contest_results_pending")
+	case errors.Is(err, contests.ErrTeamRequired):
+		authError(w, 409, "contest_team_required")
+	case errors.Is(err, contests.ErrTeamUnavailable):
+		authError(w, 409, "contest_team_unavailable")
+	case errors.Is(err, contests.ErrOnsiteUnavailable):
+		authError(w, 409, "contest_onsite_unavailable")
+	case errors.Is(err, contests.ErrIncorrectTeamCode):
+		authError(w, 400, "incorrect_team_code")
+	case errors.Is(err, contests.ErrIncorrectPassphrase):
+		authError(w, 400, "incorrect_venue_passphrase")
+	case errors.Is(err, contests.ErrTeamFull):
+		authError(w, 409, "team_full")
+	case errors.Is(err, contests.ErrTeamNameTaken):
+		authError(w, 409, "team_name_taken")
+	case errors.Is(err, contests.ErrAlreadyInTeam):
+		authError(w, 409, "team_already_joined")
+	case errors.Is(err, contests.ErrTeamLocked):
+		authError(w, 409, "team_locked")
+	case errors.Is(err, contests.ErrTeamNotFound):
+		authError(w, 404, "team_not_found")
+	case errors.Is(err, contests.ErrTeamMemberNotFound):
+		authError(w, 404, "team_member_not_found")
+	case errors.Is(err, contests.ErrParticipantNotFound):
+		authError(w, 404, "participant_not_found")
+	case errors.Is(err, contests.ErrTeamModeLocked):
+		authError(w, 409, "contest_team_mode_locked")
+	case errors.Is(err, contests.ErrTeamSizeLocked):
+		authError(w, 409, "contest_team_size_locked")
 	case errors.Is(err, contests.ErrNotReady):
 		authError(w, 409, "contest_not_ready")
 	case errors.Is(err, contests.ErrConflict):
