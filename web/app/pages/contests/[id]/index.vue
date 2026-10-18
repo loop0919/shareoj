@@ -50,6 +50,7 @@ const updating = ref(false)
 async function update() {
   if (updating.value) return
   updating.value = true
+  now.value = Date.now()
   try { await Promise.all([refresh(), refreshStandings()]); await Promise.all([loadSubmissions(), loadEditorials()]) }
   finally { updating.value = false }
 }
@@ -58,6 +59,13 @@ watch([offset, activeView, canViewSubmissions], () => { void loadSubmissions() }
 watch([activeView, () => contest.value?.status], () => { void loadEditorials() })
 onMounted(() => { void loadSubmissions(); void loadEditorials() })
 usePolling(update, 15000)
+// Re-read on each poll so the banner appears once the freeze starts.
+const now = ref(Date.now())
+const frozen = computed(() => {
+  const at = contest.value?.freezeAt
+  return !!at && !contest.value?.resultsFinal && (contest.value?.status === 'ended' || now.value >= Date.parse(at))
+})
+const freezeTime = computed(() => contest.value?.freezeAt ? new Intl.DateTimeFormat('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }).format(new Date(contest.value.freezeAt)) : '')
 function elapsed(acceptedAt: string) { return duration(new Date(acceptedAt).getTime() - new Date(contest.value!.startsAt).getTime()) }
 const problemStats = computed(() => contest.value!.problems.map(problem => {
   let submitted = 0
@@ -92,6 +100,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <dl class="limits contest-schedule"><div><dt>開始日時</dt><dd><time :datetime="contest.startsAt">{{ contestDate(contest.startsAt) }}</time></dd></div><div><dt>終了日時</dt><dd><time :datetime="contest.endsAt">{{ contestDate(contest.endsAt) }}</time></dd></div></dl>
       <p class="schedule-timezone muted">日時は日本時間で表示しています。</p>
       <p class="contest-scoring muted">誤答ペナルティ {{ contest.penaltyMinutes }} 分 · 部分点なし</p>
+      <p v-if="contest.freezeMinutes" class="contest-scoring muted">終了{{ contest.freezeMinutes }}分前から順位表を凍結します。</p>
     </header>
     <ContestParticipation :contest="contest" @joined="value => { contest = value; refreshStandings() }" />
     <section v-if="activeView === 'overview'" id="overview" class="contest-section contest-description" aria-labelledby="overview-title">
@@ -108,6 +117,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
     <section v-if="activeView === 'standings'" id="standings" class="contest-section" aria-labelledby="standings-title">
       <header class="contest-section-heading"><h1 id="standings-title">公式順位表</h1><RefreshButton label="今すぐ更新" :busy="updating" :disabled="updating" @click="update" /></header>
       <p v-if="user && (contest.excluded || contest.staff)" class="notice">{{ contest.excluded ? 'このコンテストのスタッフを務めたため、提出は公式順位の対象外です。' : 'スタッフ（作成者・作問者・テスター）としての提出は公式順位の対象外です。' }}</p>
+      <p v-if="frozen" class="notice">{{ freezeTime }}以降の提出の結果は、結果発表まで伏せています。</p>
       <p v-if="standingsError" class="notice notice-error" role="alert">順位表を取得できませんでした。</p>
       <p v-if="!standingsError && !standings?.length" class="contest-empty muted">参加者はまだいません。</p>
       <div v-if="!standingsError && contest.problems.length" class="content-table-scroll" role="region" aria-label="順位表のスクロール領域" tabindex="0" :aria-busy="updating">
@@ -120,9 +130,10 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
                 <template v-if="row.problems[p.id]">
                   <span class="standing-result">
                     <strong v-if="row.problems[p.id]!.acceptedAt" class="standing-accepted">{{ row.problems[p.id]!.points }}</strong>
-                    <span v-else-if="!row.problems[p.id]!.wrong && !row.problems[p.id]!.pending" class="muted">—</span>
+                    <span v-else-if="!row.problems[p.id]!.wrong && !row.problems[p.id]!.pending && !row.problems[p.id]!.frozen" class="muted">—</span>
                     <span v-if="row.problems[p.id]!.wrong" class="standing-wrong" :aria-label="`誤答 ${row.problems[p.id]!.wrong} 回`">({{ row.problems[p.id]!.wrong }})</span>
                     <svg v-if="row.problems[p.id]!.pending" class="standing-pending" viewBox="0 0 24 24" role="img" aria-label="判定待ち"><path d="M5 3h14M5 21h14M7 3v4l5 5-5 5v4M17 3v4l-5 5 5 5v4" /></svg>
+                    <span v-if="row.problems[p.id]!.frozen" class="standing-frozen" :aria-label="`凍結後の提出 ${row.problems[p.id]!.frozen} 件`">?{{ row.problems[p.id]!.frozen }}</span>
                   </span>
                   <small v-if="row.problems[p.id]!.acceptedAt">{{ elapsed(row.problems[p.id]!.acceptedAt!) }}</small>
                 </template>
@@ -196,6 +207,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 .standing-pending { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; color: var(--color-muted); }
 .standing-accepted, .standing-fa { color: var(--color-accent); }
 .standing-wrong { color: var(--color-error); }
+.standing-frozen { color: var(--color-muted); font-weight: 600; }
 .standing-fa { display: block; }
 .standings-table small { font-size: .75rem; }
 small { display: block; color: var(--color-muted); }
