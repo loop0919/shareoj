@@ -27,6 +27,8 @@ const tested = reactive(new Set<string>())
 // Problems another current setter authors or tests. Problem routes show a setter only their own, so the draft names
 // these with their contest readiness (ADR 0022).
 const shared = reactive(new Map<string, DraftProblem>())
+// Authors of the problems a published contest brings to this setter (viaContest), so they are tagged as in the draft.
+const contestAuthorOf = reactive(new Map<string, string>())
 // Published problems that no current setter authors or tests; saving fails until they are removed.
 const unmanaged = reactive(new Set<string>())
 // Setters, owner first. A contest not saved yet has only its creator, who owns it.
@@ -133,6 +135,7 @@ async function load() {
           titles.set(p.id, p.title)
           // Problems managed only through this contest are not entered by this setter, so they are not marked.
           if (role === 'tester' && !p.viaContest) tested.add(p.id)
+          if (p.viaContest?.id === id.value && p.viaContest.author) contestAuthorOf.set(p.id, p.viaContest.author)
         }
         available.value.push(...page.items.filter(p => !p.publishedVersion && (!p.contestId || p.contestId === id.value)))
         cursor = page.nextCursor
@@ -201,7 +204,11 @@ function problemIssue(problemId: string) {
   return code && issueMessage(code, 'contest')
 }
 // Another setter's problem names its author, as the candidates mark the ones this setter tests.
-const problemOwner = (problemId: string) => summaries.value.has(problemId) ? '' : shared.get(problemId)?.author ?? ''
+function problemOwner(problemId: string) {
+  const author = contestAuthorOf.get(problemId)
+  if (author) return author === me.value ? '' : author
+  return summaries.value.has(problemId) ? '' : shared.get(problemId)?.author ?? ''
+}
 function add(p: AccountSummary) {
   if (addable(p.id)) selected.value.push({ id: p.id, title: p.title, points: 100 })
 }
@@ -515,12 +522,12 @@ async function save() {
                 <p v-if="ready && !available.length"><NuxtLink to="/problems/new?fresh=1" target="_blank" rel="noopener noreferrer">問題を作成・保存 ↗</NuxtLink>してから、この画面を再読み込みしてください。</p>
                 <template v-else>
                   <input v-model="query" class="problem-search" type="search" aria-label="問題を検索" placeholder="タイトルまたはUUIDで検索" autocomplete="off" aria-describedby="problem-search-hint" aria-controls="problem-candidates" @keydown.enter.prevent="addFirstCandidate">
-                  <p id="problem-search-hint" class="muted search-hint">自分の未公開問題と、テスターとして参加している未公開問題から探します。他のコンテストに登録済みの問題は出ません。Enterで先頭の候補を追加します。</p>
+                  <p id="problem-search-hint" class="muted search-hint">自分の未公開問題と、テスターとして参加している未公開問題から探します。<template v-if="published && setterList.length > 1">このコンテストに入っている、ほかの作成者の問題も出ます。</template>他のコンテストに登録済みの問題は出ません。Enterで先頭の候補を追加します。</p>
                   <label class="addable-filter"><input v-model="onlyAddable" type="checkbox"> 追加できる問題だけ表示</label>
                   <p class="muted search-count" role="status">{{ candidates.length }} 件{{ query.trim() ? 'が一致' : '' }}{{ matches.length > candidates.length ? `（追加済み・追加できない ${matches.length - candidates.length} 件を非表示）` : '' }}</p>
                   <ul id="problem-candidates" class="candidates">
                     <li v-for="p in candidates" :key="p.id">
-                      <div class="problem-entry"><span>{{ problemName(p.title) }}<span v-if="tested.has(p.id)" class="problem-role">テスター</span></span><code class="problem-uuid">{{ p.id }}</code><p v-if="problemIssue(p.id)" class="problem-issue">{{ problemIssue(p.id) }}</p></div>
+                      <div class="problem-entry"><span>{{ problemName(p.title) }}<span v-if="tested.has(p.id)" class="problem-role">テスター</span><span v-else-if="problemOwner(p.id)" class="problem-role">作者 {{ problemOwner(p.id) }}</span></span><code class="problem-uuid">{{ p.id }}</code><p v-if="problemIssue(p.id)" class="problem-issue">{{ problemIssue(p.id) }}</p></div>
                       <button class="editor-button" type="button" :disabled="!addable(p.id)" :aria-label="`${problemName(p.title)}${isSelected(p.id) ? 'は追加済み' : 'を追加'}`" @click="add(p)">{{ isSelected(p.id) ? '追加済み' : '追加' }}</button>
                     </li>
                   </ul>

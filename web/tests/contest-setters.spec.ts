@@ -167,21 +167,31 @@ test('a published contest names the problems no setter manages before saving', a
     canEdit: true, participating: false, official: false, staff: true, setter: true, owner: false, canViewSubmissions: true,
     problems: [{ id: own, title: '自分の問題', points: 100 }, { id: gone, title: '抜けた人の問題', points: 200, unmanaged: true }],
   }
-  // Problems of a published contest reach co-setters through the contest, marked with it.
+  // Problems of a published contest reach co-setters through the contest, marked with it and their author.
+  const via = { id, title: contest.title }
   await page.route('**/api/my/problems**', route => route.fulfill({ json: { items: new URL(route.request().url()).searchParams.get('role') === 'tester'
-    ? [{ id: gone, title: '抜けた人の問題', updatedAt, contestId: id, viaContest: { id, title: contest.title }, readiness: ready }]
+    ? [{ id: gone, title: '抜けた人の問題', updatedAt, contestId: id, viaContest: { ...via, author: 'carol' }, readiness: ready }, { id: bobs, title: 'アリスの問題', updatedAt, contestId: id, viaContest: { ...via, author: 'alice' }, readiness: ready }]
     : [{ id: own, title: '自分の問題', updatedAt, contestId: id, readiness: ready }], nextCursor: '' } }))
   await page.route(`**/api/my/contests/${id}/draft`, route => route.fulfill({ status: 404, json: {} }))
-  await page.route(`**/api/my/contests/${id}`, route => route.fulfill({ json: contest }))
+  await page.route(`**/api/my/contests/${id}`, route => route.fulfill({ json: { ...contest, problems: [...contest.problems, { id: bobs, title: 'アリスの問題', points: 300 }] } }))
   await page.goto(`/my/contests/${shortId(id)}`)
   await page.getByRole('button', { name: '問題・配点', exact: true }).click()
   const selected = page.locator('.selected li')
-  await expect(selected.locator('strong')).toHaveText(['自分の問題', '抜けた人の問題'])
+  await expect(selected.locator('strong')).toHaveText(['自分の問題', '抜けた人の問題', 'アリスの問題'])
   await expect(selected.nth(1)).toContainText('作成者の誰も作者・テスターではないため、外すまで保存できません')
   await expect(selected.nth(0).locator('.problem-issue')).toHaveCount(0)
+  // Other setters' problems name their author after publication, as in the draft.
+  await expect(selected.nth(0).locator('.problem-role')).toHaveCount(0)
+  await expect(selected.nth(1).locator('.problem-role')).toHaveText('作者 carol')
+  await expect(selected.nth(2).locator('.problem-role')).toHaveText('作者 alice')
+  await expect(selected.nth(2).locator('.problem-issue')).toHaveCount(0)
+  await page.getByRole('button', { name: 'アリスの問題を外す', exact: true }).click()
+  await expect(page.getByText('このコンテストに入っている、ほかの作成者の問題も出ます。', { exact: false })).toBeVisible()
   await page.getByRole('checkbox', { name: '追加できる問題だけ表示', exact: true }).uncheck()
-  // A problem reached through the contest is not one this setter tests.
-  await expect(page.locator('#problem-candidates li').filter({ hasText: '抜けた人の問題' }).locator('.problem-role')).toHaveCount(0)
+  // A problem reached through the contest is not one this setter tests, so it names its author instead.
+  await expect(page.locator('#problem-candidates li').filter({ hasText: '抜けた人の問題' }).locator('.problem-role')).toHaveText('作者 carol')
+  await expect(page.locator('#problem-candidates li').filter({ hasText: 'アリスの問題' }).locator('.problem-role')).toHaveText('作者 alice')
+  await expect(page.getByRole('button', { name: 'アリスの問題を追加', exact: true })).toBeEnabled()
 })
 
 test('saving a published contest names a refused participant problem apart from other conflicts', async ({ page }) => {
