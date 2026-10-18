@@ -511,6 +511,17 @@ func TestContestSettersPostgres(t *testing.T) {
 		}
 	}
 	exec(`DELETE FROM contest_participants WHERE contest_id=$1 AND owner_id='sam'`, cid)
+	// Before the start, every current setter may try any contest problem, but a removed one may not.
+	submit := func(actor, problem string, want int) string {
+		t.Helper()
+		return request("POST", "/my/submissions", actor, map[string]any{"problemId": problem, "contestId": cid, "runtime": "cpp17", "source": "code of " + actor}, want)
+	}
+	submit("cora", pO, 202)
+	submit("olive", pA, 202)
+	if body := submit("rex", pO, 409); !strings.Contains(body, "contest_participation_required") {
+		t.Fatal(body)
+	}
+	submit("pat", pO, 409)
 
 	// A co-setter edits another setter's problem in the published contest, like a tester.
 	var owned problems.Problem

@@ -204,6 +204,36 @@ func TestContestRolesPostgres(t *testing.T) {
 	}
 	request("POST", invitation(p3, "alice"), "part", nil, 200)
 
+	// While the contest runs, the author sees participants' submissions to every contest problem, as staff.
+	var startsAt, endsAt time.Time
+	if err := store.Pool().QueryRow(ctx, `SELECT starts_at,ends_at FROM contests WHERE id=$1`, cid).Scan(&startsAt, &endsAt); err != nil {
+		t.Fatal(err)
+	}
+	exec(`UPDATE contests SET starts_at=$2,ends_at=$3 WHERE id=$1`, cid, time.Now().Add(-time.Minute), time.Now().Add(time.Hour))
+	var own, other submissions.Submission
+	if err := json.Unmarshal([]byte(submit("part", p1, 202)), &own); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(submit("part", p2, 202)), &other); err != nil {
+		t.Fatal(err)
+	}
+	for path, ids := range map[string][]string{
+		"/my/contests/" + cid + "/submissions":                     {own.ID, other.ID},
+		"/my/contests/" + cid + "/problems/" + p1 + "/submissions": {own.ID},
+		"/my/problems/" + p1 + "/submissions":                      {own.ID},
+	} {
+		body := request("GET", path, "writer", nil, 200)
+		for _, id := range ids {
+			if !strings.Contains(body, id) {
+				t.Fatalf("author misses %s in %s: %s", id, path, body)
+			}
+		}
+	}
+	request("GET", "/my/contests/"+cid+"/submissions", "part", nil, 404)
+	request("GET", "/my/contests/"+cid+"/problems/"+p1+"/submissions", "part", nil, 404)
+	exec(`DELETE FROM submissions WHERE id=ANY($1::uuid[])`, []string{own.ID, other.ID})
+	exec(`UPDATE contests SET starts_at=$2,ends_at=$3 WHERE id=$1`, cid, startsAt, endsAt)
+
 	// A problem that a participant authors or tests cannot enter the contest.
 	in.Version = 1
 	for _, extra := range []string{p3, p4} {
