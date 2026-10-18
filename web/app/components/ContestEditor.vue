@@ -81,7 +81,7 @@ const issueGuide: Record<string, [string, Section]> = {
   penalty_invalid: ['誤答ペナルティを0〜1440分の整数で入力してください', 'schedule'],
   problems_missing: ['問題を1問以上選んでください', 'problems'],
   points_invalid: ['配点を1〜1,000,000点の整数で入力してください', 'problems'],
-  problem_unavailable: ['公開済み・削除済み・他のコンテストに登録済みの問題を外してください', 'problems'],
+  problem_unavailable: ['公開済み・削除済み・他のコンテストに登録済みの問題と、作成者の誰も作者・テスターではない問題を外してください', 'problems'],
   problem_incomplete: ['難易度やテストケースなど、コンテストの条件を満たしていない問題があります', 'problems'],
 }
 const issueText = (code: string) => issueGuide[code]?.[0] ?? `確認が必要な項目があります（${code}）`
@@ -365,7 +365,11 @@ function setterError(error: unknown) {
 async function refreshSetters() {
   try {
     if (published.value) applySetters(await $fetch<Contest>(`/api/my/contests/${id.value}`))
-    else applySetters(await $fetch<ContestDraftResult>(`/api/my/contests/${id.value}/draft`))
+    else {
+      // The saved draft's issues change too, for example when the removed setter's problem stays listed.
+      const result = await $fetch<ContestDraftResult>(`/api/my/contests/${id.value}/draft`)
+      draftIssues.value = result.issues; applySetters(result)
+    }
   } catch { /* The list already reflects the change; the next save rereads the rest. */ }
 }
 async function setterInvitation(renew: boolean) {

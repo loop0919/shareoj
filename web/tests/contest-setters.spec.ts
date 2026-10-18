@@ -14,7 +14,8 @@ const renewed = 'BCDEFGHIJKLMNOPQRSTUVWXYZ2345672'
 
 function draftResult(authors: string[], owner: boolean) {
   return {
-    id, version: 2, updatedAt, issues: ['start_missing'], authors, owner,
+    // Without bob, his problem has no current setter as author or tester.
+    id, version: 2, updatedAt, issues: authors.includes('bob') ? ['start_missing'] : ['start_missing', 'problem_unavailable'], authors, owner,
     draft: { title: '共同のコンテスト', description: '説明', startsAt: null, durationMinutes: 120, penaltyMinutes: 5, problems: [{ id: own, points: 100 }, { id: bobs, points: 200 }, { id: gone, points: 300 }] },
     // The server omits problems that no current setter manages, so their titles never reach the editor.
     problems: [
@@ -57,6 +58,7 @@ test('the owner sees co-setters\' problems, issues and renews the link, and remo
   const setters = page.getByRole('list', { name: '作成者', exact: true })
   await expect(setters.getByRole('listitem')).toHaveText([/ui_test\s*オーナー/, /bob\s*共同作成者/])
   await expect(page.getByRole('button', { name: '下書きを削除', exact: true })).toBeVisible()
+  await expect(page.locator('.readiness-badge')).toHaveText('×公開できません（1 項目）')
   await expect(page.getByRole('button', { name: '共同作成者から抜ける' })).toHaveCount(0)
   await page.getByRole('button', { name: 'リンクを発行', exact: true }).click()
   const link = page.getByLabel('招待リンク', { exact: true })
@@ -84,6 +86,9 @@ test('the owner sees co-setters\' problems, issues and renews the link, and remo
   await expect(link).toHaveCount(0)
   await expect(page.getByText('bobを共同作成者から外しました。招待リンクは作り直されました。')).toBeVisible()
   expect(requests).toEqual(['POST', 'PUT', 'DELETE bob'])
+  // The readiness follows the reread draft, which names the problem nobody manages now.
+  await expect(page.locator('.readiness-badge')).toHaveText('×公開できません（2 項目）')
+  await expect(page.getByRole('list', { name: '足りない項目' })).toContainText('公開済み・削除済み・他のコンテストに登録済みの問題と、作成者の誰も作者・テスターではない問題を外してください')
   // Without bob, his problem reads like any other problem nobody manages.
   await page.getByRole('button', { name: '問題・配点', exact: true }).click()
   await expect(selected.nth(1)).toContainText('削除されたか、作成者の誰も作者・テスターではないため出題できません')
