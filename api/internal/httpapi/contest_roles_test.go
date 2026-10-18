@@ -255,6 +255,16 @@ func TestContestRolesPostgres(t *testing.T) {
 	if got := rank(); !slices.Equal(got, []string{"part"}) {
 		t.Fatal("running standings", got)
 	}
+	// While the contest runs, a participant still cannot become staff and stays ranked.
+	if body := request("POST", invite2, "part", nil, 409); !strings.Contains(body, "contest_participant_locked") {
+		t.Fatal(body)
+	}
+	if got := rank(); !slices.Equal(got, []string{"part"}) {
+		t.Fatal("standings after a refused tester invitation", got)
+	}
+	if running := view("part"); running.Staff || !running.Participating || running.CanViewSubmissions {
+		t.Fatalf("participant view while running: %+v", running)
+	}
 
 	// Once the results are final, a participant may become a tester and keeps the final rank.
 	exec(`UPDATE contests SET ends_at=$2 WHERE id=$1`, cid, start.Add(30*time.Minute))

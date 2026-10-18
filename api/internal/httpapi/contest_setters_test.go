@@ -525,6 +525,26 @@ func TestContestSettersPostgres(t *testing.T) {
 	if detail.CanReadEditorial || detail.Editorial != "" {
 		t.Fatalf("participant editorial while running: %+v", detail)
 	}
+	// While the contest runs, a registered participant still cannot join the setters.
+	if body := request("POST", renewed, "pat", nil, 409); !strings.Contains(body, "contest_participant_locked") {
+		t.Fatal(body)
+	}
+	if c := contestOf(cid, "pat"); c.IsSetter || c.Staff || !c.Participating {
+		t.Fatalf("participant view while running: %+v", c)
+	}
+	// Until the results are final, setters keep their rights through the contest, and helpers may still join.
+	request("POST", "/my/problems/"+pA+"/rejudge", "olive", map[string]any{"submissionIds": []string{}}, 202)
+	request("GET", "/my/problems/"+pO, "cora", nil, 200)
+	if joined := accept(renewed, "late", 200); !joined.Joined || !joined.Published {
+		t.Fatalf("joined while running: %+v", joined)
+	}
+	if c := contestOf(cid, "late"); !c.IsSetter || !c.Staff || !c.CanViewSubmissions {
+		t.Fatalf("helper view while running: %+v", c)
+	}
+	request("GET", "/my/problems/"+pO, "late", nil, 200)
+	// Leaving on their own keeps the link, which the end then closes.
+	request("DELETE", "/my/contests/"+cid+"/setters/late", "late", nil, 204)
+	request("GET", "/my/problems/"+pO, "late", nil, 404)
 	exec(`UPDATE contests SET ends_at=now()-interval '1 minute' WHERE id=$1`, cid)
 	decode(request("GET", "/my/contests/"+cid+"/problems/"+pO, "pat", nil, 200), &detail)
 	if !detail.CanReadEditorial {
