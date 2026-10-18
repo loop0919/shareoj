@@ -23,13 +23,13 @@ export async function privateAPI<T>(event: H3Event, path: string, options: { met
     }
     const status = (error as { response?: { status?: number } }).response?.status
     const upstreamCode = (error as { data?: { error?: string } }).data?.error
-    if (status === 429 && ['submission_rate_limited', 'creation_quota_exceeded'].includes(upstreamCode ?? '')) {
+    if (status === 429 && ['submission_rate_limited', 'creation_quota_exceeded', 'contest_attempts_limited'].includes(upstreamCode ?? '')) {
       const seconds = Number((error as { response?: { headers?: Headers } }).response?.headers?.get('Retry-After'))
       const retryAfter = Number.isSafeInteger(seconds) && seconds > 0 ? seconds : undefined
       if (retryAfter) setResponseHeader(event, 'Retry-After', retryAfter)
       throw createError({ statusCode: 429, statusMessage: 'Request failed', data: { code: upstreamCode, retryAfter } })
     }
-    const code = ['incomplete_problem', 'invalid_schedule', 'invalid_image', 'image_in_use', 'handle_taken', 'profile_conflict', 'profile_required', 'invalid_avatar', 'invalid_profile', 'tests_not_ready', 'judging_unavailable', 'judge_maintenance', 'invalid_submission', 'contest_participation_required', 'contest_participation_unavailable', 'contest_conflict', 'contest_not_ready', 'contest_problem_locked', 'contest_participant_locked', 'contest_participant_problem', 'contest_invitation_closed', 'contest_results_pending', 'setter_not_found', 'invalid_contest', 'featured_ineligible', 'featured_limit', 'incorrect_password', 'invalid_password', 'password_unavailable', 'confirmation_mismatch', 'account_has_active_contest', 'editorial_problem_unavailable'].includes(upstreamCode ?? '') ? upstreamCode : undefined
+    const code = ['incomplete_problem', 'invalid_schedule', 'invalid_image', 'image_in_use', 'handle_taken', 'profile_conflict', 'profile_required', 'invalid_avatar', 'invalid_profile', 'tests_not_ready', 'judging_unavailable', 'judge_maintenance', 'invalid_submission', 'contest_participation_required', 'contest_participation_unavailable', 'contest_conflict', 'contest_not_ready', 'contest_problem_locked', 'contest_participant_locked', 'contest_participant_problem', 'contest_invitation_closed', 'contest_results_pending', 'setter_not_found', 'contest_team_required', 'contest_team_unavailable', 'contest_onsite_unavailable', 'contest_team_mode_locked', 'contest_team_size_locked', 'incorrect_team_code', 'incorrect_venue_passphrase', 'invalid_team_name', 'invalid_venue_passphrase', 'team_name_taken', 'team_already_joined', 'team_full', 'team_locked', 'team_not_found', 'team_member_not_found', 'participant_not_found', 'invalid_contest', 'featured_ineligible', 'featured_limit', 'incorrect_password', 'invalid_password', 'password_unavailable', 'confirmation_mismatch', 'account_has_active_contest', 'editorial_problem_unavailable'].includes(upstreamCode ?? '') ? upstreamCode : undefined
     throw createError({ statusCode: status && [400, 401, 403, 404, 409, 413, 415, 429, 503].includes(status) ? status : 502, statusMessage: 'Request failed', data: code ? { code } : undefined })
   }
 }
