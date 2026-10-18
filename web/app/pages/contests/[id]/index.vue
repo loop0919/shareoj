@@ -28,23 +28,33 @@ const canSwitchStandings = computed(() => contest.value?.canViewLiveStandings ==
 const standingsMode = ref<'frozen' | 'live'>('frozen')
 const showLive = computed(() => standingsMode.value === 'live' && canSwitchStandings.value)
 const standingsModes = [{ value: 'frozen' as const, label: '凍結した順位表' }, { value: 'live' as const, label: '凍結なし' }]
+// 全員 or オンサイトのみ, kept in the URL and shared by the standings and the submissions (ADR 0024).
+const { onsite: onsiteOnly, scope, scopes } = useOnsiteScope(() => contest.value?.onsiteDivision === true)
+const teamContest = computed(() => contest.value?.teamMode === true)
 // The rows carry the view they were read for. While a switch loads, the other view's rows are hidden, so the live table
-// never sits under the frozen notice (ADR 0023) nor the frozen one under the live notice.
+// never sits under the frozen notice (ADR 0023) nor the frozen one under the live notice, and the whole table never
+// passes for the onsite one.
 const requestFetch = useRequestFetch()
 const { data: standingsData, error: standingsError, refresh: refreshStandings } = await useAsyncData(`contest-standings:${id}`, async (_, { signal }) => {
-  const live = showLive.value
-  return { live, rows: await requestFetch<Standing[]>(`${base}/standings`, { query: live ? { live: '1' } : {}, signal }) }
-}, { watch: [showLive] })
-const switchingStandings = computed(() => !!standingsData.value && standingsData.value.live !== showLive.value)
+  const live = showLive.value, onsite = onsiteOnly.value
+  const query = { ...live ? { live: '1' } : {}, ...onsite ? { scope: 'onsite' } : {} }
+  return { live, onsite, rows: await requestFetch<Standing[]>(`${base}/standings`, { query, signal }) }
+}, { watch: [showLive, onsiteOnly] })
+const switchingStandings = computed(() => !!standingsData.value && (standingsData.value.live !== showLive.value || standingsData.value.onsite !== onsiteOnly.value))
 const standings = computed(() => switchingStandings.value ? undefined : standingsData.value?.rows)
+// Team rows have no handle; their id cannot collide with one.
+const standingKey = (row: Standing) => row.team?.id ?? row.handle
 const canViewSubmissions = computed(() => contest.value?.canViewSubmissions === true)
+// While the contest runs a team member sees only the team's submissions, so the onsite filter has nothing to narrow.
+const teamOnly = computed(() => !!contest.value?.team && contest.value.status === 'running')
+const filterSubmissions = computed(() => onsiteOnly.value && !teamOnly.value)
 const submissions = ref<{ items: Submission[], hasMore: boolean } | null>(null)
 const submissionsError = ref('')
 const offset = ref(0)
 const { run: requestSubmissions, invalidate: invalidateSubmissions } = useLatestRequest()
 function loadSubmissions() {
   if (activeView.value !== 'submissions' || !canViewSubmissions.value) { invalidateSubmissions(); submissions.value = null; return Promise.resolve() }
-  const query = { offset: offset.value }
+  const query = { offset: offset.value, ...filterSubmissions.value ? { scope: 'onsite' } : {} }
   return requestSubmissions(JSON.stringify([query, user.value?.id]),
     () => $fetch<{ items: Submission[], hasMore: boolean }>(`${base}/submissions`, { query }),
     result => { submissions.value = result; submissionsError.value = '' },
@@ -76,6 +86,7 @@ async function update() {
 }
 watch(() => user.value?.id, () => { invalidateSubmissions(); submissions.value = null; void update() })
 watch([offset, activeView, canViewSubmissions], () => { void loadSubmissions() })
+watch(filterSubmissions, () => { offset.value = 0; void loadSubmissions() })
 watch([activeView, () => contest.value?.status], () => { void loadEditorials() })
 onMounted(() => { void loadSubmissions(); void loadEditorials() })
 usePolling(update, 15000)
@@ -109,7 +120,8 @@ const problemStats = computed(() => contest.value!.problems.map(problem => {
   let submitted = 0
   let accepted = 0
   let firstAt = Infinity
-  let handles: string[] = []
+  // Counted from the rows on screen, so the onsite table names the first onsite solver.
+  let first: Standing[] = []
   for (const row of standings.value ?? []) {
     const score = row.problems[problem.id]
     if (!score) continue
@@ -117,10 +129,10 @@ const problemStats = computed(() => contest.value!.problems.map(problem => {
     if (!score.acceptedAt) continue
     accepted++
     const at = new Date(score.acceptedAt).getTime()
-    if (at < firstAt) { firstAt = at; handles = [row.handle] }
-    else if (at === firstAt) handles.push(row.handle)
+    if (at < firstAt) { firstAt = at; first = [row] }
+    else if (at === firstAt) first.push(row)
   }
-  return { id: problem.id, submitted, accepted, handles, time: accepted ? duration(firstAt - new Date(contest.value!.startsAt).getTime()) : '' }
+  return { id: problem.id, submitted, accepted, first, time: accepted ? duration(firstAt - new Date(contest.value!.startsAt).getTime()) : '' }
 }))
 function duration(ms: number) { const seconds = Math.floor(ms / 1000); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` }
 useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => contest.value!.title, path: () => `/contests/${shortId(contest.value!.id)}`, description: () => contest.value!.description.slice(0, 160) })
@@ -139,12 +151,15 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <p class="schedule-timezone muted">日時は日本時間で表示しています。</p>
       <p class="contest-scoring muted">誤答ペナルティ {{ contest.penaltyMinutes }} 分 · 部分点なし</p>
       <p v-if="contest.freezeMinutes" class="contest-scoring muted">終了{{ contest.freezeMinutes }}分前から順位表を凍結します。</p>
+      <p v-if="contest.teamMode" class="contest-scoring muted">チーム戦{{ contest.maxTeamSize ? `（1チーム${contest.maxTeamSize}人まで）` : '' }}</p>
+      <p v-if="contest.onsiteDivision" class="contest-scoring muted">オンサイト参加とオープン参加の区分があります。</p>
     </header>
-    <ContestParticipation :contest="contest" @joined="value => { contest = value; refreshStandings() }" />
+    <ContestParticipation :contest="contest" :detailed="activeView === 'overview'" @joined="value => { contest = value; refreshStandings() }" @changed="update" />
     <section v-if="activeView === 'overview'" id="overview" class="contest-section contest-description" aria-labelledby="overview-title">
       <h2 id="overview-title">概要</h2><ProblemMarkdown v-if="contest.description" :source="contest.description" /><p v-else class="muted">コンテストの説明はまだありません。</p>
       <p><NuxtLink to="/docs/contest-rules">ルール</NuxtLink></p>
     </section>
+    <ContestSetterTools v-if="activeView === 'overview' && contest.setter && (contest.teamMode || contest.onsiteDivision)" :contest="contest" @changed="refreshStandings()" />
     <section v-if="activeView === 'problems'" id="problems" class="contest-section" aria-labelledby="problems-title">
       <h1 id="problems-title">問題</h1>
       <p v-if="contest.status === 'scheduled'" class="notice">問題文は開始時刻に公開されます。</p>
@@ -156,18 +171,27 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <header class="contest-section-heading"><h1 id="standings-title" ref="standingsTitle" tabindex="-1">公式順位表</h1><div class="standings-actions"><button v-if="contest.canRevealResults" type="button" class="editor-button contest-reveal" :disabled="revealing" :aria-busy="revealing" @click="reveal">{{ revealing ? '公開中…' : '結果を公開' }}</button><RefreshButton label="今すぐ更新" :busy="updating" :disabled="updating" @click="update" /></div></header>
       <p v-if="revealError" class="notice notice-error" role="alert">{{ revealError }}</p>
       <p v-if="user && (contest.excluded || contest.staff)" class="notice">{{ contest.excluded ? 'このコンテストのスタッフを務めたため、提出は公式順位の対象外です。' : 'スタッフ（作成者・作問者・テスター）としての提出は公式順位の対象外です。' }}</p>
-      <div v-if="canSwitchStandings" class="standings-mode"><SegmentedChoice v-model="standingsMode" legend="順位表の表示" name="standings-mode" :options="standingsModes" hide-legend /></div>
+      <div v-if="canSwitchStandings || contest.onsiteDivision" class="standings-filters">
+        <div v-if="canSwitchStandings" class="standings-mode"><SegmentedChoice v-model="standingsMode" legend="順位表の表示" name="standings-mode" :options="standingsModes" hide-legend /></div>
+        <div v-if="contest.onsiteDivision" class="standings-mode"><SegmentedChoice v-model="scope" legend="表示する参加者" name="standings-scope" :options="scopes" hide-legend /></div>
+      </div>
       <p v-if="showLive" class="notice">凍結なしの順位表を表示しています。スタッフだけが見られます。</p>
       <p v-else-if="frozen" class="notice">{{ freezeTime }}以降の提出の結果は、結果発表まで伏せています。</p>
+      <p v-if="onsiteOnly" class="muted standings-scope-note">オンサイト参加{{ teamContest ? 'のチーム' : 'の人' }}だけを、振り直した順位で表示しています。小さい数字は全体の順位です。</p>
       <p v-if="standingsError" class="notice notice-error" role="alert">順位表を取得できませんでした。</p>
       <LoadingSpinner v-if="!standingsError && switchingStandings" label="順位表を読み込み中" />
-      <p v-else-if="!standingsError && !standings?.length" class="contest-empty muted">参加者はまだいません。</p>
+      <p v-else-if="!standingsError && !standings?.length" class="contest-empty muted">{{ onsiteOnly ? 'オンサイトの参加者はまだいません。' : '参加者はまだいません。' }}</p>
       <div v-if="!standingsError && !switchingStandings && contest.problems.length" class="content-table-scroll" role="region" aria-label="順位表のスクロール領域" tabindex="0" :aria-busy="updating">
         <table class="content-table standings-table">
-          <thead><tr><th scope="col">順位</th><th scope="col">ユーザー</th><th scope="col">得点</th><th scope="col">時間</th><th v-for="(p, i) in contest.problems" :key="p.id || i" scope="col"><NuxtLink v-if="contest.status !== 'scheduled' && p.id" :to="contestProblemPath(contest.id, i)">{{ problemLabel(i) }}</NuxtLink><span v-else>{{ problemLabel(i) }}</span></th></tr></thead>
+          <thead><tr><th scope="col">順位</th><th scope="col">{{ teamContest ? 'チーム' : 'ユーザー' }}</th><th scope="col">得点</th><th scope="col">時間</th><th v-for="(p, i) in contest.problems" :key="p.id || i" scope="col"><NuxtLink v-if="contest.status !== 'scheduled' && p.id" :to="contestProblemPath(contest.id, i)">{{ problemLabel(i) }}</NuxtLink><span v-else>{{ problemLabel(i) }}</span></th></tr></thead>
           <tbody>
-            <tr v-for="row in standings" :key="row.handle">
-              <td>{{ row.rank }}</td><th scope="row"><UserLink :handle="row.handle" /></th><td class="standing-total">{{ row.points }}</td><td>{{ duration(row.timeMs) }}</td>
+            <tr v-for="row in standings" :key="standingKey(row)">
+              <td>{{ row.rank }}<small v-if="onsiteOnly && row.overallRank" class="standing-overall">全体 {{ row.overallRank }} 位</small></td>
+              <th scope="row">
+                <template v-if="row.team"><span class="standing-team">{{ row.team.name }}</span><span class="standing-members"><template v-for="(member, index) in row.team.members" :key="member"><span v-if="index">、</span><UserLink :handle="member" /></template></span></template>
+                <UserLink v-else :handle="row.handle" />
+                <span v-if="row.onsite && !onsiteOnly" class="standing-onsite">オンサイト</span>
+              </th><td class="standing-total">{{ row.points }}</td><td>{{ duration(row.timeMs) }}</td>
               <td v-for="(p, i) in contest.problems" :key="p.id || i">
                 <template v-if="row.problems[p.id]">
                   <span class="standing-result">
@@ -184,16 +208,17 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
             </tr>
           </tbody>
           <tfoot>
-            <tr><th colspan="4" scope="row">FA（初正解）</th><td v-for="(stat, i) in problemStats" :key="stat.id || i"><template v-if="stat.accepted"><span v-for="handle in stat.handles" :key="handle" class="standing-fa"><UserLink :handle="handle" /></span><small>{{ stat.time }}</small></template><span v-else class="muted">—</span></td></tr>
-            <tr><th colspan="4" scope="row">正解者数 / 提出者数</th><td v-for="(stat, i) in problemStats" :key="stat.id || i"><span class="standing-accepted">{{ stat.accepted }}</span> / {{ stat.submitted }}</td></tr>
+            <tr><th colspan="4" scope="row">{{ onsiteOnly ? 'FA（初正解・オンサイト）' : 'FA（初正解）' }}</th><td v-for="(stat, i) in problemStats" :key="stat.id || i"><template v-if="stat.accepted"><span v-for="row in stat.first" :key="standingKey(row)" class="standing-fa"><template v-if="row.team">{{ row.team.name }}</template><UserLink v-else :handle="row.handle" /></span><small>{{ stat.time }}</small></template><span v-else class="muted">—</span></td></tr>
+            <tr><th colspan="4" scope="row">{{ teamContest ? '正解チーム数 / 提出チーム数' : '正解者数 / 提出者数' }}{{ onsiteOnly ? '（オンサイト）' : '' }}</th><td v-for="(stat, i) in problemStats" :key="stat.id || i"><span class="standing-accepted">{{ stat.accepted }}</span> / {{ stat.submitted }}</td></tr>
           </tfoot>
         </table>
       </div>
     </section>
     <section v-if="activeView === 'submissions'" id="submissions" class="contest-section" aria-labelledby="submissions-title">
       <h1 id="submissions-title">提出一覧</h1>
-      <p v-if="!canViewSubmissions" class="notice">提出一覧と提出コードはコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。{{ frozenNote }}</p>
-      <template v-else><p class="muted">提出コードを閲覧できます。練習提出も掲載します。{{ frozenNote }}</p>
+      <p v-if="!canViewSubmissions" class="notice">提出一覧と提出コードはコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。<template v-if="contest.teamMode">チームのメンバーは、開催中もチームの提出を閲覧できます。</template>{{ frozenNote }}</p>
+      <template v-else><p class="muted">{{ teamOnly ? '開催中は、チームの提出だけを表示しています。提出コードを閲覧できます。' : '提出コードを閲覧できます。練習提出も掲載します。' }}{{ frozenNote }}</p>
+      <div v-if="contest.onsiteDivision && !teamOnly" class="standings-mode submissions-scope"><SegmentedChoice v-model="scope" legend="表示する提出" name="submissions-scope" :options="scopes" hide-legend /></div>
       <p v-if="submissionsError" class="notice notice-error" role="alert">{{ submissionsError }}</p>
       <LoadingSpinner v-if="!submissions && !submissionsError" label="提出一覧を読み込み中" />
       <template v-if="submissions"><p v-if="!submissions.items.length" class="contest-empty muted">提出はまだありません。</p><div v-else class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0"><table class="content-table"><thead><tr><th scope="col">問題</th><th scope="col">ユーザー</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th scope="col">結果</th><th scope="col">提出日時（日本時間）</th></tr></thead><tbody><tr v-for="s in submissions.items" :key="s.id"><th scope="row"><NuxtLink :to="`/contests/${shortId(contest.id)}/submissions/${shortId(s.id)}`">{{ s.problemTitle }}</NuxtLink></th><td><UserLink :handle="s.author" /></td><td class="submission-usage">{{ s.sourceBytes == null ? '—' : `${s.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage">{{ submissionUsage(s.result) }}</td><td><SubmissionStatus :item="s" /></td><td>{{ contestDate(s.createdAt) }}<span v-if="new Date(s.createdAt) >= new Date(contest.endsAt)"> · 練習</span></td></tr></tbody></table></div><ContentPagination :index="offset / 50" :has-next="submissions.hasMore" :loading="updating" @move="direction => offset += direction * 50" /></template>
@@ -246,11 +271,20 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 .standings-table tbody th { text-align: left; }
 .standings-table tfoot th { font-weight: 500; }
 .standing-total { font-weight: 700; }
-.standing-result { display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+/* The spoken counts are absolutely positioned; anchoring them here keeps them inside the scrolling table. */
+.standing-result { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
 .standing-pending { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; color: var(--color-muted); }
 .standing-accepted, .standing-fa { color: var(--color-accent); }
 .standing-wrong { color: var(--color-error); }
-.standings-mode { max-width: 24rem; margin-bottom: 16px; }
+.standings-filters { display: flex; flex-wrap: wrap; gap: 0 16px; }
+.standings-mode { flex: 1 1 16rem; max-width: 24rem; margin-bottom: 16px; }
+.submissions-scope { margin-top: 16px; }
+.standings-scope-note { margin: 0 0 16px; font-size: .8125rem; }
+.standing-team { display: block; font-weight: 600; overflow-wrap: anywhere; }
+.standing-members { display: block; color: var(--color-muted); font-size: .75rem; font-weight: 400; }
+.standing-onsite { display: inline-block; margin-top: 4px; padding: 0 6px; border: 1px solid var(--color-accent); border-radius: 4px; color: var(--color-accent); background: var(--color-accent-soft); font-size: .6875rem; font-weight: 600; white-space: nowrap; }
+.standings-table tbody th .standing-onsite { margin-inline-start: 6px; }
+.standings-table tbody th:has(.standing-team) .standing-onsite { margin-inline-start: 0; }
 .standing-frozen { color: var(--color-muted); font-weight: 600; }
 .standing-fa { display: block; }
 .standings-table small { font-size: .75rem; }
