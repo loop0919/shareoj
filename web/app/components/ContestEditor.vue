@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { accountListSchema, type AccountSummary } from '~~/shared/types/account-problems'
-import { contestAuthors, problemLabel, type Contest, type ContestDraft, type ContestDraftResult, type DraftProblem } from '~~/shared/types/contest'
+import { contestAuthors, problemLabel, type Contest, type ContestDraft, type ContestDraftResult, type DraftProblem, type Venue } from '~~/shared/types/contest'
 import { shortId } from '~~/shared/utils/short-id'
 import { accountError } from '~/utils/account-problems'
 import { issueMessage } from '~/utils/problem-readiness'
@@ -27,6 +27,21 @@ watch(freezeOn, (on) => {
   if (!on) freezeMinutes.value = ''
   else if (freezeMinutes.value === '') freezeMinutes.value = Math.min(60, Number(durationMinutes.value) || 60)
 })
+// Team contests and the onsite division (ADR 0024). Each optional limit is a switch that shows its input only when on,
+// like the freeze.
+const teamMode = ref<'individual' | 'team'>('individual')
+const teamModes = [{ value: 'individual' as const, label: '個人戦' }, { value: 'team' as const, label: 'チーム戦' }]
+const teamSizeOn = ref(false)
+const maxTeamSize = ref<number | string>('')
+watch(teamSizeOn, (on) => {
+  if (!on) maxTeamSize.value = ''
+  else if (maxTeamSize.value === '') maxTeamSize.value = 3
+})
+const onsiteOn = ref(false)
+// Setters only: drafts return it as typed, and a published contest reads it from the setters' venue route.
+const passphrase = ref('')
+watch(onsiteOn, (on) => { if (!on) passphrase.value = '' })
+const maxTeamMembers = 50
 const version = ref(0)
 const available = ref<AccountSummary[]>([])
 const titles = new Map<string, string>()
@@ -56,7 +71,7 @@ const published = ref(false)
 const draftIssues = ref<string[]>([])
 const showIssues = ref(false)
 const timezone = ref('')
-type Section = 'description' | 'problems' | 'schedule' | 'manage'
+type Section = 'description' | 'problems' | 'schedule' | 'participation' | 'manage'
 // The co-setter notification links straight to the management section.
 const section = ref<Section>(route.query.section === 'manage' ? 'manage' : 'description')
 const sidebarExpanded = ref(false)
@@ -89,15 +104,17 @@ const issueGuide: Record<string, [string, Section]> = {
   duration_invalid: ['コンテスト時間を1分以上の整数で入力してください', 'schedule'],
   penalty_invalid: ['誤答ペナルティを0〜1440分の整数で入力してください', 'schedule'],
   freeze_invalid: ['順位表を凍結する時間は、コンテスト時間以内の1分以上の整数で入力するか、凍結をオフにしてください', 'schedule'],
+  team_size_invalid: ['チームの人数の上限は2〜50人の整数で入力するか、上限をオフにしてください', 'participation'],
+  venue_passphrase_invalid: ['会場の合言葉は4〜64文字で入力するか、オンサイト区分をオフにしてください', 'participation'],
   problems_missing: ['問題を1問以上選んでください', 'problems'],
   points_invalid: ['配点を1〜1,000,000点の整数で入力してください', 'problems'],
   problem_unavailable: ['公開済み・削除済み・他のコンテストに登録済みの問題と、作成者の誰も作者・テスターではない問題を外してください', 'problems'],
   problem_incomplete: ['難易度やテストケースなど、コンテストの条件を満たしていない問題があります', 'problems'],
 }
 const issueText = (code: string) => issueGuide[code]?.[0] ?? `確認が必要な項目があります（${code}）`
-const sectionNames: Record<Section, string> = { description: 'タイトル・説明', problems: '問題・配点', schedule: '期間・ペナルティ', manage: 'コンテスト管理' }
+const sectionNames: Record<Section, string> = { description: 'タイトル・説明', problems: '問題・配点', schedule: '期間・ペナルティ', participation: '参加形式', manage: 'コンテスト管理' }
 const issueSection = (code: string): Section => issueGuide[code]?.[1] ?? 'manage'
-const snapshot = () => JSON.stringify([title.value, description.value, startsAt.value, durationMinutes.value, penaltyMinutes.value, freezeOn.value, freezeMinutes.value, selected.value])
+const snapshot = () => JSON.stringify([title.value, description.value, startsAt.value, durationMinutes.value, penaltyMinutes.value, freezeOn.value, freezeMinutes.value, teamMode.value, teamSizeOn.value, maxTeamSize.value, onsiteOn.value, passphrase.value, selected.value])
 const saved = ref('')
 let leaving = false
 const dirty = computed(() => ready.value && snapshot() !== saved.value)
@@ -165,6 +182,7 @@ async function open(contestId: string) {
     version.value = result.version; draftIssues.value = result.issues; applySetters(result)
     title.value = d.title; description.value = d.description; startsAt.value = d.startsAt ? localDate(d.startsAt) : ''
     durationMinutes.value = d.durationMinutes ?? ''; penaltyMinutes.value = d.penaltyMinutes ?? ''; freezeMinutes.value = d.freezeMinutes ?? ''; freezeOn.value = d.freezeMinutes != null
+    applyParticipation(d.teamMode, d.maxTeamSize, d.onsiteDivision, d.onsitePassphrase)
     selected.value = d.problems.map(p => ({ id: p.id, title: titles.get(p.id) ?? shared.get(p.id)?.title ?? '表示できない問題', points: p.points }))
     return
   } catch (error) {
@@ -177,8 +195,16 @@ async function open(contestId: string) {
   title.value = c.title; description.value = c.description; startsAt.value = localDate(c.startsAt)
   durationMinutes.value = Math.round((Date.parse(c.endsAt) - Date.parse(c.startsAt)) / 60000)
   penaltyMinutes.value = c.penaltyMinutes; freezeMinutes.value = c.freezeMinutes ?? ''; freezeOn.value = c.freezeMinutes != null; version.value = c.version
+  // Saving with the division on sends the passphrase back, so an editable contest reads it first.
+  const venue = c.canEdit && c.onsiteDivision ? await $fetch<Venue>(`/api/my/contests/${contestId}/onsite`) : null
+  applyParticipation(c.teamMode, c.maxTeamSize, c.onsiteDivision, venue?.passphrase)
   selected.value = c.problems.map(p => ({ id: p.id, title: p.title, points: p.points }))
   if (!c.canEdit) { locked.value = true; settersOnly.value = true; resultsFinal.value = c.resultsFinal ?? c.status === 'ended'; section.value = 'manage' }
+}
+function applyParticipation(team?: boolean, size?: number | null, onsite?: boolean, venue?: string | null) {
+  teamMode.value = team ? 'team' : 'individual'
+  maxTeamSize.value = size ?? ''; teamSizeOn.value = size != null
+  passphrase.value = venue ?? ''; onsiteOn.value = !!onsite
 }
 // Who sets the contest, and which problems other setters bring; a draft and a contest describe them differently.
 function applySetters(result: ContestDraftResult | Contest) {
@@ -313,8 +339,15 @@ function draftBody(): ContestDraft {
     title: title.value, description: description.value, startsAt: Number.isFinite(start.getTime()) ? start.toISOString() : null,
     // With the switch on, a length that is not a whole number goes as 0, so the draft keeps the freeze and lists the issue.
     durationMinutes: integer(durationMinutes.value), penaltyMinutes: integer(penaltyMinutes.value), freezeMinutes: freezeOn.value ? integer(freezeMinutes.value) ?? 0 : null,
+    // As with the freeze, a switch left on without a whole number keeps the setting and lists the issue.
+    ...participationBody(teamSizeOn.value ? integer(maxTeamSize.value) ?? 0 : null),
     problems: selected.value.map(p => ({ id: p.id, points: integer(p.points) })),
   }
+}
+// Every save sends all four, since the API keeps the stored value of a field left out.
+function participationBody(size: number | null) {
+  const team = teamMode.value === 'team'
+  return { teamMode: team, maxTeamSize: team ? size : null, onsiteDivision: onsiteOn.value, onsitePassphrase: onsiteOn.value ? passphrase.value : null }
 }
 // A saved draft or a contest answers 404 once the viewer no longer sets it, so retrying cannot help.
 const noLongerSetter = 'このコンテストの作成者ではなくなったため保存できません。入力内容をコピーしてください。'
@@ -451,14 +484,17 @@ async function save() {
   }
   busy.value = true; message.value = ''
   try {
-    await $fetch(`/api/my/contests/${id.value}`, { method: 'PUT', body: { title: title.value, description: description.value, startsAt: start.toISOString(), endsAt: end.toISOString(), penaltyMinutes: penaltyMinutes.value, freezeMinutes: freezeOn.value ? freezeMinutes.value : null, version: version.value, problems: selected.value.map(({ id, points }) => ({ id, points })) } })
+    await $fetch(`/api/my/contests/${id.value}`, { method: 'PUT', body: { title: title.value, description: description.value, startsAt: start.toISOString(), endsAt: end.toISOString(), penaltyMinutes: penaltyMinutes.value, freezeMinutes: freezeOn.value ? freezeMinutes.value : null, ...participationBody(teamSizeOn.value ? Number(maxTeamSize.value) : null), version: version.value, problems: selected.value.map(({ id, points }) => ({ id, points })) } })
     leaving = true
     await navigateTo(`/contests/${shortId(id.value)}`)
   } catch (error) {
     const status = (error as { statusCode?: number }).statusCode
-    if ((error as { data?: { data?: { code?: string } } }).data?.data?.code === 'contest_participant_problem') {
+    const code = (error as { data?: { data?: { code?: string } } }).data?.data?.code
+    if (code === 'contest_participant_problem') {
       section.value = 'problems'; message.value = '参加登録した人が作者・テスターである問題は出題できません。該当する問題を外してください。'; return
     }
+    if (code === 'contest_team_mode_locked') { section.value = 'participation'; message.value = '参加登録があるため、個人戦とチーム戦は切り替えられません。'; return }
+    if (code === 'contest_team_size_locked') { section.value = 'participation'; message.value = '人数の上限は、今いちばん人数の多いチームより少なくできません。'; return }
     message.value = status === 404 ? noLongerSetter : status === 409 ? '保存できませんでした。問題の公開状態・他コンテストへの登録・テストケースを確認してください。参加登録した人が作者・テスターの問題と、作成者の誰も作者・テスターではない問題は出題できません。開催開始や別画面での更新があった場合は再読み込みが必要です。' : status === 400 ? '入力内容を確認してください。' : '保存を確認できませんでした。作成したコンテスト一覧を確認してから再度お試しください。'
   } finally { busy.value = false }
 }
@@ -489,6 +525,7 @@ async function save() {
           <button type="button" class="editor-button editor-sidebar-item" :aria-current="section === 'description' ? 'page' : undefined" aria-label="タイトル・説明" title="タイトル・説明" @click="section = 'description'"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H5v20h14V7Zm0 0v5h5M8 12h8M8 16h6" /></svg><span class="editor-sidebar-label">タイトル・説明</span></button>
           <button type="button" class="editor-button editor-sidebar-item" :aria-current="section === 'problems' ? 'page' : undefined" aria-label="問題・配点" title="問題・配点" @click="section = 'problems'"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 6 2 2 3-4m-5 9 2 2 3-4m-5 9 2 2 3-4M12 6h9M12 13h9M12 20h9" /></svg><span class="editor-sidebar-label">問題・配点</span></button>
           <button type="button" class="editor-button editor-sidebar-item" :aria-current="section === 'schedule' ? 'page' : undefined" aria-label="期間・ペナルティ" title="期間・ペナルティ" @click="section = 'schedule'"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg><span class="editor-sidebar-label">期間・ペナルティ</span></button>
+          <button type="button" class="editor-button editor-sidebar-item" :aria-current="section === 'participation' ? 'page' : undefined" aria-label="参加形式" title="参加形式" @click="section = 'participation'"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3" /><path d="M3 20a6 6 0 0 1 12 0M16 4a3 3 0 0 1 0 6M21 20a6 6 0 0 0-4-5.7" /></svg><span class="editor-sidebar-label">参加形式</span></button>
           <button type="button" class="editor-button editor-sidebar-item" :aria-current="section === 'manage' ? 'page' : undefined" aria-label="コンテスト管理" title="コンテスト管理" @click="section = 'manage'"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3 .6-2h4.8l.6 2 2 1.2 2.1-.5 2.4 4.2-1.5 1.5v2.3l1.5 1.5-2.4 4.2-2.1-.5-2 1.2-.6 2H9l-.6-2-2-1.2-2.1.5-2.4-4.2 1.5-1.5V9.4L1.9 7.9l2.4-4.2 2.1.5Z" transform="translate(0 1)" /><circle cx="12" cy="12" r="3" /></svg><span class="editor-sidebar-label">コンテスト管理</span></button>
         </nav>
       </aside>
@@ -569,9 +606,29 @@ async function save() {
                 <p class="muted end-time">{{ endLabel }}</p>
               </section>
               <section class="settings-section"><h3>誤答ペナルティ</h3><p class="muted">正解した問題の、初回正解前の誤答だけに加算します。コンパイルエラーは対象外です。</p><label for="contest-penalty">誤答ペナルティ（分）</label><input id="contest-penalty" v-model.number="penaltyMinutes" type="number" required min="0" max="1440" step="1"><p class="muted penalty-note">0分でペナルティなしにできます。</p></section>
-              <section class="settings-section"><h3>順位表の凍結</h3><InlineSwitch v-model="freezeOn" class="freeze-switch" describedby="contest-freeze-note">順位表の凍結を行う</InlineSwitch><p id="contest-freeze-note" class="muted">終了前の指定した時間の提出は、終了後に「結果を公開」を押すまで順位表で結果を伏せます。</p><template v-if="freezeOn"><label for="contest-freeze">凍結する時間（終了前の分）</label><input id="contest-freeze" v-model.number="freezeMinutes" type="number" min="1" :max="Number(durationMinutes) || undefined" step="1" required></template></section>
+              <section class="settings-section"><h3>順位表の凍結</h3><InlineSwitch v-model="freezeOn" class="settings-switch freeze-switch" describedby="contest-freeze-note">順位表の凍結を行う</InlineSwitch><p id="contest-freeze-note" class="muted">終了前の指定した時間の提出は、終了後に「結果を公開」を押すまで順位表で結果を伏せます。</p><template v-if="freezeOn"><label for="contest-freeze">凍結する時間（終了前の分）</label><input id="contest-freeze" v-model.number="freezeMinutes" type="number" min="1" :max="Number(durationMinutes) || undefined" step="1" required></template></section>
             </fieldset>
             <p class="muted">開始後は問題セット・配点・開催期間・ペナルティ・凍結を変更できません。問題と解説は終了後に自動公開されます。</p>
+          </div>
+        </section>
+        <section v-show="section === 'participation'" class="problem-management" data-section="participation" aria-labelledby="contest-participation-title">
+          <div class="management-content">
+            <header><h2 id="contest-participation-title">参加形式</h2><p class="muted">個人戦かチーム戦かと、オンサイト参加の区分を設定します。</p></header>
+            <fieldset :disabled="!ready || locked || busy">
+              <section class="settings-section"><h3>個人戦・チーム戦</h3>
+                <div class="team-mode"><SegmentedChoice v-model="teamMode" legend="個人戦・チーム戦" name="contest-team-mode" :options="teamModes" hide-legend /></div>
+                <p class="muted">チーム戦では、参加者がチームを作るか参加コードでチームに入り、順位表にはチームごとに並びます。参加登録があると切り替えられません。</p>
+                <template v-if="teamMode === 'team'">
+                  <InlineSwitch v-model="teamSizeOn" class="settings-switch" describedby="contest-team-size-note">人数の上限を設ける</InlineSwitch>
+                  <p id="contest-team-size-note" class="muted">オフのときも、1チーム{{ maxTeamMembers }}人までです。</p>
+                  <template v-if="teamSizeOn"><label for="contest-team-size">1チームの人数の上限（人）</label><input id="contest-team-size" v-model.number="maxTeamSize" type="number" min="2" :max="maxTeamMembers" step="1" required></template>
+                </template>
+              </section>
+              <section class="settings-section"><h3>オンサイト区分</h3><InlineSwitch v-model="onsiteOn" class="settings-switch" describedby="contest-onsite-note">オンサイト区分を設ける</InlineSwitch><p id="contest-onsite-note" class="muted">会場の合言葉を入れて参加した人をオンサイト参加とし、順位表と提出一覧で絞り込めるようにします。</p>
+                <template v-if="onsiteOn"><label for="contest-passphrase">会場の合言葉</label><input id="contest-passphrase" v-model="passphrase" required minlength="4" maxlength="64" autocomplete="off" spellcheck="false" aria-describedby="contest-passphrase-note"><p id="contest-passphrase-note" class="muted passphrase-note">4〜64文字で、作成者だけが見られます。会場の参加者に配ってください。</p></template>
+              </section>
+            </fieldset>
+            <p class="muted">開始後は参加形式とオンサイト区分を変更できません。会場の合言葉の差し替えと参加者の区分の切り替えは、コンテストのページの「参加者の管理」でできます。</p>
           </div>
         </section>
         <section v-show="section === 'manage'" class="problem-management" data-section="manage" aria-labelledby="contest-manage-title">
@@ -665,7 +722,11 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .settings-section { padding-block: 24px; border-top: 1px solid var(--color-line); }
 .settings-section label { display: block; margin-bottom: 8px; }
 /* InlineSwitch is a label too; keep its own inline-flex layout instead of the block labels above. */
-.settings-section .freeze-switch { display: inline-flex; margin-bottom: 4px; }
+.settings-section .settings-switch { display: inline-flex; margin-bottom: 4px; }
+.settings-section .settings-switch + p { margin-bottom: 12px; }
+.team-mode { max-width: 24rem; margin-bottom: 8px; }
+.management-content #contest-passphrase { max-width: 24rem; font-family: var(--font-code); }
+.passphrase-note { margin-top: 8px; }
 .dates { display: grid; gap: 20px; }
 .penalty-note, .end-time { margin-top: 8px; }
 .management-row h3 { margin: 0 0 4px; }
