@@ -212,3 +212,63 @@ func TestJoinWaitsForSetterAcceptancePostgres(t *testing.T) {
 		t.Fatal("setter became a participant", n)
 	}
 }
+
+// ADR 0023: a reveal waits for a rejudge that already holds the problem, then refuses while it is pending.
+func TestRevealWaitsForRejudgePostgres(t *testing.T) {
+	f := newContestLockTest(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	pool := f.store.Pool()
+	const sid = "a0000000-0000-4000-8000-0000000000a1"
+	for _, statement := range []string{
+		`UPDATE contests SET freeze_minutes=10,starts_at=now()-interval '2 hours',ends_at=now()-interval '1 hour'`,
+		`INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,result,contest_id,created_at)
+ VALUES('` + sid + `','bob','` + lockProblem + `',1,'Locked','cpp17','code','{}'::jsonb,'DONE','{"verdict":"AC"}'::jsonb,'` + lockContest + `',now()-interval '90 minutes')`,
+	} {
+		if _, err := pool.Exec(ctx, statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Release the ended contest's problem first, so that only the reveal itself can wait for the problem row.
+	f.request("GET", "/my/contests/"+lockContest, "alice", nil, 200)
+	if n := f.count(`SELECT count(*) FROM contests WHERE released`); n != 1 {
+		t.Fatal("contest not released", n)
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	if _, err = tx.Exec(ctx, `SELECT id FROM problem_drafts WHERE id=$1 FOR UPDATE`, lockProblem); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.Exec(ctx, `UPDATE submissions SET status='QUEUED',result=NULL WHERE id=$1`, sid); err != nil {
+		t.Fatal(err)
+	}
+	r := f.newRequest("POST", "/my/contests/"+lockContest+"/reveal", "alice", nil)
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		w := httptest.NewRecorder()
+		f.handler.ServeHTTP(w, r)
+		done <- w
+	}()
+	select {
+	case w := <-done:
+		t.Fatalf("reveal returned before the rejudge ended: %d %s", w.Code, w.Body.String())
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err = tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case w := <-done:
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "contest_results_pending") {
+			t.Fatalf("reveal after the rejudge: %d %s", w.Code, w.Body.String())
+		}
+	case <-ctx.Done():
+		t.Fatal("reveal did not finish after the rejudge ended")
+	}
+	if n := f.count(`SELECT count(*) FROM contests WHERE revealed_at IS NOT NULL`); n != 0 {
+		t.Fatal("revealed with a pending rejudge", n)
+	}
+}
