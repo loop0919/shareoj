@@ -567,7 +567,7 @@ async function save() {
                 <p class="muted end-time">{{ endLabel }}</p>
               </section>
               <section class="settings-section"><h3>誤答ペナルティ</h3><p class="muted">正解した問題の、初回正解前の誤答だけに加算します。コンパイルエラーは対象外です。</p><label for="contest-penalty">誤答ペナルティ（分）</label><input id="contest-penalty" v-model.number="penaltyMinutes" type="number" required min="0" max="1440" step="1"><p class="muted penalty-note">0分でペナルティなしにできます。</p></section>
-              <section class="settings-section"><h3>順位表の凍結</h3><InlineSwitch v-model="freezeOn" describedby="contest-freeze-note">順位表の凍結を行う</InlineSwitch><p id="contest-freeze-note" class="muted">終了前の指定した時間の提出は、終了後に「結果を公開」を押すまで順位表で結果を伏せます。</p><template v-if="freezeOn"><label for="contest-freeze">凍結する時間（終了前の分）</label><input id="contest-freeze" v-model.number="freezeMinutes" type="number" min="1" :max="Number(durationMinutes) || undefined" step="1" required></template></section>
+              <section class="settings-section"><h3>順位表の凍結</h3><InlineSwitch v-model="freezeOn" class="freeze-switch" describedby="contest-freeze-note">順位表の凍結を行う</InlineSwitch><p id="contest-freeze-note" class="muted">終了前の指定した時間の提出は、終了後に「結果を公開」を押すまで順位表で結果を伏せます。</p><template v-if="freezeOn"><label for="contest-freeze">凍結する時間（終了前の分）</label><input id="contest-freeze" v-model.number="freezeMinutes" type="number" min="1" :max="Number(durationMinutes) || undefined" step="1" required></template></section>
             </fieldset>
             <p class="muted">開始後は問題セット・配点・開催期間・ペナルティ・凍結を変更できません。問題と解説は終了後に自動公開されます。</p>
           </div>
@@ -662,6 +662,8 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .management-content input:hover:not(:disabled) { border-color: var(--color-muted); }
 .settings-section { padding-block: 24px; border-top: 1px solid var(--color-line); }
 .settings-section label { display: block; margin-bottom: 8px; }
+/* InlineSwitch is a label too; keep its own inline-flex layout instead of the block labels above. */
+.settings-section .freeze-switch { display: inline-flex; margin-bottom: 4px; }
 .dates { display: grid; gap: 20px; }
 .penalty-note, .end-time { margin-top: 8px; }
 .management-row h3 { margin: 0 0 4px; }
