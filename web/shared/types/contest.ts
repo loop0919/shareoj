@@ -13,8 +13,22 @@ export type Contest = {
   // Standings freeze (ADR 0023): freezeAt is null without a freeze; resultsFinal is true once ended without a freeze or revealed.
   freezeMinutes?: number | null, freezeAt?: string | null, revealed?: boolean, revealedAt?: string | null, resultsFinal?: boolean,
   canViewLiveStandings?: boolean, canRevealResults?: boolean,
+  // Team contests and the onsite division (ADR 0024). maxTeamSize is null without a limit of the contest's own. team is
+  // the viewer's team; onsite tells whether the viewer, or their team, is onsite.
+  teamMode?: boolean, maxTeamSize?: number | null, onsiteDivision?: boolean, team?: TeamSummary | null, onsite?: boolean,
   problems: ContestProblem[],
 }
+// A team as everyone sees it in the standings; members are handles in the order they joined.
+export type TeamSummary = { id: string, name: string, members: string[], onsite: boolean }
+// The viewer's own team, with the join code only members see.
+export type MyTeam = TeamSummary & { code: string }
+// One row of the setters' list: a participant in an individual contest, a team in a team contest. onsiteVia is empty
+// while open.
+export type Entrant = { handle: string, team: TeamSummary | null, onsite: boolean, onsiteAt: string | null, onsiteVia: 'passphrase' | 'setter' | '', createdAt: string }
+// The onsite division and its passphrase, for setters only.
+export type Venue = { onsiteDivision: boolean, passphrase: string | null }
+// The participation body: an empty one joins an individual contest as open.
+export type JoinBody = { team?: { action: 'create', name: string } | { action: 'join', code: string }, onsitePassphrase?: string }
 // Setters, owner first; responses from before co-setters name the owner alone.
 export const contestAuthors = (contest: { author: string, authors?: string[] }) => contest.authors?.length ? contest.authors : [contest.author]
 export type ContestList = { items: Contest[], hasMore: boolean }
@@ -22,6 +36,7 @@ export type ContestList = { items: Contest[], hasMore: boolean }
 export type ContestDraft = {
   title: string, description: string, startsAt: string | null, durationMinutes: number | null, penaltyMinutes: number | null,
   freezeMinutes?: number | null,
+  teamMode?: boolean, maxTeamSize?: number | null, onsiteDivision?: boolean, onsitePassphrase?: string | null,
   problems: { id: string, points: number | null }[],
 }
 // problems describes the listed problems some current setter authors or tests, so co-setters see each other's titles.
@@ -30,8 +45,10 @@ export type ContestDraftResult = { id: string, version: number, updatedAt: strin
 export type ContestDraftList = { items: { id: string, title: string, author?: string, startsAt: string | null, updatedAt: string }[], hasMore: boolean }
 // A co-setter link preview; id is the draft's or contest's id, which the two share. closed: the results are final.
 export type SetterInvitation = { id: string, title: string, author: string, published: boolean, joined: boolean, closed?: boolean }
+// Team contests rank teams: handle is empty and team names the row. overallRank is the rank in the whole table, which
+// differs from rank only in the onsite table.
 export type Standing = {
-  rank: number, handle: string, points: number, timeMs: number,
+  rank: number, overallRank?: number, handle: string, team?: TeamSummary | null, onsite?: boolean, points: number, timeMs: number,
   problems: Record<string, { points: number, wrong: number, pending: number, frozen?: number, acceptedAt?: string }>,
 }
 // authors are the contest's setters; canReadEditorial is the server's answer for this viewer.

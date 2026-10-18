@@ -44,3 +44,11 @@ export async function limitedJSON(event: H3Event, limit: number) {
   try { return JSON.parse(body.toString('utf8')) as unknown }
   catch { throw createError({ statusCode: 400, statusMessage: 'Invalid JSON' }) }
 }
+
+// A JSON object that clients may leave out: a request without a Content-Type or a length has no body.
+export async function optionalJSON(event: H3Event, limit: number) {
+  if (!getHeader(event, 'content-type') && !Number(getHeader(event, 'content-length')) && !getHeader(event, 'transfer-encoding')) return undefined
+  const body = await limitedJSON(event, limit)
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw createError({ statusCode: 400, statusMessage: 'Invalid JSON' })
+  return body as Record<string, unknown>
+}
