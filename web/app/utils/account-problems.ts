@@ -11,6 +11,8 @@ export function accountError(error: unknown) {
   if (code === 'featured_limit') return '応募できる問題は作者ごとに3件までです。応募中の問題を取り下げてからお試しください。'
   if (code === 'contest_problem_locked') return 'コンテストに登録された問題は公開・削除できません。公開はコンテスト終了後に自動で行われます。'
   if (code === 'contest_participant_locked') return 'この問題が入っているコンテストに参加登録しているため、結果が確定するまで招待を受けられません。'
+  if (code === 'contest_invitation_closed') return 'コンテストの結果が確定したため、作成者に加われません。'
+  if (code === 'setter_not_found') return '共同作成者が見つかりません。ページを再読み込みして、今の作成者を確認してください。'
   if (status === 401) return 'ログインの有効期限が切れました。別のタブでログインし直してから、もう一度保存してください。'
   if (status === 409) return '別の画面で更新されています。入力内容をコピーしてからページを再読み込みし、変更を確認してください。'
   if (status === 404) return '問題が見つからないか、アクセスできません。'
