@@ -90,6 +90,7 @@ func TestContestSettersPostgres(t *testing.T) {
 		pL  = "10000000-0000-4000-8000-000000000007" // by ann, tested by olive
 		pK2 = "10000000-0000-4000-8000-000000000008" // by olive
 		pZ  = "10000000-0000-4000-8000-000000000009" // never created
+		pO2 = "10000000-0000-4000-8000-00000000000a" // by olive, outside any contest at first
 		cid = "d0000000-0000-4000-8000-000000000001"
 		d2  = "d0000000-0000-4000-8000-000000000002"
 		hid = "d0000000-0000-4000-8000-000000000003"
@@ -99,7 +100,7 @@ func TestContestSettersPostgres(t *testing.T) {
 		k2  = "d0000000-0000-4000-8000-000000000007"
 	)
 	difficulty := 3
-	for id, owner := range map[string]string{pO: "olive", pC: "cora", pA: "ann", pY: "ann", pX: "sam", pL: "ann", pK2: "olive"} {
+	for id, owner := range map[string]string{pO: "olive", pC: "cora", pA: "ann", pY: "ann", pX: "sam", pL: "ann", pK2: "olive", pO2: "olive"} {
 		draft := problems.Draft{Difficulty: &difficulty, Title: "Title of " + id[len(id)-2:], Markdown: "statement", Editorial: "editorial", TimeLimitMS: "1000", MemoryLimitMB: "256", TestCases: []problems.TestCase{{Input: "1", Output: "2", IsSample: true}}}
 		if _, err = store.Save(ctx, owner, id, 0, draft); err != nil {
 			t.Fatal(err)
@@ -510,6 +511,20 @@ func TestContestSettersPostgres(t *testing.T) {
 		t.Fatal("save changed the owner", published.Author)
 	}
 	image(contestImage, "", 200)
+	// A setter adds only problems they manage themselves, even when another setter manages the problem.
+	attempt := edit
+	attempt.Version = published.Version
+	attempt.Problems = append(slices.Clone(edit.Problems), contests.Problem{ID: pO2, Points: 100})
+	if body := request("PUT", "/my/contests/"+cid, "cora", attempt, 409); !strings.Contains(body, "contest_conflict") {
+		t.Fatal(body)
+	}
+	if c := contestOf(cid, "cora"); c.Version != published.Version || len(c.Problems) != len(edit.Problems) {
+		t.Fatalf("refused save changed the contest: %+v", c)
+	}
+	request("GET", "/my/problems/"+pO2, "cora", nil, 404)
+	decode(request("PUT", "/my/contests/"+cid, "olive", attempt, 200), &published)
+	request("GET", "/my/problems/"+pO2, "cora", nil, 200)
+	edit = attempt
 
 	// A problem that no current setter authors or tests blocks saving until it is removed.
 	request("DELETE", "/my/contests/"+cid+"/setters/carl", "carl", nil, 204)
@@ -539,7 +554,7 @@ func TestContestSettersPostgres(t *testing.T) {
 	}
 	edit.Version = published.Version
 	request("PUT", "/my/contests/"+cid, "cora", edit, 409)
-	edit.Problems = edit.Problems[:3]
+	edit.Problems = slices.DeleteFunc(edit.Problems, func(p contests.Problem) bool { return p.ID == pY })
 	decode(request("PUT", "/my/contests/"+cid, "cora", edit, 200), &published)
 	if got := excluded(cid); !slices.Equal(got, []string{"ann", "carl", "rex"}) {
 		t.Fatal("exclusions", got)
