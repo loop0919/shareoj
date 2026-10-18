@@ -19,6 +19,8 @@ const startsAt = ref('')
 // Number inputs hold '' while empty; drafts save that as null.
 const durationMinutes = ref<number | string>(120)
 const penaltyMinutes = ref<number | string>(5)
+// Empty means no standings freeze (ADR 0023).
+const freezeMinutes = ref<number | string>('')
 const version = ref(0)
 const available = ref<AccountSummary[]>([])
 const titles = new Map<string, string>()
@@ -79,6 +81,7 @@ const issueGuide: Record<string, [string, Section]> = {
   start_past: ['開始日時を現在より後にしてください', 'schedule'],
   duration_invalid: ['コンテスト時間を1分以上の整数で入力してください', 'schedule'],
   penalty_invalid: ['誤答ペナルティを0〜1440分の整数で入力してください', 'schedule'],
+  freeze_invalid: ['順位表の凍結は、コンテスト時間以内の1分以上の整数で入力するか、空欄にしてください', 'schedule'],
   problems_missing: ['問題を1問以上選んでください', 'problems'],
   points_invalid: ['配点を1〜1,000,000点の整数で入力してください', 'problems'],
   problem_unavailable: ['公開済み・削除済み・他のコンテストに登録済みの問題と、作成者の誰も作者・テスターではない問題を外してください', 'problems'],
@@ -87,7 +90,7 @@ const issueGuide: Record<string, [string, Section]> = {
 const issueText = (code: string) => issueGuide[code]?.[0] ?? `確認が必要な項目があります（${code}）`
 const sectionNames: Record<Section, string> = { description: 'タイトル・説明', problems: '問題・配点', schedule: '期間・ペナルティ', manage: 'コンテスト管理' }
 const issueSection = (code: string): Section => issueGuide[code]?.[1] ?? 'manage'
-const snapshot = () => JSON.stringify([title.value, description.value, startsAt.value, durationMinutes.value, penaltyMinutes.value, selected.value])
+const snapshot = () => JSON.stringify([title.value, description.value, startsAt.value, durationMinutes.value, penaltyMinutes.value, freezeMinutes.value, selected.value])
 const saved = ref('')
 let leaving = false
 const dirty = computed(() => ready.value && snapshot() !== saved.value)
@@ -154,7 +157,7 @@ async function open(contestId: string) {
     const d = result.draft
     version.value = result.version; draftIssues.value = result.issues; applySetters(result)
     title.value = d.title; description.value = d.description; startsAt.value = d.startsAt ? localDate(d.startsAt) : ''
-    durationMinutes.value = d.durationMinutes ?? ''; penaltyMinutes.value = d.penaltyMinutes ?? ''
+    durationMinutes.value = d.durationMinutes ?? ''; penaltyMinutes.value = d.penaltyMinutes ?? ''; freezeMinutes.value = d.freezeMinutes ?? ''
     selected.value = d.problems.map(p => ({ id: p.id, title: titles.get(p.id) ?? shared.get(p.id)?.title ?? '表示できない問題', points: p.points }))
     return
   } catch (error) {
@@ -166,7 +169,7 @@ async function open(contestId: string) {
   applySetters(c)
   title.value = c.title; description.value = c.description; startsAt.value = localDate(c.startsAt)
   durationMinutes.value = Math.round((Date.parse(c.endsAt) - Date.parse(c.startsAt)) / 60000)
-  penaltyMinutes.value = c.penaltyMinutes; version.value = c.version
+  penaltyMinutes.value = c.penaltyMinutes; freezeMinutes.value = c.freezeMinutes ?? ''; version.value = c.version
   selected.value = c.problems.map(p => ({ id: p.id, title: p.title, points: p.points }))
   if (!c.canEdit) { locked.value = true; settersOnly.value = true; ended.value = c.status === 'ended'; section.value = 'manage' }
 }
@@ -301,7 +304,7 @@ function draftBody(): ContestDraft {
   const start = new Date(startsAt.value)
   return {
     title: title.value, description: description.value, startsAt: Number.isFinite(start.getTime()) ? start.toISOString() : null,
-    durationMinutes: integer(durationMinutes.value), penaltyMinutes: integer(penaltyMinutes.value),
+    durationMinutes: integer(durationMinutes.value), penaltyMinutes: integer(penaltyMinutes.value), freezeMinutes: integer(freezeMinutes.value),
     problems: selected.value.map(p => ({ id: p.id, points: integer(p.points) })),
   }
 }
@@ -440,7 +443,7 @@ async function save() {
   }
   busy.value = true; message.value = ''
   try {
-    await $fetch(`/api/my/contests/${id.value}`, { method: 'PUT', body: { title: title.value, description: description.value, startsAt: start.toISOString(), endsAt: end.toISOString(), penaltyMinutes: penaltyMinutes.value, version: version.value, problems: selected.value.map(({ id, points }) => ({ id, points })) } })
+    await $fetch(`/api/my/contests/${id.value}`, { method: 'PUT', body: { title: title.value, description: description.value, startsAt: start.toISOString(), endsAt: end.toISOString(), penaltyMinutes: penaltyMinutes.value, freezeMinutes: freezeMinutes.value === '' ? null : freezeMinutes.value, version: version.value, problems: selected.value.map(({ id, points }) => ({ id, points })) } })
     leaving = true
     await navigateTo(`/contests/${shortId(id.value)}`)
   } catch (error) {
@@ -558,8 +561,9 @@ async function save() {
                 <p class="muted end-time">{{ endLabel }}</p>
               </section>
               <section class="settings-section"><h3>誤答ペナルティ</h3><p class="muted">正解した問題の、初回正解前の誤答だけに加算します。コンパイルエラーは対象外です。</p><label for="contest-penalty">誤答ペナルティ（分）</label><input id="contest-penalty" v-model.number="penaltyMinutes" type="number" required min="0" max="1440" step="1"><p class="muted penalty-note">0分でペナルティなしにできます。</p></section>
+              <section class="settings-section"><h3>順位表の凍結</h3><p class="muted">終了前の指定した時間の提出は、終了後に「結果を公開」を押すまで順位表で結果を伏せます。</p><label for="contest-freeze">凍結する時間（終了前の分）</label><input id="contest-freeze" v-model.number="freezeMinutes" type="number" min="1" :max="Number(durationMinutes) || undefined" step="1"><p class="muted penalty-note">空欄にすると凍結しません。</p></section>
             </fieldset>
-            <p class="muted">開始後は問題セット・配点・開催期間・ペナルティを変更できません。問題と解説は終了後に自動公開されます。</p>
+            <p class="muted">開始後は問題セット・配点・開催期間・ペナルティ・凍結を変更できません。問題と解説は終了後に自動公開されます。</p>
           </div>
         </section>
         <section v-show="section === 'manage'" class="problem-management" data-section="manage" aria-labelledby="contest-manage-title">
