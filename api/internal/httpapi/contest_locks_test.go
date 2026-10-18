@@ -273,3 +273,26 @@ func TestRevealWaitsForRejudgePostgres(t *testing.T) {
 		t.Fatal("revealed with a pending rejudge", n)
 	}
 }
+
+// ADR 0023: a reveal waits for a contest submission that is still being created, then refuses while it is pending.
+// Submissions take the contest row FOR SHARE; without the reveal's row lock its pending check would miss this one.
+func TestRevealWaitsForContestSubmissionPostgres(t *testing.T) {
+	f := newContestLockTest(t)
+	for _, statement := range []string{
+		`INSERT INTO contest_participants(contest_id,owner_id) VALUES('` + lockContest + `','bob')`,
+		`UPDATE contests SET freeze_minutes=10,starts_at=now()-interval '2 hours',ends_at=now()-interval '1 hour'`,
+	} {
+		if _, err := f.store.Pool().Exec(context.Background(), statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Release the ended contest's problem first, so that only the submission can hold the contest row.
+	f.request("GET", "/my/contests/"+lockContest, "alice", nil, 200)
+	f.waits("SHARE", `INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,contest_id,created_at)
+ SELECT 'a0000000-0000-4000-8000-0000000000a2','bob','`+lockProblem+`',1,'Locked','cpp17','code','{}'::jsonb,'QUEUED',id,ends_at-interval '1 second'
+ FROM contests WHERE id='`+lockContest+`'`,
+		f.newRequest("POST", "/my/contests/"+lockContest+"/reveal", "alice", nil), "contest_results_pending")
+	if n := f.count(`SELECT count(*) FROM contests WHERE revealed_at IS NOT NULL`); n != 0 {
+		t.Fatal("revealed with a pending submission", n)
+	}
+}

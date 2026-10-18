@@ -67,7 +67,7 @@ func TestContestFreezePostgres(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-	exec(`INSERT INTO user_profiles(owner_id,handle) VALUES ('alice','alice'),('tess','tess'),('bob','bob'),('carol','carol'),('sam','sam'),('ops','ops'),('cos','cos'),('dan','dan')`)
+	exec(`INSERT INTO user_profiles(owner_id,handle) VALUES ('alice','alice'),('tess','tess'),('bob','bob'),('carol','carol'),('sam','sam'),('ops','ops'),('cos','cos'),('dan','dan'),('olga','olga'),('cos2','cos2')`)
 	const (
 		p1  = "11111111-1111-4111-8111-111111111111"
 		p2  = "22222222-2222-4222-8222-222222222222"
@@ -218,16 +218,25 @@ func TestContestFreezePostgres(t *testing.T) {
 		carolSlow  = "a0000000-0000-4000-8000-000000000005" // pre-freeze, judged after the freeze
 		carolAC    = "a0000000-0000-4000-8000-000000000006" // frozen
 		carolQueue = "a0000000-0000-4000-8000-000000000007" // frozen, still queued
+		bobEdge    = "a0000000-0000-4000-8000-000000000008" // frozen, created exactly when the freeze starts
+		samEnd     = "a0000000-0000-4000-8000-000000000009" // practice exactly at the end, by someone who did not join
+		bobAfter   = "a0000000-0000-4000-8000-00000000000a" // practice after the end
+		samQueued  = "a0000000-0000-4000-8000-00000000000b" // practice after the end, still queued
+		bobSample  = "a0000000-0000-4000-8000-00000000000c" // frozen sample run, still queued
 		tessQueued = "a0000000-0000-4000-8000-00000000000d" // a tester's run during the contest, still queued
 	)
-	insert := func(id, owner, problem, status, verdict string, created, finished time.Duration) {
+	insertJob := func(id, owner, problem, status, verdict, job string, created, finished time.Duration) {
 		t.Helper()
 		var result any
 		if verdict != "" {
 			result = fmt.Sprintf(`{"verdict":%q,"passed":1,"total":2}`, verdict)
 		}
 		exec(`INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,result,contest_id,created_at,finished_at)
- VALUES($1,$2,$3,1,'Secret','cpp17','code','{}'::jsonb,$4,$5::jsonb,$6,$7,$8)`, id, owner, problem, status, result, cid, end.Add(created), end.Add(finished))
+ VALUES($1,$2,$3,1,'Secret','cpp17','code',$9::jsonb,$4,$5::jsonb,$6,$7,$8)`, id, owner, problem, status, result, cid, end.Add(created), end.Add(finished), job)
+	}
+	insert := func(id, owner, problem, status, verdict string, created, finished time.Duration) {
+		t.Helper()
+		insertJob(id, owner, problem, status, verdict, "{}", created, finished)
 	}
 	insert(bobWrong, "bob", p1, "DONE", "WA", -100*time.Minute, -99*time.Minute)
 	insert(bobAC, "bob", p1, "DONE", "AC", -90*time.Minute, -89*time.Minute)
@@ -236,13 +245,19 @@ func TestContestFreezePostgres(t *testing.T) {
 	insert(carolSlow, "carol", p2, "DONE", "AC", -31*time.Minute, -5*time.Minute)
 	insert(carolAC, "carol", p1, "DONE", "AC", -10*time.Minute, -9*time.Minute)
 	insert(carolQueue, "carol", p1, "QUEUED", "", -5*time.Minute, -5*time.Minute)
+	// The frozen window is [freezeAt, end): it includes a run at freezeAt and leaves out practice from the end on.
+	insert(bobEdge, "bob", p2, "DONE", "WA", -30*time.Minute, -29*time.Minute)
+	insert(samEnd, "sam", p1, "DONE", "AC", 0, time.Minute)
+	insert(bobAfter, "bob", p2, "DONE", "WA", time.Minute, 2*time.Minute)
+	insert(samQueued, "sam", p2, "QUEUED", "", time.Minute, time.Minute)
+	insertJob(bobSample, "bob", p1, "QUEUED", "", `{"easyTest":true}`, -12*time.Minute, -12*time.Minute)
 
 	frozen := map[string]map[string]cell{
-		"bob":   {"total": {points: 100}, p1: {points: 100, wrong: 1}, p2: {frozen: 1}},
+		"bob":   {"total": {points: 100}, p1: {points: 100, wrong: 1}, p2: {frozen: 2}},
 		"carol": {"total": {points: 200}, p1: {frozen: 2}, p2: {points: 200}},
 	}
 	live := map[string]map[string]cell{
-		"bob":   {"total": {points: 100}, p1: {points: 100, wrong: 1}, p2: {}},
+		"bob":   {"total": {points: 100}, p1: {points: 100, wrong: 1}, p2: {wrong: 1}},
 		"carol": {"total": {points: 300}, p1: {points: 100}, p2: {points: 200}},
 	}
 	checkTable := func(label string, got, want map[string]map[string]cell) {
@@ -285,12 +300,16 @@ func TestContestFreezePostgres(t *testing.T) {
 			t.Fatalf("%s may reveal: %+v", viewer, c)
 		}
 	}
-	public := []string{bobWrong, bobAC, carolSlow}
-	all := []string{bobWrong, bobAC, bobLate, bobCE, carolSlow, carolAC, carolQueue}
+	sorted := func(list ...string) []string {
+		slices.Sort(list)
+		return list
+	}
+	public := sorted(bobWrong, bobAC, carolSlow, samEnd, bobAfter, samQueued)
+	all := sorted(bobWrong, bobAC, bobLate, bobCE, carolSlow, carolAC, carolQueue, bobEdge, samEnd, bobAfter, samQueued)
 	for path, want := range map[string][]string{
 		"/contests/" + cid + "/submissions":                     public,
-		"/contests/" + cid + "/problems/" + p1 + "/submissions": {bobWrong, bobAC},
-		"/problems/" + p1 + "/submissions":                      {bobWrong, bobAC},
+		"/contests/" + cid + "/problems/" + p1 + "/submissions": sorted(bobWrong, bobAC, samEnd),
+		"/problems/" + p1 + "/submissions":                      sorted(bobWrong, bobAC, samEnd),
 	} {
 		if got := ids(path, ""); !slices.Equal(got, want) {
 			t.Fatalf("%s: got %v want %v", path, got, want)
@@ -299,10 +318,10 @@ func TestContestFreezePostgres(t *testing.T) {
 	if got := ids("/my/contests/"+cid+"/submissions", "sam"); !slices.Equal(got, public) {
 		t.Fatalf("stranger list: %v", got)
 	}
-	if got := ids("/my/contests/"+cid+"/submissions", "carol"); !slices.Equal(got, []string{bobWrong, bobAC, carolSlow, carolAC, carolQueue}) {
+	if got := ids("/my/contests/"+cid+"/submissions", "carol"); !slices.Equal(got, sorted(append(public, carolAC, carolQueue)...)) {
 		t.Fatalf("submitter list: %v", got)
 	}
-	if got := ids("/my/problems/"+p1+"/submissions", "bob"); !slices.Equal(got, []string{bobWrong, bobAC, bobLate}) {
+	if got := ids("/my/problems/"+p1+"/submissions", "bob"); !slices.Equal(got, sorted(bobWrong, bobAC, bobLate, samEnd)) {
 		t.Fatalf("submitter problem list: %v", got)
 	}
 	if got := ids("/my/contests/"+cid+"/submissions", "tess"); !slices.Equal(got, all) {
@@ -316,13 +335,15 @@ func TestContestFreezePostgres(t *testing.T) {
 	request("GET", "/my/contests/"+cid+"/submissions/"+carolAC, "carol", nil, 200)
 	request("GET", "/my/contests/"+cid+"/submissions/"+carolAC, "tess", nil, 200)
 	request("GET", "/submissions/"+carolSlow, "", nil, 200)
+	request("GET", "/submissions/"+bobEdge, "", nil, 404)
+	request("GET", "/submissions/"+samEnd, "", nil, 200)
 	solvers := func() int64 {
 		t.Helper()
 		var p problems.PublicProblem
 		decode(request("GET", "/problems/"+p1, "", nil, 200), &p)
 		return p.SolverCount
 	}
-	if n := solvers(); n != 1 {
+	if n := solvers(); n != 2 {
 		t.Fatalf("solvers before the reveal: %d", n)
 	}
 	// The submitter's own solved marks do not wait for the reveal.
@@ -331,6 +352,8 @@ func TestContestFreezePostgres(t *testing.T) {
 	}
 	checkTable("ended public", standings("/contests/"+cid+"/standings", ""), frozen)
 	checkTable("ended setter live", standings("/my/contests/"+cid+"/standings?live=1", "alice"), live)
+	// Operators may reveal but are not staff, so they get the frozen table too.
+	checkTable("operator live", standings("/my/contests/"+cid+"/standings?live=1", "ops"), frozen)
 
 	// Participants stay out of the staff until the reveal, so they cannot see the live table through a tester link.
 	if body := request("POST", "/my/tester-invitations/"+link.Token, "bob", nil, 409); !strings.Contains(body, "contest_participant_locked") {
@@ -360,6 +383,10 @@ func TestContestFreezePostgres(t *testing.T) {
 	if !manages("cos") {
 		t.Fatal("co-setter lost rights before the reveal")
 	}
+	if c := view("cos"); !c.CanRevealResults || !c.CanViewLiveStandings {
+		t.Fatalf("co-setter view: %+v", c)
+	}
+	checkTable("co-setter live", standings("/my/contests/"+cid+"/standings?live=1", "cos"), live)
 
 	// Only setters and operators reveal, and not while a contest submission waits for a verdict.
 	request("POST", "/my/contests/"+cid+"/reveal", "tess", nil, 404)
@@ -375,7 +402,7 @@ func TestContestFreezePostgres(t *testing.T) {
 	exec(`UPDATE submissions SET status='QUEUED' WHERE id=$1`, carolSlow)
 	request("POST", "/my/contests/"+cid+"/reveal", "alice", nil, 409)
 	exec(`UPDATE submissions SET status='DONE' WHERE id=$1`, carolSlow)
-	// A staff run does not hold the reveal, since no table counts it.
+	// Runs that no table counts do not hold the reveal: staff runs, sample runs and practice after the end.
 	insert(tessQueued, "tess", p1, "QUEUED", "", -5*time.Minute, -5*time.Minute)
 	var revealed contests.Contest
 	decode(request("POST", "/my/contests/"+cid+"/reveal", "ops", nil, 200), &revealed)
@@ -383,8 +410,9 @@ func TestContestFreezePostgres(t *testing.T) {
 		t.Fatalf("revealed: %+v", revealed)
 	}
 	exec(`DELETE FROM submissions WHERE id=$1`, tessQueued)
+	// Any setter may ask again, including a co-setter who does not own the contest.
 	var again contests.Contest
-	decode(request("POST", "/my/contests/"+cid+"/reveal", "alice", nil, 200), &again)
+	decode(request("POST", "/my/contests/"+cid+"/reveal", "cos", nil, 200), &again)
 	if again.RevealedAt == nil || !again.RevealedAt.Equal(*revealed.RevealedAt) {
 		t.Fatalf("reveal again: %+v", again)
 	}
@@ -395,11 +423,11 @@ func TestContestFreezePostgres(t *testing.T) {
 	}
 	request("GET", "/submissions/"+carolAC, "", nil, 200)
 	request("GET", "/my/submissions/"+carolAC+"/public", "bob", nil, 200)
-	if n := solvers(); n != 2 {
+	if n := solvers(); n != 3 {
 		t.Fatalf("solvers after the reveal: %d", n)
 	}
 	final := map[string]map[string]cell{
-		"bob":   {"total": {points: 100}, p1: {points: 100, wrong: 1}, p2: {}},
+		"bob":   {"total": {points: 100}, p1: {points: 100, wrong: 1}, p2: {wrong: 1}},
 		"carol": {"total": {points: 300}, p1: {points: 100}, p2: {points: 200}},
 	}
 	checkTable("revealed public", standings("/contests/"+cid+"/standings", ""), final)
@@ -440,4 +468,30 @@ func TestContestFreezePostgres(t *testing.T) {
 	if err := deleteAccount("alice"); err != nil {
 		t.Fatalf("delete after the reveal: %v", err)
 	}
+
+	// An owner with a co-setter may leave an ended, unrevealed frozen contest: it passes to the co-setter, who reveals.
+	const (
+		p5     = "55555555-5555-4555-8555-555555555555"
+		handed = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+	)
+	if _, err = store.Save(ctx, "olga", p5, 0, draft); err != nil {
+		t.Fatal(err)
+	}
+	request("PUT", "/my/contests/"+handed, "olga", contests.Input{Title: "Handed", StartsAt: start, EndsAt: start.Add(time.Hour), PenaltyMinutes: &penalty, FreezeMinutes: contests.Minutes{Value: &freeze}, Problems: []contests.Problem{{ID: p5, Points: 100}}}, 200)
+	decode(request("POST", "/my/contests/"+handed+"/setter-invitation", "olga", nil, 200), &invite)
+	request("POST", "/my/setter-invitations/"+invite.Token, "cos2", nil, 200)
+	exec(`UPDATE contests SET starts_at=$2,ends_at=$3 WHERE id=$1`, handed, time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour))
+	if err := deleteAccount("olga"); err != nil {
+		t.Fatalf("delete with a co-setter: %v", err)
+	}
+	var heir string
+	if err := store.Pool().QueryRow(ctx, `SELECT owner_id FROM contests WHERE id=$1`, handed).Scan(&heir); err != nil || heir != "cos2" {
+		t.Fatalf("handed over to %q: %v", heir, err)
+	}
+	var inherited contests.Contest
+	decode(request("GET", "/my/contests/"+handed, "cos2", nil, 200), &inherited)
+	if !inherited.IsOwner || !inherited.CanRevealResults || !inherited.CanViewLiveStandings || inherited.ResultsFinal {
+		t.Fatalf("inherited contest: %+v", inherited)
+	}
+	request("POST", "/my/contests/"+handed+"/reveal", "cos2", nil, 200)
 }
