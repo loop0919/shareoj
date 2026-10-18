@@ -47,7 +47,7 @@ test('authors choose a problem and preference, see where it lands, apply and wit
     const json = await (await page.request.get('/api/featured/schedule')).json()
     // The chosen problem lands in the second round when soon, the fourth when later.
     const round = query.get('problem') === id ? query.get('preference') === 'later' ? 3 : 1 : -1
-    if (round >= 0) json.rounds[round].slots[0] = { slot: 'easy', kind: 'new', writer: 'ui_test', difficulty: 4, mine: applied, title: '応募する問題', trial: true }
+    if (round >= 0) json.rounds[round].slots[0] = { slot: 'easy', kind: 'new', difficulty: 4, mine: applied, title: '応募する問題', trial: true }
     return route.fulfill({ json })
   })
   await page.route(/\/api\/my\/problems(?:\?.*)?$/, route => route.fulfill({ json: { items: [
@@ -197,7 +197,7 @@ test('a long list scrolls inside itself, can hide blocked problems, and keeps th
   await expect(page.getByRole('group', { name: '問題' }).getByRole('radio')).toHaveCount(30)
 })
 
-test('the schedule lists coming rounds with writers and fits narrow screens', async ({ page }, testInfo) => {
+test('the schedule lists coming rounds by level without writers and fits narrow screens', async ({ page }, testInfo) => {
   await page.goto('/featured')
   await page.getByRole('link', { name: '予定', exact: true }).click()
   await expect(page).toHaveURL('/featured/schedule')
@@ -207,7 +207,10 @@ test('the schedule lists coming rounds with writers and fits narrow screens', as
   await expect(rows).toHaveCount(8)
   await expect(rows.first()).toContainText('確定')
   await expect(rows.nth(1)).not.toContainText('確定')
-  await expect(rows.first().getByRole('link', { name: 'alice' })).toHaveAttribute('href', '/users/alice')
+  await expect(rows.first().locator('td').first()).toHaveText('Lv.4')
+  await expect(rows.first().locator('td').nth(1)).toHaveText('Lv.7')
+  // The schedule never names writers.
+  await expect(page.locator('.featured-schedule a')).toHaveCount(0)
   await expect(rows.nth(3)).toContainText('募集中')
   await expect(rows.nth(3)).toContainText('復刻')
   // No problem names reach the public schedule.

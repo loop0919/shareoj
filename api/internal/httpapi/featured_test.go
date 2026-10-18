@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -541,8 +542,9 @@ func (f featuredTest) plan(path, owner string) problems.FeaturedPlan {
 	return result
 }
 
-// writers lists one slot's writers per round, "-" for a slot without a new problem.
-func writers(plan problems.FeaturedPlan, slot int) string {
+// levels lists one slot's difficulty per round, "-" for a slot without a new problem.
+// The schedule names no writers, so the test tells problems apart by level, "*" (own) and "!" (trial).
+func levels(plan problems.FeaturedPlan, slot int) string {
 	var names []string
 	for _, round := range plan.Rounds {
 		s := round.Slots[slot]
@@ -550,7 +552,7 @@ func writers(plan problems.FeaturedPlan, slot int) string {
 			names = append(names, "-"+s.Kind)
 			continue
 		}
-		name := s.Writer
+		name := strconv.Itoa(*s.Difficulty)
 		if s.Mine {
 			name += "*"
 		}
@@ -580,7 +582,7 @@ func TestFeaturedSchedulePostgres(t *testing.T) {
 		t.Fatal("list lacks difficulty")
 	}
 	body := f.request("GET", "/featured/schedule", "", nil, 200)
-	for _, secret := range []string{a1.ID, b2.ID, "Featured problem", `"mine"`, `"title"`} {
+	for _, secret := range []string{a1.ID, b2.ID, "Featured problem", `"mine"`, `"title"`, `"writer"`, "alice", "bob", "carol"} {
 		if strings.Contains(body, secret) {
 			t.Fatal("schedule leaked", secret, body)
 		}
@@ -593,10 +595,10 @@ func TestFeaturedSchedulePostgres(t *testing.T) {
 		t.Fatal("wrong waiting counts", plan.Waiting)
 	}
 	// Easy: soon, soon, later, then soon falls back to the remaining later application.
-	if got := writers(plan, 0); got != "alice,bob,alice,carol,-missing,-missing,-missing,-missing" {
+	if got := levels(plan, 0); got != "3,4,2,1,-missing,-missing,-missing,-missing" {
 		t.Fatal("easy", got)
 	}
-	if got := writers(plan, 1); got != "bob,carol,-missing,-missing,-missing,-missing,-missing,-missing" {
+	if got := levels(plan, 1); got != "7,6,-missing,-missing,-missing,-missing,-missing,-missing" {
 		t.Fatal("hard", got)
 	}
 	// The first round is the same preview that /featured announces.
@@ -604,7 +606,7 @@ func TestFeaturedSchedulePostgres(t *testing.T) {
 	if page.NextSlots[0].Writer != "alice" || page.NextSlots[1].Writer != "bob" {
 		t.Fatal("preview disagrees", page.NextSlots)
 	}
-	if got := writers(f.plan("/my/featured/schedule", "alice"), 0); got != "alice*,bob,alice*,carol,-missing,-missing,-missing,-missing" {
+	if got := levels(f.plan("/my/featured/schedule", "alice"), 0); got != "3*,4,2*,1,-missing,-missing,-missing,-missing" {
 		t.Fatal("own problems", got)
 	}
 	mine := f.plan("/my/featured/schedule", "alice")
@@ -614,15 +616,15 @@ func TestFeaturedSchedulePostgres(t *testing.T) {
 
 	// A trial joins at the current time; its preference decides where it lands.
 	a3 := f.draft("alice", 4)
-	if got := writers(f.plan("/my/featured/schedule?problem="+a3.ID+"&preference=soon", "alice"), 0); got != "alice*,bob,alice*,alice*!,carol,-missing,-missing,-missing" {
+	if got := levels(f.plan("/my/featured/schedule?problem="+a3.ID+"&preference=soon", "alice"), 0); got != "3*,4,2*,4*!,1,-missing,-missing,-missing" {
 		t.Fatal("soon trial", got)
 	}
-	if got := writers(f.plan("/my/featured/schedule?problem="+a3.ID+"&preference=later", "alice"), 0); got != "alice*,bob,alice*,carol,alice*!,-missing,-missing,-missing" {
+	if got := levels(f.plan("/my/featured/schedule?problem="+a3.ID+"&preference=later", "alice"), 0); got != "3*,4,2*,1,4*!,-missing,-missing,-missing" {
 		t.Fatal("later trial", got)
 	}
 	// An existing application keeps its entry time and only changes preference; the preview stays.
 	// The third round is a later turn, so carol's application now comes before bob's.
-	if got := writers(f.plan("/my/featured/schedule?problem="+a2.ID+"&preference=soon", "alice"), 0); got != "alice*,alice*!,carol,bob,-missing,-missing,-missing,-missing" {
+	if got := levels(f.plan("/my/featured/schedule?problem="+a2.ID+"&preference=soon", "alice"), 0); got != "3*,2*!,1,4,-missing,-missing,-missing,-missing" {
 		t.Fatal("changed preference", got)
 	}
 	f.request("GET", "/my/featured/schedule?problem="+a3.ID, "bob", nil, 404)
@@ -631,16 +633,16 @@ func TestFeaturedSchedulePostgres(t *testing.T) {
 	f.request("GET", "/my/featured/schedule", "", nil, 401)
 	// A problem that cannot be applied is left out instead of failing.
 	f.exec(`UPDATE problem_drafts SET draft=draft-'editorial' WHERE id=$1`, a3.ID)
-	if got := writers(f.plan("/my/featured/schedule?problem="+a3.ID, "alice"), 0); strings.Contains(got, "!") {
+	if got := levels(f.plan("/my/featured/schedule?problem="+a3.ID, "alice"), 0); strings.Contains(got, "!") {
 		t.Fatal("ineligible trial placed", got)
 	}
 	// Published inventory turns empty rounds into revivals for that difficulty only.
 	revival := f.draft("carol", 8)
 	f.request("PUT", "/my/problems/"+revival.ID+"/publication", "carol", map[string]any{"version": revival.Version, "publish": true}, 200)
-	if got := writers(f.plan("/featured/schedule", ""), 1); got != "bob,carol,-revival,-revival,-revival,-revival,-revival,-revival" {
+	if got := levels(f.plan("/featured/schedule", ""), 1); got != "7,6,-revival,-revival,-revival,-revival,-revival,-revival" {
 		t.Fatal("revival", got)
 	}
-	if got := writers(f.plan("/featured/schedule", ""), 0); !strings.HasSuffix(got, "-missing") {
+	if got := levels(f.plan("/featured/schedule", ""), 0); !strings.HasSuffix(got, "-missing") {
 		t.Fatal("revival crossed difficulty", got)
 	}
 }

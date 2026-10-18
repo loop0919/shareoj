@@ -1,6 +1,6 @@
 <script setup lang="ts">
 useResponseHeader('Cache-Control').value = 'no-store'
-useSeoMeta({ title: '定期便の予定 | ShareOJ', description: 'ShareOJ 定期便のこれからの出題予定。次回から8回分のEasy・Hardに、応募した作者と難易度を表示します。' })
+useSeoMeta({ title: '定期便の予定 | ShareOJ', description: 'ShareOJ 定期便のこれからの出題予定。次回から8回分のEasy・Hardに、新作の難易度を表示します。' })
 const { data, error, status, refresh } = await useFetch('/api/featured/schedule')
 usePolling(() => refresh(), 60000)
 </script>

@@ -29,5 +29,5 @@ Architecture Decision Record（ADR）は、採用した設計だけでなく、�
 | [0017](0017-link-posts-as-user-editorials.md) | Accepted | 記事をユーザー解説として問題に紐付ける |
 | [0018](0018-tag-problems-and-posts.md) | Accepted | 問題と記事にタグを付け、使われている表記を候補に出す |
 | [0019](0019-rejudge-submissions.md) | Accepted | 提出を今の問題の内容でリジャッジし、新しい提出の採点を優先する |
-| [0020](0020-post-and-apply-on-dedicated-pages.md) | Accepted | 問題の投稿と定期便の応募を専用ページで行い、定期便の予定を公開する |
+| [0020](0020-post-and-apply-on-dedicated-pages.md) | Accepted（予定表の作者名は2026-10-18に非表示へ変更） | 問題の投稿と定期便の応募を専用ページで行い、定期便の予定を公開する |
 | [0021](0021-unify-problem-requirements.md) | Accepted | 公開・コンテスト・定期便に、同じ内容の条件を求める |

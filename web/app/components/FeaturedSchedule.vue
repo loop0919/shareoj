@@ -19,7 +19,8 @@ const slotNames = { easy: 'Easy', hard: 'Hard' } as const
               <span class="schedule-entry schedule-own"><DifficultyBadge :level="slot.difficulty" /><strong>{{ slot.title }}</strong></span>
               <span class="schedule-sub">{{ slot.trial ? trialLabel ?? '応募した場合' : '応募中' }}</span>
             </template>
-            <span v-else-if="slot.kind === 'new'" class="schedule-entry"><DifficultyBadge :level="slot.difficulty" /><UserLink :handle="slot.writer" /></span>
+            <!-- Others' problems show only the level: the schedule never says who wrote them. -->
+            <span v-else-if="slot.kind === 'new'" class="schedule-entry"><DifficultyBadge :level="slot.difficulty" /></span>
             <span v-else class="schedule-open">{{ slot.kind === 'revival' ? '復刻' : '募集中' }}</span>
           </div>
         </td>
@@ -30,7 +31,7 @@ const slotNames = { easy: 'Easy', hard: 'Hard' } as const
 
 <style scoped>
 /* Hallmark · component: featured schedule table · genre: modern-minimal · theme: existing ShareOJ tokens (Plain)
- * states: confirmed round · own problem (title) · chosen problem (title, dashed) · revival · open slot · link hover/focus via UserLink
+ * states: confirmed round · own problem (title) · chosen problem (title, dashed) · others' problem (level only) · revival · open slot
  * Desktop: one row per round, Easy and Hard sharing the width equally. Under 40rem each round stacks with mono Easy/Hard labels, so nothing scrolls sideways. */
 .featured-schedule { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: .875rem; font-variant-numeric: tabular-nums; }
 th, td { padding: 10px 12px; border-bottom: 1px solid var(--color-line); text-align: left; vertical-align: middle; }

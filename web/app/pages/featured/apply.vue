@@ -94,7 +94,7 @@ async function apply() {
         <EmptyState v-else-if="!choices.length" kind="problem" title="応募できる未公開の問題はありません。" description="解説とテストケースまで書いた問題を保存すると、ここから応募できます。"><NuxtLink class="editor-button" to="/problems/new?fresh=1">新規問題を作成</NuxtLink></EmptyState>
         <form v-else id="featured-apply-form" @submit.prevent="apply">
           <ProblemChoiceList v-model="selected" legend="問題" name="featured-problem" :choices="choices" :disabled="busy" hide-blocked-label="応募不可の問題を隠す" bounded />
-          <p class="apply-note">応募すると、予定表に作者名が載ります。取り下げは「自分の問題」からできます。</p>
+          <p class="apply-note">予定表には難易度だけが載り、作者名と問題名は載りません。取り下げは「自分の問題」からできます。</p>
         </form>
       </div>
       <section class="apply-schedule" aria-labelledby="apply-schedule-title" :aria-busy="planLoading">

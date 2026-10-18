@@ -35,14 +35,13 @@ const featured = {
   ],
 }
 // Eight rounds: the announced one, then estimates with an open Easy slot and Hard revivals.
-// The third Easy writer has the longest handle the profile rules allow.
 const featuredSchedule = {
   waiting: featured.waiting,
   rounds: ['2099-10-01T14:00:00Z', '2099-10-05T14:00:00Z', '2099-10-08T14:00:00Z', '2099-10-12T14:00:00Z', '2099-10-15T14:00:00Z', '2099-10-19T14:00:00Z', '2099-10-22T14:00:00Z', '2099-10-26T14:00:00Z'].map((scheduledAt, index) => ({
     scheduledAt, confirmed: index === 0,
     slots: [
-      index < 3 ? { slot: 'easy', kind: 'new', writer: ['alice', 'bob', 'a_long_handle_name_x'][index], difficulty: [4, 2, 3][index] } : { slot: 'easy', kind: 'missing', writer: '', difficulty: null },
-      index < 2 ? { slot: 'hard', kind: 'new', writer: ['carol', 'alice'][index], difficulty: [7, 10][index] } : { slot: 'hard', kind: 'revival', writer: '', difficulty: null },
+      index < 3 ? { slot: 'easy', kind: 'new', difficulty: [4, 2, 3][index] } : { slot: 'easy', kind: 'missing', difficulty: null },
+      index < 2 ? { slot: 'hard', kind: 'new', difficulty: [7, 10][index] } : { slot: 'hard', kind: 'revival', difficulty: null },
     ],
   })),
 }

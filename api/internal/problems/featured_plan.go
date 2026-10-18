@@ -12,11 +12,10 @@ import (
 
 const featuredPlanRounds = 8
 
-// FeaturedPlanSlot never carries a problem ID. Title is set only for the viewer's own problems.
+// FeaturedPlanSlot never carries a problem ID or its writer. Title is set only for the viewer's own problems.
 type FeaturedPlanSlot struct {
 	Slot       string `json:"slot"`
 	Kind       string `json:"kind"`
-	Writer     string `json:"writer"`
 	Difficulty *int   `json:"difficulty"`
 	Mine       bool   `json:"mine,omitempty"`
 	Title      string `json:"title,omitempty"`
@@ -36,9 +35,9 @@ type FeaturedPlan struct {
 
 type featuredEntry struct {
 	featuredCandidate
-	writer, title, slot string
-	difficulty          int
-	trial               bool
+	title, slot string
+	difficulty  int
+	trial       bool
 }
 
 // FeaturedPlan lays out the coming rounds as if the current applications stayed unchanged.
@@ -99,12 +98,12 @@ func (s *Store) FeaturedPlan(ctx context.Context, viewer, trialID, trialPreferen
 			slot := FeaturedPlanSlot{Slot: name, Kind: "missing"}
 			switch {
 			case entry != nil:
-				slot = FeaturedPlanSlot{Slot: name, Kind: "new", Writer: entry.writer, Difficulty: &entry.difficulty, Trial: entry.trial}
+				slot = FeaturedPlanSlot{Slot: name, Kind: "new", Difficulty: &entry.difficulty, Trial: entry.trial}
 				if entry.owner == viewer {
 					slot.Mine, slot.Title = true, entry.title
 				}
 			case i == 0:
-				slot = FeaturedPlanSlot{Slot: name, Kind: previews[j].Kind, Writer: previews[j].Writer, Difficulty: previews[j].Difficulty}
+				slot = FeaturedPlanSlot{Slot: name, Kind: previews[j].Kind, Difficulty: previews[j].Difficulty}
 			case revivals[name]:
 				slot.Kind = "revival"
 			}
@@ -121,15 +120,15 @@ func (s *Store) FeaturedPlan(ctx context.Context, viewer, trialID, trialPreferen
 
 // featuredQueue loads, in entry order, every application that selection would accept now.
 func (s *Store) featuredQueue(ctx context.Context, tx pgx.Tx, known, enabled []string) ([]featuredEntry, error) {
-	rows, err := tx.Query(ctx, `SELECT d.id,d.owner_id,d.draft,a.preference,a.entered_at,COALESCE(u.handle,'') FROM problem_drafts d
- JOIN featured_applications a ON a.problem_id=d.id LEFT JOIN user_profiles u ON u.owner_id=d.owner_id
+	rows, err := tx.Query(ctx, `SELECT d.id,d.owner_id,d.draft,a.preference,a.entered_at FROM problem_drafts d
+ JOIN featured_applications a ON a.problem_id=d.id
  WHERE NOT d.ever_published AND NOT EXISTS(SELECT 1 FROM contest_problems cp WHERE cp.problem_id=d.id) ORDER BY a.entered_at,d.id`)
 	if err != nil {
 		return nil, err
 	}
 	entries, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (featuredEntry, error) {
 		var e featuredEntry
-		err := row.Scan(&e.id, &e.owner, &e.raw, &e.preference, &e.entered, &e.writer)
+		err := row.Scan(&e.id, &e.owner, &e.raw, &e.preference, &e.entered)
 		return e, err
 	})
 	if err != nil {
@@ -160,10 +159,10 @@ func (s *Store) featuredTrial(ctx context.Context, tx pgx.Tx, queue []featuredEn
 	}
 	e := featuredEntry{featuredCandidate: featuredCandidate{preference: preference, entered: now}, trial: true}
 	var unavailable bool
-	err := tx.QueryRow(ctx, `SELECT d.id,d.owner_id,d.draft,COALESCE(u.handle,''),
+	err := tx.QueryRow(ctx, `SELECT d.id,d.owner_id,d.draft,
  d.ever_published OR d.published_draft IS NOT NULL OR d.scheduled_at IS NOT NULL
  OR EXISTS(SELECT 1 FROM contest_problems WHERE problem_id=d.id) OR EXISTS(SELECT 1 FROM featured_applications WHERE problem_id=d.id)
- FROM problem_drafts d LEFT JOIN user_profiles u ON u.owner_id=d.owner_id WHERE d.id=$1 AND d.owner_id=$2`, id, owner).Scan(&e.id, &e.owner, &e.raw, &e.writer, &unavailable)
+ FROM problem_drafts d WHERE d.id=$1 AND d.owner_id=$2`, id, owner).Scan(&e.id, &e.owner, &e.raw, &unavailable)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}

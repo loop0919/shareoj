@@ -169,8 +169,7 @@ test('featured application', async ({ page }) => {
   await page.route('**/api/my/featured/schedule**', async route => {
     const plan = await (await page.request.get('/api/featured/schedule')).json()
     plan.rounds[1].slots[1].difficulty = 8
-    plan.rounds[2].slots[0].writer = 'carol'
-    plan.rounds[3].slots[0] = { slot: 'easy', kind: 'new', writer: 'alice', difficulty: 1, mine: true, title: 'A + B', trial: true }
+    plan.rounds[3].slots[0] = { slot: 'easy', kind: 'new', difficulty: 1, mine: true, title: 'A + B', trial: true }
     return route.fulfill({ json: plan })
   })
   await page.goto(`/featured/apply?problem=${draftId}`)
