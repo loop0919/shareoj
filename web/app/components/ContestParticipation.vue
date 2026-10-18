@@ -21,7 +21,9 @@ async function join() {
 
 <template>
   <div class="contest-participation">
-    <p v-if="user && !contest.official" class="muted">{{ contest.staff === false ? 'このコンテストのスタッフを務めたため、参加できません。' : 'スタッフ（作成者・作問者・テスター）は公式参加の対象外です。' }}</p>
+    <!-- A public response (for example, before the profile exists) says nothing about the viewer, so it claims no role. -->
+    <p v-if="user && contest.excluded" class="muted">このコンテストのスタッフを務めたため、参加できません。</p>
+    <p v-else-if="user && contest.staff" class="muted">スタッフ（作成者・作問者・テスター）は公式参加の対象外です。</p>
     <p v-else-if="user && contest.participating" class="participating" role="status">参加済み</p>
     <p v-else-if="contest.status === 'ended'" class="muted">参加受付は終了しました。</p>
     <template v-else>

@@ -250,7 +250,7 @@ const runningContest = {
 
 for (const [role, flags, notice, participation] of [
   ['setter', { official: false, staff: true, setter: true }, 'スタッフ（作成者・作問者・テスター）としての提出は公式順位の対象外です。', 'スタッフ（作成者・作問者・テスター）は公式参加の対象外です。'],
-  ['former setter', { official: false, staff: false, setter: false }, 'このコンテストのスタッフを務めたため、提出は公式順位の対象外です。', 'このコンテストのスタッフを務めたため、参加できません。'],
+  ['former setter', { official: false, staff: false, setter: false, excluded: true }, 'このコンテストのスタッフを務めたため、提出は公式順位の対象外です。', 'このコンテストのスタッフを務めたため、参加できません。'],
 ] as const) {
   test(`contest pages list every setter and explain the ${role}'s place`, async ({ page }) => {
     const contest = { ...runningContest, ...flags }
@@ -280,6 +280,17 @@ for (const [role, flags, notice, participation] of [
     await expect(page.getByLabel('ソースコード', { exact: true })).toHaveCount(flags.staff ? 1 : 0)
   })
 }
+
+// A signed-in user without a profile gets the public response, which says nothing about the viewer's roles.
+test('contest pages claim no role from a public response', async ({ page }) => {
+  const contest = { ...runningContest, official: false, staff: false, setter: false, excluded: false }
+  await page.route(`**/api/contests/${contest.id}**`, route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/standings') ? [] : contest }))
+  await page.goto(`/contests/${shortId(contest.id)}?view=standings`, { waitUntil: 'networkidle' })
+  await page.getByRole('button', { name: '今すぐ更新' }).click()
+  await expect(page.getByText('参加者はまだいません。')).toBeVisible()
+  await expect(page.getByText(/スタッフを務めた|スタッフ（作成者・作問者・テスター）/)).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '参加する', exact: true })).toBeVisible()
+})
 
 test('my contests list every setter of a contest and the owner of each draft', async ({ page }) => {
   await page.route(url => url.pathname === '/api/my/contests/drafts', route => route.fulfill({ json: { items: [{ id, title: '共同の下書き', author: 'alice', startsAt: null, updatedAt }], hasMore: false } }))

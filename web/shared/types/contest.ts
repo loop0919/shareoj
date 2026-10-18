@@ -4,11 +4,12 @@ import { shortId } from '../utils/short-id'
 // unmanaged tells setters before the start that no current setter authors or tests the problem, so saving fails.
 export type ContestProblem = { id: string, points: number, title?: string, timeLimitMs?: string, memoryLimitMb?: string, solved?: boolean, hasEditorial?: boolean, unmanaged?: boolean }
 // author is the owner; authors lists every setter, owner first. staff, setter and owner describe the viewer (ADR 0022).
+// excluded: the viewer is recorded as former staff of this contest; public responses always say false.
 export type Contest = {
   id: string, author: string, authors?: string[], problemAuthors: string[], testers: string[], title: string, description: string,
   startsAt: string, endsAt: string, penaltyMinutes: number, version: number,
   status: 'scheduled' | 'running' | 'ended', canEdit: boolean, participating: boolean, official: boolean, canViewSubmissions: boolean,
-  staff?: boolean, setter?: boolean, owner?: boolean,
+  staff?: boolean, setter?: boolean, owner?: boolean, excluded?: boolean,
   problems: ContestProblem[],
 }
 // Setters, owner first; responses from before co-setters name the owner alone.
