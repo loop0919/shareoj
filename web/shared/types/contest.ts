@@ -10,6 +10,9 @@ export type Contest = {
   startsAt: string, endsAt: string, penaltyMinutes: number, version: number,
   status: 'scheduled' | 'running' | 'ended', canEdit: boolean, participating: boolean, official: boolean, canViewSubmissions: boolean,
   staff?: boolean, setter?: boolean, owner?: boolean, excluded?: boolean,
+  // Standings freeze (ADR 0023): freezeAt is null without a freeze; resultsFinal is true once ended without a freeze or revealed.
+  freezeMinutes?: number | null, freezeAt?: string | null, revealed?: boolean, revealedAt?: string | null, resultsFinal?: boolean,
+  canViewLiveStandings?: boolean, canRevealResults?: boolean,
   problems: ContestProblem[],
 }
 // Setters, owner first; responses from before co-setters name the owner alone.
@@ -18,6 +21,7 @@ export type ContestList = { items: Contest[], hasMore: boolean }
 // A contest before publication: any field may be missing until the server reports no issues.
 export type ContestDraft = {
   title: string, description: string, startsAt: string | null, durationMinutes: number | null, penaltyMinutes: number | null,
+  freezeMinutes?: number | null,
   problems: { id: string, points: number | null }[],
 }
 // problems describes the listed problems some current setter authors or tests, so co-setters see each other's titles.
@@ -28,7 +32,7 @@ export type ContestDraftList = { items: { id: string, title: string, author?: st
 export type SetterInvitation = { id: string, title: string, author: string, published: boolean, joined: boolean, closed?: boolean }
 export type Standing = {
   rank: number, handle: string, points: number, timeMs: number,
-  problems: Record<string, { points: number, wrong: number, pending: number, acceptedAt?: string }>,
+  problems: Record<string, { points: number, wrong: number, pending: number, frozen?: number, acceptedAt?: string }>,
 }
 // authors are the contest's setters; canReadEditorial is the server's answer for this viewer.
 export type ContestProblemDetail = Omit<PublicProblem, 'timeLimitMs' | 'memoryLimitMb'> & { timeLimitMs: string, memoryLimitMb: string, authors?: string[], canReadEditorial?: boolean }
