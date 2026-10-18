@@ -159,8 +159,10 @@ test('setters publish the results after confirming and learn why pending runs bl
   await routeContest(page, state)
   const reveals: string[] = []
   let refusal: string | undefined = 'contest_results_pending'
-  await page.route(`**/api/my/contests/${id}/reveal`, (route: Route) => {
+  let hold: Promise<void> | undefined
+  await page.route(`**/api/my/contests/${id}/reveal`, async (route: Route) => {
     reveals.push(route.request().method())
+    await hold
     if (refusal) return route.fulfill({ status: 409, json: { statusCode: 409, data: { code: refusal } } })
     state.contest = { ...state.contest, revealed: true, revealedAt: '2026-09-15T15:00:00Z', resultsFinal: true, canRevealResults: false }
     state.rows = () => liveRows
@@ -183,9 +185,18 @@ test('setters publish the results after confirming and learn why pending runs bl
   await reveal.click()
   await expect(page.getByRole('alert')).toHaveText('終了前のコンテストと、順位表を凍結しないコンテストでは結果を公開できません。')
   refusal = undefined
+  let release = () => {}
+  hold = new Promise(resolve => { release = resolve })
   page.once('dialog', dialog => void dialog.accept())
   await reveal.click()
+  const busy = page.getByRole('button', { name: '公開中…', exact: true })
+  await expect(busy).toBeDisabled()
+  await expect(busy).toHaveAttribute('aria-busy', 'true')
+  release()
   // The page rereads the contest and the standings: the button, the notice and the frozen counts are gone.
+  // It says so, and focus moves from the vanished button to the heading of the table.
+  await expect(page.getByRole('status').filter({ hasText: '結果を公開しました' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '公式順位表' })).toBeFocused()
   await expect(reveal).toHaveCount(0)
   await expect(page.getByRole('alert')).toHaveCount(0)
   await expect(page.locator('.standing-frozen')).toHaveCount(0)
@@ -193,6 +204,22 @@ test('setters publish the results after confirming and learn why pending runs bl
   await expect(page.getByRole('group', { name: '順位表の表示' })).toHaveCount(0)
   await expect(notice(page)).toHaveText(['スタッフ（作成者・作問者・テスター）としての提出は公式順位の対象外です。'])
   expect(reveals).toEqual(['POST', 'POST', 'POST'])
+})
+
+test('a refusal goes away once someone else publishes the results', async ({ page }) => {
+  const state = { contest: { ...contest, setter: true, staff: true, canViewLiveStandings: true, canRevealResults: true }, rows: (_live: boolean) => frozenRows }
+  await routeContest(page, state)
+  await page.route(`**/api/my/contests/${id}/reveal`, route => route.fulfill({ status: 409, json: { statusCode: 409, data: { code: 'contest_results_pending' } } }))
+  await openStandings(page)
+  page.once('dialog', dialog => void dialog.accept())
+  await page.getByRole('button', { name: '結果を公開', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('判定待ちの提出が残っているため、まだ結果を公開できません。判定が終わってから、もう一度お試しください。')
+  // A co-setter or an operator publishes meanwhile; the next read drops the button and the stale refusal with it.
+  state.contest = { ...state.contest, revealed: true, revealedAt: '2026-09-15T15:00:00Z', resultsFinal: true, canRevealResults: false }
+  state.rows = () => liveRows
+  await page.getByRole('button', { name: '今すぐ更新' }).click()
+  await expect(page.getByRole('button', { name: '結果を公開', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('alert')).toHaveCount(0)
 })
 
 test('the standings heading keeps every control on screen at each width', async ({ page }, testInfo) => {

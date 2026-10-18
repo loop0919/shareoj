@@ -11,6 +11,7 @@ const route = useRoute()
 // The layout header shows the contest menu that switches these views.
 const activeView = computed(() => contestView(route.query.view))
 const { user } = useAccount()
+const { showToast } = useToast()
 const id = fullId(route.params.id)
 const base = `/api/contests/${encodeURIComponent(id)}`
 const { data: contest, error, refresh } = await useContest(id)
@@ -89,12 +90,19 @@ const freezeTime = computed(() => {
 // Setters and operators publish the frozen results after the end; the server refuses while runs are still pending.
 const revealing = ref(false)
 const revealError = ref('')
+const standingsTitle = ref<HTMLElement>()
+// A refusal no longer applies once someone else has published the results.
+watch(() => contest.value?.canRevealResults, can => { if (!can) revealError.value = '' })
 async function reveal() {
   if (revealing.value || !window.confirm('結果を公開します。凍結後の提出の結果が順位表に反映され、元に戻せません。よろしいですか？')) return
   revealing.value = true; revealError.value = ''
   try {
     await $fetch(`/api/my/contests/${encodeURIComponent(id)}/reveal`, { method: 'POST' })
     await Promise.all([refresh(), refreshStandings()])
+    showToast('結果を公開しました')
+    // The focused button is gone with the reveal, so focus moves to the heading of the table it changed.
+    await nextTick()
+    standingsTitle.value?.focus()
   } catch (error) {
     const code = (error as { data?: { data?: { code?: string } } }).data?.data?.code
     revealError.value = code === 'contest_results_pending' ? '判定待ちの提出が残っているため、まだ結果を公開できません。判定が終わってから、もう一度お試しください。'
@@ -151,7 +159,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       </div>
     </section>
     <section v-if="activeView === 'standings'" id="standings" class="contest-section" aria-labelledby="standings-title">
-      <header class="contest-section-heading"><h1 id="standings-title">公式順位表</h1><div class="standings-actions"><button v-if="contest.canRevealResults" type="button" class="editor-button contest-reveal" :disabled="revealing" @click="reveal">結果を公開</button><RefreshButton label="今すぐ更新" :busy="updating" :disabled="updating" @click="update" /></div></header>
+      <header class="contest-section-heading"><h1 id="standings-title" ref="standingsTitle" tabindex="-1">公式順位表</h1><div class="standings-actions"><button v-if="contest.canRevealResults" type="button" class="editor-button contest-reveal" :disabled="revealing" :aria-busy="revealing" @click="reveal">{{ revealing ? '公開中…' : '結果を公開' }}</button><RefreshButton label="今すぐ更新" :busy="updating" :disabled="updating" @click="update" /></div></header>
       <p v-if="revealError" class="notice notice-error" role="alert">{{ revealError }}</p>
       <p v-if="user && (contest.excluded || contest.staff)" class="notice">{{ contest.excluded ? 'このコンテストのスタッフを務めたため、提出は公式順位の対象外です。' : 'スタッフ（作成者・作問者・テスター）としての提出は公式順位の対象外です。' }}</p>
       <div v-if="canSwitchStandings" class="standings-mode"><SegmentedChoice v-model="standingsMode" legend="順位表の表示" name="standings-mode" :options="standingsModes" hide-legend /></div>
