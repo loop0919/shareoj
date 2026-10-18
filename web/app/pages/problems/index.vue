@@ -46,8 +46,12 @@ useSharePreview({ type: 'website', title: heading, path, description })
 <template>
   <div class="catalogue">
     <header class="catalogue-heading"><h1>問題</h1><NuxtLink class="editor-button primary catalogue-action" to="/problems/post">問題投稿</NuxtLink></header>
-    <!-- Viewers who hide problem tags get no tag search, unless a link opened a filtered list. -->
-    <TagFilter v-if="showTags || tag" kind="problem" :tag="tag" to="/problems" />
+    <!-- Viewers who hide problem tags get no tag search, unless a link opened a filtered list. The switch comes first so it stays put when the search appears. -->
+    <div class="catalogue-tools">
+      <InlineSwitch v-model="showTags" class="tags-switch" :describedby="showTags ? undefined : 'problem-tags-hint'">タグを表示</InlineSwitch>
+      <span v-if="!showTags" id="problem-tags-hint" class="tags-hint">解法のヒントになることがあります。</span>
+      <TagFilter v-if="showTags || tag" kind="problem" :tag="tag" to="/problems" />
+    </div>
     <EmptyState v-if="!current.items.length" kind="problem" :title="tag ? `「${tag}」のタグが付いた問題はまだありません。` : '公開された問題はまだありません。'" />
     <div v-else class="content-table-scroll" tabindex="0" role="region" aria-label="問題一覧" :aria-busy="loading">
       <table class="content-table">
@@ -67,6 +71,10 @@ useSharePreview({ type: 'website', title: heading, path, description })
 
 <style scoped>
 .catalogue-action { min-height: 40px; padding-inline: 16px; }
+.catalogue-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 20px; }
+.catalogue-tools > .tag-filter { margin-bottom: 0; }
+.tags-switch { font-size: .875rem; }
+.tags-hint { color: var(--color-muted); font-size: .8125rem; }
 .content-table tr.solved { background: var(--color-accent-soft); }
 .problem-row-tags { margin-top: 6px; }
 </style>

@@ -52,13 +52,45 @@ test('problem tags stay hidden until the viewer turns them on', async ({ page },
   await page.goto(`/problems/${problemId}`)
   await expect(page.locator('.problem-meta').getByRole('list', { name: 'タグ' }).getByRole('link')).toHaveText(['DP', 'グラフ'])
   expect(await (await page.request.get(`/problems/${problemId}`)).text()).toContain('aria-label="タグ"')
+
+  // The problem list switches the same preference.
+  await page.goto('/problems')
+  const listToggle = page.getByRole('switch', { name: 'タグを表示' })
+  await expect(listToggle).toBeChecked()
+  await listToggle.click()
+  await expect(page.getByRole('list', { name: 'タグ' })).toHaveCount(0)
+  await expect(page.getByRole('search')).toHaveCount(0)
+  await page.goto('/my/settings?tab=display')
+  await expect(toggle).toHaveAttribute('aria-checked', 'false')
 })
 
-test('signed-out viewers do not see problem tags', async ({ page }) => {
+test('signed-out viewers can show problem tags from the problem list', async ({ page }, testInfo) => {
   await page.route('**/api/auth/me', route => route.fulfill({ json: { user: null } }))
   await page.goto(`/problems/${problemId}`)
   await expect(page.getByRole('link', { name: 'ログイン', exact: true }).first()).toBeVisible()
   await expect(page.getByRole('list', { name: 'タグ' })).toHaveCount(0)
+
+  await page.goto('/problems')
+  const toggle = page.getByRole('switch', { name: 'タグを表示' })
+  await expect(toggle).not.toBeChecked()
+  await expect(toggle).toHaveAccessibleDescription('解法のヒントになることがあります。')
+  await page.screenshot({ path: testInfo.outputPath('problems-tags-off.png') })
+  await toggle.click()
+  const row = page.getByRole('row').filter({ has: page.getByRole('link', { name: 'A + B', exact: true }) })
+  await expect(row.getByRole('list', { name: 'タグ' }).getByRole('link')).toHaveText(['DP', 'グラフ'])
+  await expect(page.getByRole('search', { name: '問題をタグで絞り込む' })).toBeVisible()
+  await expect(page.getByText('解法のヒントになることがあります。')).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('problems-tags-on.png') })
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.screenshot({ path: testInfo.outputPath('problems-tags-on-dark.png') })
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.screenshot({ path: testInfo.outputPath('problems-tags-on-390.png') })
+
+  // The browser keeps the choice, so the server renders the tags on the next visit.
+  await page.goto(`/problems/${problemId}`)
+  await expect(page.locator('.problem-meta').getByRole('list', { name: 'タグ' }).getByRole('link')).toHaveText(['DP', 'グラフ'])
+  expect(await (await page.request.get(`/problems/${problemId}`)).text()).toContain('aria-label="タグ"')
 })
 
 test('contest problems never show tags', async ({ page }) => {
