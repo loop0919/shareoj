@@ -184,6 +184,9 @@ func save(ctx context.Context, tx pgx.Tx, actor, id string, in Input, policy Jud
 		}
 		// A draft's id belongs to its setters: a contest created over it would make them setters of someone else's
 		// contest, and its owner a setter of their draft.
+		if err = lockID(ctx, tx, id); err != nil {
+			return err
+		}
 		var tag pgconn.CommandTag
 		tag, err = tx.Exec(ctx, `INSERT INTO contests(id,owner_id,title,description,starts_at,ends_at,penalty_minutes)
  SELECT $1,$2,$3,$4,$5,$6,$7 WHERE $5>clock_timestamp() AND ($8 OR NOT EXISTS (SELECT 1 FROM contest_drafts WHERE id=$1))`, id, owner, in.Title, in.Description, in.StartsAt, in.EndsAt, *in.PenaltyMinutes, publishing)

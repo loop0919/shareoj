@@ -302,6 +302,9 @@ func (s *Store) createDraft(ctx context.Context, owner, id string, d Draft, data
 	if err = database.ConsumeCreationQuota(ctx, tx, owner, "contest"); err != nil {
 		return DraftResult{}, err
 	}
+	if err = lockID(ctx, tx, id); err != nil {
+		return DraftResult{}, err
+	}
 	// The id must stay free in contests too, since publication keeps it.
 	r, err := scanDraft(tx.QueryRow(ctx, `INSERT INTO contest_drafts(id,owner_id,draft) SELECT $1,$2,$3
  WHERE NOT EXISTS (SELECT 1 FROM contests WHERE id=$1) ON CONFLICT(id) DO NOTHING RETURNING `+draftColumns, id, owner, data))
@@ -323,6 +326,9 @@ func (s *Store) updateDraft(ctx context.Context, actor, id string, in DraftInput
 	defer func() { _ = tx.Rollback(ctx) }()
 	current, err := scanDraft(tx.QueryRow(ctx, `SELECT `+draftColumns+` FROM contest_drafts WHERE id=$1 AND contest_setter(id,$2) FOR UPDATE`, id, actor))
 	if err != nil {
+		return current, err
+	}
+	if err = stillSetter(ctx, tx, id, actor); err != nil {
 		return current, err
 	}
 	if current.Version != in.Version {
@@ -347,6 +353,26 @@ func (s *Store) updateDraft(ctx context.Context, actor, id string, in DraftInput
 		return r, err
 	}
 	return r, tx.Commit(ctx)
+}
+
+// stillSetter checks the role again after the row lock: the locking statement judged it before the wait, and a
+// removal that committed meanwhile locks the draft without changing it, so PostgreSQL does not check again.
+func stillSetter(ctx context.Context, tx pgx.Tx, id, actor string) error {
+	var setter bool
+	if err := tx.QueryRow(ctx, `SELECT contest_setter($1,$2)`, id, actor).Scan(&setter); err != nil {
+		return err
+	}
+	if !setter {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// lockID serializes creating a draft, publishing it and creating a contest under one id. Each checks the other table
+// for the id with its own snapshot, which a commit in between would slip past and leave a draft beside the contest.
+func lockID(ctx context.Context, tx pgx.Tx, id string) error {
+	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text,709091022))`, id)
+	return err
 }
 
 // draftConflict turns a missed write into 409 when the actor is still a setter of the draft or of its published
@@ -383,8 +409,13 @@ func (s *Store) Drafts(ctx context.Context, actor string, offset int) ([]DraftSu
 }
 
 // forgetContest removes what the id shares between a draft and its contest. A deleted draft takes its co-setters,
-// link, exclusions and notifications with it, so a new draft that reuses the id starts clean.
+// link, exclusions and notifications with it, so a new draft that reuses the id starts clean. A contest with the id
+// keeps them all, so that a stray draft beside it cannot clear who stays out of it.
 func forgetContest(ctx context.Context, tx pgx.Tx, id string) error {
+	var published bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM contests WHERE id=$1)`, id).Scan(&published); err != nil || published {
+		return err
+	}
 	for _, statement := range []string{
 		`DELETE FROM contest_setters WHERE contest_id=$1`,
 		`DELETE FROM contest_setter_invitations WHERE contest_id=$1`,
@@ -426,8 +457,14 @@ func (s *Store) Publish(ctx context.Context, actor, id string, version int64, po
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if err = lockID(ctx, tx, id); err != nil {
+		return err
+	}
 	var owner string
 	if err = tx.QueryRow(ctx, `SELECT owner_id FROM contest_drafts WHERE id=$1 AND contest_setter(id,$2) FOR UPDATE`, id, actor).Scan(&owner); err != nil {
+		return err
+	}
+	if err = stillSetter(ctx, tx, id, actor); err != nil {
 		return err
 	}
 	r, err := scanDraft(tx.QueryRow(ctx, `SELECT `+draftColumns+` FROM contest_drafts WHERE id=$1`, id))
