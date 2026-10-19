@@ -30,6 +30,10 @@ curl https://api.share-oj.net/problems
 | `/users/{handle}` | 公開プロフィール |
 | `/runtimes` | 提出に使える言語 |
 
+チーム戦の順位表は、行がチームになります。
+`handle` は空文字なので、`team.id` で行を区別してください。
+順位表と、コンテストの提出の一覧（`/contests/{id}/submissions` など）は、`scope=onsite` を付けると、オンサイト参加の行と提出だけを返します。
+
 すべてのエンドポイントと応答の形式は、仕様書で確認してください。
 
 ## IDとページ送り {#pagination}
