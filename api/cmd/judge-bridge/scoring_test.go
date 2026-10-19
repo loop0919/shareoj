@@ -103,7 +103,7 @@ func TestPartialScoringJobsAndResults(t *testing.T) {
 		t.Fatalf("scoring not pinned: %+v %+v", scored.Scoring, scored.Cases)
 	}
 	for _, name := range []string{"sample", "local sample"} {
-		if _, keys := job(name); keys["scoring"] != nil {
+		if _, keys := job(name); keys["scoring"] != nil || keys["acceptPoints"] != nil {
 			t.Fatal("a sample check carries scoring", name)
 		}
 	}
@@ -143,8 +143,10 @@ func TestPartialScoringJobsAndResults(t *testing.T) {
 		!bytes.Contains(sent[ids["valid"]]["cases"], []byte(`"groups":["小課題1","小課題2"]`)) {
 		t.Fatalf("scoring lost in dispatch: %s %s", sent[ids["valid"]]["scoring"], sent[ids["valid"]]["cases"])
 	}
-	if _, ok := sent[ids["sample"]]["scoring"]; ok {
-		t.Fatal("a job without scoring gained the key")
+	for _, key := range []string{"scoring", "acceptPoints"} {
+		if _, ok := sent[ids["sample"]][key]; ok {
+			t.Fatal("a job without scoring gained the key", key)
+		}
 	}
 
 	var logs bytes.Buffer
@@ -255,8 +257,31 @@ func TestPartialScoringJobsAndResults(t *testing.T) {
 	if err := create("aggregate", "dave", "cpp17-isolate", false); err != nil {
 		t.Fatal(err)
 	}
-	if j, _ := job("aggregate"); j.Scoring == nil || j.Scoring.Aggregator == nil || j.Scoring.Aggregator.Source != "int main(){}" {
+	if j, _ := job("aggregate"); j.Scoring == nil || j.Scoring.Aggregator == nil || j.Scoring.Aggregator.Source != "int main(){}" || j.AcceptPoints {
 		t.Fatalf("aggregator not pinned: %+v", j.Scoring)
+	}
+	// A sample check of an aggregate-mode problem has no scoring, but the worker must still accept quitp there.
+	if err := create("aggregate sample", "dave", "cpp17-isolate", true); err != nil {
+		t.Fatal(err)
+	}
+	if j, keys := job("aggregate sample"); keys["scoring"] != nil || !j.AcceptPoints || len(j.Cases) != 1 {
+		t.Fatalf("aggregate sample check: %+v", keys)
+	}
+	payloads = nil
+	if err := b.dispatch(ctx); err != nil {
+		t.Fatal(err)
+	}
+	sent = map[string]map[string]json.RawMessage{}
+	for _, p := range payloads {
+		var id string
+		_ = json.Unmarshal(p["submissionId"], &id)
+		sent[id] = p
+	}
+	if p := sent[ids["aggregate sample"]]; p == nil || string(p["acceptPoints"]) != "true" || p["scoring"] != nil {
+		t.Fatalf("acceptPoints lost in dispatch: %v", p)
+	}
+	if p := sent[ids["aggregate"]]; p == nil || p["acceptPoints"] != nil || p["scoring"] == nil {
+		t.Fatalf("scored aggregate job: %v", p)
 	}
 	// Without its aggregator, or without groups, scoring waits too: the judge would turn every run into JE.
 	aggregate.Scoring.Aggregator = nil
