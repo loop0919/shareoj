@@ -141,12 +141,15 @@ func (s *Store) Join(ctx context.Context, id, owner string, in JoinInput) error 
 		&st.registered, &st.team, &st.code); err != nil {
 		return err
 	}
+	// A registered participant who sends the passphrase alone asks to become onsite, even when it is blank: answering
+	// a blank one with success would tell them they are onsite while they stay open (ADR 0024).
+	upgrading := st.registered && in.Team == nil && in.OnsitePassphrase != nil
 	switch {
 	case !st.competitor || st.ended && !st.registered:
 		return ErrParticipationUnavailable
 	case in.Team != nil && !st.teamMode:
 		return ErrTeamUnavailable
-	case passphrase != "" && !st.division:
+	case (passphrase != "" || upgrading) && !st.division:
 		return ErrOnsiteUnavailable
 	}
 	// Sending the code of one's own team again changes nothing, so a repeated request succeeds.
@@ -155,11 +158,15 @@ func (s *Store) Join(ctx context.Context, id, owner string, in JoinInput) error 
 	}
 	entering := in.Team != nil && st.team == nil
 	// A registration without a team can only come from an API before teams; it may still enter a team.
-	if st.teamMode && st.team == nil && !entering && !(st.registered && passphrase == "") {
+	if st.teamMode && st.team == nil && !entering && !(st.registered && in.OnsitePassphrase == nil) {
 		return ErrTeamRequired
 	}
-	if st.ended && (entering || passphrase != "") {
+	if st.ended && (entering || passphrase != "" || upgrading) {
 		return ErrParticipationUnavailable
+	}
+	// A blank passphrase is no guess, so it is not counted.
+	if upgrading && passphrase == "" {
+		return ErrIncorrectPassphrase
 	}
 	if !entering && passphrase == "" {
 		if !st.registered {

@@ -602,12 +602,15 @@ func TestContestOnsitePostgres(t *testing.T) {
 	}
 	f.join(tc, "carol", joinCode(f.team(tc, "bob").Code))
 	f.fail("POST", path, "carol", map[string]any{"onsitePassphrase": "wrong"}, 400, "incorrect_venue_passphrase")
+	f.fail("POST", path, "carol", map[string]any{"onsitePassphrase": " "}, 400, "incorrect_venue_passphrase")
 	if upgraded := f.join(tc, "carol", map[string]any{"onsitePassphrase": phrase}); !upgraded.Onsite || !f.contest(tc, "bob").Onsite {
 		t.Fatalf("upgrade: %+v", upgraded)
 	}
 	// Someone without a team cannot become onsite alone, and a contest without the division refuses the passphrase.
 	f.fail("POST", path, "dan", map[string]any{"onsitePassphrase": phrase}, 409, "contest_team_required")
 	f.fail("POST", "/my/contests/"+pc+"/participation", "dan", map[string]any{"onsitePassphrase": phrase}, 409, "contest_onsite_unavailable")
+	f.join(pc, "dan", nil)
+	f.fail("POST", "/my/contests/"+pc+"/participation", "dan", map[string]any{"onsitePassphrase": ""}, 409, "contest_onsite_unavailable")
 	f.fail("PUT", "/my/contests/"+pc+"/onsite", "alice", map[string]any{"passphrase": "abcd"}, 409, "contest_onsite_unavailable")
 	f.decode(f.request("GET", "/my/contests/"+pc+"/onsite", "alice", nil, 200), &venue)
 	if venue.OnsiteDivision || venue.Passphrase != nil {
@@ -653,8 +656,14 @@ func TestContestOnsitePostgres(t *testing.T) {
 	if gina := f.join(ic, "gina", map[string]any{"onsitePassphrase": " open sesame "}); !gina.Onsite || gina.Team != nil {
 		t.Fatalf("onsite participant: %+v", gina)
 	}
-	if hank := f.join(ic, "hank", nil); hank.Onsite || !hank.Participating {
+	// A blank passphrase registers open; from someone registered it is a failed upgrade, not a success that changes nothing.
+	if hank := f.join(ic, "hank", map[string]any{"onsitePassphrase": "　"}); hank.Onsite || !hank.Participating {
 		t.Fatalf("open participant: %+v", hank)
+	}
+	failures = f.count(`SELECT count(*) FROM contest_attempt_failures`)
+	f.fail("POST", ipath, "hank", map[string]any{"onsitePassphrase": " 　 "}, 400, "incorrect_venue_passphrase")
+	if f.count(`SELECT count(*) FROM contest_attempt_failures`) != failures {
+		t.Fatal("a blank passphrase counted as an attempt")
 	}
 	f.fail("POST", ipath, "hank", map[string]any{"onsitePassphrase": "Open Sesame"}, 400, "incorrect_venue_passphrase")
 	if hank := f.join(ic, "hank", map[string]any{"onsitePassphrase": "ｏｐｅｎ sesame"}); !hank.Onsite {
@@ -716,6 +725,7 @@ func TestContestOnsitePostgres(t *testing.T) {
 	// After the end nobody upgrades or replaces the passphrase; setters switch until the results are final.
 	f.schedule(tc, "ended")
 	f.fail("POST", path, "bob", map[string]any{"onsitePassphrase": "running"}, 409, "contest_participation_unavailable")
+	f.fail("POST", path, "bob", map[string]any{"onsitePassphrase": ""}, 409, "contest_participation_unavailable")
 	f.fail("PUT", "/my/contests/"+tc+"/onsite", "alice", map[string]any{"passphrase": "after"}, 409, "contest_conflict")
 	f.fail("PUT", onsite, "alice", map[string]any{"onsite": false}, 409, "contest_conflict")
 	f.exec(`UPDATE contests SET freeze_minutes=10 WHERE id=$1`, tc)
