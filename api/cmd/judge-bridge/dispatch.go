@@ -136,6 +136,9 @@ func (b bridge) dispatchOne(ctx context.Context, tx pgx.Tx) (err error) {
 	if job.Scoring != nil {
 		request["scoring"] = job.Scoring
 	}
+	if job.AcceptPoints {
+		request["acceptPoints"] = true
+	}
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return err

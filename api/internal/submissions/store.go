@@ -40,6 +40,9 @@ type Job struct {
 	MemoryLimitMB       int                                                       `json:"memoryLimitMb"`
 	Cases               []Case                                                    `json:"cases"`
 	Scoring             *problems.Scoring                                         `json:"scoring,omitempty"`
+	// AcceptPoints marks a sample check of an aggregate-mode problem: the worker reads case scores and accepts
+	// quitp as in a scored run, but keeps no score (ADR 0025).
+	AcceptPoints bool `json:"acceptPoints,omitempty"`
 }
 
 // Sample previews share a 24 KiB budget so escaped JSON fits in the result queue.
@@ -215,6 +218,8 @@ func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) 
 			return Submission{}, ErrParticipationRequired
 		}
 	}
+	// A sample check of an aggregate-mode problem carries acceptPoints instead of scoring, so that quitp is AC there
+	// as in a scored run.
 	result, err := scan(query(ctx, `WITH moment AS MATERIALIZED (SELECT clock_timestamp() AS now)
  INSERT INTO submissions
   (id,owner_id,problem_id,problem_version,problem_title,runtime,source,contest_id,created_at,job)
@@ -222,8 +227,10 @@ func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) 
   jsonb_build_object('privateDraft',($9='' AND NOT EXISTS(SELECT 1 FROM problem_drafts p WHERE p.id=$3 AND p.published_draft IS NOT NULL)),'image',$5::text,'easyTest',$8::boolean,'cases',selected_cases,'checker',selected_draft->'checker','interactor',selected_draft->'interactor',
   'timeLimitMs',(selected_draft->>'timeLimitMs')::int,
   'memoryLimitMb',(selected_draft->>'memoryLimitMb')::int)
-  || CASE WHEN NOT $8::boolean AND COALESCE(selected_draft->'scoring','null'::jsonb) <> 'null'::jsonb
-    THEN jsonb_build_object('scoring',selected_draft->'scoring') ELSE '{}'::jsonb END
+  || CASE WHEN COALESCE(selected_draft->'scoring','null'::jsonb) = 'null'::jsonb THEN '{}'::jsonb
+    WHEN NOT $8::boolean THEN jsonb_build_object('scoring',selected_draft->'scoring')
+    WHEN selected_draft->'scoring'->>'mode' = 'aggregate' THEN jsonb_build_object('acceptPoints',true)
+    ELSE '{}'::jsonb END
   FROM (
     SELECT id, COALESCE(published_draft,draft) AS selected_draft,
       CASE WHEN published_draft IS NULL THEN version ELSE published_version END AS selected_version

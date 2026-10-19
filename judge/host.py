@@ -65,6 +65,9 @@ def validate_job(job, runtime):
         validate_judge_code(code)
     if type(job.get('easyTest', False)) is not bool or (job.get('easyTest') and (job.get('generate') or job.get('validate'))):
         raise ValueError('sample mode')
+    # A sample check of an aggregate-mode problem reads case scores like a scored run, without scoring (ADR 0025).
+    if type(job.get('acceptPoints', False)) is not bool or (job.get('acceptPoints') and (not job.get('easyTest') or job.get('scoring') is not None)):
+        raise ValueError('sample points')
     base = job.get('generationBaseBytes', 0)
     if type(base) is not int or not 0 <= base <= TEST_SET_LIMIT:
         raise ValueError('generation budget')
@@ -354,6 +357,8 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
     scoring = job.get('scoring')
     # Only aggregate mode reads score and result files; existing judge programs may write anything there.
     aggregate = scoring is not None and scoring['mode'] == 'aggregate'
+    # Its sample checks read them too, so quitp is AC there as well, but they keep no score.
+    points = aggregate or job.get('acceptPoints', False)
     aggregator_artifact = sandbox.ARTIFACT.with_name('aggregator')
     group_tles = [0] * len(scoring['groups']) if scoring is not None else None
 
@@ -420,13 +425,13 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
                     diagnostic(message)
                     data = message.encode()
                     case_log.extend(data[:max(0, log_limit + 1 - len(case_log))])
-                item = interactive.execute(job, case, checker_artifact, case_diagnostic, score_file=aggregate)
+                item = interactive.execute(job, case, checker_artifact, case_diagnostic, score_file=points)
                 if job.get('easyTest'):
                     item['checkerLog'] = sample_preview(bytes(case_log), log_limit)
                 item['name'] = case.get('name') or f'ケース{index + 1}'
                 if item['verdict'] == 'JE':
                     return checker_error('interactor_execution_failed')
-                if aggregate:
+                if points:
                     data, exit_code = item.pop('scoreFile'), item.pop('judgeExitCode')
                     try:
                         verdict, score, message = case_score(job['interactor'].get('protocol', 'legacy'), item['verdict'], data, exit_code)
@@ -434,7 +439,7 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
                         diagnostic(f"{error}\n", keep=True)
                         return checker_error('judge_score_invalid')
                     item['verdict'] = verdict
-                    if score is not None:
+                    if score is not None and aggregate:
                         item['score'] = score
                         diagnostic(f"点: {score}\n")
                     if message:
@@ -450,20 +455,22 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
                                                    timeLimitMs=5000, memoryLimitMb=512), artifact=checker_artifact,
                                               checker_files={'test-input': case['input'].encode(),
                                                              'expected-output': case['output'].encode(),
-                                                             'submission-source': job['source'].encode()}, score_file=aggregate)
+                                                             'submission-source': job['source'].encode()}, score_file=points)
                     checked['index'] = index
-                    verdict = sandbox.judge_verdict(checked, protocol, points=aggregate)
+                    verdict = sandbox.judge_verdict(checked, protocol, points=points)
                     score, message = None, ''
-                    if aggregate:
+                    if points:
                         try:
                             verdict, score, message = case_score(protocol, verdict, checked['scoreFile'], checked['exitCode'])
                         except ScoreError as error:
                             diagnostic(f"ケース{index + 1}: JE\n" + checked.get('checkerLog', '') + '\n')
                             diagnostic(f"{error}\n", keep=True)
                             return checker_error('judge_score_invalid')
+                        if not aggregate:
+                            score = None
                     diagnostic(f"ケース{index + 1}: {verdict}" + ('' if score is None else f" (点: {score})") + '\n'
                                + checked.get('checkerLog', '') + '\n' + (f"結果ファイル: {message}\n" if message else ''))
-                    if protocol == 'testlib' and checked['exitCode'] == 7 and not aggregate:
+                    if protocol == 'testlib' and checked['exitCode'] == 7 and not points:
                         diagnostic(interactive.points_note(job))
                     if verdict == 'JE':
                         return checker_error('checker_execution_failed')
