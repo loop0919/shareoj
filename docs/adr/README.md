@@ -33,6 +33,6 @@ Architecture Decision Record（ADR）は、採用した設計だけでなく、�
 | [0021](0021-unify-problem-requirements.md) | Accepted（内容の条件と保存時に確かめる範囲は0025で一部変更） | 公開・コンテスト・定期便に、同じ内容の条件を求める |
 | [0022](0022-share-contests-among-setters.md) | Accepted | コンテストを複数のセッターで作り、スタッフと参加者を兼ねさせない |
 | [0023](0023-freeze-contest-standings.md) | Accepted | 順位表を凍結し、結果を公開するまで凍結後の提出を伏せる |
-| [0024](0024-team-and-onsite-participation.md) | Accepted | チーム戦を参加コードで組み、オンサイト参加を会場の合言葉で区別する |
+| [0024](0024-team-and-onsite-participation.md) | Accepted（個人参加、合言葉の文字、オンサイトの切り替えは2026-10-19に変更） | チーム戦を参加コードで組み、オンサイト参加を会場の合言葉で区別する |
 | [0025](0025-score-partially-with-test-groups.md) | Accepted | テストケースのグループごとに部分点を付ける |
 | [0026](0026-switch-problem-tags-on-problem-list.md) | Accepted | 問題のタグを問題一覧で表示に切り替えられるようにする |
