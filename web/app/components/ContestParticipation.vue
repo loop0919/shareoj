@@ -25,6 +25,16 @@ async function join() {
   passphrase.value = ''
   emit('joined', result)
 }
+// In a team contest Enter in the passphrase field picks neither 個人参加 nor チーム参加, so 個人参加 is no submit button.
+function submitted() { if (!teamMode.value) void join() }
+// It checks the passphrase as a submit would. After the start joining alone shuts out every team for good (ADR 0024),
+// so it asks first.
+function joinAlone(event: MouseEvent) {
+  const form = (event.currentTarget as HTMLButtonElement).form
+  if (form && !form.reportValidity()) return
+  if (props.contest.status === 'running' && !window.confirm('個人参加すると、このコンテストではチームを作ることもチームに入ることもできなくなります。個人参加しますか？')) return
+  void join()
+}
 </script>
 
 <template>
@@ -47,14 +57,14 @@ async function join() {
       <NuxtLink v-else class="editor-button" :to="login(route.fullPath)">ログインして参加する</NuxtLink>
       <p class="muted"><template v-if="teamMode">ログインしてから参加します。</template>参加すると順位表に表示されます。</p>
     </template>
-    <form v-else class="participation-form" @submit.prevent="join">
+    <form v-else class="participation-form" @submit.prevent="submitted">
       <div v-if="detailed && division" class="participation-field"><label for="join-passphrase">会場の合言葉（オンサイト参加者のみ）</label><VenuePassphraseInput id="join-passphrase" v-model="passphrase" aria-describedby="join-passphrase-note" /><p id="join-passphrase-note" class="muted">{{ venuePassphraseRule }}です。入れるとオンサイト参加、空のままならオープン参加です。オンサイト参加は順位表に表示されます。</p></div>
       <div v-if="teamMode" class="participation-buttons">
-        <button type="submit" class="editor-button" :disabled="saving" :aria-busy="saving">{{ saving ? '参加登録中…' : '個人参加' }}</button>
+        <button type="button" class="editor-button" :disabled="saving" :aria-busy="saving" @click="joinAlone">{{ saving ? '参加登録中…' : '個人参加' }}</button>
         <NuxtLink class="editor-button" :to="teamPage" @click="carried = passphrase">チーム参加</NuxtLink>
       </div>
       <button v-else type="submit" class="editor-button" :disabled="saving" :aria-busy="saving">{{ saving ? '参加登録中…' : '参加する' }}</button>
-      <p class="muted">参加すると順位表に表示されます。<template v-if="teamMode">「チーム参加」では、チームのページでチームを作るか、参加コードでチームに入ります。<template v-if="contest.maxTeamSize">1チーム{{ contest.maxTeamSize }}人までです。</template></template><template v-if="division && !detailed">オンサイト参加の人は、{{ teamMode ? '概要ページかチームのページ' : '概要ページ' }}で会場の合言葉を入れて参加してください。</template></p>
+      <p class="muted">参加すると順位表に表示されます。<template v-if="teamMode">「チーム参加」では、チームのページでチームを作るか、参加コードでチームに入ります。<template v-if="contest.maxTeamSize">1チーム{{ contest.maxTeamSize }}人までです。</template>個人参加すると、開始後はチームを作ることもチームに入ることもできません。</template><template v-if="division && !detailed">オンサイト参加の人は、{{ teamMode ? '概要ページかチームのページ' : '概要ページ' }}で会場の合言葉を入れて参加してください。</template></p>
     </form>
     <p v-if="error" class="notice notice-error" role="alert">{{ error }}</p>
   </div>

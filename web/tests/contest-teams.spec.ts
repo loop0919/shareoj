@@ -217,7 +217,7 @@ test('team contests offer 個人参加 and チーム参加, and joining alone wo
   await reread(page, 'overview')
   await expect(page.locator('.contest-scoring')).toContainText(['チーム戦（1チーム3人まで）'])
   await expect(page.getByRole('group', { name: '参加のしかた' })).toHaveCount(0)
-  await expect(area.locator('.participation-form > p.muted')).toHaveText('参加すると順位表に表示されます。「チーム参加」では、チームのページでチームを作るか、参加コードでチームに入ります。1チーム3人までです。')
+  await expect(area.locator('.participation-form > p.muted')).toHaveText('参加すると順位表に表示されます。「チーム参加」では、チームのページでチームを作るか、参加コードでチームに入ります。1チーム3人までです。個人参加すると、開始後はチームを作ることもチームに入ることもできません。')
   const field = page.getByLabel('会場の合言葉（オンサイト参加者のみ）', { exact: true })
   await field.fill('tokyo')
   await area.getByRole('button', { name: '個人参加', exact: true }).click()
@@ -243,6 +243,38 @@ test('team contests offer 個人参加 and チーム参加, and joining alone wo
   await reread(page, 'overview')
   await expect(area.locator('.participation-state')).toHaveText('参加済みオンサイト参加個人参加')
   await expect(area.getByRole('link')).toHaveCount(0)
+})
+
+test('in a running team contest Enter in the passphrase field picks neither way in, and 個人参加 asks first', async ({ page }) => {
+  const contest = { ...base, status: 'running' as const, teamMode: true, maxTeamSize: 3, onsiteDivision: true }
+  const state = await routeContest(page, contest)
+  const bodies = await routeJoin(page, state, [{ ...contest, participating: true, onsite: true }])
+  const dialogs: string[] = []
+  let accept = false
+  page.on('dialog', dialog => { dialogs.push(dialog.message()); void (accept ? dialog.accept() : dialog.dismiss()) })
+  await open(page)
+  const area = page.locator('.contest-participation')
+  await expect(area.locator('.participation-form > p.muted')).toContainText('個人参加すると、開始後はチームを作ることもチームに入ることもできません。')
+  const field = page.getByLabel('会場の合言葉（オンサイト参加者のみ）', { exact: true })
+  // Enter stands for neither 個人参加 nor チーム参加: it only reports a value against the rule.
+  await field.fill('Venue-2026')
+  await field.press('Enter')
+  expect(await validation(field)).toBe(ruleMessage)
+  await field.fill('Venue_2026')
+  await field.press('Enter')
+  // 個人参加 checks the passphrase first, then asks, since after the start the person can never join a team.
+  await field.fill('Venue-2026')
+  await area.getByRole('button', { name: '個人参加', exact: true }).click()
+  await field.fill('Venue_2026')
+  await area.getByRole('button', { name: '個人参加', exact: true }).click()
+  await expect.poll(() => dialogs.length).toBe(1)
+  await expect(area.locator('.participation-state')).toHaveCount(0)
+  expect(bodies).toEqual([])
+  accept = true
+  await area.getByRole('button', { name: '個人参加', exact: true }).click()
+  await expect(area.locator('.participation-state')).toHaveText('参加済みオンサイト参加個人参加')
+  expect(dialogs).toEqual(Array(2).fill('個人参加すると、このコンテストではチームを作ることもチームに入ることもできなくなります。個人参加しますか？'))
+  expect(bodies).toEqual([{ onsitePassphrase: 'Venue_2026' }])
 })
 
 test('guests choose 個人参加 or チーム参加 through the login page, which keeps the page they chose', async ({ page }) => {
