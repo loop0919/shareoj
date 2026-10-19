@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -52,10 +53,18 @@ var cleanup = []string{
 
 // Delete runs removeIdentity before committing, so a failure to delete the sign-in leaves the account untouched.
 // Two owners who co-set each other's contests lock each other's rows in opposite order when both delete at once, so
-// the one PostgreSQL aborts tries again; by then the other has finished, and the hand-over sees it as gone.
+// the one PostgreSQL aborts tries again after a short wait; by then the other has finished, and the hand-over sees it
+// as gone. Retrying at once can lose the same race again while the other deletion is still running.
 func (s *Store) Delete(ctx context.Context, owner, handle string, removeIdentity func(context.Context) error) error {
 	var err error
-	for range 3 {
+	for attempt := range 5 {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(attempt) * 100 * time.Millisecond):
+			}
+		}
 		err = s.delete(ctx, owner, handle, removeIdentity)
 		var pg *pgconn.PgError
 		if !errors.As(err, &pg) || pg.Code != "40P01" {
