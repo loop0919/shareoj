@@ -2,7 +2,8 @@
 import type { Submission } from '../../shared/types/submission'
 import { shortId } from '~~/shared/utils/short-id'
 
-const props = defineProps<{ problemId: string, hasSamples: boolean, contestId?: string, beforeSubmit?: () => Promise<boolean>, disabled?: boolean }>()
+// team is a team contest's member, whose own submissions are listed as the team's (ADR 0024).
+const props = defineProps<{ problemId: string, hasSamples: boolean, contestId?: string, team?: boolean, beforeSubmit?: () => Promise<boolean>, disabled?: boolean }>()
 const { user } = useAccount()
 const sampleHelpId = useId()
 const source = ref('')
@@ -59,7 +60,7 @@ async function submit(easyTest = false) {
       }
       return
     }
-    await navigateTo(props.contestId ? `/contests/${shortId(props.contestId)}/my-submissions/${shortId(result.id)}` : `/my/submissions/${shortId(result.id)}`)
+    await navigateTo(props.contestId ? `/contests/${shortId(props.contestId)}/my-submissions/${shortId(result.id)}${props.team ? '?from=team' : ''}` : `/my/submissions/${shortId(result.id)}`)
   } catch (error) {
     const failure = error as { statusCode?: number, data?: { data?: { code?: string, retryAfter?: number } } }
     const code = failure.data?.data?.code

@@ -25,8 +25,9 @@ function load() {
     () => { message.value = '提出一覧を取得できませんでした。閲覧権限を確認し、再取得してください。' })
 }
 function detail(item: Submission) {
-  // A teammate's submission is not the viewer's own, so it opens on the shared detail page.
-  if (props.mine && (!props.team || item.author === profile.value?.handle)) return props.contestId ? `/contests/${shortId(props.contestId)}/my-submissions/${shortId(item.id)}` : `/my/submissions/${shortId(item.id)}?from=problem`
+  // A teammate's submission is not the viewer's own, so it opens on the shared detail page. Either way the breadcrumb
+  // leads back to 「チームの提出」.
+  if (props.mine && (!props.team || item.author === profile.value?.handle)) return props.contestId ? `/contests/${shortId(props.contestId)}/my-submissions/${shortId(item.id)}${props.team ? '?from=team' : ''}` : `/my/submissions/${shortId(item.id)}?from=problem`
   return props.contestId ? `/contests/${shortId(props.contestId)}/submissions/${shortId(item.id)}?from=${props.team ? 'team' : 'problem'}` : `/problems/${shortId(props.problemId)}/submissions/${shortId(item.id)}`
 }
 watch(() => [user.value?.id, props.problemId, props.contestId, props.mine, props.team, props.onsite], () => {
