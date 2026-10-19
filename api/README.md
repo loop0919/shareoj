@@ -317,7 +317,7 @@ DB接続先のURLや資格情報はエラー応答へ含めない。
 | API | 動作 |
 | --- | --- |
 | `GET /auth/me` | 検証済みユーザーのIDを取得 |
-| `GET /my/problems` | 自分の問題を更新日時の降順で50件取得 |
+| `GET /my/problems` | 自分の問題を更新日時の降順で50件取得。部分点の問題には`partial`と`fullScore`（満点）を付ける |
 | `GET /my/problems?role=tester` | テスト中の問題を更新日時の降順で50件取得。コンテストのセッターとしてだけ扱える問題には`viaContest`（`id`と`title`）を付ける |
 | `GET /my/problems/{id}` | 作者またはテスターとして問題の本文と更新番号を取得。コンテストのセッターとして扱える人は`contestEditors`に返す |
 | `PUT /my/problems/{id}` | UUID v4のIDを指定して作成または更新 |

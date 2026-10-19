@@ -177,12 +177,15 @@ type Summary struct {
 	EverPublished      bool       `json:"everPublished"`
 	ContestID          string     `json:"contestId,omitempty"`
 	// ViaContest marks a tested problem that the viewer manages only as a setter of that contest.
-	ViaContest       *ContestRef `json:"viaContest,omitempty"`
-	PublishedVersion int64       `json:"publishedVersion"`
-	ID               string      `json:"id"`
-	Title            string      `json:"title"`
-	Difficulty       *int        `json:"difficulty"`
-	UpdatedAt        time.Time   `json:"updatedAt"`
+	ViaContest *ContestRef `json:"viaContest,omitempty"`
+	// Partial marks a partially scored problem, whose full score becomes its points in a contest (ADR 0025).
+	Partial          bool      `json:"partial,omitempty"`
+	FullScore        int       `json:"fullScore,omitempty"`
+	PublishedVersion int64     `json:"publishedVersion"`
+	ID               string    `json:"id"`
+	Title            string    `json:"title"`
+	Difficulty       *int      `json:"difficulty"`
+	UpdatedAt        time.Time `json:"updatedAt"`
 }
 
 type Cursor struct {
@@ -306,6 +309,7 @@ func (s *Store) list(ctx context.Context, owner string, cursor *Cursor, testing 
 		}
 		err := json.Unmarshal(data, &p.Draft)
 		p.Title, p.Difficulty = p.Draft.Title, p.Draft.Difficulty
+		p.Partial, p.FullScore = p.Draft.Scoring != nil, p.Draft.Scoring.FullScore()
 		return p, err
 	})
 }

@@ -136,6 +136,16 @@ func TestPartialScoringProblemsPostgres(t *testing.T) {
 	// A contest draft asks no points of a partially scored problem: it is worth its full score.
 	f.save("alice", partial, scoredDraft(), 200)
 	f.save("alice", binary, allOrNothing(), 200)
+	// The editor learns from the author's list which problems need no points.
+	var own struct{ Items []problems.Summary }
+	f.decode(f.request("GET", "/my/problems", "alice", nil, 200), &own)
+	listed := map[string]problems.Summary{}
+	for _, item := range own.Items {
+		listed[item.ID] = item
+	}
+	if p, b := listed[partial], listed[binary]; !p.Partial || p.FullScore != 100 || b.Partial || b.FullScore != 0 {
+		t.Fatalf("list: %+v %+v", p, b)
+	}
 	start, five := time.Now().Add(time.Hour), 5
 	draft := func(version int64, points *int) map[string]any {
 		return map[string]any{"version": version, "draft": map[string]any{"title": "部分点", "startsAt": start, "durationMinutes": 60, "penaltyMinutes": 5,
