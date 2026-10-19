@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { submissionUsage } from '~/utils/submission-usage'
-import { contestAuthors, contestDate, contestFreezeTime, contestProblemPath, contestStatus, contestView, contestViews, frozenSubmissionsNote, problemLabel, type Standing } from '~~/shared/types/contest'
+import { formatScore } from '~/utils/score'
+import { contestAuthors, contestDate, contestFreezeTime, contestProblemPath, contestStatus, contestView, contestViews, frozenSubmissionsNote, problemLabel, type Standing, type StandingCell } from '~~/shared/types/contest'
 import { fullId, shortId } from '~~/shared/utils/short-id'
 import type { Submission } from '~~/shared/types/submission'
 import type { UserEditorial } from '~~/shared/types/post'
@@ -115,6 +116,19 @@ async function reveal() {
       : '結果を公開できませんでした。時間をおいてもう一度お試しください。'
   } finally { revealing.value = false }
 }
+// A cell shows the problem's score once it is above 0 (ADR 0025). Rows without score come from servers before
+// partial scoring, where only an AC scored.
+function cellScore(cell: StandingCell) {
+  if (cell.score === undefined) return cell.acceptedAt ? String(cell.points) : ''
+  return cell.score > 0 ? cell.scoreText ?? formatScore(cell.score) : ''
+}
+// The time of the last submission that raised the score; for a full score it is when the score was reached.
+function cellTime(cell: StandingCell) {
+  return cell.score === undefined ? cell.acceptedAt : cell.score > 0 ? cell.scoredAt ?? cell.acceptedAt : undefined
+}
+// With partial scores, 「解いた」 means the full score (ADR 0025), so the footer names it.
+const solvedWord = computed(() => contest.value?.partialScoring ? '満点' : '正解')
+const showSubmissionScore = computed(() => contest.value?.partialScoring === true || !!submissions.value?.items.some(item => item.result?.scoring))
 function elapsed(acceptedAt: string) { return duration(new Date(acceptedAt).getTime() - new Date(contest.value!.startsAt).getTime()) }
 const problemStats = computed(() => contest.value!.problems.map(problem => {
   let submitted = 0
@@ -149,7 +163,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <div class="problem-summary"><div class="problem-meta muted"><span class="contest-status" :data-status="contest.status">{{ contestStatus[contest.status] }}</span><p>作成者 <template v-for="(author, index) in contestAuthors(contest)" :key="author"><span v-if="index">、</span><UserLink :handle="author" /></template></p><p v-if="contest.problemAuthors?.length">作問者 <template v-for="(author, index) in contest.problemAuthors" :key="author"><span v-if="index">、</span><UserLink :handle="author" /></template></p><p v-if="contest.testers?.length">テスター <template v-for="(tester, index) in contest.testers" :key="tester"><span v-if="index">、</span><UserLink :handle="tester" /></template></p></div></div>
       <dl class="limits contest-schedule"><div><dt>開始日時</dt><dd><time :datetime="contest.startsAt">{{ contestDate(contest.startsAt) }}</time></dd></div><div><dt>終了日時</dt><dd><time :datetime="contest.endsAt">{{ contestDate(contest.endsAt) }}</time></dd></div></dl>
       <p class="schedule-timezone muted">日時は日本時間で表示しています。</p>
-      <p class="contest-scoring muted">誤答ペナルティ {{ contest.penaltyMinutes }} 分 · 部分点なし</p>
+      <p class="contest-scoring muted">誤答ペナルティ {{ contest.penaltyMinutes }} 分<template v-if="!contest.partialScoring"> · 部分点なし</template></p>
       <p v-if="contest.freezeMinutes" class="contest-scoring muted">終了{{ contest.freezeMinutes }}分前から順位表を凍結します。</p>
       <p v-if="contest.teamMode" class="contest-scoring muted">チーム戦{{ contest.maxTeamSize ? `（1チーム${contest.maxTeamSize}人まで）` : '' }}</p>
       <p v-if="contest.onsiteDivision" class="contest-scoring muted">オンサイト参加とオープン参加の区分があります。</p>
@@ -164,7 +178,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <h1 id="problems-title">問題</h1>
       <p v-if="contest.status === 'scheduled'" class="notice">問題文は開始時刻に公開されます。</p>
       <div v-if="contest.problems.length" class="content-table-scroll" role="region" aria-label="コンテストの問題" tabindex="0">
-        <table class="content-table contest-problems"><thead><tr><th scope="col">#</th><th scope="col">問題</th><th scope="col"><abbr title="実行時間制限 / メモリ制限">TL / ML</abbr></th><th scope="col">配点</th></tr></thead><tbody><tr v-for="(p, index) in contest.problems" :key="p.id || index" :class="{ solved: p.solved }"><td>{{ problemLabel(index) }}</td><th scope="row"><NuxtLink v-if="p.id" :to="contestProblemPath(contest.id, index)" :aria-label="p.solved ? `${p.title}（AC 済み）` : undefined">{{ p.title }}</NuxtLink><span v-else>???</span></th><td class="problem-limits">{{ !p.timeLimitMs ? '—' : `${Number(p.timeLimitMs) / 1000} 秒` }}・{{ !p.memoryLimitMb ? '—' : `${p.memoryLimitMb} MiB` }}</td><td>{{ p.points }} 点</td></tr></tbody></table>
+        <table class="content-table contest-problems"><thead><tr><th scope="col">#</th><th scope="col">問題</th><th scope="col"><abbr title="実行時間制限 / メモリ制限">TL / ML</abbr></th><th scope="col">配点</th></tr></thead><tbody><tr v-for="(p, index) in contest.problems" :key="p.id || index" :class="{ solved: p.solved }"><td>{{ problemLabel(index) }}</td><th scope="row"><NuxtLink v-if="p.id" :to="contestProblemPath(contest.id, index)" :aria-label="p.solved ? `${p.title}（${p.partial ? '満点' : 'AC 済み'}）` : undefined">{{ p.title }}</NuxtLink><span v-else>???</span></th><td class="problem-limits">{{ !p.timeLimitMs ? '—' : `${Number(p.timeLimitMs) / 1000} 秒` }}・{{ !p.memoryLimitMb ? '—' : `${p.memoryLimitMb} MiB` }}</td><td>{{ p.points }} 点<small v-if="p.partial">部分点あり</small></td></tr></tbody></table>
       </div>
     </section>
     <section v-if="activeView === 'standings'" id="standings" class="contest-section" aria-labelledby="standings-title">
@@ -191,25 +205,25 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
                 <template v-if="row.team"><span class="standing-team">{{ row.team.name }}</span><span class="standing-members"><template v-for="(member, index) in row.team.members" :key="member"><span v-if="index">、</span><UserLink :handle="member" /></template></span></template>
                 <UserLink v-else :handle="row.handle" />
                 <span v-if="row.onsite && !onsiteOnly" class="standing-onsite">オンサイト</span>
-              </th><td class="standing-total">{{ row.points }}</td><td>{{ duration(row.timeMs) }}</td>
+              </th><td class="standing-total">{{ row.scoreText ?? row.points }}</td><td>{{ duration(row.timeMs) }}</td>
               <td v-for="(p, i) in contest.problems" :key="p.id || i">
                 <template v-if="row.problems[p.id]">
                   <span class="standing-result">
-                    <strong v-if="row.problems[p.id]!.acceptedAt" class="standing-accepted">{{ row.problems[p.id]!.points }}</strong>
+                    <strong v-if="cellScore(row.problems[p.id]!)" :class="row.problems[p.id]!.acceptedAt ? 'standing-accepted' : 'standing-partial'">{{ cellScore(row.problems[p.id]!) }}<span v-if="!row.problems[p.id]!.acceptedAt" class="visually-hidden">（部分点）</span></strong>
                     <span v-else-if="!row.problems[p.id]!.wrong && !row.problems[p.id]!.pending && !row.problems[p.id]!.frozen" class="muted">—</span>
                     <span v-if="row.problems[p.id]!.wrong" class="standing-wrong"><span aria-hidden="true">({{ row.problems[p.id]!.wrong }})</span><span class="visually-hidden">誤答 {{ row.problems[p.id]!.wrong }} 回</span></span>
                     <svg v-if="row.problems[p.id]!.pending" class="standing-pending" viewBox="0 0 24 24" role="img" aria-label="判定待ち"><path d="M5 3h14M5 21h14M7 3v4l5 5-5 5v4M17 3v4l-5 5 5 5v4" /></svg>
                     <span v-if="row.problems[p.id]!.frozen" class="standing-frozen"><span aria-hidden="true">?{{ row.problems[p.id]!.frozen }}</span><span class="visually-hidden">凍結後の提出 {{ row.problems[p.id]!.frozen }} 件</span></span>
                   </span>
-                  <small v-if="row.problems[p.id]!.acceptedAt">{{ elapsed(row.problems[p.id]!.acceptedAt!) }}</small>
+                  <small v-if="cellTime(row.problems[p.id]!)">{{ elapsed(cellTime(row.problems[p.id]!)!) }}</small>
                 </template>
                 <span v-else class="muted">—</span>
               </td>
             </tr>
           </tbody>
           <tfoot>
-            <tr><th colspan="4" scope="row">{{ onsiteOnly ? 'FA（初正解・オンサイト）' : 'FA（初正解）' }}</th><td v-for="(stat, i) in problemStats" :key="stat.id || i"><template v-if="stat.accepted"><span v-for="row in stat.first" :key="standingKey(row)" class="standing-fa"><template v-if="row.team">{{ row.team.name }}</template><UserLink v-else :handle="row.handle" /></span><small>{{ stat.time }}</small></template><span v-else class="muted">—</span></td></tr>
-            <tr><th colspan="4" scope="row">{{ teamContest ? `正解数 / 提出数（チーム・個人${onsiteOnly ? '、オンサイト' : ''}）` : `正解者数 / 提出者数${onsiteOnly ? '（オンサイト）' : ''}` }}</th><td v-for="(stat, i) in problemStats" :key="stat.id || i"><span class="standing-accepted">{{ stat.accepted }}</span> / {{ stat.submitted }}</td></tr>
+            <tr><th colspan="4" scope="row">{{ contest.partialScoring ? (onsiteOnly ? 'FA（初の満点・オンサイト）' : 'FA（初の満点）') : (onsiteOnly ? 'FA（初正解・オンサイト）' : 'FA（初正解）') }}</th><td v-for="(stat, i) in problemStats" :key="stat.id || i"><template v-if="stat.accepted"><span v-for="row in stat.first" :key="standingKey(row)" class="standing-fa"><template v-if="row.team">{{ row.team.name }}</template><UserLink v-else :handle="row.handle" /></span><small>{{ stat.time }}</small></template><span v-else class="muted">—</span></td></tr>
+            <tr><th colspan="4" scope="row">{{ teamContest ? `${solvedWord}数 / 提出数（チーム・個人${onsiteOnly ? '、オンサイト' : ''}）` : `${solvedWord}者数 / 提出者数${onsiteOnly ? '（オンサイト）' : ''}` }}</th><td v-for="(stat, i) in problemStats" :key="stat.id || i"><span class="standing-accepted">{{ stat.accepted }}</span> / {{ stat.submitted }}</td></tr>
           </tfoot>
         </table>
       </div>
@@ -221,7 +235,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <div v-if="contest.onsiteDivision && !teamOnly" class="standings-mode submissions-scope"><SegmentedChoice v-model="scope" legend="表示する提出" name="submissions-scope" :options="scopes" hide-legend /></div>
       <p v-if="submissionsError" class="notice notice-error" role="alert">{{ submissionsError }}</p>
       <LoadingSpinner v-if="!submissions && !submissionsError" label="提出一覧を読み込み中" />
-      <template v-if="submissions"><p v-if="!submissions.items.length" class="contest-empty muted">提出はまだありません。</p><div v-else class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0"><table class="content-table"><thead><tr><th scope="col">問題</th><th scope="col">ユーザー</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th scope="col">結果</th><th scope="col">提出日時（日本時間）</th></tr></thead><tbody><tr v-for="s in submissions.items" :key="s.id"><th scope="row"><NuxtLink :to="`/contests/${shortId(contest.id)}/submissions/${shortId(s.id)}`">{{ s.problemTitle }}</NuxtLink></th><td><UserLink :handle="s.author" /></td><td class="submission-usage">{{ s.sourceBytes == null ? '—' : `${s.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage">{{ submissionUsage(s.result) }}</td><td><SubmissionStatus :item="s" /></td><td>{{ contestDate(s.createdAt) }}<span v-if="new Date(s.createdAt) >= new Date(contest.endsAt)"> · 練習</span></td></tr></tbody></table></div><ContentPagination :index="offset / 50" :has-next="submissions.hasMore" :loading="updating" @move="direction => offset += direction * 50" /></template>
+      <template v-if="submissions"><p v-if="!submissions.items.length" class="contest-empty muted">提出はまだありません。</p><div v-else class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0"><table class="content-table"><thead><tr><th scope="col">問題</th><th scope="col">ユーザー</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th v-if="showSubmissionScore" scope="col">得点</th><th scope="col">結果</th><th scope="col">提出日時（日本時間）</th></tr></thead><tbody><tr v-for="s in submissions.items" :key="s.id"><th scope="row"><NuxtLink :to="`/contests/${shortId(contest.id)}/submissions/${shortId(s.id)}`">{{ s.problemTitle }}</NuxtLink></th><td><UserLink :handle="s.author" /></td><td class="submission-usage">{{ s.sourceBytes == null ? '—' : `${s.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage">{{ submissionUsage(s.result) }}</td><td v-if="showSubmissionScore" class="submission-score" :data-full="(s.result?.scoring && s.result.scoring.score === s.result.scoring.maxScore) || undefined">{{ s.result?.scoring ? formatScore(s.result.scoring.score) : '—' }}</td><td><SubmissionStatus :item="s" /></td><td>{{ contestDate(s.createdAt) }}<span v-if="new Date(s.createdAt) >= new Date(contest.endsAt)"> · 練習</span></td></tr></tbody></table></div><ContentPagination :index="offset / 50" :has-next="submissions.hasMore" :loading="updating" @move="direction => offset += direction * 50" /></template>
       </template>
     </section>
     <section v-if="activeView === 'editorials'" id="editorials" class="contest-section" aria-labelledby="editorials-title">
@@ -237,6 +251,8 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 </template>
 <style scoped>
 .submission-usage { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.submission-score { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.submission-score[data-full] { color: var(--color-accent); font-weight: 600; }
 /* Hallmark · component: contest standings · genre: modern-minimal · theme: existing ShareOJ tokens
  * pre-emit critique: P4 H4 E4 S5 R5 V4
  * modern-minimal · Long Document · existing problem page tokens and hierarchy */
@@ -275,6 +291,8 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 .standing-result { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
 .standing-pending { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; color: var(--color-muted); }
 .standing-accepted, .standing-fa { color: var(--color-accent); }
+/* A partial score keeps the ordinary colour; the accent marks the full score (ADR 0025). */
+.standing-partial { color: var(--color-ink); }
 .standing-wrong { color: var(--color-error); }
 .standings-filters { display: flex; flex-wrap: wrap; gap: 0 16px; }
 .standings-mode { flex: 1 1 16rem; max-width: 24rem; margin-bottom: 16px; }

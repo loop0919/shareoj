@@ -37,7 +37,7 @@ usePolling(load, 2000, () => !message.value && (items.value.some(item => item.st
             <td class="submission-language">{{ runtimeLabel(item.runtime) }}</td>
             <td class="submission-usage">{{ item.sourceBytes == null ? '—' : `${item.sourceBytes.toLocaleString('en-US')} bytes` }}</td>
             <td class="submission-usage">{{ submissionUsage(item.result) }}</td>
-            <td class="submission-result"><span role="status"><SubmissionStatus :item="item" /></span></td>
+            <td class="submission-result"><span role="status"><SubmissionStatus :item="item" show-score /></span></td>
             <td><NuxtLink :to="`/my/submissions/${shortId(item.id)}`" :aria-label="`${item.problemTitle}の提出詳細`">詳細</NuxtLink></td>
           </tr>
         </tbody>

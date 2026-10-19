@@ -46,6 +46,7 @@ useSharePreview({ title: () => problem.value!.title, path: () => `/problems/${sh
         </div>
       </div>
       <dl class="limits"><div><dt>実行時間制限</dt><dd>{{ problem.timeLimitMs / 1000 }} 秒</dd></div><div><dt>メモリ制限</dt><dd>{{ problem.memoryLimitMb }} MiB</dd></div></dl>
+      <ProblemScoring v-if="problem.scoring" :scoring="problem.scoring" />
     </header>
     <nav class="problem-menu" aria-label="問題メニュー">
       <NuxtLink :to="`/problems/${shortId(problem.id)}`" :aria-current="showingEditorial || submissionView ? undefined : 'page'">問題文</NuxtLink>
@@ -56,7 +57,7 @@ useSharePreview({ title: () => problem.value!.title, path: () => `/problems/${sh
     </nav>
     <p v-if="problem.editorialHidden" class="notice">定期便の新作です。解説と他者の提出は{{ problem.editorialRevealAt ? contestDate(problem.editorialRevealAt) : '翌22時' }}（日本時間）に公開します。<template v-if="canEdit">作成者とテスターは公開前から閲覧できます。</template></p>
     <p v-if="problem.editorialHidden && !canEdit && route.query.view === 'submissions'" class="muted">他者の提出は解禁後に閲覧できます。自分の提出と採点結果は「自分の提出」から確認できます。</p>
-    <ProblemSubmissionList v-else-if="submissionView" :key="String(route.query.view)" :problem-id="problem.id" :mine="route.query.view === 'my-submissions'" />
+    <ProblemSubmissionList v-else-if="submissionView" :key="String(route.query.view)" :problem-id="problem.id" :mine="route.query.view === 'my-submissions'" :scored="!!problem.scoring" />
     <article v-else class="problem-body" aria-label="問題詳細">
       <template v-if="showingEditorial">
         <ProblemMarkdown v-if="problem.editorial" :source="problem.editorial" />

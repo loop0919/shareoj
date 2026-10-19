@@ -2,7 +2,8 @@ import type { PublicProblem } from './problem'
 import { shortId } from '../utils/short-id'
 // hasEditorial is present only when the viewer may read the editorial now. False means none is registered.
 // unmanaged tells setters before the start that no current setter authors or tests the problem, so saving fails.
-export type ContestProblem = { id: string, points: number, title?: string, timeLimitMs?: string, memoryLimitMb?: string, solved?: boolean, hasEditorial?: boolean, unmanaged?: boolean }
+// partial marks a partially scored problem, whose points are its full score (ADR 0025); hidden with the title.
+export type ContestProblem = { id: string, points: number, title?: string, timeLimitMs?: string, memoryLimitMb?: string, solved?: boolean, hasEditorial?: boolean, unmanaged?: boolean, partial?: boolean }
 // author is the owner; authors lists every setter, owner first. staff, setter and owner describe the viewer (ADR 0022).
 // excluded: the viewer is recorded as former staff of this contest; public responses always say false.
 export type Contest = {
@@ -16,6 +17,8 @@ export type Contest = {
   // Team contests and the onsite division (ADR 0024). maxTeamSize is null without a limit of the contest's own. team is
   // the viewer's team, null for someone registered alone; onsite tells whether the viewer, or their team, is onsite.
   teamMode?: boolean, maxTeamSize?: number | null, onsiteDivision?: boolean, team?: TeamSummary | null, onsite?: boolean,
+  // Whether any problem gives partial scores (ADR 0025), known before the problems are shown.
+  partialScoring?: boolean,
   problems: ContestProblem[],
 }
 // A team as everyone sees it in the standings; members are handles in the order they joined.
@@ -40,7 +43,8 @@ export type ContestDraft = {
   problems: { id: string, points: number | null }[],
 }
 // problems describes the listed problems some current setter authors or tests, so co-setters see each other's titles.
-export type DraftProblem = { id: string, title: string, author: string, issues: string[] }
+// partial problems are worth their fullScore and take no points (ADR 0025).
+export type DraftProblem = { id: string, title: string, author: string, issues: string[], partial?: boolean, fullScore?: number }
 export type ContestDraftResult = { id: string, version: number, updatedAt: string, draft: ContestDraft, issues: string[], problems?: DraftProblem[], authors?: string[], owner?: boolean }
 export type ContestDraftList = { items: { id: string, title: string, author?: string, startsAt: string | null, updatedAt: string }[], hasMore: boolean }
 // A co-setter link preview; id is the draft's or contest's id, which the two share. closed: the results are final.
@@ -48,9 +52,13 @@ export type SetterInvitation = { id: string, title: string, author: string, publ
 // Team contests rank teams beside those who joined alone: a team's row has an empty handle and team names it, and an
 // individual's row has team null. overallRank is the rank in the whole table, which differs from rank only in the onsite
 // table.
+// Scores (ADR 0025): score is in hundredths and scoreText its display form ("37.50", "100"); points is the whole part,
+// kept for older readers. scoredAt is the last submission that raised a problem's score, acceptedAt the one that reached
+// its full score.
+export type StandingCell = { points: number, score?: number, scoreText?: string, wrong: number, pending: number, frozen?: number, acceptedAt?: string, scoredAt?: string }
 export type Standing = {
-  rank: number, overallRank?: number, handle: string, team?: TeamSummary | null, onsite?: boolean, points: number, timeMs: number,
-  problems: Record<string, { points: number, wrong: number, pending: number, frozen?: number, acceptedAt?: string }>,
+  rank: number, overallRank?: number, handle: string, team?: TeamSummary | null, onsite?: boolean, points: number, score?: number, scoreText?: string, timeMs: number,
+  problems: Record<string, StandingCell>,
 }
 // authors are the contest's setters; canReadEditorial is the server's answer for this viewer.
 export type ContestProblemDetail = Omit<PublicProblem, 'timeLimitMs' | 'memoryLimitMb'> & { timeLimitMs: string, memoryLimitMb: string, authors?: string[], canReadEditorial?: boolean }

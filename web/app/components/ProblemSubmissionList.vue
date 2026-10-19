@@ -4,9 +4,10 @@ import type { Submission } from '~~/shared/types/submission'
 import { shortId } from '~~/shared/utils/short-id'
 import { submissionUsage } from '~/utils/submission-usage'
 import { runtimeLabel } from '~/utils/runtime-label'
+import { formatScore } from '~/utils/score'
 // team lists the viewer's and their teammates' submissions in a team contest; onsite keeps the onsite participants'
-// (ADR 0024).
-const props = defineProps<{ problemId: string, contestId?: string, mine: boolean, team?: boolean, onsite?: boolean }>()
+// (ADR 0024). scored adds the score column of a partially scored problem (ADR 0025).
+const props = defineProps<{ problemId: string, contestId?: string, mine: boolean, team?: boolean, onsite?: boolean, scored?: boolean }>()
 const { user, profile } = useAccount()
 const route = useRoute()
 const title = computed(() => props.team ? 'チームの提出' : props.mine ? '自分の提出' : 'すべての提出')
@@ -37,6 +38,8 @@ watch([offset, () => user.value?.id, () => props.problemId, () => props.contestI
 onMounted(load)
 usePolling(load, 15000)
 
+// Results judged before the problem became partially scored carry no score and show 「—」.
+const showScore = computed(() => props.scored || !!data.value?.items.some(item => item.result?.scoring))
 const { allowed: canRejudge, busy: rejudging, message: rejudgeMessage, rejudge } = useRejudge(() => props.problemId)
 const selected = ref<string[]>([])
 // Only finished judgements can be rejudged. Selection belongs to the visible page.
@@ -69,8 +72,8 @@ usePolling(load, 3000, () => canRejudge.value && !!data.value?.items.some(item =
       <template v-if="data">
         <p v-if="!data.items.length" class="muted">提出はまだありません。</p>
         <div v-if="data.items.length" class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0" :aria-busy="loading">
-          <table class="content-table"><thead><tr><th v-if="canRejudge" scope="col" class="select-cell"><input type="checkbox" :checked="allSelected" :disabled="!selectable.length" aria-label="このページの提出をすべて選択" @change="selected = ($event.target as HTMLInputElement).checked ? [...selectable] : []"></th><th scope="col">提出日時（日本時間）</th><th scope="col">ユーザー</th><th scope="col">言語</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th scope="col">結果</th><th scope="col">詳細</th></tr></thead>
-            <tbody><tr v-for="item in data.items" :key="item.id"><td v-if="canRejudge" class="select-cell"><input v-model="selected" type="checkbox" :value="item.id" :disabled="!selectable.includes(item.id)" :aria-label="`${contestDate(item.createdAt)}の提出を選択`"></td><td><time :datetime="item.createdAt">{{ contestDate(item.createdAt) }}</time></td><td><UserLink :handle="item.author" /></td><td>{{ runtimeLabel(item.runtime) }}</td><td class="submission-usage">{{ item.sourceBytes == null ? '—' : `${item.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage">{{ submissionUsage(item.result) }}</td><td><SubmissionStatus :item="item" /></td><td><NuxtLink :to="detail(item)">詳細</NuxtLink></td></tr></tbody>
+          <table class="content-table"><thead><tr><th v-if="canRejudge" scope="col" class="select-cell"><input type="checkbox" :checked="allSelected" :disabled="!selectable.length" aria-label="このページの提出をすべて選択" @change="selected = ($event.target as HTMLInputElement).checked ? [...selectable] : []"></th><th scope="col">提出日時（日本時間）</th><th scope="col">ユーザー</th><th scope="col">言語</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th v-if="showScore" scope="col">得点</th><th scope="col">結果</th><th scope="col">詳細</th></tr></thead>
+            <tbody><tr v-for="item in data.items" :key="item.id"><td v-if="canRejudge" class="select-cell"><input v-model="selected" type="checkbox" :value="item.id" :disabled="!selectable.includes(item.id)" :aria-label="`${contestDate(item.createdAt)}の提出を選択`"></td><td><time :datetime="item.createdAt">{{ contestDate(item.createdAt) }}</time></td><td><UserLink :handle="item.author" /></td><td>{{ runtimeLabel(item.runtime) }}</td><td class="submission-usage">{{ item.sourceBytes == null ? '—' : `${item.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage">{{ submissionUsage(item.result) }}</td><td v-if="showScore" class="submission-score" :data-full="(item.result?.scoring && item.result.scoring.score === item.result.scoring.maxScore) || undefined">{{ item.result?.scoring ? formatScore(item.result.scoring.score) : '—' }}</td><td><SubmissionStatus :item="item" /></td><td><NuxtLink :to="detail(item)">詳細</NuxtLink></td></tr></tbody>
           </table>
         </div>
         <ContentPagination :index="offset / 50" :has-next="data.hasMore" :loading="loading" @move="direction => offset += direction * 50" />
@@ -80,6 +83,8 @@ usePolling(load, 3000, () => canRejudge.value && !!data.value?.items.some(item =
 </template>
 <style scoped>
 .submission-usage { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.submission-score { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.submission-score[data-full] { color: var(--color-accent); font-weight: 600; }
 .problem-submissions { padding-block: 32px 64px; }
 .submission-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
 .submission-heading h2 { margin: 0; }

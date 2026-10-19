@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { executionTime, memoryUsage } from '~/utils/submission-usage'
+import { formatCaseScore, formatScore } from '~/utils/score'
 import { runtimeLabel } from '~/utils/runtime-label'
 import { submissionProblemPath, type Submission } from '~~/shared/types/submission'
 const props = defineProps<{ item: Submission }>()
@@ -22,6 +23,11 @@ async function copySource() {
   catch { copyMessage.value = 'コピーできませんでした。コードを選択してコピーしてください。' }
   finally { copying.value = false }
 }
+const score = computed(() => item.value.result?.scoring)
+// Group cases point into result.cases; a compile error has no cases, so they are numbered instead.
+const caseNames = (positions: number[]) => positions.map(position => item.value.result?.cases?.[position]?.name || `ケース${position + 1}`).join('、')
+// Only the aggregate mode gives cases their own scores.
+const caseScores = computed(() => !!item.value.result?.cases?.some(testCase => testCase.score !== undefined))
 const verdicts: Record<string, string> = { AC: '正解', WA: '不正解', CE: 'コンパイルエラー', RE: '実行時エラー', TLE: '実行時間超過', MLE: 'メモリ超過', OLE: '出力超過', JE: '採点できませんでした' }
 </script>
 
@@ -59,7 +65,23 @@ const verdicts: Record<string, string> = { AC: '正解', WA: '不正解', CE: '�
             <tr><th scope="row" title="各テストケースの最大CPU時間">実行時間</th><td>{{ executionTime(item.result?.cpuTimeMs) }}</td></tr>
             <tr><th scope="row" title="各テストケースの最大メモリ使用量">メモリ使用量</th><td>{{ memoryUsage(item.result?.memoryBytes) }}</td></tr>
             <tr><th scope="row">結果</th><td><span role="status" aria-live="polite"><SubmissionStatus :item="item" /><template v-if="item.result">：{{ verdicts[item.result.verdict] ?? '' }}</template></span></td></tr>
+            <tr v-if="score"><th scope="row">得点</th><td><strong class="submission-score" :data-full="score.score === score.maxScore || undefined">{{ formatScore(score.score) }}</strong> / {{ formatScore(score.maxScore) }}</td></tr>
             <tr><th scope="row">正解したケース</th><td>{{ item.result ? `${item.result.passed} / ${item.result.total}` : '—' }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section v-if="score?.groups?.length" class="case-results group-results" aria-labelledby="group-results-title">
+      <h2 id="group-results-title">グループごとの得点</h2>
+      <div class="submission-info">
+        <table aria-label="グループごとの得点">
+          <thead><tr><th scope="col">グループ</th><th scope="col">得点 / 配点</th><th scope="col">ケース</th></tr></thead>
+          <tbody>
+            <tr v-for="(group, index) in score.groups" :key="index">
+              <td>{{ group.name }}</td>
+              <td><span class="submission-score" :data-full="(group.maxScore > 0 && group.score === group.maxScore) || undefined">{{ formatScore(group.score) }}</span> / {{ formatScore(group.maxScore) }}</td>
+              <td class="group-cases">{{ group.cases.length ? caseNames(group.cases) : '—' }}</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -68,11 +90,12 @@ const verdicts: Record<string, string> = { AC: '正解', WA: '不正解', CE: '�
       <h2 id="case-results-title">ジャッジ結果</h2>
       <div v-if="item.result?.cases?.length" class="submission-info">
         <table aria-label="テストケースごとの結果">
-          <thead><tr><th scope="col">テストケース名</th><th scope="col">結果</th><th scope="col">CPU時間</th><th scope="col">経過時間</th><th scope="col">最大メモリ</th></tr></thead>
+          <thead><tr><th scope="col">テストケース名</th><th scope="col">結果</th><th v-if="caseScores" scope="col">点</th><th scope="col">CPU時間</th><th scope="col">経過時間</th><th scope="col">最大メモリ</th></tr></thead>
           <tbody>
             <tr v-for="(testCase, index) in item.result.cases" :key="index">
               <td>{{ testCase.name }}</td>
               <td><span class="verdict-badge" :data-verdict="testCase.verdict === 'SKIPPED' ? undefined : testCase.verdict" :title="verdicts[testCase.verdict]">{{ testCase.verdict === 'SKIPPED' ? '未実行' : testCase.verdict }}</span></td>
+              <td v-if="caseScores">{{ testCase.score === undefined ? '—' : formatCaseScore(testCase.score) }}</td>
               <td>{{ testCase.cpuTimeMs == null ? '—' : `${testCase.cpuTimeMs} ms` }}</td>
               <td>{{ testCase.wallTimeMs == null ? '—' : `${testCase.wallTimeMs} ms` }}</td>
               <td>{{ memoryUsage(testCase.memoryBytes) }}</td>
@@ -116,6 +139,10 @@ const verdicts: Record<string, string> = { AC: '正解', WA: '不正解', CE: '�
 .case-results th { width: auto; text-align: center; }
 .case-results td + td { border-left: 1px solid var(--color-line); }
 .case-results thead { background: var(--color-surface); }
+.submission-score[data-full] { color: var(--color-accent); }
+strong.submission-score { font-size: 1rem; }
+.group-results td:first-child, .group-results .group-cases { text-align: left; }
+.group-results .group-cases { font-family: var(--font-code); font-size: .8125rem; }
 .compile-log pre { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 480px) { .submission-info th, .submission-info td { padding: 10px; } .submission-info th { width: 35%; } }
 </style>
