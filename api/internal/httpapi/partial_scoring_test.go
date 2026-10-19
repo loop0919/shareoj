@@ -603,3 +603,50 @@ func TestProblemSaveDuringMaintenancePostgres(t *testing.T) {
 	f.save("alice", special, ungrouped(checked), 400)
 	f.save("alice", pub, ungrouped(checked), 400)
 }
+
+// Lists carry each run's score without its groups; details carry the group table and the cases' scores, and neither
+// shows the checker log, which holds the aggregator's stderr (ADR 0025).
+func TestPartialScoringSubmissionViewsPostgres(t *testing.T) {
+	f := newTeamTest(t, "alice", "bob")
+	const (
+		pub     = "f7000000-0000-4000-8000-000000000001"
+		inside  = "f7000000-0000-4000-8000-000000000002"
+		cid     = "f7000000-0000-4000-8000-000000000003"
+		ownRun  = "f7100000-0000-4000-8000-000000000001"
+		contRun = "f7100000-0000-4000-8000-000000000002"
+	)
+	f.save("alice", pub, scoredDraft(), 200)
+	f.publish("alice", pub, true, 200)
+	f.save("alice", inside, scoredDraft(), 200)
+	f.create(cid, inside, nil)
+	f.join(cid, "bob", nil)
+	f.schedule(cid, "ended")
+	const detail = `{"verdict":"WA","passed":2,"total":3,"checkerLog":"aggregator stderr","cases":[
+ {"name":"sample","verdict":"AC","cpuTimeMs":1,"wallTimeMs":1,"memoryBytes":1024},
+ {"name":"01","verdict":"AC","score":1000000000000000000,"cpuTimeMs":1,"wallTimeMs":1,"memoryBytes":1024},
+ {"name":"02","verdict":"WA","score":3,"cpuTimeMs":1,"wallTimeMs":1,"memoryBytes":1024}],
+ "scoring":{"score":3750,"maxScore":10000,"groups":[{"name":"小課題1","score":3000,"maxScore":3000,"cases":[1]},{"name":"小課題2","score":750,"maxScore":7000,"cases":[1,2]}]}}`
+	insert := func(id, problem string, contest any, at time.Time) {
+		f.exec(`INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,result,contest_id,created_at,finished_at)
+ VALUES($1,'bob',$2,1,'部分点','cpp17','code','{"privateDraft":false}'::jsonb,'DONE',$3::jsonb,$4,$5,$5)`, id, problem, detail, contest, at)
+	}
+	insert(ownRun, pub, nil, time.Now())
+	insert(contRun, inside, cid, time.Now().Add(-90*time.Minute))
+	for _, path := range []string{"/problems/" + pub + "/submissions", "/contests/" + cid + "/submissions"} {
+		body := f.request("GET", path, "", nil, 200)
+		if !strings.Contains(body, `"scoring":{"score":3750,"maxScore":10000}`) || strings.Contains(body, `"groups"`) || strings.Contains(body, "aggregator stderr") {
+			t.Fatalf("list %s: %s", path, body)
+		}
+	}
+	for _, path := range []string{"/problems/" + pub + "/submissions/" + ownRun, "/contests/" + cid + "/submissions/" + contRun, "/submissions/" + ownRun} {
+		body := f.request("GET", path, "", nil, 200)
+		for _, want := range []string{`"score":1000000000000000000`, `"score":3}`, `{"name":"小課題1","score":3000,"maxScore":3000,"cases":[1]}`, `{"name":"小課題2","score":750,"maxScore":7000,"cases":[1,2]}`} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("detail %s lacks %s: %s", path, want, body)
+			}
+		}
+		if strings.Contains(body, "aggregator stderr") || strings.Contains(body, "checkerLog") {
+			t.Fatalf("detail %s shows the checker log: %s", path, body)
+		}
+	}
+}
