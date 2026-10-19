@@ -74,7 +74,7 @@ class RunnerTests(unittest.TestCase):
                         return dict(status='TO' if item['verdict'] == 'TLE' else '', oom=False,
                                     overflow=False, exitCode=1 if item['verdict'] == 'RE' else 0,
                                     signal=0, output='', **item)
-                    def interact(job, case, artifact, diagnostic):
+                    def interact(job, case, artifact, diagnostic, **kwargs):
                         return reply(int(case['input']))
                     with tempfile.TemporaryDirectory() as tmp, patch.object(sandbox, 'execute', execute), \
                             patch.object(host.interactive, 'execute', interact), \

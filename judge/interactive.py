@@ -27,7 +27,7 @@ def failure(metrics):
     return None
 
 
-def relay(processes, observe, wall, diagnostic, protocol='legacy'):
+def relay(processes, observe, wall, diagnostic, protocol='legacy', points=False):
     """observe returns completed metrics or an early output-limit observation."""
     buffers = [bytearray(), bytearray()]
     totals = [0, 0]
@@ -39,6 +39,9 @@ def relay(processes, observe, wall, diagnostic, protocol='legacy'):
     while True:
         metrics = [observe(i) for i in range(2)]
         errors = ['OLE' if totals[i] > sandbox.OUTPUT_LIMIT else failure(m) for i, m in enumerate(metrics)]
+        # In aggregate mode quitp ends like _ok: the submission must still exit normally (ADR 0025).
+        if points and errors[1] == 'RE' and sandbox.judge_verdict(metrics[1], protocol, points=True) == 'AC':
+            errors[1] = None
         # An isolate wall timeout belongs to the conversation, including input waits.
         wall_expired = any(m and m.get('wallTimeout') for m in metrics)
         if errors[1] in ('MLE', 'OLE') or (errors[1] == 'TLE' and not metrics[1].get('wallTimeout')):
@@ -83,7 +86,14 @@ def relay(processes, observe, wall, diagnostic, protocol='legacy'):
                 target.close()
 
 
-def execute(job, case, artifact, diagnostic):
+def points_note(job):
+    # Jobs without scoring keep the diagnostic they had before ADR 0025.
+    if job.get('scoring') is None:
+        return 'testlibの部分点（_points）は未対応です。\n'
+    return 'testlibの部分点（_points）は、集計コード方式の問題でだけ使えます。\n'
+
+
+def execute(job, case, artifact, diagnostic, score_file=False):
     wall = 3 * (job['timeLimitMs'] / 1000 + 5) + 1
     boxes, metas, processes = [], [], []
     replies = [None, None]
@@ -105,7 +115,8 @@ def execute(job, case, artifact, diagnostic):
                                         'expected-output': case['output'].encode(),
                                         'submission-source': job['source'].encode()}
             command = sandbox.prepare_program(box, RUNTIMES[name], binary, files,
-                                              protocol=job['interactor'].get('protocol', 'legacy') if i else 'legacy', interactive=True)
+                                              protocol=job['interactor'].get('protocol', 'legacy') if i else 'legacy', interactive=True,
+                                              result_file=score_file and i == 1)
             if i == 1 and RUNTIMES[name]['artifact'] == 'java':
                 command = ['-Xmx128m' if arg == '-Xmx256m' else arg for arg in command]
             args = sandbox.run_args(name, job['timeLimitMs'] / 1000 if i == 0 else 5,
@@ -135,7 +146,8 @@ def execute(job, case, artifact, diagnostic):
                 return dict(status='', exitCode=0, signal=0, oom=False, overflow=True)
             return None
 
-        verdict = relay(processes, observe, wall, diagnostic, job['interactor'].get('protocol', 'legacy'))
+        protocol = job['interactor'].get('protocol', 'legacy')
+        verdict = relay(processes, observe, wall, diagnostic, protocol, points=score_file)
         # Capture natural exits before signalling the still-running peer.
         observed = [observe(i) for i in range(2)]
         for i, process in enumerate(processes):
@@ -146,9 +158,14 @@ def execute(job, case, artifact, diagnostic):
         if observed[0] is None or 'cpuTimeMs' not in observed[0]:
             observed[0] = sandbox.metadata(metas[0].read_text())
         diagnostic('対話判定: ' + verdict + '\nジャッジ標準エラー:\n' + stderr[1][:65536].decode(errors='replace') + '\n')
-        if job['interactor'].get('protocol') == 'testlib' and observed[1] and observed[1]['exitCode'] == 7:
-            diagnostic('testlibの部分点（_points）は未対応です。\n')
-        return dict(verdict=verdict, **{key: observed[0][key] for key in ('cpuTimeMs', 'wallTimeMs', 'memoryBytes')})
+        if job['interactor'].get('protocol') == 'testlib' and observed[1] and observed[1]['exitCode'] == 7 and not score_file:
+            diagnostic(points_note(job))
+        item = dict(verdict=verdict, **{key: observed[0][key] for key in ('cpuTimeMs', 'wallTimeMs', 'memoryBytes')})
+        if score_file:
+            # Both programs have stopped, so the file can no longer change.
+            item.update(scoreFile=sandbox.read_judge_file(boxes[1], protocol),
+                        judgeExitCode=observed[1]['exitCode'] if observed[1] and 'exitCode' in observed[1] else None)
+        return item
     finally:
         for process in processes:
             if process.poll() is None:

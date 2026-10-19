@@ -18,6 +18,9 @@ ISOLATE = '/usr/local/bin/isolate'
 META = Path('/run/judge/meta')
 ARTIFACT = Path('/run/judge/main')
 OUTPUT_LIMIT = 16 * 1024 * 1024
+SCORE_FILE_LIMIT = 4096
+# testlib caps a message at 32,000 bytes before XML escaping, which can grow it sixfold.
+RESULT_FILE_LIMIT = 256 * 1024
 
 
 def invoke(args, timeout=10, *, box_id=0):
@@ -58,7 +61,18 @@ def regular_read(path, limit):
         return file.read(limit + 1)
 
 
-def execute(request, compile_phase=False, *, artifact=None, checker_files=None):
+def read_judge_file(box, protocol):
+    """The legacy score file or the testlib result file, or None unless it is a bounded regular file."""
+    limit = RESULT_FILE_LIMIT if protocol == 'testlib' else SCORE_FILE_LIMIT
+    try:
+        # The judge program may have replaced its file with a link, FIFO or directory.
+        data = regular_read(box / ('result' if protocol == 'testlib' else 'score'), limit)
+    except (OSError, ValueError):
+        return None
+    return data if len(data) <= limit else None
+
+
+def execute(request, compile_phase=False, *, artifact=None, checker_files=None, score_file=False, stderr_log=False):
     artifact = ARTIFACT if artifact is None else artifact
     runtime = RUNTIMES[request.get('runtime', 'cpp17-isolate')]
     if compile_phase:
@@ -95,7 +109,7 @@ def execute(request, compile_phase=False, *, artifact=None, checker_files=None):
             if checker_files is not None and protocol == 'testlib':
                 checker_files = dict(checker_files, **{'submission-output': data})
                 data = b''
-            command = prepare_program(box, runtime, artifact, checker_files, protocol=protocol)
+            command = prepare_program(box, runtime, artifact, checker_files, protocol=protocol, result_file=score_file)
             (box / 'input').write_bytes(data)
         args = run_args(request.get('runtime', 'cpp17-isolate'), cpu, wall, memory,
                         compile_phase=compile_phase)
@@ -120,8 +134,10 @@ def execute(request, compile_phase=False, *, artifact=None, checker_files=None):
             # Roslyn writes compiler diagnostics to stdout; other compilers use stderr.
             return {'compiled': success, 'compileLog': (stderr + stdout)[:65536].decode(errors='replace')}
         metrics.update(output=base64.b64encode(stdout[:OUTPUT_LIMIT]).decode(), overflow=overflow)
-        if checker_files is not None:
+        if checker_files is not None or stderr_log:
             metrics['checkerLog'] = stderr[:65536].decode(errors='replace')
+        if score_file:
+            metrics['scoreFile'] = read_judge_file(box, protocol)
         return metrics
     finally:
         # isolate cleanup destroys the box and its cgroup, including descendants.
@@ -175,7 +191,7 @@ def prepare_dependencies(box, runtime):
             path.chmod(0o777 if path.is_dir() else 0o666)
 
 
-def prepare_program(box, runtime, artifact, files=None, *, protocol='legacy', interactive=False):
+def prepare_program(box, runtime, artifact, files=None, *, protocol='legacy', interactive=False, result_file=False):
     prepare_dependencies(box, runtime)
     program = runtime.get('program', 'main.dll' if runtime['artifact'] == 'dotnet' else 'main')
     shutil.copyfile(artifact, box / program)
@@ -194,6 +210,11 @@ def prepare_program(box, runtime, artifact, files=None, *, protocol='legacy', in
             (box / output).write_bytes(b'' if interactive else files['submission-output'])
             (box / output).chmod(0o666 if interactive else 0o444)
             command += ['/box/test-input', '/box/' + output, '/box/expected-output']
+            if result_file:
+                # Aggregate mode only: testlib writes its outcome and points here (ADR 0025).
+                (box / 'result').write_bytes(b'')
+                (box / 'result').chmod(0o666)
+                command += ['/box/result', '-appes']
         else:
             (box / 'score').write_bytes(b'')
             (box / 'score').chmod(0o666)
@@ -203,12 +224,15 @@ def prepare_program(box, runtime, artifact, files=None, *, protocol='legacy', in
     return command
 
 
-def judge_verdict(metrics, protocol='legacy'):
+def judge_verdict(metrics, protocol='legacy', points=False):
     if metrics['overflow'] or metrics['oom'] or metrics['status'] == 'TO':
         return 'JE'
     if protocol == 'testlib':
         if metrics['signal'] or metrics['status'] not in ('', 'RE'):
             return 'JE'
+        # In aggregate mode _points (exit 7) is an accepted output; the result file holds its points.
+        if points and metrics['exitCode'] == 7:
+            return 'AC'
         return {0: 'AC', 1: 'WA', 2: 'WA', 4: 'WA', 8: 'WA'}.get(metrics['exitCode'], 'JE')
     return 'WA' if metrics['status'] or metrics['exitCode'] or metrics['signal'] else 'AC'
 

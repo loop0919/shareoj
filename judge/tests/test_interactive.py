@@ -138,7 +138,7 @@ class InteractiveTests(unittest.TestCase):
             compiled.append(request['runtime'])
             Path(kwargs.get('artifact', host.sandbox.ARTIFACT)).write_text(request['source'])
             return dict(compiled=True)
-        def execute(job, case, artifact, diagnostic):
+        def execute(job, case, artifact, diagnostic, **kwargs):
             self.assertEqual(host.sandbox.ARTIFACT.read_text(), 'submitted source')
             self.assertEqual(artifact.read_text(), 'assert True')
             self.assertEqual(case['output'], 'expected secret')
