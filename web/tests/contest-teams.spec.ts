@@ -128,20 +128,21 @@ test('venue passphrase fields guide typing and name the rule for other character
   const field = page.getByLabel('会場の合言葉（オンサイト参加者のみ）', { exact: true })
   // Case matters, so nothing capitalises, corrects or fills in what is typed.
   for (const [name, value] of [['autocomplete', 'off'], ['autocapitalize', 'off'], ['autocorrect', 'off'], ['spellcheck', 'false']] as const) await expect(field).toHaveAttribute(name, value)
-  await expect(field).toHaveAttribute('pattern', /A-Za-z0-9_/)
-  // Full-width letters, digits and underscores, and spaces around them, are what the server folds, so they pass.
-  for (const value of ['abcd', 'Venue_2026', ' Ｖｅｎｕｅ＿２０２６　', 'a'.repeat(64)]) {
+  // The server folds and trims before it checks, so full-width letters, digits and underscores, and spaces around them,
+  // pass. The edge values are those of TestVenuePassphrases, so the browser and the server agree on them.
+  for (const value of ['abcd', 'Venue_2026', ' Ｖｅｎｕｅ＿２０２６　', 'a'.repeat(64), '\uFEFFVenue_2026', 'Venue_2026\u0085', '\u00A0Venue_2026\u2029', '　Ｖｅｎｕｅ＿２０２６', 'ﬁne_day']) {
     await field.fill(value)
     expect(await validation(field), value).toBe('')
   }
-  for (const value of ['abc', 'Venue-2026', 'Venue 2026', 'かいじょう', 'ａｂｃ', 'a'.repeat(65), '　 ']) {
+  for (const value of ['abc', 'Venue-2026', 'Venue 2026', 'かいじょう', 'ａｂｃ', 'a'.repeat(65), 'Venue_\uFEFF2026', 'a\u200Bbcd']) {
     await field.fill(value)
     expect(await validation(field), value).toBe(ruleMessage)
     await page.getByRole('button', { name: '参加する', exact: true }).click()
   }
   expect(bodies).toEqual([])
-  // The field is optional: empty joins open.
-  await field.fill('')
+  // The field is optional, and spaces alone are empty, as on the server: they join open without a passphrase.
+  await field.fill('　 ')
+  expect(await validation(field)).toBe('')
   await page.getByRole('button', { name: '参加する', exact: true }).click()
   await expect(page.locator('.participation-division')).toHaveText('オープン参加')
   expect(bodies).toEqual([null])

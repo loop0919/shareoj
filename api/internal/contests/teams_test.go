@@ -48,6 +48,10 @@ func TestVenuePassphrases(t *testing.T) {
 		"abc": false, " ａｂｃ ": false, strings.Repeat("x", 65): false, "": false,
 		"two words": false, "Venue-2026": false, "pass.word": false, "ａｂｃｄ！": false, "合言葉です": false, "café": false, "abcd\u00e9": false,
 		"a\u200bbcd": false, "ab\ncd": false, "abcd\ufe0f": false, "\u2800\u2800\u2800\u2800": false, "abc\x00": false,
+		// The browser gives the same verdicts on these (web/tests/contest-teams.spec.ts), so it never lets through a
+		// value the server counts as a wrong guess, or stops one the server takes.
+		"\ufeffVenue_2026": true, "Venue_2026\u0085": true, "\u00a0Venue_2026\u2029": true, "　Ｖｅｎｕｅ＿２０２６": true, "ﬁne_day": true,
+		"\ufeff": false, "Venue_\ufeff2026": false,
 	} {
 		if got := ValidPassphrase(in); got != want {
 			t.Errorf("ValidPassphrase(%q) = %t, want %t", in, got, want)

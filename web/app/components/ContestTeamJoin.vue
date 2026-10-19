@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Contest, JoinBody } from '~~/shared/types/contest'
 import { shortId } from '~~/shared/utils/short-id'
-import { venuePassphraseRule } from '~/utils/venue-passphrase'
+import { venuePassphraseBlank, venuePassphraseRule } from '~/utils/venue-passphrase'
 // The team page's form: create a team or join one by its code, with the venue passphrase when the contest has a
 // division. Someone registered alone uses it to switch to a team before the start (ADR 0024).
 const props = defineProps<{ contest: Contest }>()
@@ -21,7 +21,7 @@ carried.value = ''
 async function join() {
   if (saving.value) return
   const body: JoinBody = { team: teamAction.value === 'create' ? { action: 'create', name: teamName.value } : { action: 'join', code: teamCode.value } }
-  if (askPassphrase.value && passphrase.value) body.onsitePassphrase = passphrase.value
+  if (askPassphrase.value && !venuePassphraseBlank(passphrase.value)) body.onsitePassphrase = passphrase.value
   const result = await send(body)
   if (!result) return
   teamName.value = ''; teamCode.value = ''; passphrase.value = ''

@@ -131,9 +131,10 @@ func ValidTeamName(name string) bool {
 }
 
 // NormalizePassphrase trims and folds width variants: the venue passphrase is read out or handed out on paper, so
-// full-width input or a stray space must not fail (ADR 0024).
+// full-width input or a stray space must not fail (ADR 0024). It also trims U+FEFF, which a value pasted from a file
+// can start with, so that it trims what the browser's check trims (web/app/utils/venue-passphrase.ts).
 func NormalizePassphrase(passphrase string) string {
-	return strings.TrimSpace(norm.NFKC.String(passphrase))
+	return strings.TrimFunc(norm.NFKC.String(passphrase), func(r rune) bool { return unicode.IsSpace(r) || r == '\ufeff' })
 }
 
 // ValidPassphrase accepts 4 to 64 ASCII letters, digits and underscores after normalization, so full-width input

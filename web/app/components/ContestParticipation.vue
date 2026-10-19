@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Contest, JoinBody } from '~~/shared/types/contest'
 import { shortId } from '~~/shared/utils/short-id'
-import { venuePassphraseRule } from '~/utils/venue-passphrase'
+import { venuePassphraseBlank, venuePassphraseRule } from '~/utils/venue-passphrase'
 // detailed is the overview page: only it takes the venue passphrase and offers the switch to a team. Team contests join
 // alone here with 「個人参加」; 「チーム参加」 leads to the team page, which forms teams and holds the team panel (ADR 0024).
 const props = defineProps<{ contest: Contest, detailed?: boolean }>()
@@ -19,7 +19,7 @@ const carried = useCarriedPassphrase(props.contest.id)
 async function join() {
   if (saving.value) return
   const body: JoinBody = {}
-  if (props.detailed && division.value && passphrase.value) body.onsitePassphrase = passphrase.value
+  if (props.detailed && division.value && !venuePassphraseBlank(passphrase.value)) body.onsitePassphrase = passphrase.value
   const result = await send(body)
   if (!result) return
   passphrase.value = ''
