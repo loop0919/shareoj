@@ -509,7 +509,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 ### コンテストへの参加
 
 - `POST /my/contests/{id}/participation`：認証・プロフィール登録が必要。開始前または開催中に参加登録し、更新後のコンテスト詳細を返します。同じユーザーの再登録は重複しません。
-  本文が空なら個人戦のオープン参加です。チーム戦とオンサイト区分の本文は下の「チーム戦とオンサイト」にあります。
+  本文が空なら、チーム戦でも個人のオープン参加です。チーム戦とオンサイト区分の本文は下の「チーム戦とオンサイト」にあります。
 - 詳細の `participating` は閲覧ユーザーの登録状態です。`official` は公式順位の対象になれるかどうかで、スタッフとスタッフだった人は対象外です。`staff` は閲覧ユーザーがスタッフかどうかです。
 - 登録者は未提出でも0点で順位表に表示されます。開催中の提出には登録が必要です（スタッフを除く）。終了後の練習提出には登録不要です。
 - 終了後の新規登録・対象外ユーザーの登録は409 `contest_participation_unavailable`、未登録での提出は409 `contest_participation_required` です。
@@ -599,7 +599,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
   - `teamMode`：チーム戦かどうか。
   - `maxTeamSize`：チーム戦の最大人数で、2〜50かnull（無制限。内部の上限は50人）。個人戦では保存しない。
   - `onsiteDivision`：オンサイト区分の有無。
-  - `onsitePassphrase`：会場の合言葉。`onsiteDivision`をtrueで送るときは必須で、前後の空白を除きNFKCで正規化して4〜64文字にする。それ以外のときは読まない。
+  - `onsitePassphrase`：会場の合言葉。`onsiteDivision`をtrueで送るときは必須で、前後の空白を除きNFKCで正規化したあとの、英字、数字、`_`だけの4〜64文字にする（大文字と小文字は区別する）。それ以外のときは読まない。
 - 範囲外は400 `invalid_contest`で、下書きでは`issues`に`team_size_invalid`か`venue_passphrase_invalid`を入れる。
 - 参加登録があると、個人戦とチーム戦は切り替えられず（409 `contest_team_mode_locked`）、最大人数は最も大きいチームの人数より下げられない（409 `contest_team_size_locked`）。
 - 開始前に区分をなしにすると、記録したオンサイトを消し、合言葉も消す。
@@ -609,14 +609,15 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 
 参加の本文は`{"team":{"action":"create","name":"..."}}`か`{"team":{"action":"join","code":"..."}}`と、任意の`onsitePassphrase`である。
 
-- チーム戦ではチームの指定が必要で（409 `contest_team_required`）、個人戦では指定できない（409 `contest_team_unavailable`）。
+- `team`を省くと、チーム戦でも個人で参加する。個人戦では`team`を指定できない（409 `contest_team_unavailable`）。
+- 個人で参加した人は、開始前ならチームを作るか入ってメンバーになる。開始後は409 `contest_individual_locked`とし、試行回数には数えない。
+  オンサイトの個人がチームを作るか入ると、チームもオンサイトになる。
 - チーム名はNFKCで正規化して空白をまとめ、1〜40文字にする。制御文字と書式文字、異体字セレクタやハングルの埋め字などの表示されない文字を含む名前と、見える文字のない名前は400 `invalid_team_name`、大文字と小文字だけが違う名前を含めて同じ名前は409 `team_name_taken`。
 - 1人が入れるチームは1つで、2つ目は409 `team_already_joined`とする。自分のチームのコードを再び送っても何も変えない。満員のチームは409 `team_full`。
 - 参加コードはサーバーが作る10文字で、0、O、1、I、L、Uを使わない。大文字と小文字、全角、空白とハイフンの違いは無視し、誤りは400 `incorrect_team_code`。
-- 会場の合言葉が正しければ本人（チーム戦ではチーム）をオンサイトにし、誤りは400 `incorrect_venue_passphrase`として何も登録しない。区分のないコンテストでは409 `contest_onsite_unavailable`。
+- 会場の合言葉が正しければ本人（チームのメンバーならチーム）をオンサイトにし、誤りは400 `incorrect_venue_passphrase`として何も登録しない。使えない文字を含む合言葉も誤りとして数える。区分のないコンテストでは409 `contest_onsite_unavailable`。
 - 登録済みの人は、終了まで`onsitePassphrase`だけを送ってオンサイトになれる。チームの誰か1人が入れればチーム全体がオンサイトになる。
   空白だけの合言葉は、未登録の人ならオープン参加として登録し、登録済みの人からは400 `incorrect_venue_passphrase`とする（試行回数には数えない）。
-- セッターがオープンに切り替えた参加者（チーム戦ではチーム）は、セッターがオンサイトに戻すか区分をなしにするまで、合言葉を送っても409 `onsite_kept_open`とする。試行回数には数えない。
 - 参加コードと合言葉の誤りはアカウントとコンテストの組ごとに数え、10分に10回に達すると、以後の試行を429 `contest_attempts_limited`と`Retry-After`で断る。
 
 | API | 動作 |
@@ -627,18 +628,20 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 | `DELETE /my/contests/{id}/team/members/{handle}` | 開始前に、ほかのメンバーを外すか、自分のハンドルで抜ける。204を返す |
 | `GET /my/contests/{id}/onsite` | セッターに`{"onsiteDivision":true,"passphrase":"..."}`を返す |
 | `PUT /my/contests/{id}/onsite` | セッターが`{"passphrase":"..."}`で合言葉を差し替える。終了まで |
-| `GET /my/contests/{id}/participants` | セッターに参加者（チーム戦ではチーム）を`{"items":[...]}`で返す |
-| `PUT /my/contests/{id}/participants/{handle}/onsite` | セッターが個人戦の参加者の区分を`{"onsite":true}`か`false`で切り替える。結果確定まで |
-| `PUT /my/contests/{id}/teams/{team}/onsite` | セッターがチームの区分を切り替える。結果確定まで |
+| `GET /my/contests/{id}/participants` | セッターにチームと個人で参加した人を`{"items":[...]}`で返す |
+| `PUT /my/contests/{id}/participants/{handle}/onsite` | セッターが個人で参加した人を`{"onsite":true}`でオンサイトにする。結果確定まで |
+| `PUT /my/contests/{id}/teams/{team}/onsite` | セッターがチームを`{"onsite":true}`でオンサイトにする。結果確定まで |
 | `PUT /my/contests/{id}/teams/{team}/name` | セッターがチーム名を直す。結果確定まで |
 
 - メンバーの操作は、チームがなければ404 `team_not_found`、チームにいないハンドルは404 `team_member_not_found`、期間外は409 `team_locked`とする。
-- メンバーを外すか自分で抜けると、参加コードを作り直す。最後の1人が抜けるとチームを消す。
-- セッターの操作は、セッター以外に404 `contest_not_found`、期間外に409 `contest_conflict`、該当する参加者やチームがなければ404 `participant_not_found`か`team_not_found`を返す。
-- 参加者一覧の各要素は、個人戦では`handle`、チーム戦では`team`を持ち、`onsite`、`onsiteAt`、`onsiteVia`（`passphrase`か`setter`、オープンなら空）、`keptOpen`（セッターがオープンに切り替えたか）、`createdAt`を返す。
+- メンバーを外すか自分で抜けると、その人の参加登録を消し、参加コードを作り直す。最後の1人が抜けるとチームを消す。
+- セッターの操作は、セッター以外に404 `contest_not_found`、期間外に409 `contest_conflict`、該当する参加者やチームがなければ404 `participant_not_found`か`team_not_found`を返す。チームのメンバーのハンドルは`participant_not_found`とする。
+- オープンに戻す`{"onsite":false}`は400 `onsite_irreversible`とする。オンサイトからオープンに戻す経路はなく、区分をなしにしたときだけ全員がオープンになる。
+- 参加者一覧の各要素は、チームなら`team`、個人で参加した人なら`handle`を持ち、`onsite`、`onsiteAt`、`onsiteVia`（`passphrase`か`setter`、オープンなら空）、`createdAt`を返す。
 - 合言葉の差し替えはコンテストの`version`を進めるので、古い合言葉を持つ編集画面の保存は409 `contest_conflict`になる。
 - 開始前の退会では、そのコンテストの参加登録とチームの所属を外し、空になったチームを消し、残ったチームの参加コードを作り直す。
-- 配布時は`035_contest_teams.sql`だけのコミットを先に配布して適用し、その後にAPIを配布する。`037_contest_onsite_kept_open.sql`も同じく先に適用する。
+- 配布時は`035_contest_teams.sql`だけのコミットを先に配布して適用し、その後にAPIを配布する。`037_contest_onsite_kept_open.sql`と`038_contest_team_individuals.sql`も同じく先に適用する。
+  `039_contest_onsite_drop_kept_open.sql`は`kept_open`の列を消すので、列を読まないAPIを配布した後に適用する。
 
 チームの提出の共有、順位表、オンサイトの絞り込みは次のとおり。
 
@@ -650,9 +653,10 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 - コンテストの問題の提出一覧は、`mine=team`で自分とチームメイトのこのコンテストへの提出を返す。
   認証が必要で、個人戦では`mine=1`と同じになり、ほかの経路では400 `invalid_request`とする。
 - コンテスト詳細の`problems[].solved`は、チーム戦ではメンバーの誰かが正解した問題に付く。
-- チーム戦の順位表はチームごとに1行で、`handle`を空文字にし、`team`（`id`、`name`、`members`、`onsite`）を返す。
-  得点、ペナルティ、凍結は、メンバー全員の提出をまとめて個人戦と同じ規則で計算する。
-  チームに属さない登録（チームを知らない古いAPIが作ったもの）は、チームに入るまで行にしない。
+- チーム戦の順位表は、チームごとの行と、個人で参加した人ごとの行を同じ表に並べる。
+  チームの行は`handle`を空文字にして`team`（`id`、`name`、`members`、`onsite`）を返し、個人の行は`handle`を返して`team`をnullにする。
+  得点、ペナルティ、凍結は、チームならメンバー全員の提出をまとめ、個人ならその人の提出で、同じ規則で計算する。
+  個人で参加した人の提出の公開範囲、解いた印、オンサイト区分は、個人戦と同じく本人だけのものとする。
 - 順位表の各行は、`onsite`（区分があり、本人かチームがオンサイト）と`overallRank`（全体の順位）を返す。
 - 順位表（公開と`/my`）、コンテストの提出一覧、問題ごとの提出一覧は`scope=onsite`を受け付け、ほかの値は400 `invalid_request`とする。
   順位表はオンサイトの行だけを返し、`rank`をその中で振り直す。
