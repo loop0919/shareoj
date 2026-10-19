@@ -275,3 +275,65 @@ func TestContestTeamIndividualsPostgres(t *testing.T) {
 	f.fail("POST", path, "mia", nil, 409, "contest_participation_unavailable")
 	f.fail("POST", path, "kate", map[string]any{"onsitePassphrase": phrase}, 409, "contest_participation_unavailable")
 }
+
+// ADR 0024: someone who entered open moves into a team with the venue passphrase in the same request, as the team page
+// sends it. A wrong passphrase, a full team or a taken name leaves them alone with nothing created; a right one makes
+// the team onsite, and the division lives on the team alone.
+func TestContestTeamSwitchWithPassphrasePostgres(t *testing.T) {
+	f := newTeamTest(t, "alice", "bob", "carol", "dan", "erin", "kate")
+	const (
+		tc     = "c3000000-0000-4000-8000-000000000001"
+		pa     = "a3000000-0000-4000-8000-000000000001"
+		phrase = "Venue_2026"
+	)
+	f.problem(pa)
+	f.create(tc, pa, map[string]any{"teamMode": true, "maxTeamSize": 2, "onsiteDivision": true, "onsitePassphrase": phrase})
+	path := "/my/contests/" + tc + "/participation"
+	f.join(tc, "bob", create("Alpha"))
+	alpha := f.team(tc, "bob").Code
+	f.join(tc, "carol", joinCode(alpha))
+	f.join(tc, "kate", nil)
+	failures := func() int { return f.count(`SELECT count(*) FROM contest_attempt_failures WHERE owner_id='kate'`) }
+	alone := func(step string, guesses int) {
+		t.Helper()
+		if kate := f.contest(tc, "kate"); !kate.Participating || kate.Team != nil || kate.Onsite {
+			t.Fatalf("%s: %+v", step, kate)
+		}
+		if n := f.count(`SELECT count(*) FROM contest_teams WHERE name_key='delta'`); n != 0 {
+			t.Fatalf("%s: a team was left behind", step)
+		}
+		if n := failures(); n != guesses {
+			t.Fatalf("%s: %d guesses counted, want %d", step, n, guesses)
+		}
+	}
+	// A wrong passphrase, or one with other characters, is a counted guess, and nothing moves or is created.
+	f.fail("POST", path, "kate", withOnsite(create("Delta"), "Venue_2025"), 400, "incorrect_venue_passphrase")
+	alone("wrong passphrase", 1)
+	f.fail("POST", path, "kate", withOnsite(create("Delta"), "Venue-2026"), 400, "incorrect_venue_passphrase")
+	alone("other characters", 2)
+	f.fail("POST", path, "kate", withOnsite(joinCode(alpha), "Venue_2025"), 400, "incorrect_venue_passphrase")
+	alone("wrong passphrase on a join", 3)
+	// A full team or a taken name refuses the move even with the right passphrase, which then makes nobody onsite.
+	f.fail("POST", path, "kate", withOnsite(joinCode(alpha), phrase), 409, "team_full")
+	alone("full team", 3)
+	f.fail("POST", path, "kate", withOnsite(create("ALPHA"), phrase), 409, "team_name_taken")
+	alone("taken name", 3)
+	// The right passphrase, as typed, moves them into a new team that becomes onsite through it.
+	kate := f.join(tc, "kate", withOnsite(create("Delta"), " Ｖｅｎｕｅ＿２０２６ "))
+	if kate.Team == nil || !kate.Team.Onsite || !kate.Onsite || !slices.Equal(kate.Team.Members, []string{"kate"}) {
+		t.Fatalf("moved onsite: %+v %+v", kate, kate.Team)
+	}
+	// Joining an open team with it turns that team onsite too.
+	f.join(tc, "erin", create("Gamma"))
+	f.join(tc, "dan", nil)
+	dan := f.join(tc, "dan", withOnsite(joinCode(f.team(tc, "erin").Code), phrase))
+	if dan.Team == nil || !dan.Team.Onsite || !slices.Equal(dan.Team.Members, []string{"erin", "dan"}) || !f.contest(tc, "erin").Onsite {
+		t.Fatalf("joined onsite: %+v", dan.Team)
+	}
+	if n := f.count(`SELECT count(*) FROM contest_teams WHERE name IN ('Delta','Gamma') AND onsite_via='passphrase' AND onsite_at IS NOT NULL`); n != 2 {
+		t.Fatalf("onsite teams through the passphrase: %d", n)
+	}
+	if n := f.count(`SELECT count(*) FROM contest_participants WHERE onsite_at IS NOT NULL OR onsite_via IS NOT NULL`); n != 0 || failures() != 3 {
+		t.Fatalf("members keep %d divisions of their own, %d guesses", n, failures())
+	}
+}
