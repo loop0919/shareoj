@@ -33,5 +33,4 @@ crash.*.log
 /web/.output-lambda/
 /web/.build/
 /judge/.build/
-/judge/__pycache__/
-/judge/tests/__pycache__/
+__pycache__/
