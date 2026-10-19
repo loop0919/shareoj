@@ -22,6 +22,13 @@ const rotating = ref(false)
 const newPassphrase = ref('')
 const renaming = ref('')
 const newName = ref('')
+// Each form replaces the button that opened it, and closing it brings the button back; focus follows, rather than
+// falling to the page.
+const root = ref<HTMLDetailsElement>()
+async function focus(selector: string) {
+  await nextTick()
+  root.value?.querySelector<HTMLElement>(selector)?.focus()
+}
 const key = (row: Entrant) => row.team?.id ?? row.handle
 const label = (row: Entrant) => row.team?.name ?? row.handle
 function report(text: string, error = false) { message.value = text; failed.value = error }
@@ -47,7 +54,8 @@ function failure(error: unknown, after: string) {
   if (errorCode(error) === 'contest_conflict') return after
   return contestTeamError(error, '変更できませんでした。一覧を更新してから、もう一度お試しください。')
 }
-function startRotate() { newPassphrase.value = ''; rotating.value = true; report('') }
+function startRotate() { newPassphrase.value = ''; rotating.value = true; report(''); void focus('#setter-venue-new') }
+function closeRotate() { rotating.value = false; void focus('#setter-venue-rotate') }
 async function rotate() {
   if (busy.value) return
   busy.value = 'venue'; report('')
@@ -57,6 +65,7 @@ async function rotate() {
     report('会場の合言葉を差し替えました。前の合言葉は使えません。')
   } catch (error) { report(failure(error, '終了したため、会場の合言葉は差し替えられません。'), true) }
   finally { busy.value = '' }
+  if (!rotating.value) void focus('#setter-venue-rotate')
 }
 // The switch moves at once and returns if the server refuses, so it never shows a state that was not saved.
 async function setOnsite(row: Entrant, onsite: boolean) {
@@ -74,7 +83,8 @@ async function setOnsite(row: Entrant, onsite: boolean) {
     report(failure(error, '結果が確定したため、区分は変更できません。'), true)
   } finally { busy.value = '' }
 }
-function startRename(row: Entrant) { newName.value = row.team?.name ?? ''; renaming.value = key(row); report('') }
+function startRename(row: Entrant) { newName.value = row.team?.name ?? ''; renaming.value = key(row); report(''); void focus('.setter-rename input') }
+function closeRename(row: Entrant) { renaming.value = ''; void focus(`[data-rename="${key(row)}"]`) }
 async function rename(row: Entrant) {
   if (busy.value || !row.team) return
   busy.value = key(row); report('')
@@ -86,11 +96,12 @@ async function rename(row: Entrant) {
     emit('changed')
   } catch (error) { report(failure(error, '結果が確定したため、チーム名は変更できません。'), true) }
   finally { busy.value = '' }
+  if (!renaming.value) void focus(`[data-rename="${key(row)}"]`)
 }
 </script>
 
 <template>
-  <details class="setter-tools" @toggle="toggle">
+  <details ref="root" class="setter-tools" @toggle="toggle">
     <summary><span>参加者の管理</span><span class="muted">作成者だけに表示</span></summary>
     <div class="setter-tools-body">
       <p class="muted">{{ division ? '会場の合言葉は終了まで差し替えられます。参加者の区分は、結果が確定するまで切り替えられます。オープン参加に戻した参加者は、合言葉ではオンサイト参加に戻れません。' : 'チーム名は、結果が確定するまで変更できます。' }}</p>
@@ -99,10 +110,10 @@ async function rename(row: Entrant) {
       <template v-else>
         <section v-if="division" class="setter-venue" aria-labelledby="setter-venue-title">
           <h3 id="setter-venue-title">会場の合言葉</h3>
-          <div v-if="!rotating" class="setter-row"><input id="setter-venue-current" :value="venue?.passphrase ?? ''" readonly aria-labelledby="setter-venue-title" @focus="($event.target as HTMLInputElement).select()"><button v-if="!ended" type="button" class="editor-button" :disabled="!!busy" @click="startRotate">差し替える</button></div>
+          <div v-if="!rotating" class="setter-row"><input id="setter-venue-current" :value="venue?.passphrase ?? ''" readonly aria-labelledby="setter-venue-title" @focus="($event.target as HTMLInputElement).select()"><button v-if="!ended" id="setter-venue-rotate" type="button" class="editor-button" :disabled="!!busy" @click="startRotate">差し替える</button></div>
           <form v-else class="setter-form" @submit.prevent="rotate">
             <label for="setter-venue-new">新しい会場の合言葉</label>
-            <div class="setter-row"><input id="setter-venue-new" v-model="newPassphrase" required minlength="4" maxlength="64" autocomplete="off" spellcheck="false"><button type="submit" class="editor-button" :disabled="!!busy" :aria-busy="busy === 'venue'">{{ busy === 'venue' ? '保存中…' : '保存' }}</button><button type="button" class="editor-button" :disabled="busy === 'venue'" @click="rotating = false">キャンセル</button></div>
+            <div class="setter-row"><input id="setter-venue-new" v-model="newPassphrase" required minlength="4" maxlength="64" autocomplete="off" spellcheck="false"><button type="submit" class="editor-button" :disabled="!!busy" :aria-busy="busy === 'venue'">{{ busy === 'venue' ? '保存中…' : '保存' }}</button><button type="button" class="editor-button" :disabled="busy === 'venue'" @click="closeRotate">キャンセル</button></div>
           </form>
           <p class="muted">会場の参加者に配ります。差し替えると前の合言葉は使えなくなりますが、すでにオンサイト参加の人はそのままです。</p>
         </section>
@@ -116,8 +127,8 @@ async function rename(row: Entrant) {
                 <tr v-for="row in entrants" :key="key(row)">
                   <th scope="row">
                     <template v-if="row.team">
-                      <form v-if="renaming === key(row)" class="setter-row" @submit.prevent="rename(row)"><input v-model="newName" required autocomplete="off" :aria-label="`${row.team.name}の新しいチーム名`"><button type="submit" class="editor-button" :disabled="!!busy" :aria-busy="busy === key(row)">保存</button><button type="button" class="editor-button" :disabled="busy === key(row)" @click="renaming = ''">キャンセル</button></form>
-                      <span v-else class="setter-team"><strong>{{ row.team.name }}</strong><button v-if="!final" type="button" class="editor-button" :disabled="!!busy" :aria-label="`${row.team.name}の名前を変更`" @click="startRename(row)">名前を変更</button></span>
+                      <form v-if="renaming === key(row)" class="setter-row setter-rename" @submit.prevent="rename(row)"><input v-model="newName" required autocomplete="off" :aria-label="`${row.team.name}の新しいチーム名`"><button type="submit" class="editor-button" :disabled="!!busy" :aria-busy="busy === key(row)">保存</button><button type="button" class="editor-button" :disabled="busy === key(row)" @click="closeRename(row)">キャンセル</button></form>
+                      <span v-else class="setter-team"><strong>{{ row.team.name }}</strong><button v-if="!final" type="button" class="editor-button" :data-rename="key(row)" :disabled="!!busy" :aria-label="`${row.team.name}の名前を変更`" @click="startRename(row)">名前を変更</button></span>
                       <span class="setter-members"><template v-for="(member, index) in row.team.members" :key="member"><span v-if="index">、</span><UserLink :handle="member" /></template></span>
                     </template>
                     <UserLink v-else :handle="row.handle" />
