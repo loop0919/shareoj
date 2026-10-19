@@ -63,12 +63,12 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 
 | ID | 内容 | 主なファイル | リスク・効果・規模 | 反証（価値・安全） | 状態 |
 | --- | --- | --- | --- | --- | --- |
-| C01 | CLI pushの下書き合成を関数に切り出し、規則を特性テストで固定 | `cli/main.go` | 低・高・S | 修正・修正 | 未着手 |
+| C01 | CLI pushの下書き合成を関数に切り出し、規則を特性テストで固定 | `cli/main.go` | 低・高・S | 修正・修正 | 完了（`0c17328`） |
 | C02 | SQLの文字列置換をやめ、テスター用一覧と提出詳細の非公開列を明示的に組み立てる | `api/internal/problems/store.go`、`api/internal/submissions/store.go` | 低・高・S | 修正・維持 | 未着手 |
 | C03 | BFFのエラー変換を切り出し、画面へ渡すエラーコードを名前付きの一覧にする | `web/server/utils/private-api.ts` | 低・高・S | 修正・維持 | 未着手 |
 | C04 | useProblemDraftの既定値と自動保存の再予約をまとめる | `web/app/composables/useProblemDraft.ts` | 低・高・S | 維持・修正 | 未着手 |
 | C05 | ジャッジの失敗判定と上限検証をそれぞれ1か所にまとめる | `judge/sandbox.py`、`judge/host.py`、`judge/interactive.py` | 低・中・S | 修正・維持 | 未着手 |
-| C06 | コンテスト提出の閲覧条件をSQL断片1つにまとめ、2つの一覧で共有する | `api/internal/submissions/contest.go`、`problem.go` | 中・高・S | 維持・維持 | 未着手 |
+| C06 | コンテスト提出の閲覧条件をSQL断片1つにまとめ、2つの一覧で共有する | `api/internal/submissions/contest.go`、`problem.go` | 中・高・S | 維持・維持 | 計画済み |
 | C07 | 提出とリジャッジで重複する「採点できる下書きか」の条件を1か所で生成する | `api/internal/submissions/store.go`、`rejudge.go` | 中・高・M | 修正・修正 | 未着手 |
 | C08 | 問題とプロフィールのストアを具体型で持ち、実行時の型アサーションをやめる | `api/internal/httpapi/routes.go`ほか | 中・高・M | 修正・修正 | 未着手 |
 | C09 | 「利用できる言語」の判定と既定の言語を1か所にまとめる | `web/app/composables/useJudgeCatalog.ts`ほか | 低・中・S | 修正・維持 | 未着手 |
@@ -87,9 +87,30 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 上位20件の枠外とした候補（offsetの検証、CLIのコマンド表など）と除外理由は`.local/refactor/dropped.json`にある。
 `judge/rollout.py`の整理は、本番AWSなしでは重要な挙動を確かめられないため除外した。
 
+## サイクルの進め方
+
+1件ごとに次の順で進める。作業ツリーを編集する担当は常に1人にする。
+
+1. 計画: 計画担当が候補の資料と実コードから短い計画を書き、別の担当が読み取り専用で計画をレビューする（人間の確認の代わり）。
+2. 実装: 実装担当が特性テストを先に足し、変更前のコードで成功することを確かめてから変更する。コミットはしない。
+3. simplify: メインセッションから`simplify`を実行する（再利用・単純化・効率・深さの4観点を並列でレビューし、妥当なものだけ適用）。
+4. 差分の固定: `git add -A`と`git write-tree`でtreeを記録し、以後はそのtreeを検証・レビューする。
+5. 検証とレビュー: 検証担当が検証コマンドを実行する。挙動・安全・設計・`code-review`の4観点で独立にレビューし、判定担当が指摘を実コードで確かめて「必須」「軽微」「却下」に分ける。必須の指摘は新しい修正担当が直し、範囲を絞った再レビューで確かめる（最大3回。同じ指摘が2回続けて残れば中断）。最後のコード変更の後に検証をやり直す。
+6. コミット: 記録したtreeと一致することを確かめてからコミットし、この記録を更新する。
+
+実行に使うワークフローのスクリプトと各サイクルの記録（計画、実装レポート、simplifyの結果、レビュー結果、検証ログ）は、worktreeの`.local/refactor/`に置く（git管理外）。採用した計画は`docs/refactor/plans/`に写す。
+
 ## 完了したサイクル
 
-なし。
+### C01 CLI pushの下書き合成（`0c17328`）
+
+- 計画: [plans/C01-cli-merge-draft.md](plans/C01-cli-merge-draft.md)。計画レビューは承認（軽微な指摘4件）。
+- 変更: `push`の合成部分（27行）を`mergeDraft(local, remote draft) error`へ処理順も中身も変えずに移した。docコメントに規則の要約と、順序の理由（合成はcopyで上書きされるremoteの値を読む、testCasesの参照に置き換わる前に呼ぶ）を書いた。
+- 特性テスト: `TestPushMergeRules`（generatorsの役割ごとの更新、全部省いたときの保持、nullの扱い、判定器の置き換え、省いた項目の保持）、`TestScoringPushMerge`（停止時点と文言、版の競合の優先、不正なremoteのscoringとgenerators）。変更前のコードで成功し、変異（直接書き込み、null判定や排他削除の削除、呼び出し位置の移動など）をすべて検出することを確かめた。
+- simplify: docコメントの理由の修正、`strings.Replace`が一致しないときの検出、テストの繰り返し整理を適用。共通ヘルパー化などは範囲外として見送り。
+- レビュー: 4観点で挙動の変化はなし。必須の指摘3件（generatorsを全部省いたpushのテストがない、remoteのgeneratorsのデコード失敗を通るテストがない、docコメントに規則の要約がない）を1回の修正で解消。
+- 検証（最終tree）: `cli`で`go test -count=1 ./...`、`go vet ./...`、`CGO_ENABLED=0 go build -trimpath`、`gofmt -l .`がすべて成功。
+- 軽微（未対応）: 追加テストは`errors.As`で判定するため、デコードエラーを包み直す変更は検出しない。
 
 ## 保留事項
 
@@ -105,8 +126,8 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | D06 | アカウント削除で、残った下書きと同じidの公開済みコンテストの関連行まで消える可能性 | `api/internal/accounts/store.go:41-44` | lockID導入前の競合でしか生じないはず |
 | D07 | 送り出しの先頭の提出が恒久的に失敗すると、期限切れ（6時間）まで後続が止まる | `api/cmd/judge-bridge/dispatch.go:65-80` | 起きる可能性は低いが、起きると全提出の採点が止まる |
 | D08 | deployment-statusの期間のコメントが実装と一致しない | `api/cmd/judge-bridge/bridge.go:48-56` | 挙動は安全側。コメントを信じた修正が危険 |
-| D09 | `login`・`logout`に余分な引数を渡すと、init/check/push向けの文言が出る | `cli/main.go:339-345` | 文言が実際の誤りと合わない |
-| D10 | 新規作成時の問題文と解説のひな形をCLIとWebが別々に持つ | `cli/main.go:232-233`、`web/app/utils/problem-draft.ts:124,135` | 片方だけ変えるとずれる（494674fで手作業で同期した前例あり） |
+| D09 | `login`・`logout`に余分な引数を渡すと、init/check/push向けの文言が出る | `cli/main.go`の`run`（`needsDirectory`の判定） | 文言が実際の誤りと合わない |
+| D10 | 新規作成時の問題文と解説のひな形をCLIとWebが別々に持つ | `cli/main.go`の`initProblem`、`web/app/utils/problem-draft.ts:124,135` | 片方だけ変えるとずれる（494674fで手作業で同期した前例あり） |
 | D11 | rolloutの`finish()`が1台構成でも`--instance`を全台分渡し、api-smokeで失敗する | `judge/rollout.py:416-418` | 1台構成の通常配布を支援するかの判断が要る |
 | D12 | 処理系別のヒープ上限が「memory==256なら対話ジャッジ側」という前提のまま | `judge/sandbox.py:154-163` | 256 MiBの提出が小さいヒープで動き、MLEがREになりうる |
 | D13 | 保存ショートカットの判定がコンテスト編集画面だけ違う（IME変換中やShift付きでも保存） | `web/app/components/ContestEditor.vue:160-165` | 画面ごとに動きが違う |
@@ -124,4 +145,4 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 ## 現在の作業と次の手順
 
 - 実行順の目安は、C01、C06、C12、C04、C02、C03、C05、C11、C09、C07、C08、C13。C15〜C20は着手前に反証を行う。
-- 次はC01。
+- C06は計画済み（計画レビュー承認、軽微な指摘4件）。次はC06の実装。
