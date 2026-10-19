@@ -7,6 +7,55 @@ from pathlib import Path
 from runtimes import RUNTIMES
 from interactive_smoke import failure_program
 
+
+def scoring_smoke(digest, passed):
+    """Group cutoff, legacy score files and aggregator I/O in the real sandbox (ADR 0025)."""
+    if 'cpp17-isolate' not in passed:
+        return
+    from testlib_smoke import exact_aggregator
+    echo = '#include <cstdio>\nint main(){int n;if(scanf("%d",&n)!=1)return 1;if(n>=5)for(;;){}printf("%d\\n",n);fflush(stdout);}'
+    def job(cases, groups, **changes):
+        item = dict(runtime='cpp17-isolate', runtimeDigest=digest, source=echo, timeLimitMs=1000, memoryLimitMb=512,
+                    cases=[dict(name=f'case{i}', input=str(n), output=str(n), isSample=sample, groups=member)
+                           for i, (n, sample, member) in enumerate(cases)],
+                    scoring=dict(mode='groups', groups=[dict(name=name, points=points) for name, points in groups]))
+        item.update(changes)
+        return item
+    # Group a stops after two TLEs; b and the ungrouped sample keep running.
+    result = judge(job([(1, True, []), (5, False, ['a']), (6, False, ['a', 'b']), (2, False, ['a']), (3, False, ['b']), (4, False, ['c'])],
+                       [('a', 40), ('b', 60), ('c', 20)]), digest)
+    assert [c['verdict'] for c in result['cases']] == ['AC', 'TLE', 'TLE', 'SKIPPED', 'AC', 'AC'], result
+    assert result['scoring'] == dict(score=2000, maxScore=12000, groups=[dict(score=0, maxScore=4000), dict(score=0, maxScore=6000),
+                                                                         dict(score=2000, maxScore=2000)]), result
+    print('scoring groups OK', flush=True)
+    # A legacy checker scores AC and WA cases through argv[4]; the aggregator sees every case by number.
+    checker = r'''#include <fstream>
+#include <iostream>
+int main(int argc,char** argv){int n,x;std::ifstream(argv[1])>>n;if(!(std::cin>>x))return 1;
+ std::ofstream(argv[4])<<" SCORE\n";return n==4;}'''
+    cases = [(3, False, ['g']), (4, False, ['g']), (2, True, [])]
+    aggregator = exact_aggregator('3 1\n10\nAC 30 0 1 0\nWA 40 0 1 0\nAC 20 1 0\n', '2.339\n')
+    scored = job(cases, [('g', 10)], checker=dict(runtime='cpp17', source=checker.replace('SCORE', '"<<x*10<<"')))
+    scored['scoring'].update(mode='aggregate', aggregator=dict(runtime='cpp17', source=aggregator))
+    result = judge(scored, digest)
+    assert result['verdict'] == 'WA' and [c.get('score') for c in result['cases']] == [30, 40, 20], result
+    assert result['scoring'] == dict(score=233, maxScore=1000, groups=[dict(score=233, maxScore=1000)]), result
+    scored['checker']['source'] = checker.replace('SCORE', '1.5')
+    result = judge(scored, digest)
+    assert result['verdict'] == 'JE' and 'スコアファイル' in result['checkerLog'], result
+    # A legacy interactor writes its score to the same argument.
+    interactor = r'''#include <cstdio>
+#include <fstream>
+int main(int argc,char** argv){int n,y;std::ifstream(argv[1])>>n;printf("%d\n",n);fflush(stdout);
+ if(scanf("%d",&y)!=1)return 1;std::ofstream(argv[4])<<y;return y==2*n?0:1;}'''
+    solution = '#include <cstdio>\nint main(){int n;if(scanf("%d",&n)!=1)return 1;printf("%d\\n",2*n);fflush(stdout);}'
+    scored = job([(3, False, ['g'])], [('g', 10)], source=solution, interactor=dict(runtime='cpp17', source=interactor))
+    scored['scoring'].update(mode='aggregate', aggregator=dict(runtime='cpp17', source=exact_aggregator('1 1\n10\nAC 6 0 1 0\n', '6')))
+    result = judge(scored, digest)
+    assert result['verdict'] == 'AC' and result['cases'][0]['score'] == 6 and result['scoring']['score'] == 600, result
+    print('scoring aggregate OK', flush=True)
+
+
 with slot():
     runtime = verify_assets(full=True)
     prepare_cgroup()
@@ -125,6 +174,7 @@ int main(int argc,char** argv){
         interactive_smoke.run(runtime, passed, fixtures, judge)
         import testlib_smoke
         testlib_smoke.run(runtime, passed, judge)
+        scoring_smoke(runtime, passed)
     except Exception as error:
         # An incomplete role/isolation test can never authorize publication.
         print('judge role smoke FAILED', repr(error), flush=True)
