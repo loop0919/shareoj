@@ -6,6 +6,13 @@ const problem = {
   editorial: '## 解説\n\n$A+B$ を計算します。',
   tags: ['DP', 'グラフ'],
 }
+// A partially scored problem shows its full score and its groups' points (ADR 0025), here in a contest of its own.
+const partialProblem = { ...problem, id: 'abababab-abab-4bab-8bab-abababababab', title: '部分点の問題', scoring: { fullScore: 100, groups: [{ name: '小課題1', points: 30 }, { name: '小課題2', points: 70 }] } }
+const partialContest = {
+  id: 'acacacac-acac-4cac-8cac-acacacacacac', title: '部分点のコンテスト', author: 'alice', description: '', startsAt: '2026-09-10T00:00:00Z', endsAt: '2026-09-10T02:00:00Z', penaltyMinutes: 5,
+  status: 'running', canEdit: false, official: true, participating: false, canViewSubmissions: false, partialScoring: true,
+  problems: [{ id: partialProblem.id, title: partialProblem.title, points: 100, partial: true }, { id: problem.id, title: problem.title, points: 200 }],
+}
 // The API leaves out the tags of a problem in a 定期便 round.
 const featuredProblem = { ...problem, id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', title: '定期便の新作', difficulty: 9, editorial: '', tags: [], editorialHidden: true, editorialRevealAt: '2099-09-29T13:00:00Z' }
 const tags = [
@@ -134,6 +141,11 @@ createServer(async (req, res) => {
     res.end(JSON.stringify({ items: matches ? [problem] : [], nextCursor: '' }))
   }
   else if (path === `/problems/${problem.id}`) res.end(JSON.stringify(problem))
+  else if (path === `/problems/${partialProblem.id}`) res.end(JSON.stringify(partialProblem))
+  else if (path === `/contests/${partialContest.id}`) res.end(JSON.stringify(partialContest))
+  else if (path === `/contests/${partialContest.id}/standings`) res.end('[]')
+  else if (path === `/contests/${partialContest.id}/problems/${partialProblem.id}`) res.end(JSON.stringify(partialProblem))
+  else if (path === `/contests/${partialContest.id}/problems/${problem.id}`) res.end(JSON.stringify(problem))
   else if (path === `/problems/${problem.id}/editorials`) res.end(JSON.stringify({ items: [{ problemId: problem.id, id: '77777777-7777-4777-8777-777777777777', title: '日本語 & #記事 + 共有', author: 'alice', publishedAt: '2026-09-10T00:00:00Z', isOperator: false }] }))
   else if (path === `/problems/${problem.id}/samples`) res.end(JSON.stringify({ items: [
     { name: 'sample_1', input: ' 3 5\n\n', output: '8\n' },
