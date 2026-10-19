@@ -36,6 +36,7 @@ type Job struct {
 	TimeLimitMS         int                                                       `json:"timeLimitMs"`
 	MemoryLimitMB       int                                                       `json:"memoryLimitMb"`
 	Cases               []Case                                                    `json:"cases"`
+	Scoring             *problems.Scoring                                         `json:"scoring,omitempty"`
 }
 
 // Sample previews share a 24 KiB budget so escaped JSON fits in the result queue.
@@ -145,7 +146,8 @@ type RunInput struct {
 	CheckerRuntimes                              []string
 }
 
-// CreateRun pins the selected problem version and cases in the insertion statement.
+// CreateRun pins the selected problem version and cases in the insertion statement. A sample check never scores, so
+// its job has no scoring (ADR 0025), and the local Docker judge does not score at all.
 func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) {
 	owner, id, problemID, source, image, runtime := in.Owner, in.ID, in.ProblemID, in.Source, in.Image, in.Runtime
 	easyTest, contestID, checkerRuntimes := in.EasyTest, in.ContestID, in.CheckerRuntimes
@@ -193,6 +195,8 @@ func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) 
   jsonb_build_object('privateDraft',($9='' AND NOT EXISTS(SELECT 1 FROM problem_drafts p WHERE p.id=$3 AND p.published_draft IS NOT NULL)),'image',$5::text,'easyTest',$8::boolean,'cases',selected_cases,'checker',selected_draft->'checker','interactor',selected_draft->'interactor',
   'timeLimitMs',(selected_draft->>'timeLimitMs')::int,
   'memoryLimitMb',(selected_draft->>'memoryLimitMb')::int)
+  || CASE WHEN NOT $8::boolean AND COALESCE(selected_draft->'scoring','null'::jsonb) <> 'null'::jsonb
+    THEN jsonb_build_object('scoring',selected_draft->'scoring') ELSE '{}'::jsonb END
   FROM (
     SELECT id, COALESCE(published_draft,draft) AS selected_draft,
       CASE WHEN published_draft IS NULL THEN version ELSE published_version END AS selected_version
@@ -218,6 +222,10 @@ func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) 
     ($6 <> 'cpp17-local' AND COALESCE(selected_draft->'checker','null'::jsonb) = 'null'::jsonb AND
      selected_draft->'interactor'->>'runtime'=ANY($7::text[]) AND
      length(btrim(selected_draft->'interactor'->>'source', E' \t\r\n'))>0))
+  AND ($8::boolean OR COALESCE(selected_draft->'scoring','null'::jsonb) = 'null'::jsonb OR
+    ($6 <> 'cpp17-local' AND (selected_draft->'scoring'->>'mode' <> 'aggregate' OR
+     (selected_draft->'scoring'->'aggregator'->>'runtime'=ANY($7::text[]) AND
+      length(btrim(selected_draft->'scoring'->'aggregator'->>'source', E' \t\r\n'))>0))))
   RETURNING `+columns, id, owner, problemID, source, image, runtime, checkerRuntimes, easyTest, contestID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = ErrNotReady

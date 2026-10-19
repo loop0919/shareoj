@@ -24,6 +24,10 @@ func ValidDraft(d Draft, knownRuntimes []string) bool {
 	if (d.Checker != nil && d.Interactor != nil) || !tags.Valid(d.Tags) {
 		return false
 	}
+	// Partial scoring stays off until every judge host can score (ADR 0025); an old judge would ignore the groups.
+	if d.Scoring != nil || slices.ContainsFunc(d.TestCases, func(c TestCase) bool { return c.Groups != nil }) {
+		return false
+	}
 	for _, code := range []*Generator{d.Checker, d.Interactor} {
 		if code == nil {
 			continue

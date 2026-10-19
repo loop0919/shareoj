@@ -110,6 +110,11 @@ func Judge(ctx context.Context, source string, job Job) Result {
 	if job.Interactor != nil {
 		return Result{Verdict: "JE", Total: len(job.Cases), CheckerLog: "対話形式はisolateワーカーで実行してください。"}
 	}
+	// The adapter keeps its own copy of the judging rules and does not copy partial scoring (ADR 0025). CreateRun
+	// already refuses these jobs; a JE without scores is what FinishAttempt accepts for one.
+	if job.Scoring != nil {
+		return Result{Verdict: "JE", Total: len(job.Cases), CheckerLog: "部分点の問題はisolateワーカーで実行してください。"}
+	}
 	if job.Checker != nil && (job.Checker.Runtime != "cpp17" || !job.Checker.ValidJudgeProtocol() || strings.TrimSpace(job.Checker.Source) == "" || len(job.Checker.Source) > 65536 || !utf8.ValidString(job.Checker.Source) || strings.ContainsRune(job.Checker.Source, 0) || job.Generate || job.Validate) {
 		return r
 	}

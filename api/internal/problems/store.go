@@ -39,11 +39,26 @@ type Generators struct {
 	Output     Generator `json:"output"`
 }
 
+// Scoring defines a partial-scoring problem (ADR 0025): "groups" gives a group its points when all of its cases are
+// AC, and "aggregate" lets the aggregator decide each group's score. A problem without it is judged all-or-nothing.
+type Scoring struct {
+	Mode       string         `json:"mode"`
+	Groups     []ScoringGroup `json:"groups"`
+	Aggregator *Generator     `json:"aggregator,omitempty"`
+}
+
+// ScoringGroup is a named set of cases; the problem's full score is the sum of the points of its groups.
+type ScoringGroup struct {
+	Name   string `json:"name"`
+	Points int    `json:"points"`
+}
+
 type Draft struct {
 	Difficulty    *int        `json:"difficulty"`
 	Interactor    *Generator  `json:"interactor,omitempty"`
 	Checker       *Generator  `json:"checker,omitempty"`
 	Generators    *Generators `json:"generators,omitempty"`
+	Scoring       *Scoring    `json:"scoring,omitempty"`
 	Title         string      `json:"title"`
 	Markdown      string      `json:"markdown"`
 	Editorial     string      `json:"editorial,omitempty"`
@@ -60,6 +75,9 @@ type TestCase struct {
 	Output     string    `json:"output"`
 	InputFile  *TestFile `json:"inputFile,omitempty"`
 	OutputFile *TestFile `json:"outputFile,omitempty"`
+	// Groups names the scoring groups the case belongs to. Names rather than positions let a job copy the cases as
+	// they are.
+	Groups []string `json:"groups,omitempty"`
 }
 
 type TestFile struct {

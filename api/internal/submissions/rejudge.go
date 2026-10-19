@@ -68,6 +68,8 @@ func (s *Store) Rejudge(ctx context.Context, in RejudgeInput) (int64, error) {
   job=jsonb_build_object('privateDraft',COALESCE(s.job->'privateDraft','false'::jsonb),'image',$4::text,'easyTest',false,
     'cases',t.draft->'testCases','checker',t.draft->'checker','interactor',t.draft->'interactor',
     'timeLimitMs',(t.draft->>'timeLimitMs')::int,'memoryLimitMb',(t.draft->>'memoryLimitMb')::int)
+    || CASE WHEN COALESCE(t.draft->'scoring','null'::jsonb) <> 'null'::jsonb
+      THEN jsonb_build_object('scoring',t.draft->'scoring') ELSE '{}'::jsonb END
   FROM (
     SELECT sub.id,
       CASE WHEN sub.contest_id IS NULL THEN COALESCE(p.published_draft,p.draft) ELSE cp.draft END AS draft,
@@ -86,7 +88,11 @@ func (s *Store) Rejudge(ctx context.Context, in RejudgeInput) (int64, error) {
   AND (COALESCE(t.draft->'interactor','null'::jsonb) = 'null'::jsonb OR
     (s.runtime <> 'cpp17-local' AND COALESCE(t.draft->'checker','null'::jsonb) = 'null'::jsonb AND
      t.draft->'interactor'->>'runtime'=ANY($5::text[]) AND
-     length(btrim(t.draft->'interactor'->>'source', E' \t\r\n'))>0))`,
+     length(btrim(t.draft->'interactor'->>'source', E' \t\r\n'))>0))
+  AND (COALESCE(t.draft->'scoring','null'::jsonb) = 'null'::jsonb OR
+    (s.runtime <> 'cpp17-local' AND (t.draft->'scoring'->>'mode' <> 'aggregate' OR
+     (t.draft->'scoring'->'aggregator'->>'runtime'=ANY($5::text[]) AND
+      length(btrim(t.draft->'scoring'->'aggregator'->>'source', E' \t\r\n'))>0))))`,
 		in.ProblemID, in.Runtimes, in.SubmissionIDs, in.Image, in.CheckerRuntimes)
 	if err != nil {
 		return 0, err
