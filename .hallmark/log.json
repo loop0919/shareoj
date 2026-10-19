@@ -6,6 +6,15 @@
     "nav": "N1a (shared site navigation)",
     "footer": "Ft1 (shared site footer)",
     "enrichment": "none",
+    "brief": "ShareOJ team page (/contests/[id]/team) for team contests: create or join a team with the venue passphrase, switch from an individual registration before the start, and the team panel with onsite upgrade; the contest page's 個人参加/チーム参加 buttons, venue passphrase fields with the letters-digits-underscore rule, and the setters' one-way オンサイトにする control"
+  },
+  {
+    "date": "2026-10-19",
+    "macrostructure": "Workbench (in-app pages inside the existing system)",
+    "theme": "Plain (existing ShareOJ system)",
+    "nav": "N1a (shared site navigation)",
+    "footer": "Ft1 (shared site footer)",
+    "enrichment": "none",
     "brief": "ShareOJ team and onsite participation: the contest participation form (create or join a team, venue passphrase), the team panel with join code and members, the setters' participant tools on the contest overview, team rows and the 全員/オンサイトのみ filter on standings and submission lists, and the 参加形式 section of the contest editor"
   },
   {

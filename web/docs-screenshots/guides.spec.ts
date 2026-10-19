@@ -234,7 +234,7 @@ test('generator and checker', async ({ page }) => {
 test('contest participation', async ({ page }) => {
   // Tall enough that the fixed contest clock stays below the form.
   await page.setViewportSize({ width: 1280, height: 1400 })
-  // The guide shows a team contest with an onsite division, which names every field (ADR 0024).
+  // The guide shows a team contest with an onsite division, which offers every choice (ADR 0024).
   const contestId = '99999999-9999-4999-8999-999999999999'
   await page.route(`**/api/contests/${contestId}`, async route => {
     const response = await route.fetch()
@@ -244,17 +244,16 @@ test('contest participation', async ({ page }) => {
   await page.goto(`/contests/${shortId(contestId)}?view=standings`, { waitUntil: 'networkidle' })
   await page.getByRole('button', { name: '今すぐ更新' }).click()
   await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '概要', exact: true }).click()
-  await page.getByLabel('チーム名', { exact: true }).fill('ShareOJ Lovers')
-  await page.getByLabel('会場の合言葉（オンサイト参加者のみ）', { exact: true }).fill('ShareOJ-2026')
+  const passphrase = page.getByLabel('会場の合言葉（オンサイト参加者のみ）', { exact: true })
+  await passphrase.fill('ShareOJ_2026')
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
-  const join = page.getByRole('button', { name: '参加する' })
+  const area = page.locator('.contest-participation')
   await annotate(page, [
-    { target: page.getByRole('group', { name: '参加のしかた' }), badge: 'right' },
-    { target: page.getByLabel('チーム名', { exact: true }), badge: 'right' },
-    { target: page.getByLabel('会場の合言葉（オンサイト参加者のみ）', { exact: true }), badge: 'right' },
-    join,
+    { target: passphrase, badge: 'right' },
+    area.getByRole('button', { name: '個人参加', exact: true }),
+    area.getByRole('link', { name: 'チーム参加', exact: true }),
   ])
-  await shoot(page, 'contest-join', [page.getByRole('heading', { level: 1 }), join.locator('..')])
+  await shoot(page, 'contest-join', [page.getByRole('heading', { level: 1 }), area])
 })
 
 test('difficulty vote', async ({ page }) => {
