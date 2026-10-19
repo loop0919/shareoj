@@ -150,9 +150,17 @@ markdown.renderer.rules.judge_status = (tokens, index) => {
   return `<span class="verdict-badge"${verdict === 'WJ' ? '' : ` data-verdict="${verdict}"`}>${verdict}</span>`
 }
 
+// The title is inline Markdown too, so math and code render in the summary. Links keep only their text:
+// a link inside <summary> would navigate instead of toggling the fold.
+function renderFoldTitle(title: string) {
+  const [line] = markdown.parseInline(title, {})
+  const children = (line?.children ?? []).filter(child => child.type !== 'link_open' && child.type !== 'link_close')
+  return markdown.renderer.renderInline(children, markdown.options, {})
+}
+
 markdown.renderer.rules.container_details_open = (tokens, index, options, env) => {
   const title = tokens[index]!.info.trim().slice('details'.length).trim() || '詳細'
-  return markSourceLines(`<details><summary>${markdown.utils.escapeHtml(title)}</summary>\n`, tokens[index]!, env)
+  return markSourceLines(`<details><summary>${renderFoldTitle(title)}</summary>\n`, tokens[index]!, env)
 }
 markdown.renderer.rules.container_details_close = () => '</details>\n'
 
