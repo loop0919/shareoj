@@ -1,6 +1,7 @@
 package contests
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -138,5 +139,42 @@ func TestRankRowsCountsMembersTowardTheirTeam(t *testing.T) {
 	if extra := RankRows(nil, []Attempt{{Handle: "e", Team: "t9", ProblemID: "A", Verdict: "AC", Points: 100, CreatedAt: at(3)}}, start, 5, time.Time{}); len(extra) != 1 ||
 		extra[0].Team == nil || extra[0].Team.ID != "t9" || extra[0].Handle != "" || extra[0].Points != 100 {
 		t.Fatalf("unlisted team: %+v", extra)
+	}
+}
+
+// A team contest's table holds team rows and the rows of participants who entered alone, ranked under one rule; a
+// tie between a team and a participant shares the rank (ADR 0024).
+func TestRankRowsMixesTeamsAndIndividuals(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	at := func(minutes int) time.Time { return start.Add(time.Duration(minutes) * time.Minute) }
+	rows := []Standing{
+		{Team: &TeamSummary{ID: "t1", Name: "Alpha", Members: []string{"a", "b"}}},
+		{Handle: "solo", Onsite: true},
+		{Team: &TeamSummary{ID: "t2", Name: "Beta", Members: []string{"c"}, Onsite: true}, Onsite: true},
+		{Handle: "idle"},
+	}
+	attempts := []Attempt{
+		{Handle: "a", Team: "t1", ProblemID: "A", Verdict: "WA", Points: 100, CreatedAt: at(1)},
+		{Handle: "c", Team: "t2", ProblemID: "A", Verdict: "AC", Points: 100, CreatedAt: at(3)},
+		{Handle: "b", Team: "t1", ProblemID: "A", Verdict: "AC", Points: 100, CreatedAt: at(5)},
+		{Handle: "solo", ProblemID: "A", Verdict: "AC", Points: 100, CreatedAt: at(10)},
+		{Handle: "solo", ProblemID: "B", Verdict: "AC", Points: 200, CreatedAt: at(50)},
+	}
+	table := RankRows(rows, attempts, start, 5, at(40))
+	names := []string{}
+	for _, r := range table {
+		names = append(names, fmt.Sprintf("%d %s %d %d", r.Rank, r.name(), r.Points, r.TimeMS/60000))
+	}
+	// One member's wrong answer costs Alpha the penalty another member's acceptance pays; solo's later acceptance is
+	// frozen, and the tie goes by name.
+	if want := []string{"1 Beta\x00t2 100 3", "2 Alpha\x00t1 100 10", "2 solo 100 10", "4 idle 0 0"}; !reflect.DeepEqual(names, want) {
+		t.Fatalf("mixed table %q", names)
+	}
+	if table[2].Handle != "solo" || table[2].Team != nil || table[2].Problems["B"].Frozen != 1 || table[1].Problems["A"].Wrong != 1 {
+		t.Fatalf("rows: %+v %+v", table[1], table[2])
+	}
+	onsite := OnsiteRows(table)
+	if len(onsite) != 2 || onsite[0].Team == nil || onsite[0].Rank != 1 || onsite[1].Handle != "solo" || onsite[1].Rank != 2 || onsite[1].OverallRank != 2 {
+		t.Fatalf("onsite: %+v", onsite)
 	}
 }
