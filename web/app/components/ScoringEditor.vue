@@ -46,19 +46,18 @@ const method = computed<Method>({
     const memory = props.memory
     if (next === 'binary') {
       if (!current) return
-      // Leaving 部分点採点 takes work out of the draft, so it is confirmed first.
-      if (hasWork(current)) {
-        if (!window.confirm(`一括採点にすると、グループと配点、ケースの所属${hasCode(current) ? '、集計コード' : ''}を下書きから外します。このページを開いている間は、部分点採点に戻すと元に戻ります。一括採点にしますか？`)) return keepChoices('method')
-        memory.previous = { scoring: structuredClone(toRaw(current)), membership: new WeakMap(cases.value.map(item => [toRaw(item), [...item.groups ?? []]])) }
-      } else memory.previous = undefined
+      // Leaving 部分点採点 takes work out of the draft, so it is confirmed first. What it leaves is kept even when empty,
+      // so 部分点採点 always comes back as it was left.
+      if (hasWork(current) && !window.confirm(`一括採点にすると、グループと配点、ケースの所属${hasCode(current) ? '、集計コード' : ''}を下書きから外します。このページを開いている間は、部分点採点に戻すと元に戻ります。一括採点にしますか？`)) return keepChoices('method')
+      memory.previous = { scoring: structuredClone(toRaw(current)), membership: new WeakMap(cases.value.map(item => [toRaw(item), [...item.groups ?? []]])) }
       if (current.aggregator) memory.aggregator = structuredClone(toRaw(current.aggregator))
       for (const item of cases.value) item.groups = []
       scoring.value = null
       return
     }
     if (current) return
-    // Work taken out by 一括採点 comes back as it was, the switch included. Otherwise a partial problem starts with the
-    // switch off and one group holding every case but the samples, which scores like 一括採点.
+    // What 一括採点 took out comes back as it was, the switch included. A problem that has not left 部分点採点 on this
+    // page starts with the switch off and one group holding every case but the samples, which scores like 一括採点.
     const previous = memory.previous
     const restored: Scoring = previous ? structuredClone(previous.scoring) : { mode: 'groups', groups: [{ name: '小課題1', points: 100 }], aggregator: undefined }
     const names = new Set(restored.groups.map(group => group.name))

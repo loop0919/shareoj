@@ -272,7 +272,7 @@ test('the switch starts off, turns on and off without asking while there is no c
   expect((await stored(page)).scoring).toEqual({ mode: 'aggregate', groups: [{ name: '小課題1', points: 100 }], aggregator: { runtime: 'cpp23-gcc', source: 'print(100)' } })
 })
 
-test('部分点採点 comes back as 一括採点 left it, and starts afresh when nothing was taken out', async ({ page }) => {
+test('部分点採点 comes back as 一括採点 left it, even with nothing in it', async ({ page }) => {
   await page.goto('/problems/new?fresh=1')
   await page.getByLabel('問題のタイトル').fill('戻す部分点')
   await addCases(page, 2)
@@ -299,7 +299,8 @@ test('部分点採点 comes back as 一括採点 left it, and starts afresh when
   expect(draft.scoring).toEqual({ mode: 'aggregate', groups: [{ name: '全体', points: 100 }], aggregator: { runtime: 'cpp23-gcc', source: 'print(100)' } })
   expect(draft.testCases.map((item: { groups?: string[] }) => item.groups)).toEqual([['全体'], ['全体']])
 
-  // With no groups and no code left, leaving asks nothing, and the next switch starts off with the usual first group.
+  // With no groups and no code left, leaving asks nothing, and coming back keeps that empty setup with the switch off
+  // instead of the first group a new partial problem gets.
   await aggregate.uncheck()
   await page.getByRole('button', { name: '「全体」を削除' }).click()
   await expect(page.getByLabel('グループ1の名前')).toHaveCount(0)
@@ -308,10 +309,11 @@ test('部分点採点 comes back as 一括採点 left it, and starts afresh when
   expect(asked).toBe(3)
   await methods.getByRole('radio', { name: '部分点採点' }).check()
   await expect(aggregate).not.toBeChecked()
-  await expect(page.getByLabel('グループ1の名前')).toHaveValue('小課題1')
+  await expect(page.getByText('グループを追加してください。満点は、グループの配点の合計です。')).toBeVisible()
+  await expect(page.getByLabel('グループ1の名前')).toHaveCount(0)
   draft = await stored(page)
-  expect(draft.scoring).toEqual({ mode: 'groups', groups: [{ name: '小課題1', points: 100 }] })
-  expect(draft.testCases.map((item: { groups?: string[] }) => item.groups)).toEqual([['小課題1'], ['小課題1']])
+  expect(draft.scoring).toEqual({ mode: 'groups', groups: [] })
+  expect(draft.testCases.map((item: { groups?: string[] }) => item.groups)).toEqual([undefined, undefined])
   // The aggregator taken out on the way still comes back with the switch.
   await aggregate.check()
   await expect(page.getByRole('textbox', { name: '集計コード', exact: true })).toHaveText('print(100)')
