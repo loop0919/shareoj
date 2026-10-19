@@ -22,7 +22,8 @@ test('a grouped problem saves through the editor, names what is missing, takes i
   await page.getByRole('button', { name: 'case_001.txt', exact: true }).click()
   await page.getByRole('checkbox', { name: 'サンプルケースにする' }).check()
   await page.getByRole('button', { name: '採点', exact: true }).click()
-  await page.getByRole('group', { name: '採点方式' }).getByRole('radio', { name: 'グループ', exact: true }).check()
+  await page.getByRole('group', { name: '採点方式' }).getByRole('radio', { name: '部分点採点' }).check()
+  await expect(page.getByRole('switch', { name: '集計コードで採点する' })).not.toBeChecked()
   await page.getByLabel('グループ1の配点').fill('30')
   await page.getByRole('button', { name: 'グループを追加' }).click()
   await page.getByLabel('グループ2の名前').fill('大きいケース')
@@ -53,6 +54,16 @@ test('a grouped problem saves through the editor, names what is missing, takes i
   const saved = (await (await page.request.get(`/api/my/problems/${id}`)).json()).draft
   expect(saved.scoring).toEqual({ mode: 'groups', groups: [{ name: '小課題1', points: 30 }, { name: '大きいケース', points: 70 }] })
   expect(saved.testCases.map((item: { groups?: string[] }) => item.groups)).toEqual([undefined, ['小課題1'], ['小課題1', '大きいケース'], ['小課題1']])
+  // The switch saves the aggregate mode with its code, and turning it off (confirmed) saves the groups mode again.
+  const savedScoring = async () => (await (await page.request.get(`/api/my/problems/${id}`)).json()).draft.scoring
+  await page.getByRole('button', { name: '採点', exact: true }).click()
+  const aggregate = page.getByRole('switch', { name: '集計コードで採点する' })
+  await aggregate.check()
+  await page.getByRole('textbox', { name: '集計コード', exact: true }).fill('print(100)')
+  await expect.poll(savedScoring).toMatchObject({ mode: 'aggregate', groups: saved.scoring.groups, aggregator: { source: 'print(100)' } })
+  await aggregate.uncheck()
+  await expect.poll(savedScoring).toEqual(saved.scoring)
+  await expect(status).toHaveText('保存済み')
   await page.goto(`/problems/${shortId(id)}`)
   await expect(page.locator('.problem-header .problem-scoring-total')).toHaveText('部分点あり（満点100点）')
 
@@ -77,7 +88,7 @@ test('a grouped problem saves through the editor, names what is missing, takes i
   await page.getByLabel('グループ1の配点').fill('40')
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(status).toHaveText('保存に失敗しました')
-  await expect(page.locator('.editor-notices').getByRole('alert')).toHaveText('コンテストが始まったため、採点方式とグループの名前・配点・順番は変えられません。ケースの所属、テストケース、集計コードは直せます。')
+  await expect(page.locator('.editor-notices').getByRole('alert')).toHaveText('コンテストが始まったため、採点方式、集計コードで採点するかどうか、グループの名前・配点・順番は変えられません。ケースの所属、テストケース、集計コードは直せます。')
   await page.getByLabel('グループ1の配点').fill('30')
   await page.getByRole('button', { name: 'テストケース', exact: true }).click()
   await page.getByRole('button', { name: 'case_002.txt', exact: true }).click()
