@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -27,9 +28,14 @@ func validProgress(p submissions.Progress) bool {
 		(p.Phase == "JUDGING" || (p.Phase == "PREPARING" && p.Completed == 0))
 }
 
+// validResult checks a result's own shape. Rules that need the job, such as which cases a partial-scoring job may
+// skip and the score of a groups-mode problem, are checked by FinishAttempt (ADR 0025).
 func validResult(r submissions.Result) bool {
 	allowed := map[string]bool{"AC": true, "WA": true, "TLE": true, "MLE": true, "OLE": true, "RE": true, "CE": true, "JE": true}
 	if !allowed[r.Verdict] || r.Total < 0 || r.Total > 100 || r.Passed < 0 || r.Passed > r.Total || len(r.CompileLog) > 196608 || len(r.CheckerLog) > 16384 {
+		return false
+	}
+	if r.Scoring != nil && !validScore(*r.Scoring, r.Verdict) {
 		return false
 	}
 	if r.Verdict == "JE" || r.Verdict == "CE" {
@@ -49,14 +55,20 @@ func validResult(r submissions.Result) bool {
 			return false
 		}
 		if c.Verdict == "SKIPPED" {
-			if tleCount < 2 || c.CPUTimeMS != nil || c.WallTimeMS != nil || c.MemoryBytes != nil ||
-				c.Output != nil || c.OutputFile != nil || c.SampleDetails != nil || c.CheckerLog != nil {
+			// All-or-nothing judging skips only the cases after the second TLE. Partial scoring also skips by group and
+			// when its time budget runs out, anywhere in the list.
+			if (r.Scoring == nil && tleCount < 2) || c.CPUTimeMS != nil || c.WallTimeMS != nil || c.MemoryBytes != nil ||
+				c.Output != nil || c.OutputFile != nil || c.SampleDetails != nil || c.CheckerLog != nil || c.Score != nil {
 				return false
 			}
 			skipped = true
 			continue
 		}
-		if skipped {
+		if skipped && r.Scoring == nil {
+			return false
+		}
+		// Only an accepted or wrong output has a case score, and only in a partial-scoring result.
+		if c.Score != nil && (r.Scoring == nil || (c.Verdict != "AC" && c.Verdict != "WA") || *c.Score < 0 || *c.Score > submissions.MaxCaseScore) {
 			return false
 		}
 		if c.CheckerLog != nil {
@@ -106,6 +118,23 @@ func validResult(r submissions.Result) bool {
 	return passed == r.Passed && verdict == r.Verdict
 }
 
+// validScore checks the sums and bounds of a score in hundredths. A judge error has no score, and a compile error
+// scores 0 in every group.
+func validScore(s submissions.SubmissionScore, verdict string) bool {
+	if verdict == "JE" || len(s.Groups) == 0 || len(s.Groups) > 100 || s.MaxScore < 100 || s.MaxScore > 100*1_000_000 {
+		return false
+	}
+	var score, maxScore int64
+	for _, g := range s.Groups {
+		if g.MaxScore < 0 || g.MaxScore > 100*1_000_000 || g.MaxScore%100 != 0 || g.Score < 0 || g.Score > g.MaxScore || (verdict == "CE" && g.Score != 0) {
+			return false
+		}
+		score += g.Score
+		maxScore += g.MaxScore
+	}
+	return score == s.Score && maxScore == s.MaxScore
+}
+
 func (b bridge) results(ctx context.Context, event events.SQSEvent) events.SQSEventResponse {
 	response := events.SQSEventResponse{}
 	finished := false
@@ -133,7 +162,15 @@ func (b bridge) results(ctx context.Context, event events.SQSEvent) events.SQSEv
       (progress->>'phase'='PREPARING' OR (progress->>'completed')::int < $7)))`,
 				e.ID, e.Attempt, raw, submissions.IsolateRuntimeIDs(), p.Total, p.Phase, p.Completed)
 		} else {
-			err = (&submissions.Store{Pool: b.db}).FinishAttempt(ctx, e.ID, e.Attempt, *e.Result)
+			store := &submissions.Store{Pool: b.db}
+			err = store.FinishAttempt(ctx, e.ID, e.Attempt, *e.Result)
+			if errors.Is(err, submissions.ErrUnscored) {
+				// A judge older than ADR 0025 judged a partial-scoring job as all-or-nothing. Its verdict says nothing
+				// about the score, so the submission becomes JE rather than silently all-or-nothing.
+				observe("failure", "platform", "unscored_result", e.ID, e.Attempt)
+				e.Result = &submissions.Result{Verdict: "JE"}
+				err = store.FinishAttempt(ctx, e.ID, e.Attempt, *e.Result)
+			}
 		}
 		if err != nil {
 			observe("failure", "platform", "result_apply_failed", e.ID, e.Attempt)

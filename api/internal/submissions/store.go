@@ -18,6 +18,9 @@ var ErrParticipationRequired = errors.New("contest participation required")
 
 var ErrNotReady = errors.New("problem is not ready for judging")
 
+// ErrUnscored reports a result without scores for a partial-scoring job, which a judge older than ADR 0025 sends.
+var ErrUnscored = errors.New("partial-scoring result without scores")
+
 type Case = problems.TestCase
 
 const GenerationOutputLimit = 512 << 20
@@ -63,6 +66,9 @@ type CaseResult struct {
 	CPUTimeMS     *float64           `json:"cpuTimeMs,omitempty"`
 	WallTimeMS    *float64           `json:"wallTimeMs,omitempty"`
 	MemoryBytes   *int64             `json:"memoryBytes,omitempty"`
+	// Score is the case score the judge program returned in an aggregate-mode problem, not multiplied by 100. It
+	// may exceed 2^53.
+	Score *int64 `json:"score,omitempty"`
 }
 
 type Result struct {
@@ -75,6 +81,27 @@ type Result struct {
 	Passed      int          `json:"passed"`
 	Total       int          `json:"total"`
 	CompileLog  string       `json:"compileLog,omitempty" hidden:"true"`
+	// Scoring is present only for a partial-scoring problem. Results without it are all-or-nothing (ADR 0025).
+	Scoring *SubmissionScore `json:"scoring,omitempty"`
+}
+
+// MaxCaseScore bounds a case score, so that raw scores such as query counts reach the aggregator as they are.
+const MaxCaseScore = 1_000_000_000_000_000_000
+
+// SubmissionScore holds a submission's score in hundredths, so that sums and comparisons never use floating point.
+type SubmissionScore struct {
+	Score    int64        `json:"score"`
+	MaxScore int64        `json:"maxScore"`
+	Groups   []GroupScore `json:"groups,omitempty"`
+}
+
+// GroupScore is one group's score in hundredths, in the order of the job's groups. Name and Cases (0-based positions
+// in the job's cases) come from the job, so a result needs nothing else to show its group table.
+type GroupScore struct {
+	Name     string `json:"name"`
+	Score    int64  `json:"score"`
+	MaxScore int64  `json:"maxScore"`
+	Cases    []int  `json:"cases"`
 }
 
 // Summaries use the maximum measured value across cases, not the sum.

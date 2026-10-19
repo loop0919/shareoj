@@ -7,14 +7,20 @@ import (
 )
 
 func publicSubmission(s Submission) Submission {
-	// Public results must not expose private checker diagnostics or test data.
+	// Public results must not expose private checker diagnostics or test data. Scores are public like verdicts; the
+	// aggregator's diagnostics stay in the checker log.
 	if s.Result != nil {
 		result := &Result{Verdict: s.Result.Verdict, Passed: s.Result.Passed, Total: s.Result.Total,
 			CPUTimeMS: s.Result.CPUTimeMS, MemoryBytes: s.Result.MemoryBytes}
+		if s.Result.Scoring != nil {
+			score := *s.Result.Scoring
+			score.Groups = append([]GroupScore(nil), score.Groups...)
+			result.Scoring = &score
+		}
 		for _, c := range s.Result.Cases {
 			result.Cases = append(result.Cases, CaseResult{
 				Name: c.Name, Verdict: c.Verdict,
-				CPUTimeMS: c.CPUTimeMS, WallTimeMS: c.WallTimeMS, MemoryBytes: c.MemoryBytes,
+				CPUTimeMS: c.CPUTimeMS, WallTimeMS: c.WallTimeMS, MemoryBytes: c.MemoryBytes, Score: c.Score,
 			})
 		}
 		s.Result = result
@@ -99,6 +105,10 @@ func submissionList(rows pgx.Rows) (ContestSubmissionList, error) {
 		item = publicSubmission(item)
 		if item.Result != nil {
 			item.Result.Cases = nil
+			// A list shows the score only; the group table belongs to the detail.
+			if item.Result.Scoring != nil {
+				item.Result.Scoring.Groups = nil
+			}
 		}
 		item.Source = ""
 		return item, e

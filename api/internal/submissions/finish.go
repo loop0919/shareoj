@@ -13,7 +13,8 @@ func (s *Store) Finish(ctx context.Context, id string, result Result) error {
 	return s.FinishAttempt(ctx, id, "", result)
 }
 
-// FinishAttempt registers generated files and completes only the current attempt, atomically.
+// FinishAttempt registers generated files and completes only the current attempt, atomically. It stores nothing and
+// returns ErrUnscored when a partial-scoring job comes back without scores, so that the caller records a JE instead.
 func (s *Store) FinishAttempt(ctx context.Context, id, attempt string, result Result) error {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
@@ -36,6 +37,9 @@ func (s *Store) FinishAttempt(ctx context.Context, id, attempt string, result Re
 		return err
 	}
 	result.Interactive = job.Interactor != nil
+	if err = scoreResult(job, &result); err != nil {
+		return err
+	}
 	total := job.GenerationBaseBytes
 	if total < 0 || total > GenerationOutputLimit {
 		return testfiles.ErrInvalid
