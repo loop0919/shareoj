@@ -165,3 +165,28 @@ code { font-family: var(--font-code); }
 .catalogue-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin: 12px 0 24px; }
 .catalogue-heading h1 { font-size: 1.75rem; margin: 0; }
 .catalogue-heading > a { display: inline-flex; align-items: center; text-decoration: none; }
+
+/* Hallmark · component: contest participation · genre: modern-minimal · theme: existing ShareOJ tokens (Plain)
+ * states: guest · staff · open · onsite · individual · team · busy · error
+ * Shared by the contest page and the team page (ADR 0024). One column of labelled fields; the choice, inputs and
+ * buttons share one width so the form reads top to bottom. */
+.contest-participation { margin-block: 24px; }
+.contest-participation p { margin: 8px 0; }
+.contest-participation .editor-button { min-height: 44px; padding: 8px 20px; color: var(--color-accent); border-color: var(--color-accent); }
+.contest-participation button:disabled { opacity: .6; cursor: wait; }
+.participation-state { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.participating { color: var(--color-accent); font-weight: 600; }
+.participation-division { padding: 2px 8px; border: 1px solid var(--color-line); border-radius: 4px; color: var(--color-muted); font-size: .8125rem; }
+.participation-division[data-onsite] { border-color: var(--color-accent); color: var(--color-accent); background: var(--color-accent-soft); }
+.participation-team { color: var(--color-muted); font-size: .875rem; overflow-wrap: anywhere; }
+.participation-buttons { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.participation-form { display: grid; gap: 12px; max-width: 28rem; margin-block: 16px 0; }
+.participation-form > .editor-button { justify-self: start; }
+.participation-field { display: grid; gap: 6px; min-width: 0; }
+.participation-field label { font-size: .875rem; font-weight: 600; }
+.participation-field p { margin: 0; font-size: .8125rem; }
+.participation-field input { width: 100%; min-width: 0; min-height: 44px; padding: 8px 10px; border: 1px solid var(--color-line); border-radius: 4px; font: inherit; }
+.participation-field input:hover { border-color: var(--color-muted); }
+.participation-field input:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
+.participation-field input:user-invalid { border-color: var(--color-error); }
+#team-code, #join-passphrase, #venue-passphrase { font-family: var(--font-code); letter-spacing: .04em; }

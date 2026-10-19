@@ -42,7 +42,7 @@ const { data: standingsData, error: standingsError, refresh: refreshStandings } 
 }, { watch: [showLive, onsiteOnly] })
 const switchingStandings = computed(() => !!standingsData.value && (standingsData.value.live !== showLive.value || standingsData.value.onsite !== onsiteOnly.value))
 const standings = computed(() => switchingStandings.value ? undefined : standingsData.value?.rows)
-// Team rows have no handle; their id cannot collide with one.
+// Team contests mix team rows, which have no handle, and individuals' rows; a team's id cannot collide with a handle.
 const standingKey = (row: Standing) => row.team?.id ?? row.handle
 const canViewSubmissions = computed(() => contest.value?.canViewSubmissions === true)
 // While the contest runs a team member sees only the team's submissions, so the onsite filter has nothing to narrow.
@@ -154,7 +154,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <p v-if="contest.teamMode" class="contest-scoring muted">チーム戦{{ contest.maxTeamSize ? `（1チーム${contest.maxTeamSize}人まで）` : '' }}</p>
       <p v-if="contest.onsiteDivision" class="contest-scoring muted">オンサイト参加とオープン参加の区分があります。</p>
     </header>
-    <ContestParticipation :contest="contest" :detailed="activeView === 'overview'" @joined="value => { contest = value; refreshStandings() }" @changed="update" />
+    <ContestParticipation :contest="contest" :detailed="activeView === 'overview'" @joined="value => { contest = value; refreshStandings() }" />
     <section v-if="activeView === 'overview'" id="overview" class="contest-section contest-description" aria-labelledby="overview-title">
       <h2 id="overview-title">概要</h2><ProblemMarkdown v-if="contest.description" :source="contest.description" /><p v-else class="muted">コンテストの説明はまだありません。</p>
       <p><NuxtLink to="/docs/contest-rules">ルール</NuxtLink></p>
@@ -177,13 +177,13 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       </div>
       <p v-if="showLive" class="notice">凍結なしの順位表を表示しています。スタッフだけが見られます。</p>
       <p v-else-if="frozen" class="notice">{{ freezeTime }}以降の提出の結果は、結果発表まで伏せています。</p>
-      <p v-if="onsiteOnly" class="muted standings-scope-note">オンサイト参加{{ teamContest ? 'のチーム' : 'の人' }}だけを、振り直した順位で表示しています。小さい数字は全体の順位です。</p>
+      <p v-if="onsiteOnly" class="muted standings-scope-note">オンサイト参加{{ teamContest ? 'のチームと個人' : 'の人' }}だけを、振り直した順位で表示しています。小さい数字は全体の順位です。</p>
       <p v-if="standingsError" class="notice notice-error" role="alert">順位表を取得できませんでした。</p>
       <LoadingSpinner v-if="!standingsError && switchingStandings" label="順位表を読み込み中" />
       <p v-else-if="!standingsError && !standings?.length" class="contest-empty muted">{{ onsiteOnly ? 'オンサイトの参加者はまだいません。' : '参加者はまだいません。' }}</p>
       <div v-if="!standingsError && !switchingStandings && contest.problems.length" class="content-table-scroll" role="region" aria-label="順位表のスクロール領域" tabindex="0" :aria-busy="updating">
         <table class="content-table standings-table">
-          <thead><tr><th scope="col">順位</th><th scope="col">{{ teamContest ? 'チーム' : 'ユーザー' }}</th><th scope="col">得点</th><th scope="col">時間</th><th v-for="(p, i) in contest.problems" :key="p.id || i" scope="col"><NuxtLink v-if="contest.status !== 'scheduled' && p.id" :to="contestProblemPath(contest.id, i)">{{ problemLabel(i) }}</NuxtLink><span v-else>{{ problemLabel(i) }}</span></th></tr></thead>
+          <thead><tr><th scope="col">順位</th><th scope="col">{{ teamContest ? 'チーム・個人' : 'ユーザー' }}</th><th scope="col">得点</th><th scope="col">時間</th><th v-for="(p, i) in contest.problems" :key="p.id || i" scope="col"><NuxtLink v-if="contest.status !== 'scheduled' && p.id" :to="contestProblemPath(contest.id, i)">{{ problemLabel(i) }}</NuxtLink><span v-else>{{ problemLabel(i) }}</span></th></tr></thead>
           <tbody>
             <tr v-for="row in standings" :key="standingKey(row)">
               <td>{{ row.rank }}<small v-if="onsiteOnly && row.overallRank" class="standing-overall">全体 {{ row.overallRank }} 位</small></td>
@@ -209,7 +209,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
           </tbody>
           <tfoot>
             <tr><th colspan="4" scope="row">{{ onsiteOnly ? 'FA（初正解・オンサイト）' : 'FA（初正解）' }}</th><td v-for="(stat, i) in problemStats" :key="stat.id || i"><template v-if="stat.accepted"><span v-for="row in stat.first" :key="standingKey(row)" class="standing-fa"><template v-if="row.team">{{ row.team.name }}</template><UserLink v-else :handle="row.handle" /></span><small>{{ stat.time }}</small></template><span v-else class="muted">—</span></td></tr>
-            <tr><th colspan="4" scope="row">{{ teamContest ? '正解チーム数 / 提出チーム数' : '正解者数 / 提出者数' }}{{ onsiteOnly ? '（オンサイト）' : '' }}</th><td v-for="(stat, i) in problemStats" :key="stat.id || i"><span class="standing-accepted">{{ stat.accepted }}</span> / {{ stat.submitted }}</td></tr>
+            <tr><th colspan="4" scope="row">{{ teamContest ? '正解チーム・個人数 / 提出チーム・個人数' : '正解者数 / 提出者数' }}{{ onsiteOnly ? '（オンサイト）' : '' }}</th><td v-for="(stat, i) in problemStats" :key="stat.id || i"><span class="standing-accepted">{{ stat.accepted }}</span> / {{ stat.submitted }}</td></tr>
           </tfoot>
         </table>
       </div>

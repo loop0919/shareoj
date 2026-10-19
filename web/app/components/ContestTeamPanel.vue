@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { Contest, MyTeam } from '~~/shared/types/contest'
 import { contestTeamError, errorCode } from '~/utils/contest-team'
-// The viewer's team in a team contest: members, the join code only members see, renaming, and before the start
-// leaving or removing a member (ADR 0024).
+// The viewer's team on the team page of a team contest: members, the join code only members see, renaming, and before
+// the start leaving or removing a member (ADR 0024).
 const props = defineProps<{ contest: Contest }>()
 const emit = defineEmits<{ changed: [] }>()
 const { profile } = useAccount()
@@ -143,7 +143,7 @@ async function leave() {
         <button type="button" class="editor-button team-copy" :disabled="!team" :aria-label="copied ? 'コピーしました' : '参加コードをコピー'" :title="copied ? 'コピーしました' : '参加コードをコピー'" @click="copyCode"><svg v-if="copied" class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L19 8" /></svg><svg v-else class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V4H4v12h4" /></svg></button>
         <button type="button" class="editor-button" :disabled="!!action || !team" :aria-busy="action === 'code'" @click="renewCode">{{ action === 'code' ? '作り直し中…' : '作り直す' }}</button>
       </div>
-      <p id="team-code-help" class="muted">参加コードを伝えた人は「チームに入る」から加われます。開始後はメンバーを外せませんが、参加コードを作り直すと、それ以降の加入を止められます。</p>
+      <p id="team-code-help" class="muted">参加コードを伝えた人は、「チーム参加」の「チームに入る」から加われます。開始後はメンバーを外せませんが、参加コードを作り直すと、それ以降の加入を止められます。</p>
     </div>
     <p v-else class="muted">終了したため、チームには入れません。</p>
     <button v-if="beforeStart" type="button" class="editor-button danger team-leave" :disabled="!!action" @click="leave">チームを抜ける</button>

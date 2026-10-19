@@ -6,7 +6,8 @@ const route = useRoute()
 const pageError = useError()
 // Contest pages swap the site menu for the contest's own menu. Error pages keep the site menu.
 const contestId = computed(() => !pageError.value && String(route.name ?? '').startsWith('contests-id') ? fullId(route.params.id) : '')
-const contestSection = computed<ContestView>(() => route.name === 'contests-id' ? contestView(route.query.view) : String(route.name).startsWith('contests-id-submissions') ? 'submissions' : 'problems')
+// The team page belongs to the overview, where participation starts.
+const contestSection = computed<ContestView>(() => route.name === 'contests-id' ? contestView(route.query.view) : route.name === 'contests-id-team' ? 'overview' : String(route.name).startsWith('contests-id-submissions') ? 'submissions' : 'problems')
 const { data: judgeCatalog, error: judgeCatalogError, refresh: refreshJudge } = await useJudgeCatalog()
 function refreshVisibleJudge() { if (document.visibilityState === 'visible') void refreshJudge({ dedupe: 'defer' }) }
 // A refresh during hydration reuses Nuxt's server payload.
