@@ -140,6 +140,9 @@ var contestOnsiteKeptOpenSchema string
 //go:embed 038_contest_team_individuals.sql
 var contestTeamIndividualsSchema string
 
+//go:embed 039_contest_onsite_drop_kept_open.sql
+var contestOnsiteDropKeptOpenSchema string
+
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
@@ -152,7 +155,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err = tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version bigint PRIMARY KEY)`); err != nil {
 		return err
 	}
-	for index, schema := range []string{problemsSchema, profilesSchema, publicationsSchema, submissionsSchema, judgeOutboxSchema, testFilesSchema, multilanguageDispatchSchema, judgeProgressSchema, generatedTestFilesSchema, problemFavoritesSchema, sampleCaseFlagsSchema, contestsSchema, problemSubmissionsSchema, testerInvitationsSchema, profileAccountsSchema, notificationsSchema, contentImagesSchema, difficultyVotesSchema, reservedSchema, contestParticipantsSchema, featuredProblemsSchema, featuredPreviewsSchema, creationQuotasSchema, registrationQuotasSchema, contestDraftsSchema, accountDeletionSchema, userEditorialsSchema, tagsSchema, scheduledProblemsSchema, rejudgesSchema, contestRolesSchema, contestSettersSchema, contestSetterDraftGuardSchema, contestFreezeSchema, contestTeamsSchema, contestTeamVisibilitySchema, contestOnsiteKeptOpenSchema, contestTeamIndividualsSchema} {
+	for index, schema := range []string{problemsSchema, profilesSchema, publicationsSchema, submissionsSchema, judgeOutboxSchema, testFilesSchema, multilanguageDispatchSchema, judgeProgressSchema, generatedTestFilesSchema, problemFavoritesSchema, sampleCaseFlagsSchema, contestsSchema, problemSubmissionsSchema, testerInvitationsSchema, profileAccountsSchema, notificationsSchema, contentImagesSchema, difficultyVotesSchema, reservedSchema, contestParticipantsSchema, featuredProblemsSchema, featuredPreviewsSchema, creationQuotasSchema, registrationQuotasSchema, contestDraftsSchema, accountDeletionSchema, userEditorialsSchema, tagsSchema, scheduledProblemsSchema, rejudgesSchema, contestRolesSchema, contestSettersSchema, contestSetterDraftGuardSchema, contestFreezeSchema, contestTeamsSchema, contestTeamVisibilitySchema, contestOnsiteKeptOpenSchema, contestTeamIndividualsSchema, contestOnsiteDropKeptOpenSchema} {
 		version := index + 1
 		var applied bool
 		if err = tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version=$1)`, version).Scan(&applied); err != nil {

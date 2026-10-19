@@ -1068,6 +1068,10 @@ func TestContestTeamOnsiteDropPostgres(t *testing.T) {
 		pa = "a0000000-0000-4000-8000-000000000001"
 	)
 	f.problem(pa)
+	// Setters no longer keep anyone open, and migration 39 dropped the columns that remembered it.
+	if n := f.count(`SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND column_name='kept_open'`); n != 0 {
+		t.Fatalf("kept_open columns: %d", n)
+	}
 	c := f.create(tc, pa, map[string]any{"teamMode": true, "onsiteDivision": true, "onsitePassphrase": "first"})
 	if alpha := f.join(tc, "bob", withOnsite(create("Alpha"), "first")); !alpha.Onsite {
 		t.Fatalf("onsite team: %+v", alpha)
