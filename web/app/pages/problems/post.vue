@@ -71,7 +71,7 @@ async function post(cancel = false) {
     if (at || cancel) return await navigateTo('/my?tab=problems')
     await navigateTo(`/problems/${shortId(problem.id)}`)
     showToast('公開しました')
-  } catch (cause) { error.value = accountError(cause) }
+  } catch (cause) { error.value = accountError(cause, 'publish') }
   finally { busy.value = false }
 }
 </script>
