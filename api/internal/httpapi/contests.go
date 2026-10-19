@@ -516,6 +516,8 @@ func contestError(w http.ResponseWriter, err error) {
 		authError(w, 409, "contest_not_ready")
 	case errors.Is(err, contests.ErrConflict):
 		authError(w, 409, "contest_conflict")
+	case errors.Is(err, contests.ErrPointsRequired):
+		authError(w, 400, "invalid_contest")
 	default:
 		authError(w, 503, "database_unavailable")
 	}

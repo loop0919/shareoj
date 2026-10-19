@@ -71,9 +71,12 @@ func (s *Store) FeaturedStandings(ctx context.Context, at time.Time, offset int)
 	// Rank only by the solved set: both > Hard > Easy > neither. Completion time,
 	// wrong answers and repeat ACs never change the rank. Within a tied rank,
 	// show earlier completion first; zero-solvers use their first submission.
+	// A problem is solved by a full score, and a judged run short of it is wrong, so partial scores never show
+	// (ADR 0011, ADR 0025); for an all-or-nothing problem that is an AC and the other judged verdicts, as before.
 	rows, err = tx.Query(ctx, `WITH attempts AS (
  SELECT u.handle,f.slot,s.created_at,
- CASE WHEN s.status='DONE' THEN COALESCE(s.result->>'verdict','') ELSE '' END AS verdict
+ CASE WHEN s.status='DONE' THEN COALESCE(s.result->>'verdict','') ELSE '' END AS verdict,
+ s.status='DONE' AND submission_full_score(s.result) AS full_score
  FROM featured_slots f JOIN submissions s ON s.problem_id=f.problem_id
  JOIN user_profiles u ON u.owner_id=s.owner_id
  WHERE f.scheduled_at=$1 AND f.kind<>'missing'
@@ -84,11 +87,11 @@ func (s *Store) FeaturedStandings(ctx context.Context, at time.Time, offset int)
  AND NOT COALESCE((s.job->>'validate')::boolean,false)
  AND NOT EXISTS(SELECT 1 FROM featured_slots other WHERE other.scheduled_at=$1 AND can_manage_problem(other.problem_id,s.owner_id))
  ), solved AS (
- SELECT handle,slot,min(created_at) FILTER (WHERE verdict='AC') AS accepted_at,min(created_at) AS first_at
+ SELECT handle,slot,min(created_at) FILTER (WHERE full_score) AS accepted_at,min(created_at) AS first_at
  FROM attempts GROUP BY handle,slot
  ), per_problem AS (
  SELECT s.handle,s.slot,s.accepted_at,s.first_at,
- count(*) FILTER (WHERE a.verdict IN ('WA','RE','TLE','MLE','OLE') AND (s.accepted_at IS NULL OR a.created_at<s.accepted_at)) AS wrong
+ count(*) FILTER (WHERE a.verdict IN ('AC','WA','RE','TLE','MLE','OLE') AND NOT a.full_score AND (s.accepted_at IS NULL OR a.created_at<s.accepted_at)) AS wrong
  FROM solved s JOIN attempts a USING(handle,slot) GROUP BY s.handle,s.slot,s.accepted_at,s.first_at
  ), totals AS (
  SELECT handle,max(accepted_at) FILTER (WHERE slot='easy') AS easy_at,max(accepted_at) FILTER (WHERE slot='hard') AS hard_at,

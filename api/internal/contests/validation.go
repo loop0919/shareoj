@@ -32,8 +32,10 @@ func ValidInput(in Input) bool {
 		return false
 	}
 	seen := map[string]bool{}
+	// Points 0 leave them unset: a partially scored problem takes its full score (ADR 0025), and save refuses the
+	// others without points.
 	for _, p := range in.Problems {
-		if !problems.ValidID(p.ID) || seen[p.ID] || p.Points < 1 || p.Points > 1000000 {
+		if !problems.ValidID(p.ID) || seen[p.ID] || p.Points < 0 || p.Points > problems.MaxFullScore {
 			return false
 		}
 		seen[p.ID] = true

@@ -17,8 +17,15 @@ import (
 
 var ErrConflict = errors.New("contest is locked or problems are unavailable")
 
+// ErrPointsRequired means an all-or-nothing problem came without points; a partially scored one takes its full score.
+var ErrPointsRequired = errors.New("contest problem needs points")
+
 type Problem struct {
+	// Solved is set when the viewer, or their team, has the problem's full score, summing each group's best score
+	// across their runs like the standings; for an all-or-nothing problem that is an AC (ADR 0025).
 	Solved bool `json:"solved,omitempty"`
+	// Partial marks a partially scored problem, whose Points are its full score.
+	Partial bool `json:"partial,omitempty"`
 	// HasEditorial is set only when the viewer may read the editorial now. False means none is registered.
 	HasEditorial  *bool  `json:"hasEditorial,omitempty"`
 	ID            string `json:"id"`
@@ -58,6 +65,8 @@ type Contest struct {
 	CanViewLiveStandings bool `json:"canViewLiveStandings"`
 	// CanRevealResults lets a setter or an operator reveal an ended frozen contest (POST /my/contests/{id}/reveal).
 	CanRevealResults bool `json:"canRevealResults"`
+	// PartialScoring tells whether any problem gives partial scores (ADR 0025), even before the problems are shown.
+	PartialScoring bool `json:"partialScoring"`
 	// TeamMode lets participants form teams, each a row of the standings; those who enter alone keep rows of their own
 	// (ADR 0024). MaxTeamSize is null in individual contests and in team contests without a limit of their own;
 	// MaxTeamMembers still caps every team. OnsiteDivision tells whether the venue passphrase can make participants
@@ -127,12 +136,13 @@ const coSetters = `ARRAY(SELECT su.handle FROM contest_setters s JOIN user_profi
 
 const fields = `c.id,c.owner_id,u.handle,` + coSetters + `,c.title,c.description,c.starts_at,c.ends_at,c.penalty_minutes,c.freeze_minutes,
  contest_freeze_at(c),c.revealed_at,contest_results_final(c),c.team_mode,c.max_team_size,c.onsite_division,c.version,
- CASE WHEN statement_timestamp()<c.starts_at THEN 'scheduled' WHEN statement_timestamp()<c.ends_at THEN 'running' ELSE 'ended' END`
+ CASE WHEN statement_timestamp()<c.starts_at THEN 'scheduled' WHEN statement_timestamp()<c.ends_at THEN 'running' ELSE 'ended' END,
+ EXISTS(SELECT 1 FROM contest_problems cp WHERE cp.contest_id=c.id AND jsonb_typeof(cp.draft->'scoring')='object')`
 
 func scan(row pgx.Row) (Contest, error) {
 	var c Contest
 	var others []string
-	err := row.Scan(&c.ID, &c.Owner, &c.Author, &others, &c.Title, &c.Description, &c.StartsAt, &c.EndsAt, &c.PenaltyMinutes, &c.FreezeMinutes, &c.FreezeAt, &c.RevealedAt, &c.ResultsFinal, &c.TeamMode, &c.MaxTeamSize, &c.OnsiteDivision, &c.Version, &c.Status)
+	err := row.Scan(&c.ID, &c.Owner, &c.Author, &others, &c.Title, &c.Description, &c.StartsAt, &c.EndsAt, &c.PenaltyMinutes, &c.FreezeMinutes, &c.FreezeAt, &c.RevealedAt, &c.ResultsFinal, &c.TeamMode, &c.MaxTeamSize, &c.OnsiteDivision, &c.Version, &c.Status, &c.PartialScoring)
 	c.Revealed = c.RevealedAt != nil
 	c.Authors = append([]string{c.Author}, others...)
 	c.Problems = []Problem{}
@@ -193,17 +203,16 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
 	c.CanRevealResults = c.IsSetter && c.Revealable()
 	// In a team contest a problem is solved when any member has solved it (ADR 0024).
 	rows, err := tx.Query(ctx, `SELECT cp.problem_id,cp.points,cp.draft->>'title',cp.draft->>'timeLimitMs',cp.draft->>'memoryLimitMb',
- EXISTS(SELECT 1 FROM submissions s WHERE s.contest_id=cp.contest_id AND s.problem_id=cp.problem_id
-  AND (s.owner_id=$3 OR s.owner_id IN (SELECT unnest(contest_teammates($1::uuid,$3)))) AND s.status='DONE' AND s.result->>'verdict'='AC'
-  AND NOT COALESCE((s.job->>'easyTest')::boolean,false)
-  AND NOT COALESCE((s.job->>'generate')::boolean,false)
-  AND NOT COALESCE((s.job->>'validate')::boolean,false)
-  AND s.created_at>=$4),
+ EXISTS(SELECT 1 FROM submissions s WHERE `+solvedRun+` AND submission_full_score(s.result))
+  OR COALESCE((SELECT sum(best) FROM (SELECT max((x.g->>'score')::bigint) AS best FROM submissions s
+   CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(s.result->'scoring'->'groups')='array' THEN s.result->'scoring'->'groups' ELSE '[]' END) WITH ORDINALITY x(g,i)
+   WHERE `+solvedRun+` GROUP BY x.i) groups),0)>=cp.points::bigint*100,
  ($2 OR contest_problem_access(cp.contest_id,cp.problem_id,$3)),
  CASE WHEN ($5 OR contest_problem_access(cp.contest_id,cp.problem_id,$3))
   AND NOT COALESCE(statement_timestamp()<featured_reveal_at(d.id),false) THEN COALESCE(cp.draft->>'editorial','')<>'' END,
  $6 AND NOT (contest_setter(cp.contest_id,d.owner_id)
-  OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=d.id AND contest_setter(cp.contest_id,t.owner_id)))
+  OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=d.id AND contest_setter(cp.contest_id,t.owner_id))),
+ COALESCE(jsonb_typeof(cp.draft->'scoring')='object',false)
  FROM contest_problems cp JOIN problem_drafts d ON d.id=cp.problem_id
  WHERE cp.contest_id=$1 ORDER BY cp.position`, id, c.Status != "scheduled", viewer, c.StartsAt, c.Status == "ended", c.CanEdit)
 	if err != nil {
@@ -212,9 +221,9 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
 	c.Problems, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (Problem, error) {
 		var p Problem
 		var visible bool
-		e := row.Scan(&p.ID, &p.Points, &p.Title, &p.TimeLimitMS, &p.MemoryLimitMB, &p.Solved, &visible, &p.HasEditorial, &p.Unmanaged)
+		e := row.Scan(&p.ID, &p.Points, &p.Title, &p.TimeLimitMS, &p.MemoryLimitMB, &p.Solved, &visible, &p.HasEditorial, &p.Unmanaged, &p.Partial)
 		if !visible {
-			p.ID, p.Title, p.TimeLimitMS, p.MemoryLimitMB, p.Solved, p.HasEditorial = "", "", "", "", false, nil
+			p.ID, p.Title, p.TimeLimitMS, p.MemoryLimitMB, p.Solved, p.HasEditorial, p.Partial = "", "", "", "", false, nil, false
 		}
 		return p, e
 	})
@@ -223,6 +232,15 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
 	}
 	return c, tx.Commit(ctx)
 }
+
+// solvedRun picks the viewer's runs of a contest problem that can solve it, and their team's in a team contest: judged
+// runs from the start on, practice after the end included.
+const solvedRun = `s.contest_id=cp.contest_id AND s.problem_id=cp.problem_id
+  AND (s.owner_id=$3 OR s.owner_id IN (SELECT unnest(contest_teammates($1::uuid,$3)))) AND s.status='DONE'
+  AND NOT COALESCE((s.job->>'easyTest')::boolean,false)
+  AND NOT COALESCE((s.job->>'generate')::boolean,false)
+  AND NOT COALESCE((s.job->>'validate')::boolean,false)
+  AND s.created_at>=$4`
 
 func (s *Store) Save(ctx context.Context, owner, id string, in Input, policy JudgePolicy) error {
 	tx, err := s.Pool.Begin(ctx)
@@ -374,7 +392,15 @@ func save(ctx context.Context, tx pgx.Tx, actor, id string, in Input, policy Jud
 		if json.Unmarshal(snap.data, &d) != nil || !policy.validProblem(d) {
 			return ErrConflict
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO contest_problems(contest_id,problem_id,position,points,draft,problem_version) VALUES($1,$2,$3,$4,$5,$6)`, id, p.ID, i, p.Points, snap.data, snap.version)
+		// A partially scored problem is worth its full score, which problem saves keep in step until the start (ADR 0025).
+		points := p.Points
+		if d.Scoring != nil {
+			points = d.Scoring.FullScore()
+		}
+		if points < 1 {
+			return ErrPointsRequired
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO contest_problems(contest_id,problem_id,position,points,draft,problem_version) VALUES($1,$2,$3,$4,$5,$6)`, id, p.ID, i, points, snap.data, snap.version)
 		if err != nil {
 			return err
 		}
@@ -455,6 +481,7 @@ func (s *Store) Problem(ctx context.Context, id, pid, viewer string) (ContestPro
 	p.SpecialJudge = d.Checker != nil
 	p.Interactive = d.Interactor != nil
 	p.HasSamples = d.HasSamples()
+	p.Scoring = d.PublicScoring()
 	if editorial && !p.EditorialHidden {
 		p.Editorial = d.Editorial
 	}

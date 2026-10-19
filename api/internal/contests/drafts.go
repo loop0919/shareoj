@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -59,6 +60,9 @@ type ListedProblem struct {
 	Title  string           `json:"title"`
 	Author string           `json:"author"`
 	Issues []problems.Issue `json:"issues"`
+	// Partial marks a partially scored problem, whose points are its full score and need no input (ADR 0025).
+	Partial   bool `json:"partial,omitempty"`
+	FullScore int  `json:"fullScore,omitempty"`
 }
 type DraftSummary struct {
 	ID        string     `json:"id"`
@@ -157,13 +161,15 @@ func (d Draft) contentIssues(now time.Time) []string {
 	if len(d.Problems) == 0 {
 		issues = append(issues, IssueProblems)
 	}
-	for _, p := range d.Problems {
-		if p.Points == nil || *p.Points < 1 || *p.Points > 1000000 {
-			issues = append(issues, IssuePoints)
-			break
-		}
-	}
 	return issues
+}
+
+// pointsMissing tells whether an all-or-nothing problem lacks valid points. A partially scored problem is worth its
+// full score, so its points are not read (ADR 0025).
+func (d Draft) pointsMissing(partial map[string]bool) bool {
+	return slices.ContainsFunc(d.Problems, func(p DraftProblem) bool {
+		return !partial[p.ID] && (p.Points == nil || *p.Points < 1 || *p.Points > problems.MaxFullScore)
+	})
 }
 
 type querier interface {
@@ -179,6 +185,7 @@ func assess(ctx context.Context, q querier, id string, d Draft, policy JudgePoli
 	if len(d.Problems) == 0 {
 		return issues, listed, nil
 	}
+	partial := map[string]bool{}
 	ids := make([]string, len(d.Problems))
 	for i, p := range d.Problems {
 		ids[i] = p.ID
@@ -205,6 +212,9 @@ func assess(ctx context.Context, q querier, id string, d Draft, policy JudgePoli
 		var draft problems.Draft
 		valid := json.Unmarshal(raw, &draft) == nil
 		p.Title = draft.Title
+		if draft.Scoring != nil {
+			p.Partial, p.FullScore, partial[p.ID] = true, draft.Scoring.FullScore(), true
+		}
 		p.Issues = problems.Assess(draft, state, policy.KnownRuntimes, policy.EnabledRuntimes).Contest
 		found[p.ID] = p
 		if !state.Published && !state.Scheduled && !state.InContest && state.FeaturedPreference == "" {
@@ -221,6 +231,9 @@ func assess(ctx context.Context, q querier, id string, d Draft, policy JudgePoli
 		if p, ok := found[pid]; ok {
 			listed = append(listed, p)
 		}
+	}
+	if d.pointsMissing(partial) {
+		issues = append(issues, IssuePoints)
 	}
 	if unavailable > 0 {
 		issues = append(issues, IssueUnavailable)

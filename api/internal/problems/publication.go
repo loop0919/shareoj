@@ -24,14 +24,16 @@ type PublicProblem struct {
 	HasSamples             bool       `json:"hasSamples"`
 	Interactive            bool       `json:"interactive,omitempty"`
 	SpecialJudge           bool       `json:"specialJudge,omitempty"`
-	ID                     string     `json:"id"`
-	Title                  string     `json:"title"`
-	Markdown               string     `json:"markdown,omitempty"`
-	Editorial              string     `json:"editorial,omitempty"`
-	TimeLimitMS            string     `json:"timeLimitMs,omitempty"`
-	MemoryLimitMB          string     `json:"memoryLimitMb,omitempty"`
-	Author                 string     `json:"author"`
-	PublishedAt            time.Time  `json:"publishedAt"`
+	// Scoring is set for a partially scored problem (ADR 0025) and left out of lists.
+	Scoring       *ScoringSummary `json:"scoring,omitempty"`
+	ID            string          `json:"id"`
+	Title         string          `json:"title"`
+	Markdown      string          `json:"markdown,omitempty"`
+	Editorial     string          `json:"editorial,omitempty"`
+	TimeLimitMS   string          `json:"timeLimitMs,omitempty"`
+	MemoryLimitMB string          `json:"memoryLimitMb,omitempty"`
+	Author        string          `json:"author"`
+	PublishedAt   time.Time       `json:"publishedAt"`
 }
 type Publications interface {
 	Publish(context.Context, string, string, int64, bool) (Problem, error)
@@ -83,7 +85,8 @@ func (s *Store) Publish(ctx context.Context, owner, id string, version int64, pu
 	return p, err
 }
 
-const acceptedRun = `s.status='DONE' AND s.result->>'verdict'='AC'
+// A run solves its problem with the full score, which is an AC for an all-or-nothing problem (ADR 0025).
+const acceptedRun = `s.status='DONE' AND submission_full_score(s.result)
  AND NOT COALESCE((s.job->>'easyTest')::boolean,false)
  AND NOT COALESCE((s.job->>'generate')::boolean,false)
  AND NOT COALESCE((s.job->>'validate')::boolean,false)`
@@ -126,6 +129,7 @@ func (s *Store) PublicGet(ctx context.Context, id, viewer string) (PublicProblem
 	p.SpecialJudge = d.Checker != nil
 	p.Interactive = d.Interactor != nil
 	p.HasSamples = d.HasSamples()
+	p.Scoring = d.PublicScoring()
 	p.Testers, err = s.Testers(ctx, id)
 	return p, err
 }
