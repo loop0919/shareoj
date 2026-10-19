@@ -24,8 +24,7 @@ import (
 	"judge/api/internal/submissions"
 )
 
-// Partial scoring is inactive (ValidDraft rejects it), so the draft is saved through the store as the API will save it
-// once enabled (ADR 0025).
+// The draft is saved through the store, as the API saves it (ADR 0025).
 func TestPartialScoringJobsAndResults(t *testing.T) {
 	ctx := context.Background()
 	db := migratedDB(t)
@@ -258,5 +257,24 @@ func TestPartialScoringJobsAndResults(t *testing.T) {
 	}
 	if j, _ := job("aggregate"); j.Scoring == nil || j.Scoring.Aggregator == nil || j.Scoring.Aggregator.Source != "int main(){}" {
 		t.Fatalf("aggregator not pinned: %+v", j.Scoring)
+	}
+	// Without its aggregator, or without groups, scoring waits too: the judge would turn every run into JE.
+	aggregate.Scoring.Aggregator = nil
+	ungrouped := draft
+	ungrouped.Scoring = &problems.Scoring{Mode: "groups"}
+	ungrouped.TestCases = []problems.TestCase{{IsSample: true, Name: "sample", Input: "1", Output: "1"}, {Name: "01", Input: "2", Output: "2"}}
+	for name, d := range map[string]problems.Draft{"no aggregator": aggregate, "no groups": ungrouped} {
+		publish(d)
+		if err := create(name, "dave", "cpp17-isolate", false); !errors.Is(err, submissions.ErrNotReady) {
+			t.Fatal(name, err)
+		}
+		if _, err = queue.Rejudge(ctx, submissions.RejudgeInput{Actor: "alice", ProblemID: problem, SubmissionIDs: []string{ids["unscored"]}, Image: digest, Runtimes: []string{"cpp17-isolate"}, CheckerRuntimes: checkers}); !errors.Is(err, submissions.ErrNotReady) {
+			t.Fatal("rejudge", name, err)
+		}
+	}
+	// A sample check never scores, so it runs whatever the scoring lacks.
+	publish(ungrouped)
+	if err := create("sample without groups", "dave", "cpp17-isolate", true); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -78,9 +78,10 @@ func TestPublicDocumentation(t *testing.T) {
 				t.Fatal("missing generated model", name)
 			}
 		}
-		for name, fields := range map[string][]string{"Contest": {"authors", "setter", "owner", "teamMode", "maxTeamSize", "onsiteDivision", "team", "onsite"}, "ContestProblem": {"authors", "canReadEditorial", "author", "markdown"}, "TeamSummary": {"id", "name", "members", "onsite"}, "Standing": {"handle", "team", "onsite", "overallRank"},
-			// Partial scores are public like verdicts (ADR 0025).
-			"Result": {"scoring"}, "CaseResult": {"score"}, "SubmissionScore": {"score", "maxScore", "groups"}, "GroupScore": {"name", "score", "maxScore", "cases"}} {
+		for name, fields := range map[string][]string{"Contest": {"authors", "setter", "owner", "teamMode", "maxTeamSize", "onsiteDivision", "team", "onsite", "partialScoring"}, "ContestProblem": {"authors", "canReadEditorial", "author", "markdown"}, "TeamSummary": {"id", "name", "members", "onsite"}, "Standing": {"handle", "team", "onsite", "overallRank", "score", "scoreText"},
+			// Partial scores are public like verdicts, and problems show their groups' points (ADR 0025).
+			"Result": {"scoring"}, "CaseResult": {"score"}, "SubmissionScore": {"score", "maxScore", "groups"}, "GroupScore": {"name", "score", "maxScore", "cases"},
+			"Score": {"points", "score", "scoreText", "acceptedAt", "scoredAt"}, "Problem": {"points", "partial"}, "PublicProblem": {"scoring"}, "ScoringSummary": {"fullScore", "groups"}, "ScoringGroup": {"name", "points"}} {
 			for _, field := range fields {
 				if _, ok := doc.Components.Schemas[name].Properties[field]; !ok {
 					t.Fatal("missing field", name, field)
@@ -106,6 +107,17 @@ func TestPublicDocumentation(t *testing.T) {
 					t.Fatal("secret documented", name, field)
 				}
 			}
+		}
+		// The aggregator and the scoring mode stay with the problem's editors.
+		for _, name := range []string{"PublicProblem", "ContestProblem", "ScoringSummary"} {
+			for _, hidden := range []string{"aggregator", "mode"} {
+				if _, ok := doc.Components.Schemas[name].Properties[hidden]; ok {
+					t.Fatal("private field documented", name, hidden)
+				}
+			}
+		}
+		if _, ok := doc.Components.Schemas["Scoring"]; ok {
+			t.Fatal("private scoring documented")
 		}
 		for _, name := range []string{"Result", "CaseResult"} {
 			for _, hidden := range []string{"checkerLog", "compileLog", "sampleDetails", "outputFile", "output"} {
