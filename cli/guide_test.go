@@ -29,20 +29,37 @@ func TestAuthoringGuide(t *testing.T) {
 			t.Fatalf("invalid guide args accepted: %v", args)
 		}
 	}
-	// The guide's TOML example must remain usable with the generated files.
-	_, exampleTOML, ok := strings.Cut(authoringGuide, "```toml\n")
-	if !ok {
-		t.Fatal("missing TOML example")
+	// The guide's TOML examples must remain usable with the generated files.
+	var examples []string
+	for rest := authoringGuide; ; {
+		_, after, ok := strings.Cut(rest, "```toml\n")
+		if !ok {
+			break
+		}
+		block, next, ok := strings.Cut(after, "\n```")
+		if !ok {
+			t.Fatal("unterminated TOML example")
+		}
+		examples, rest = append(examples, block), next
 	}
-	exampleTOML, _, ok = strings.Cut(exampleTOML, "\n```")
-	if !ok {
-		t.Fatal("unterminated TOML example")
+	if len(examples) != 2 {
+		t.Fatalf("expected the problem and partial scoring examples, got %d", len(examples))
 	}
 	dir := example(t)
-	write(t, filepath.Join(dir, "problem.toml"), exampleTOML)
+	write(t, filepath.Join(dir, "problem.toml"), examples[0])
 	write(t, filepath.Join(dir, "editorial.md"), "解説")
 	if _, err := loadProblem(dir); err != nil {
 		t.Fatal("guide example cannot be checked:", err)
+	}
+	// The partial scoring example extends the first one with the cases it lists.
+	for _, name := range []string{"01", "02", "03", "04"} {
+		write(t, filepath.Join(dir, "tests", name+".in"), "1 2\n")
+		write(t, filepath.Join(dir, "tests", name+".out"), "3\n")
+	}
+	write(t, filepath.Join(dir, "problem.toml"), examples[0]+"\n"+examples[1])
+	d, notes, err := readProblem(dir)
+	if err != nil || len(notes) != 0 || d["scoring"] == nil {
+		t.Fatal("guide scoring example cannot be checked:", err, notes)
 	}
 }
 

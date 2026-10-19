@@ -124,10 +124,11 @@ shareoj push ./my-problem
 ```
 
 問題文、解説、生成器、チェッカーまたはインタラクター、非公開を含む全テストケースを取得します。
-コードは `input.txt`、`output.txt`、`validation.txt`、`checker.txt`、`interactor.txt` に保存し、実行言語は `problem.toml` に保持します。
+コードは `input.txt`、`output.txt`、`validation.txt`、`checker.txt`、`interactor.txt`、`aggregator.txt` に保存し、実行言語は `problem.toml` に保持します。
 テストファイルは `tests/case001.in` / `case001.out` のような連番で保存します。
 元のケース名（空の名前を含む）は `[tests.names]` に記録し、ケースの順序とサンプル指定も保持します。
 `samples` は元のケース名ではなく `case001` のようなファイル名の幹を指定します。
+部分点の問題では `[scoring]` と `[[tests.groups]]` も書き出し、グループのケースも同じ幹で指定します。
 
 取得先がすでに存在する場合は上書きせずエラーにします。
 取得中に失敗した場合は、作成途中のディレクトリを削除します。
@@ -191,6 +192,37 @@ samples = ["sample1"]
 これらのテーブルだけ `protocol = "legacy"` または `protocol = "testlib"` を指定できます。
 `testlib` は `cpp23-gcc` と `cpp23-clang` に対応し、生成器には `protocol` を指定しません。
 
+部分点を付ける問題では、`[scoring]` に採点方式を、`[[tests.groups]]` にグループの名前、配点、ケースを指定します。
+
+```toml
+[scoring]
+mode = "aggregate"
+
+[scoring.aggregator]
+source = "aggregator.cpp"
+runtime = "cpp23-gcc"
+
+[[tests.groups]]
+name = "小課題1"
+points = 30
+cases = ["01", "02"]
+
+[[tests.groups]]
+name = "小課題2"
+points = 70
+cases = ["01", "02", "03"]
+```
+
+`mode` は、属するケースがすべて AC のグループに配点を与える `"groups"` か、集計コードがグループごとの得点を決める `"aggregate"` です。
+集計コードは `[scoring.aggregator]` に `source` と `runtime` を指定し、`protocol` は指定しません。
+入出力は [判定方法ガイド](../web/app/content/docs/checkers.md) の「集計コード」を参照してください。
+`cases` には `samples` と同じくファイル名の幹を指定し、1 つのケースを複数のグループに入れられます。
+グループは 100 個まで、名前は 64 文字までで、前後の空白を除いて重複できません。
+配点は 0 以上の整数で、満点（配点の合計）は 1〜1,000,000 点です。
+`[scoring]` には `[tests]` が、`[[tests.groups]]` には `[scoring]` が必要です。
+ケースのないグループと、どのグループにも属さないサンプル以外のケースは、`check` が警告します。
+下書きには保存できますが、公開の条件を満たしません。
+
 ## テストケースと rime
 
 `tests.directory` 直下の `*.in` と同名の `*.out` を、ファイル名の順で取り込みます。
@@ -230,6 +262,14 @@ CLI は `PROJECT` / `PROBLEM` / `TESTSET` を読み込まず、rime も実行し
 `[tests]` を指定すると全テストをローカルの一覧に置き換え、省略すると既存テストを保持します。
 空のテストディレクトリを明示すると全テストを削除します。
 判定器の種類を変更した場合は、以前の種類の設定を削除します。
+`[scoring]` を指定すると採点方式とグループを置き換え、省略するとサーバー側の設定を保持します。
+集計コード方式で `[scoring.aggregator]` を省略した場合は、サーバー側の集計コードを保持します。
+部分点の問題で `[scoring]` を省略して `[tests]` を指定すると、ケースの所属が消えるため保存せずに停止します。
+一括方式に戻す操作は Web で行ってください。
+部分点の設定に対応していない古い CLI は、部分点の問題に `[tests]` を push するとケースの所属を消すため、更新してから編集してください。
+
+公開中の問題と、結果確定前のコンテストに入っている問題は、公開の条件を満たさない内容では保存できず、`incomplete_problem` で失敗します。
+コンテストの開始後に採点方式とグループの名前・配点・順番を変える保存は、`problem_scoring_locked` で拒否されます。
 
 Web 側で編集されて更新番号が変わっていれば、`push` は停止します。
 Web の下書きとローカルの内容を比較して必要な変更を取り込んだ後、表示された更新番号を指定して再実行できます。
