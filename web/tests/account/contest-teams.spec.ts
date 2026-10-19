@@ -167,6 +167,7 @@ test('the venue passphrase makes participants onsite, a mistake registers nothin
   await expect(guest.locator('.standings-table tbody tr')).toHaveCount(2)
   await table.getByRole('switch', { name: 'bobをオンサイト参加にする' }).click()
   await expect(table.getByRole('switch', { name: 'bobをオンサイト参加にする' })).not.toBeChecked()
+  await expect(table.locator('tbody tr').filter({ hasText: 'bob' }).locator('td').nth(1)).toHaveText('—（作成者がオープンに変更）')
   await guest.reload()
   await expect(guest.locator('.standings-table tbody tr')).toHaveCount(1)
   await expect(guest.locator('.standings-table tbody tr')).toContainText('dave')
@@ -185,7 +186,11 @@ test('the venue passphrase makes participants onsite, a mistake registers nothin
   await erin.getByLabel('会場の合言葉（オンサイト参加者のみ）', { exact: true }).fill('Second-Venue')
   await erin.getByRole('button', { name: '参加する', exact: true }).click()
   await expect(erin.getByRole('alert')).toHaveText(/^参加コードか会場の合言葉の誤りが続いたため、一時的に試せません。(約\d+分|\d+秒)後にもう一度お試しください。$/)
-  // Others are unaffected and the passphrase works for them.
-  expect((await join(bob, id, { onsitePassphrase: 'Second-Venue' })).status()).toBe(200)
-  for (const page of [carol, bob, dave, erin, guest]) await page.context().close()
+  // Others are unaffected and the passphrase works for them, but not for bob, whom carol moved back to open.
+  const frank = await user(browser, 'frank')
+  expect((await join(frank, id, { onsitePassphrase: 'Second-Venue' })).status()).toBe(200)
+  const kept = await join(bob, id, { onsitePassphrase: 'Second-Venue' })
+  expect(kept.status()).toBe(409)
+  expect((await kept.json()).data).toEqual({ code: 'onsite_kept_open' })
+  for (const page of [carol, bob, dave, erin, frank, guest]) await page.context().close()
 })

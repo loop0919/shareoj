@@ -113,6 +113,8 @@ test('joining without a passphrase sends no body, and an open participant turns 
   const bodies = await routeJoin(page, state, [
     { ...contest, participating: true },
     { status: 400, code: 'incorrect_venue_passphrase' },
+    { status: 409, code: 'onsite_kept_open' },
+    { ...contest, participating: true },
     { ...contest, participating: true, onsite: true },
   ])
   await open(page)
@@ -120,16 +122,28 @@ test('joining without a passphrase sends no body, and an open participant turns 
   await expect(page.locator('.participation-division')).toHaveText('オープン参加')
   const later = page.getByLabel('会場の合言葉（オンサイト参加者のみ）', { exact: true })
   await expect(later).toHaveAccessibleDescription('会場で配られた合言葉を入れると、終了までオンサイト参加に変えられます。オンサイト参加は順位表に表示されます。')
+  // Spaces alone pass the required check but would change nothing on the server, so they are not sent.
+  await later.fill('　 ')
+  await page.getByRole('button', { name: 'オンサイト参加にする', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('会場の合言葉を入力してください。')
   await later.fill('osaka')
   await page.getByRole('button', { name: 'オンサイト参加にする', exact: true }).click()
   await expect(page.getByRole('alert')).toHaveText('会場の合言葉が違います。会場で配られた合言葉を確かめてください。')
   await expect(later).toHaveValue('osaka')
+  await page.getByRole('button', { name: 'オンサイト参加にする', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('作成者がオープン参加に変更したため、会場の合言葉ではオンサイト参加にできません。')
+  // Only a contest that answers onsite counts as the change; anything else keeps the input and says so.
+  await page.getByRole('button', { name: 'オンサイト参加にする', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('オンサイト参加に変わりませんでした。ページを再読み込みしてから、もう一度お試しください。')
+  await expect(later).toHaveValue('osaka')
+  await expect(page.locator('.participation-division')).toHaveText('オープン参加')
+  await expect(page.locator('.toast')).toHaveCount(0)
   await later.fill('Venue-2026')
   await page.getByRole('button', { name: 'オンサイト参加にする', exact: true }).click()
   await expect(page.locator('.participation-division')).toHaveText('オンサイト参加')
   await expect(page.locator('.toast').getByRole('status')).toHaveText('オンサイト参加に変わりました')
   await expect(later).toHaveCount(0)
-  expect(bodies).toEqual([null, { onsitePassphrase: 'osaka' }, { onsitePassphrase: 'Venue-2026' }])
+  expect(bodies).toEqual([null, ...Array(3).fill({ onsitePassphrase: 'osaka' }), { onsitePassphrase: 'Venue-2026' }])
   // Other views show the division alone, and after the end nobody turns onsite.
   state.contest = { ...contest, participating: true }
   await menu(page, 'standings')
@@ -141,6 +155,26 @@ test('joining without a passphrase sends no body, and an open participant turns 
   await menu(page, 'overview')
   await expect(page.locator('.participation-division')).toHaveText('オープン参加')
   await expect(later).toHaveCount(0)
+})
+
+test('a member of an open team turns the whole team onsite on the overview, beside the team panel', async ({ page }) => {
+  const team = { id: alpha, name: 'Alpha', members: ['ui_test', 'bob'], onsite: false }
+  const contest = { ...base, status: 'running' as const, teamMode: true, onsiteDivision: true, participating: true, team, onsite: false }
+  const state = await routeContest(page, contest)
+  const bodies = await routeJoin(page, state, [{ ...contest, onsite: true, team: { ...team, onsite: true } }])
+  await page.route(`**/api/my/contests/${id}/team`, route => route.fulfill({ json: { ...team, code: 'ABCDEFGHJK' } }))
+  await open(page)
+  await expect(page.getByRole('region', { name: 'チーム' })).toBeVisible()
+  await expect(page.locator('.participation-division')).toHaveText('オープン参加')
+  const field = page.getByLabel('会場の合言葉（オンサイト参加者のみ）', { exact: true })
+  await expect(field).toHaveAccessibleDescription('会場で配られた合言葉を入れると、終了までオンサイト参加に変えられます。メンバーの1人が入れると、チーム全体がオンサイト参加になります。オンサイト参加は順位表に表示されます。')
+  await field.fill('Venue-2026')
+  await page.getByRole('button', { name: 'オンサイト参加にする', exact: true }).click()
+  await expect(page.locator('.participation-division')).toHaveText('オンサイト参加')
+  await expect(page.locator('.toast').getByRole('status')).toHaveText('オンサイト参加に変わりました')
+  await expect(field).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'チーム' })).toBeVisible()
+  expect(bodies).toEqual([{ onsitePassphrase: 'Venue-2026' }])
 })
 
 test('team contests create a team on the overview, and other views link there', async ({ page }) => {
@@ -269,9 +303,14 @@ test('the team panel copies and renews the code, renames the team, and before th
   await panel.getByRole('button', { name: '作り直す', exact: true }).click()
   await expect(code).toHaveValue('MNPQRSTVWX')
   await expect(panel.getByRole('status')).toHaveText('参加コードを作り直しました。前のコードでは入れません。')
-  // Renaming keeps the input on a refusal.
+  // Renaming keeps the input on a refusal. Focus moves into the form and back to the button, never to the page.
   await panel.getByRole('button', { name: 'チーム名を変更' }).click()
   const rename = panel.getByLabel('新しいチーム名', { exact: true })
+  await expect(rename).toBeFocused()
+  await panel.getByRole('button', { name: 'キャンセル', exact: true }).click()
+  await expect(panel.getByRole('button', { name: 'チーム名を変更' })).toBeFocused()
+  await panel.getByRole('button', { name: 'チーム名を変更' }).press('Enter')
+  await expect(rename).toBeFocused()
   await expect(rename).toHaveValue('Alpha')
   await rename.fill('Beta')
   refusal = 'team_name_taken'
@@ -282,11 +321,13 @@ test('the team panel copies and renews the code, renames the team, and before th
   await panel.getByRole('button', { name: '保存', exact: true }).click()
   await expect(panel.locator('.team-name strong')).toHaveText('Gamma')
   await expect(panel.getByRole('status')).toHaveText('チーム名を変更しました。')
+  await expect(panel.getByRole('button', { name: 'チーム名を変更' })).toBeFocused()
   // Removing a member renews the code, which the panel reads again.
   page.once('dialog', dialog => { question = dialog.message(); void dialog.accept() })
   await panel.getByRole('button', { name: 'bobをチームから外す' }).click()
   expect(question).toBe('bobをチームから外しますか？外した人の参加登録は取り消され、参加コードは作り直されます。')
   await expect(panel.getByRole('list', { name: 'メンバー' }).getByRole('listitem')).toHaveText(['ui_test自分', 'carol外す'])
+  await expect(panel.getByRole('list', { name: 'メンバー' })).toBeFocused()
   await expect(code).toHaveValue('RENEWED234')
   await expect(panel.getByRole('status')).toHaveText('bobをチームから外しました。参加コードを作り直しました。')
   await noHorizontalScroll(page)
@@ -325,14 +366,35 @@ test('after the start members only rename and renew, and after the end nothing c
   await menu(page, 'standings')
   await page.getByRole('button', { name: '今すぐ更新' }).click()
   await menu(page, 'overview')
-  await expect(panel.getByLabel('参加コード', { exact: true })).toHaveValue('ABCDEFGHJK')
-  await expect(panel.getByRole('button', { name: '参加コードをコピー' })).toBeVisible()
+  // Nobody joins after the end, so the code and the invitation to share it are gone.
+  await expect(panel.getByLabel('参加コード', { exact: true })).toHaveCount(0)
+  await expect(panel.getByRole('button', { name: '参加コードをコピー' })).toHaveCount(0)
+  await expect(panel).toContainText('終了したため、チームには入れません。')
+  await expect(panel).not.toContainText('「チームに入る」から加われます')
   await expect(panel.getByRole('button', { name: /チーム名を変更|作り直す|外す|抜ける/ })).toHaveCount(0)
+})
+
+test('the team panel follows a join code that another member renewed', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.clock.install()
+  const team = { id: alpha, name: 'Alpha', members: ['ui_test', 'bob'], onsite: false }
+  await routeContest(page, { ...base, status: 'running', teamMode: true, participating: true, team })
+  let code = 'ABCDEFGHJK'
+  await page.route(`**/api/my/contests/${id}/team`, route => route.fulfill({ json: { ...team, code } }))
+  await open(page)
+  const panel = page.getByRole('region', { name: 'チーム' })
+  await expect(panel.getByLabel('参加コード', { exact: true })).toHaveValue('ABCDEFGHJK')
+  // Bob renews the code; the members stay the same, and the panel still reads the new one.
+  code = 'MNPQRSTVWX'
+  await page.clock.fastForward(15000)
+  await expect(panel.getByLabel('参加コード', { exact: true })).toHaveValue('MNPQRSTVWX')
+  await panel.getByRole('button', { name: '参加コードをコピー' }).click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('MNPQRSTVWX')
 })
 
 const entrants = (): Entrant[] => [
   { handle: '', team: { id: alpha, name: 'Alpha', members: ['bob', 'carol'], onsite: true }, onsite: true, onsiteAt: '2099-10-01T02:30:00Z', onsiteVia: 'passphrase', createdAt: '2099-09-30T12:00:00Z' },
-  { handle: '', team: { id: beta, name: 'Beta', members: ['dave'], onsite: false }, onsite: false, onsiteAt: null, onsiteVia: '', createdAt: '2099-09-30T13:00:00Z' },
+  { handle: '', team: { id: beta, name: 'Beta', members: ['dave'], onsite: false }, onsite: false, onsiteAt: null, onsiteVia: '', keptOpen: true, createdAt: '2099-09-30T13:00:00Z' },
 ]
 
 test('setters open the participant tools, replace the venue passphrase, switch divisions and rename teams', async ({ page }) => {
@@ -357,7 +419,7 @@ test('setters open the participant tools, replace the venue passphrase, switch d
     const body = request.postDataJSON()
     rows = rows.map(row => row.team!.id !== team ? row : field === 'name'
       ? { ...row, team: { ...row.team!, name: body.name } }
-      : { ...row, onsite: body.onsite, onsiteAt: body.onsite ? row.onsiteAt ?? '2099-10-01T03:40:00Z' : null, onsiteVia: body.onsite ? row.onsiteVia || 'setter' : '', team: { ...row.team!, onsite: body.onsite } })
+      : { ...row, onsite: body.onsite, onsiteAt: body.onsite ? row.onsiteAt ?? '2099-10-01T03:40:00Z' : null, onsiteVia: body.onsite ? row.onsiteVia || 'setter' : '', keptOpen: !body.onsite, team: { ...row.team!, onsite: body.onsite } })
     return route.fulfill({ json: rows.find(row => row.team!.id === team) })
   })
   await open(page)
@@ -372,11 +434,18 @@ test('setters open the participant tools, replace the venue passphrase, switch d
   const table = tools.getByRole('region', { name: '参加者の一覧' })
   await expect(table.locator('thead th')).toHaveText(['チーム', '区分', 'オンサイトになった時刻（日本時間）', '登録日時（日本時間）'])
   await expect(table.locator('tbody tr').first().locator('td').nth(1)).toHaveText('2099/10/01 11:30（合言葉）')
-  await expect(table.locator('tbody tr').nth(1).locator('td').nth(1)).toHaveText('—')
+  // A team a setter moved to open says so, since the passphrase no longer moves it back.
+  await expect(table.locator('tbody tr').nth(1).locator('td').nth(1)).toHaveText('—（作成者がオープンに変更）')
+  await expect(tools.locator('.setter-tools-body > p').first()).toHaveText('会場の合言葉は終了まで差し替えられます。参加者の区分は、結果が確定するまで切り替えられます。オープン参加に戻した参加者は、合言葉ではオンサイト参加に戻れません。')
   await expect(tools.getByRole('heading', { name: 'チーム 2 チーム' })).toBeVisible()
-  // Replacing the passphrase explains a refusal and keeps the input.
+  // Replacing the passphrase explains a refusal and keeps the input. Focus follows the form and the button it replaces.
   await venue.getByRole('button', { name: '差し替える', exact: true }).click()
   const fresh = venue.getByLabel('新しい会場の合言葉', { exact: true })
+  await expect(fresh).toBeFocused()
+  await venue.getByRole('button', { name: 'キャンセル', exact: true }).click()
+  await expect(venue.getByRole('button', { name: '差し替える', exact: true })).toBeFocused()
+  await venue.getByRole('button', { name: '差し替える', exact: true }).press('Enter')
+  await expect(fresh).toBeFocused()
   await fresh.fill('abc d')
   refusal = 'invalid_venue_passphrase'
   await venue.getByRole('button', { name: '保存', exact: true }).click()
@@ -386,6 +455,7 @@ test('setters open the participant tools, replace the venue passphrase, switch d
   await venue.getByRole('button', { name: '保存', exact: true }).click()
   await expect(venue.getByRole('textbox', { name: '会場の合言葉' })).toHaveValue('Second-Venue')
   await expect(tools.getByRole('status')).toHaveText('会場の合言葉を差し替えました。前の合言葉は使えません。')
+  await expect(venue.getByRole('button', { name: '差し替える', exact: true })).toBeFocused()
   // A switch per row moves the team and shows when and how; a refusal puts the switch back.
   const betaSwitch = table.getByRole('switch', { name: 'Betaをオンサイト参加にする' })
   await expect(betaSwitch).not.toBeChecked()
@@ -398,12 +468,17 @@ test('setters open the participant tools, replace the venue passphrase, switch d
   await expect(betaSwitch).toBeChecked()
   await expect(table.locator('tbody tr').nth(1).locator('td').nth(1)).toHaveText('2099/10/01 12:40（作成者）')
   await expect(tools.getByRole('status')).toHaveText('Betaをオンサイト参加にしました。')
-  // Renaming happens in the row.
+  // Renaming happens in the row, and focus stays there.
   await table.getByRole('button', { name: 'Alphaの名前を変更' }).click()
+  await expect(table.getByRole('textbox', { name: 'Alphaの新しいチーム名' })).toBeFocused()
+  await table.getByRole('button', { name: 'キャンセル', exact: true }).click()
+  await expect(table.getByRole('button', { name: 'Alphaの名前を変更' })).toBeFocused()
+  await table.getByRole('button', { name: 'Alphaの名前を変更' }).press('Enter')
   await table.getByRole('textbox', { name: 'Alphaの新しいチーム名' }).fill('Alpha Prime')
   await table.getByRole('button', { name: '保存', exact: true }).click()
   await expect(table.locator('tbody tr').first().locator('strong')).toHaveText('Alpha Prime')
   await expect(tools.getByRole('status')).toHaveText('チーム名を「Alpha Prime」に変更しました。')
+  await expect(table.getByRole('button', { name: 'Alpha Primeの名前を変更' })).toBeFocused()
   expect(requests).toEqual([
     'GET onsite', 'GET participants', 'PUT onsite {"passphrase":"abc d"}', 'PUT onsite {"passphrase":"Second-Venue"}',
     'PUT onsite {"onsite":true}', 'PUT onsite {"onsite":true}', 'PUT name {"name":"Alpha Prime"}',
@@ -411,7 +486,20 @@ test('setters open the participant tools, replace the venue passphrase, switch d
   await noHorizontalScroll(page)
   await page.setViewportSize({ width: 375, height: 900 })
   await tools.screenshot({ path: test.info().outputPath('setter-tools-375.png') })
-  // Once the results are final the switches and renaming close, and after the end the passphrase stays as it is.
+  // After the end of a frozen contest the passphrase stays as it is, but setters fix divisions and names until the reveal.
+  state.contest = { ...contest, status: 'ended', resultsFinal: false, freezeMinutes: 30 }
+  await menu(page, 'standings')
+  await page.getByRole('button', { name: '今すぐ更新' }).click()
+  await menu(page, 'overview')
+  await tools.locator('summary').click()
+  await expect(venue.getByRole('button', { name: '差し替える', exact: true })).toHaveCount(0)
+  await expect(table.getByRole('button', { name: 'Alpha Primeの名前を変更' })).toBeVisible()
+  await expect(betaSwitch).toBeEnabled()
+  await betaSwitch.click()
+  await expect(betaSwitch).not.toBeChecked()
+  await expect(table.locator('tbody tr').nth(1).locator('td').nth(1)).toHaveText('—（作成者がオープンに変更）')
+  expect(requests.at(-1)).toBe('PUT onsite {"onsite":false}')
+  // Once the results are final the switches and renaming close.
   state.contest = { ...contest, status: 'ended', resultsFinal: true }
   await menu(page, 'standings')
   await page.getByRole('button', { name: '今すぐ更新' }).click()
@@ -561,7 +649,15 @@ test('the problem page lists the team\'s submissions with their submitters and f
   // A teammate's submission opens on the shared page; one's own keeps the personal page.
   await expect(list.locator('tbody tr').nth(0).getByRole('cell').nth(1)).toHaveText('bob')
   await expect(list.locator('tbody tr').nth(0).getByRole('link', { name: '詳細' })).toHaveAttribute('href', `/contests/${shortId(id)}/submissions/${shortId(bobs)}?from=team`)
-  await expect(list.locator('tbody tr').nth(1).getByRole('link', { name: '詳細' })).toHaveAttribute('href', `/contests/${shortId(id)}/my-submissions/${shortId(own)}`)
+  await expect(list.locator('tbody tr').nth(1).getByRole('link', { name: '詳細' })).toHaveAttribute('href', `/contests/${shortId(id)}/my-submissions/${shortId(own)}?from=team`)
+  // Either way the breadcrumb names the list it came from.
+  await page.route(`**/api/my/submissions/${own}`, route => route.fulfill({ json: { ...submission(own, 'ui_test'), contestId: id, source: 'int main() {}' } }))
+  await list.locator('tbody tr').nth(1).getByRole('link', { name: '詳細' }).click()
+  await expect(page).toHaveURL(`/contests/${shortId(id)}/my-submissions/${shortId(own)}?from=team`)
+  const crumb = page.getByRole('navigation', { name: 'パンくずリスト' }).getByRole('link', { name: /^この問題の/ })
+  await expect(crumb).toHaveText('この問題のチームの提出')
+  await expect(crumb).toHaveAttribute('href', `/contests/${shortId(id)}/problems/${shortId(problemId)}?view=my-submissions`)
+  await page.goBack()
   // While the contest runs, everyone else's submissions stay closed to a member.
   await menuBar.getByRole('link', { name: 'すべての提出' }).click()
   await expect(page.locator('.submission-notice')).toHaveText('提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。開催中のチームの提出は「チームの提出」で確認できます。')
@@ -650,6 +746,8 @@ test('the editor sets team mode, a team size and the onsite division with switch
   await size.check()
   await expect(sizeInput).toHaveValue('3')
   await onsite.check()
+  // Turning the switch on fills in a passphrase to read out at the venue; the setter may change it.
+  await expect(passphrase).toHaveValue(/^[a-hjkmnp-tv-z2-9]{8}$/)
   await passphrase.fill('Venue-2026')
   // Each switch is a track and thumb beside its label, not a block label over a bare checkbox.
   for (const name of ['人数の上限を設ける', 'オンサイト区分を設ける']) {
@@ -760,8 +858,37 @@ test('a published contest loads the passphrase for setters, sends every setting,
   await save.click()
   expect(await page.getByLabel('1チームの人数の上限（人）', { exact: true }).evaluate((input: HTMLInputElement) => input.validity.rangeOverflow)).toBe(true)
   await page.getByLabel('1チームの人数の上限（人）', { exact: true }).fill('5')
+  // The server checks the passphrase's length after trimming it, and so does the page, before anything is sent.
+  const passphrase = page.getByLabel('会場の合言葉', { exact: true })
+  await passphrase.fill('ab  ')
+  await page.getByRole('button', { name: '期間・ペナルティ', exact: true }).click()
+  await save.click()
+  await expect(page.getByRole('alert')).toHaveText('会場の合言葉は4〜64文字で入力するか、オンサイト区分をオフにしてください。')
+  await expect(page.getByRole('button', { name: '参加形式', exact: true })).toHaveAttribute('aria-current', 'page')
+  await passphrase.fill('Venue-2026')
   await save.click()
   await expect(page).toHaveURL(`/contests/${shortId(id)}`)
   const fields = (body: Record<string, unknown>) => [body.teamMode, body.maxTeamSize, body.onsiteDivision, body.onsitePassphrase]
   expect(bodies.map(fields)).toEqual([[false, null, true, 'Venue-2026'], [true, 2, true, 'Venue-2026'], [true, 5, true, 'Venue-2026']])
+})
+
+test('the editor of a started contest leaves the passphrase to the setter tools instead of showing an empty field', async ({ page }) => {
+  const contest: Contest = {
+    ...base, title: '開催中のチーム戦', author: 'ui_test', authors: ['ui_test'], status: 'running', startsAt: '2026-10-01T00:00:00Z',
+    canEdit: false, staff: true, setter: true, owner: true, official: false, canViewSubmissions: true, teamMode: true, onsiteDivision: true, resultsFinal: false,
+    problems: [{ id: '11111111-aaaa-4aaa-8aaa-000000000001', title: '自分の問題', points: 100 }],
+  }
+  const venue: string[] = []
+  await page.route('**/api/my/problems**', route => route.fulfill({ json: { items: [], nextCursor: '' } }))
+  await page.route(`**/api/my/contests/${id}/draft`, route => route.fulfill({ status: 404, json: {} }))
+  await page.route(`**/api/my/contests/${id}/onsite`, route => { venue.push(route.request().method()); return route.fulfill({ json: { onsiteDivision: true, passphrase: 'Venue-2026' } }) })
+  await page.route(`**/api/my/contests/${id}`, route => route.fulfill({ json: contest }))
+  await page.goto(`/my/contests/${shortId(id)}`)
+  await page.getByRole('button', { name: '参加形式', exact: true }).click()
+  const onsite = page.getByRole('switch', { name: 'オンサイト区分を設ける', exact: true })
+  await expect(onsite).toBeChecked()
+  await expect(onsite).toBeDisabled()
+  await expect(page.getByLabel('会場の合言葉', { exact: true })).toHaveCount(0)
+  await expect(page.locator('[data-section="participation"]')).toContainText('会場の合言葉は、コンテストのページの「参加者の管理」で確認できます。')
+  expect(venue).toEqual([])
 })
