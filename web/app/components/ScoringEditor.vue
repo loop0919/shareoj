@@ -123,8 +123,22 @@ function removeGroup(index: number) {
   for (const item of cases.value) if (item.groups?.includes(group.name)) item.groups = item.groups.filter(name => name !== group.name)
   for (const errors of [nameErrors, pointErrors]) for (const key of Object.keys(errors)) delete errors[Number(key)]
 }
-const aggregator = computed(() => scoring.value?.mode === 'aggregate' ? scoring.value.aggregator : undefined)
-const aggregatorError = computed(() => aggregator.value && (!aggregator.value.source.trim() || new TextEncoder().encode(aggregator.value.source).length > 65536 || aggregator.value.source.includes('\0'))
+// A draft from the CLI may be in the aggregate mode without an aggregator; the first edit creates it.
+const aggregating = computed(() => scoring.value?.mode === 'aggregate')
+function aggregatorDraft() {
+  const current = scoring.value!
+  current.aggregator ??= { runtime: defaultRuntime(), source: '' }
+  return current.aggregator
+}
+const aggregatorRuntime = computed({
+  get: () => scoring.value?.aggregator?.runtime ?? defaultRuntime(),
+  set: runtime => { aggregatorDraft().runtime = runtime },
+})
+const aggregatorSource = computed({
+  get: () => scoring.value?.aggregator?.source ?? '',
+  set: source => { aggregatorDraft().source = source },
+})
+const aggregatorError = computed(() => aggregating.value && (!aggregatorSource.value.trim() || new TextEncoder().encode(aggregatorSource.value).length > 65536 || aggregatorSource.value.includes('\0'))
   ? '公開・採点するには集計コードを1〜65,536バイトで、NUL文字を含めずに入力してください。' : '')
 </script>
 
@@ -168,12 +182,12 @@ const aggregatorError = computed(() => aggregator.value && (!aggregator.value.so
           <button type="button" class="editor-button" @click="emit('show-cases')">テストケースを開く</button>
         </div>
       </section>
-      <section v-if="aggregator" class="scoring-block" aria-labelledby="aggregator-title">
+      <section v-if="aggregating" class="scoring-block" aria-labelledby="aggregator-title">
         <h2 id="aggregator-title">集計コード</h2>
         <div class="aggregator-option">
           <label for="aggregator-language">集計コードの言語</label>
-          <select id="aggregator-language" v-model="aggregator.runtime" :disabled="disabled">
-            <option v-if="!available.some(item => item.id === aggregator?.runtime)" :value="aggregator.runtime">{{ aggregator.runtime }}（現在利用できません）</option>
+          <select id="aggregator-language" v-model="aggregatorRuntime" :disabled="disabled">
+            <option v-if="!available.some(item => item.id === aggregatorRuntime)" :value="aggregatorRuntime">{{ aggregatorRuntime }}（現在利用できません）</option>
             <option v-for="item in available" :key="item.id" :value="item.id">{{ item.label }}</option>
           </select>
         </div>
@@ -186,7 +200,7 @@ const aggregatorError = computed(() => aggregator.value && (!aggregator.value.so
             <div><dt>制限</dt><dd>CPU 5秒・512 MiB。失敗や書式違いは、提出全体がJEになります。</dd></div>
           </dl>
         </details>
-        <SourceCodeEditor v-model="aggregator.source" :runtime="aggregator.runtime" label="集計コード" :disabled="disabled" />
+        <SourceCodeEditor v-model="aggregatorSource" :runtime="aggregatorRuntime" label="集計コード" :disabled="disabled" />
         <p v-if="aggregatorError" class="editor-error" role="alert">{{ aggregatorError }}</p>
       </section>
     </div>
