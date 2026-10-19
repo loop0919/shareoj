@@ -158,20 +158,21 @@ const aggregatorError = computed(() => aggregating.value && (!aggregatorSource.v
         <div class="scoring-heading"><h2 id="scoring-groups-title">グループ</h2><p>満点 <strong>{{ total }}</strong> 点</p></div>
         <p v-if="totalError" class="field-error" role="alert">{{ totalError }}</p>
         <p v-if="!groups.length" class="muted">グループを追加してください。満点は、グループの配点の合計です。</p>
-        <table v-else class="scoring-groups">
-          <thead><tr><th scope="col">グループ名</th><th scope="col">配点</th><th scope="col">ケース</th><th scope="col"><span class="visually-hidden">操作</span></th></tr></thead>
-          <tbody>
-            <tr v-for="(group, index) in groups" :key="index">
-              <td>
+        <!-- Explicit roles keep the table for screen readers when narrow screens lay its rows out as grids. -->
+        <table v-else class="scoring-groups" role="table">
+          <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">グループ名</th><th scope="col" role="columnheader">配点</th><th scope="col" role="columnheader">ケース</th><th scope="col" role="columnheader"><span class="visually-hidden">操作</span></th></tr></thead>
+          <tbody role="rowgroup">
+            <tr v-for="(group, index) in groups" :key="index" role="row">
+              <td role="cell">
                 <input :id="`group-name-${index}`" :value="group.name" :aria-label="`グループ${index + 1}の名前`" :aria-invalid="!!nameErrors[index]" :aria-describedby="nameErrors[index] ? `group-name-error-${index}` : undefined" :disabled="disabled" maxlength="64" autocomplete="off" @change="rename(index, $event)" @keydown.enter.prevent="rename(index, $event)">
                 <p v-if="nameErrors[index]" :id="`group-name-error-${index}`" class="field-error" role="alert">{{ nameErrors[index] }}</p>
               </td>
-              <td>
+              <td role="cell">
                 <span class="points-input"><input :value="group.points" type="number" min="0" :max="maxFullScore" step="1" inputmode="numeric" :aria-label="`グループ${index + 1}の配点`" :aria-invalid="!!pointErrors[index]" :aria-describedby="pointErrors[index] ? `group-points-error-${index}` : undefined" :disabled="disabled" @input="updatePoints(index, $event)" @change="checkPoints(index, $event)"> 点</span>
                 <p v-if="pointErrors[index]" :id="`group-points-error-${index}`" class="field-error" role="alert">{{ pointErrors[index] }}</p>
               </td>
-              <td class="group-count" :data-empty="!counts.get(group.name) || undefined">{{ counts.get(group.name) ?? 0 }} 件</td>
-              <td><button type="button" class="editor-button group-remove" :disabled="disabled" :aria-label="`「${group.name}」を削除`" title="グループを削除" @click="removeGroup(index)"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" /></svg></button></td>
+              <td class="group-count" role="cell" :data-empty="!counts.get(group.name) || undefined">{{ counts.get(group.name) ?? 0 }} 件</td>
+              <td role="cell"><button type="button" class="editor-button group-remove" :disabled="disabled" :aria-label="`「${group.name}」を削除`" title="グループを削除" @click="removeGroup(index)"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" /></svg></button></td>
             </tr>
           </tbody>
         </table>
@@ -242,8 +243,12 @@ const aggregatorError = computed(() => aggregating.value && (!aggregatorSource.v
 button:disabled { opacity: .5; cursor: not-allowed; }
 @media (pointer: coarse) { .group-remove { width: 44px; min-height: 44px; } .group-add { min-height: 44px; } }
 @media (max-width: 480px) {
-  .scoring-groups th:nth-child(2), .scoring-groups td:nth-child(2) { width: 7.5em; }
-  .points-input input { width: 5em; }
-  .scoring-groups th, .scoring-groups td { padding-inline: 4px; }
+  /* Beside fixed points, count and delete columns the name would keep a few characters; it takes a line of its own. */
+  .scoring-groups thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .scoring-groups, .scoring-groups tbody { display: block; }
+  .scoring-groups tr { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: start; gap: 6px 12px; padding-block: 10px; border-bottom: 1px solid var(--color-line); }
+  .scoring-groups td { display: block; width: auto !important; padding: 0; border: 0; }
+  .scoring-groups td:first-child { grid-column: 1 / -1; }
+  .group-count { padding-top: 8px !important; }
 }
 </style>

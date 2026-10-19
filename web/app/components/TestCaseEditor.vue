@@ -293,7 +293,7 @@ function add() {
 .case-groups-missing { color: var(--color-error); }
 .case-groups-link { margin-left: auto; padding: 4px 2px; border: 0; background: none; color: var(--color-accent); font: inherit; font-size: .75rem; text-decoration: underline; cursor: pointer; }
 @media (hover: hover) { .group-chip:not(:has(input:checked)):hover { background: var(--color-surface); } }
-@media (pointer: coarse) { .group-chip { min-height: 44px; } }
+@media (pointer: coarse) { .group-chip, .case-groups-link { min-height: 44px; } .case-groups-link { padding-inline: 8px; } }
 .case-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 1; min-height: 0; }
 .empty-editor { display: flex; flex-direction: column; padding: 16px; overflow-y: auto; }
 .empty-editor > * { margin-block: auto; }
