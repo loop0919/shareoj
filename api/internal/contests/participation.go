@@ -106,7 +106,8 @@ func samePassphrase(sent, stored string) bool {
 
 // Join registers the actor (ADR 0024). Staff, former staff and, after the end, newcomers are refused as before.
 // In a team contest the actor creates a team or joins one by its code; one person is in one team. A correct venue
-// passphrase makes the participant, or the whole team, onsite until the end; a wrong one registers nothing.
+// passphrase makes the participant, or the whole team, onsite until the end, unless a setter moved them to open;
+// a wrong one registers nothing.
 func (s *Store) Join(ctx context.Context, id, owner string, in JoinInput) error {
 	passphrase := ""
 	if in.OnsitePassphrase != nil {
@@ -184,9 +185,11 @@ func (s *Store) Join(ctx context.Context, id, owner string, in JoinInput) error 
 		}
 	}
 	var team string
+	// Whether a setter moved the team, or the participant, to open. Their switch updates the same row this locks.
+	var kept bool
 	switch {
 	case joining:
-		err = tx.QueryRow(ctx, `SELECT id FROM contest_teams WHERE contest_id=$1 AND join_code=$2 FOR UPDATE`, id, NormalizeJoinCode(in.Team.Code)).Scan(&team)
+		err = tx.QueryRow(ctx, `SELECT id,kept_open FROM contest_teams WHERE contest_id=$1 AND join_code=$2 FOR UPDATE`, id, NormalizeJoinCode(in.Team.Code)).Scan(&team, &kept)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return failAttempt(ctx, tx, id, owner, ErrIncorrectTeamCode)
 		}
@@ -196,7 +199,7 @@ func (s *Store) Join(ctx context.Context, id, owner string, in JoinInput) error 
 	case st.team != nil:
 		// A member may be removed, or leave, meanwhile; the team's lock orders that, and membership is read again.
 		var member bool
-		err = tx.QueryRow(ctx, `SELECT id FROM contest_teams WHERE id=$1 FOR UPDATE`, *st.team).Scan(&team)
+		err = tx.QueryRow(ctx, `SELECT id,kept_open FROM contest_teams WHERE id=$1 FOR UPDATE`, *st.team).Scan(&team, &kept)
 		if err == nil {
 			err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM contest_participants WHERE contest_id=$1 AND owner_id=$2 AND team_id=$3)`, id, owner, team).Scan(&member)
 		}
@@ -206,6 +209,15 @@ func (s *Store) Join(ctx context.Context, id, owner string, in JoinInput) error 
 		if err != nil {
 			return err
 		}
+	case st.registered && passphrase != "":
+		err = tx.QueryRow(ctx, `SELECT kept_open FROM contest_participants WHERE contest_id=$1 AND owner_id=$2 FOR UPDATE`, id, owner).Scan(&kept)
+		if err != nil {
+			return err
+		}
+	}
+	// The setter's decision stands, whoever holds the passphrase; it is not a guess, so nothing is counted.
+	if passphrase != "" && kept {
+		return ErrOnsiteKeptOpen
 	}
 	if passphrase != "" && !samePassphrase(passphrase, st.stored) {
 		return failAttempt(ctx, tx, id, owner, ErrIncorrectPassphrase)

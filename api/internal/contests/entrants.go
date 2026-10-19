@@ -51,9 +51,9 @@ func (s *Store) RotatePassphrase(ctx context.Context, id, actor, passphrase stri
 // entrantTeams and entrantParticipants read the rows of the setters' list, oldest first; $2 narrows them to one team
 // or one handle. Participants left out of the standings are left out here too.
 var (
-	entrantTeams = `SELECT t.id,t.name,` + members("t") + `,c.onsite_division AND t.onsite_at IS NOT NULL,t.onsite_at,COALESCE(t.onsite_via,''),t.created_at
+	entrantTeams = `SELECT t.id,t.name,` + members("t") + `,c.onsite_division AND t.onsite_at IS NOT NULL,t.onsite_at,COALESCE(t.onsite_via,''),t.kept_open,t.created_at
  FROM contest_teams t JOIN contests c ON c.id=t.contest_id WHERE c.id=$1 AND ($2='' OR t.id::text=$2) ORDER BY t.created_at,t.id`
-	entrantParticipants = `SELECT u.handle,c.onsite_division AND p.onsite_at IS NOT NULL,p.onsite_at,COALESCE(p.onsite_via,''),p.created_at
+	entrantParticipants = `SELECT u.handle,c.onsite_division AND p.onsite_at IS NOT NULL,p.onsite_at,COALESCE(p.onsite_via,''),p.kept_open,p.created_at
  FROM contest_participants p JOIN contests c ON c.id=p.contest_id JOIN user_profiles u ON u.owner_id=p.owner_id
  WHERE c.id=$1 AND contest_competitor(c,p.owner_id) AND ($2='' OR u.handle=$2) ORDER BY p.created_at,u.handle`
 )
@@ -70,11 +70,11 @@ func readEntrants(ctx context.Context, q querier, id string, teamMode bool, only
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Entrant, error) {
 		var e Entrant
 		if !teamMode {
-			err := row.Scan(&e.Handle, &e.Onsite, &e.OnsiteAt, &e.OnsiteVia, &e.CreatedAt)
+			err := row.Scan(&e.Handle, &e.Onsite, &e.OnsiteAt, &e.OnsiteVia, &e.KeptOpen, &e.CreatedAt)
 			return e, err
 		}
 		e.Team = &TeamSummary{}
-		err := row.Scan(&e.Team.ID, &e.Team.Name, &e.Team.Members, &e.Onsite, &e.OnsiteAt, &e.OnsiteVia, &e.CreatedAt)
+		err := row.Scan(&e.Team.ID, &e.Team.Name, &e.Team.Members, &e.Onsite, &e.OnsiteAt, &e.OnsiteVia, &e.KeptOpen, &e.CreatedAt)
 		e.Team.Onsite = e.Onsite
 		return e, err
 	})
@@ -133,7 +133,8 @@ func one(ctx context.Context, tx pgx.Tx, id string, teamMode bool, only string) 
 
 // SetOnsite moves a participant (by handle, in an individual contest) or a team (by id, in a team contest) between the
 // divisions until the results are final, in case the passphrase leaked or someone at the venue missed it (ADR 0024).
-// Becoming onsite again keeps the first time and route; becoming open clears them.
+// Becoming onsite again keeps the first time and route; becoming open clears them and keeps them open: the passphrase
+// no longer makes them onsite, or a team member at the venue could undo the switch up to the end.
 func (s *Store) SetOnsite(ctx context.Context, id, actor, handle, team string, onsite bool) (Entrant, error) {
 	var e Entrant
 	err := s.changeEntrant(ctx, id, actor, func(tx pgx.Tx, teamMode, division bool) error {
@@ -146,10 +147,10 @@ func (s *Store) SetOnsite(ctx context.Context, id, actor, handle, team string, o
 			return ErrOnsiteUnavailable
 		case teamMode:
 			tag, err = tx.Exec(ctx, `UPDATE contest_teams SET onsite_at=CASE WHEN $3 THEN COALESCE(onsite_at,clock_timestamp()) END,
- onsite_via=CASE WHEN $3 THEN COALESCE(onsite_via,'setter') END WHERE contest_id=$1 AND id::text=$2`, id, team, onsite)
+ onsite_via=CASE WHEN $3 THEN COALESCE(onsite_via,'setter') END,kept_open=NOT $3 WHERE contest_id=$1 AND id::text=$2`, id, team, onsite)
 		default:
 			tag, err = tx.Exec(ctx, `UPDATE contest_participants p SET onsite_at=CASE WHEN $3 THEN COALESCE(p.onsite_at,clock_timestamp()) END,
- onsite_via=CASE WHEN $3 THEN COALESCE(p.onsite_via,'setter') END
+ onsite_via=CASE WHEN $3 THEN COALESCE(p.onsite_via,'setter') END,kept_open=NOT $3
  FROM contests c, user_profiles u WHERE c.id=p.contest_id AND u.owner_id=p.owner_id AND p.contest_id=$1 AND u.handle=$2
  AND contest_competitor(c,p.owner_id)`, id, handle, onsite)
 		}

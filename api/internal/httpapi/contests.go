@@ -488,6 +488,8 @@ func contestError(w http.ResponseWriter, err error) {
 		authError(w, 409, "contest_team_unavailable")
 	case errors.Is(err, contests.ErrOnsiteUnavailable):
 		authError(w, 409, "contest_onsite_unavailable")
+	case errors.Is(err, contests.ErrOnsiteKeptOpen):
+		authError(w, 409, "onsite_kept_open")
 	case errors.Is(err, contests.ErrIncorrectTeamCode):
 		authError(w, 400, "incorrect_team_code")
 	case errors.Is(err, contests.ErrIncorrectPassphrase):

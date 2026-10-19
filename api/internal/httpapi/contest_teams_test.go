@@ -624,11 +624,18 @@ func TestContestOnsitePostgres(t *testing.T) {
 	onsite := "/my/contests/" + tc + "/teams/" + gamma.ID + "/onsite"
 	var e contests.Entrant
 	f.decode(f.request("PUT", onsite, "alice", map[string]any{"onsite": false}, 200), &e)
-	if e.Onsite || e.OnsiteAt != nil || e.OnsiteVia != "" || e.Team == nil || e.Team.Onsite || f.contest(tc, "frank").Onsite {
+	if e.Onsite || e.OnsiteAt != nil || e.OnsiteVia != "" || !e.KeptOpen || e.Team == nil || e.Team.Onsite || f.contest(tc, "frank").Onsite {
 		t.Fatalf("switched open: %+v", e)
 	}
+	// The switch sticks: a member with the passphrase cannot undo it, and nobody joins the team with it either.
+	failures := f.count(`SELECT count(*) FROM contest_attempt_failures`)
+	f.fail("POST", path, "frank", map[string]any{"onsitePassphrase": phrase}, 409, "onsite_kept_open")
+	f.fail("POST", path, "dan", withPhrase(joinCode(gamma.Code), phrase), 409, "onsite_kept_open")
+	if f.contest(tc, "frank").Onsite || f.contest(tc, "dan").Participating || f.count(`SELECT count(*) FROM contest_attempt_failures`) != failures {
+		t.Fatal("the passphrase undid the setter's switch")
+	}
 	f.decode(f.request("PUT", onsite, "cos", map[string]any{"onsite": true}, 200), &e)
-	if !e.Onsite || e.OnsiteVia != "setter" || e.OnsiteAt == nil {
+	if !e.Onsite || e.OnsiteVia != "setter" || e.OnsiteAt == nil || e.KeptOpen {
 		t.Fatalf("switched onsite: %+v", e)
 	}
 	// Switching again keeps the first time and route.
@@ -655,11 +662,12 @@ func TestContestOnsitePostgres(t *testing.T) {
 	}
 	f.fail("POST", ipath, "tess", map[string]any{"onsitePassphrase": "open sesame"}, 409, "contest_participation_unavailable")
 	f.decode(f.request("PUT", "/my/contests/"+ic+"/participants/hank/onsite", "alice", map[string]any{"onsite": false}, 200), &e)
-	if e.Handle != "hank" || e.Team != nil || e.Onsite || f.contest(ic, "hank").Onsite {
+	if e.Handle != "hank" || e.Team != nil || e.Onsite || !e.KeptOpen || f.contest(ic, "hank").Onsite {
 		t.Fatalf("participant switched open: %+v", e)
 	}
+	f.fail("POST", ipath, "hank", map[string]any{"onsitePassphrase": "open sesame"}, 409, "onsite_kept_open")
 	f.decode(f.request("PUT", "/my/contests/"+ic+"/participants/hank/onsite", "alice", map[string]any{"onsite": true}, 200), &e)
-	if !e.Onsite || e.OnsiteVia != "setter" {
+	if !e.Onsite || e.OnsiteVia != "setter" || e.KeptOpen {
 		t.Fatalf("participant switched onsite: %+v", e)
 	}
 	f.fail("PUT", "/my/contests/"+ic+"/participants/ivan/onsite", "alice", map[string]any{"onsite": true}, 404, "participant_not_found")
@@ -679,8 +687,9 @@ func TestContestOnsitePostgres(t *testing.T) {
 	f.fail("PUT", "/my/contests/"+ic, "alice", update(before, map[string]any{"onsiteDivision": true, "onsitePassphrase": "open sesame"}), 409, "contest_conflict")
 	f.fail("POST", ipath, "ivan", map[string]any{"onsitePassphrase": "open sesame"}, 400, "incorrect_venue_passphrase")
 	f.join(ic, "ivan", map[string]any{"onsitePassphrase": "New phrase"})
+	f.request("PUT", "/my/contests/"+ic+"/participants/ivan/onsite", "alice", map[string]any{"onsite": false}, 200)
 
-	// Dropping the division before the start makes everyone open and forgets the passphrase.
+	// Dropping the division before the start makes everyone open and forgets the passphrase and the setters' switches.
 	f.decode(f.request("PUT", "/my/contests/"+ic, "alice", update(f.contest(ic, "alice"), map[string]any{"onsiteDivision": false}), 200), &c)
 	if c.OnsiteDivision || f.contest(ic, "gina").Onsite || f.count(`SELECT count(*) FROM contest_participants WHERE contest_id=$1 AND onsite_at IS NOT NULL`, ic) != 0 {
 		t.Fatalf("division dropped: %+v", c)
@@ -694,6 +703,9 @@ func TestContestOnsitePostgres(t *testing.T) {
 	f.decode(f.request("PUT", "/my/contests/"+ic, "alice", update(c, map[string]any{"onsiteDivision": true, "onsitePassphrase": "second"}), 200), &c)
 	if !c.OnsiteDivision || f.contest(ic, "gina").Onsite {
 		t.Fatalf("division again: %+v", c)
+	}
+	if ivan := f.join(ic, "ivan", map[string]any{"onsitePassphrase": "second"}); !ivan.Onsite {
+		t.Fatalf("kept open across the new division: %+v", ivan)
 	}
 
 	// While the contest runs the passphrase still changes and upgrades work; the division itself is fixed.
@@ -891,6 +903,10 @@ func TestContestTeamLocksPostgres(t *testing.T) {
 	if n := f.count(`SELECT count(*) FROM contest_teams WHERE onsite_at IS NOT NULL`); n != 0 {
 		t.Fatal("removed member made the team onsite")
 	}
+	// A setter's switch to open, made while a member enters the passphrase, holds.
+	w = f.waits(f.newRequest("POST", path, "bob", map[string]any{"onsitePassphrase": "correct"}),
+		`UPDATE contest_teams SET kept_open=true WHERE id='`+team+`'`)
+	expect(t, w, 409, "onsite_kept_open")
 	// A save waits for a registration in progress, then keeps the team mode.
 	c := f.contest(tc, "alice")
 	f.exec(`DELETE FROM contest_participants`)
@@ -899,6 +915,14 @@ func TestContestTeamLocksPostgres(t *testing.T) {
 		`SELECT id FROM contests WHERE id='`+tc+`' FOR SHARE`,
 		`INSERT INTO contest_participants(contest_id,owner_id) VALUES('`+tc+`','erin')`)
 	expect(t, w, 409, "contest_team_mode_locked")
+	// In an individual contest the participant's row orders the passphrase against the setter's switch.
+	const ic, pb = "c0000000-0000-4000-8000-000000000002", "a0000000-0000-4000-8000-000000000002"
+	f.problem(pb)
+	f.create(ic, pb, map[string]any{"onsiteDivision": true, "onsitePassphrase": "correct"})
+	f.join(ic, "carol", nil)
+	w = f.waits(f.newRequest("POST", "/my/contests/"+ic+"/participation", "carol", map[string]any{"onsitePassphrase": "correct"}),
+		`UPDATE contest_participants SET kept_open=true WHERE contest_id='`+ic+`' AND owner_id='carol'`)
+	expect(t, w, 409, "onsite_kept_open")
 }
 
 // ADR 0024: deleting an account before the start takes it out of the contest and its team; after the start it stays.

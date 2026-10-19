@@ -615,6 +615,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 - 参加コードはサーバーが作る10文字で、0、O、1、I、L、Uを使わない。大文字と小文字、全角、空白とハイフンの違いは無視し、誤りは400 `incorrect_team_code`。
 - 会場の合言葉が正しければ本人（チーム戦ではチーム）をオンサイトにし、誤りは400 `incorrect_venue_passphrase`として何も登録しない。区分のないコンテストでは409 `contest_onsite_unavailable`。
 - 登録済みの人は、終了まで`onsitePassphrase`だけを送ってオンサイトになれる。チームの誰か1人が入れればチーム全体がオンサイトになる。
+- セッターがオープンに切り替えた参加者（チーム戦ではチーム）は、セッターがオンサイトに戻すか区分をなしにするまで、合言葉を送っても409 `onsite_kept_open`とする。試行回数には数えない。
 - 参加コードと合言葉の誤りはアカウントとコンテストの組ごとに数え、10分に10回に達すると、以後の試行を429 `contest_attempts_limited`と`Retry-After`で断る。
 
 | API | 動作 |
@@ -633,10 +634,10 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 - メンバーの操作は、チームがなければ404 `team_not_found`、チームにいないハンドルは404 `team_member_not_found`、期間外は409 `team_locked`とする。
 - メンバーを外すか自分で抜けると、参加コードを作り直す。最後の1人が抜けるとチームを消す。
 - セッターの操作は、セッター以外に404 `contest_not_found`、期間外に409 `contest_conflict`、該当する参加者やチームがなければ404 `participant_not_found`か`team_not_found`を返す。
-- 参加者一覧の各要素は、個人戦では`handle`、チーム戦では`team`を持ち、`onsite`、`onsiteAt`、`onsiteVia`（`passphrase`か`setter`、オープンなら空）、`createdAt`を返す。
+- 参加者一覧の各要素は、個人戦では`handle`、チーム戦では`team`を持ち、`onsite`、`onsiteAt`、`onsiteVia`（`passphrase`か`setter`、オープンなら空）、`keptOpen`（セッターがオープンに切り替えたか）、`createdAt`を返す。
 - 合言葉の差し替えはコンテストの`version`を進めるので、古い合言葉を持つ編集画面の保存は409 `contest_conflict`になる。
 - 開始前の退会では、そのコンテストの参加登録とチームの所属を外し、空になったチームを消し、残ったチームの参加コードを作り直す。
-- 配布時は`035_contest_teams.sql`だけのコミットを先に配布して適用し、その後にAPIを配布する。
+- 配布時は`035_contest_teams.sql`だけのコミットを先に配布して適用し、その後にAPIを配布する。`037_contest_onsite_kept_open.sql`も同じく先に適用する。
 
 チームの提出の共有、順位表、オンサイトの絞り込みは次のとおり。
 

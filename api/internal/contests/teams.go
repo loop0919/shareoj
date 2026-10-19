@@ -38,6 +38,8 @@ var (
 	ErrTeamUnavailable = errors.New("the contest is not a team contest")
 	// ErrOnsiteUnavailable means a venue passphrase, or an onsite change, was sent for a contest without the division.
 	ErrOnsiteUnavailable = errors.New("the contest has no onsite division")
+	// ErrOnsiteKeptOpen refuses the venue passphrase from a participant, or for a team, that a setter moved to open.
+	ErrOnsiteKeptOpen = errors.New("a setter keeps the participant open")
 	// ErrIncorrectTeamCode and ErrIncorrectPassphrase count toward the attempt limit.
 	ErrIncorrectTeamCode   = errors.New("no team has this join code")
 	ErrIncorrectPassphrase = errors.New("the venue passphrase is incorrect")
@@ -80,12 +82,14 @@ type Team struct {
 
 // Entrant is one row of the setters' participant list: a participant in an individual contest, a team in a team
 // contest. OnsiteVia tells how they became onsite, "passphrase" or "setter", and is empty while they are open.
+// KeptOpen marks one a setter moved to open, whom the venue passphrase no longer makes onsite.
 type Entrant struct {
 	Handle    string       `json:"handle"`
 	Team      *TeamSummary `json:"team"`
 	Onsite    bool         `json:"onsite"`
 	OnsiteAt  *time.Time   `json:"onsiteAt"`
 	OnsiteVia string       `json:"onsiteVia"`
+	KeptOpen  bool         `json:"keptOpen"`
 	CreatedAt time.Time    `json:"createdAt"`
 }
 
@@ -184,7 +188,7 @@ func members(t string) string {
 // keepRegistrations refuses settings that would split the registrations (ADR 0024): the team mode cannot change once
 // someone has registered, and the maximum team size cannot drop below the largest team. Joining holds the contest row
 // in share mode, so the registrations read here stay until the save commits. Dropping the onsite division before the
-// start makes everyone open again.
+// start makes everyone open again and forgets the setters' switches, so a division turned on later starts afresh.
 func keepRegistrations(ctx context.Context, tx pgx.Tx, id string, teamMode bool, in Input) error {
 	var registered bool
 	var largest int
@@ -200,7 +204,7 @@ func keepRegistrations(ctx context.Context, tx pgx.Tx, id string, teamMode bool,
 	}
 	if in.OnsiteDivision != nil && !*in.OnsiteDivision {
 		for _, table := range []string{"contest_participants", "contest_teams"} {
-			if _, err := tx.Exec(ctx, `UPDATE `+table+` SET onsite_at=NULL,onsite_via=NULL WHERE contest_id=$1 AND onsite_at IS NOT NULL`, id); err != nil {
+			if _, err := tx.Exec(ctx, `UPDATE `+table+` SET onsite_at=NULL,onsite_via=NULL,kept_open=false WHERE contest_id=$1 AND (onsite_at IS NOT NULL OR kept_open)`, id); err != nil {
 				return err
 			}
 		}
