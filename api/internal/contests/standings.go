@@ -2,25 +2,36 @@ package contests
 
 import (
 	"context"
+	"fmt"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 )
 
+// Score is a problem's cell. Points is the problem's score in whole points, Score the same in hundredths, exact for a
+// partially scored problem (ADR 0025), and ScoreText the way to show it: a whole number, or two decimals ("37.50").
+// AcceptedAt is when the full score was reached and ScoredAt when the score last rose; for an all-or-nothing problem
+// both are the first AC. Wrong counts every wrong run of a problem without a score, and otherwise the wrong runs before
+// ScoredAt, which the penalty counts. Pending counts the runs waiting for a verdict before the full score.
 // Frozen counts the submissions made after the freeze, whatever their verdict (ADR 0023); it stays 0 on a
-// problem accepted before the freeze, and without a freeze or after the results are final.
+// problem with the full score before the freeze, and without a freeze or after the results are final.
 type Score struct {
 	Points     int        `json:"points"`
+	Score      int64      `json:"score"`
+	ScoreText  string     `json:"scoreText"`
 	Wrong      int        `json:"wrong"`
 	Pending    int        `json:"pending"`
 	Frozen     int        `json:"frozen"`
 	AcceptedAt *time.Time `json:"acceptedAt,omitempty"`
+	ScoredAt   *time.Time `json:"scoredAt,omitempty"`
 }
 
 // Standing is a row of the standings: a team, or a participant who is in no team (ADR 0024). Handle names the
 // participant and is empty in a team row, whose Team holds the name and the members. Onsite marks the onsite division.
-// OverallRank is the rank among all rows; it differs from Rank only in the onsite division's table.
+// OverallRank is the rank among all rows; it differs from Rank only in the onsite division's table. Points, Score and
+// ScoreText total the cells like a cell's own.
 type Standing struct {
 	Rank        int               `json:"rank"`
 	OverallRank int               `json:"overallRank"`
@@ -28,15 +39,20 @@ type Standing struct {
 	Team        *TeamSummary      `json:"team"`
 	Onsite      bool              `json:"onsite"`
 	Points      int               `json:"points"`
+	Score       int64             `json:"score"`
+	ScoreText   string            `json:"scoreText"`
 	TimeMS      int64             `json:"timeMs"`
 	Problems    map[string]*Score `json:"problems"`
 }
 
-// Attempt is a submission to rank. Team is the submitter's team, if any; the attempt counts toward its row.
+// Attempt is a submission to rank. Team is the submitter's team, if any; the attempt counts toward its row. Points is
+// the problem's points, its full score. Groups holds a partially scored result's group scores in hundredths; nil
+// means an all-or-nothing result, which scores the full points with an AC.
 type Attempt struct {
 	Handle, ProblemID, Verdict string
 	Team                       string
 	Points                     int
+	Groups                     []int64
 	CreatedAt                  time.Time
 }
 
@@ -62,6 +78,14 @@ func (s Standing) name() string {
 	return s.Handle
 }
 
+// ScoreText writes a score in hundredths as a whole number, or with two decimals when it has a fraction (ADR 0025).
+func ScoreText(hundredths int64) string {
+	if hundredths%100 == 0 {
+		return strconv.FormatInt(hundredths/100, 10)
+	}
+	return fmt.Sprintf("%d.%02d", hundredths/100, hundredths%100)
+}
+
 // Attempts must be ordered by acceptance time, never judge completion time.
 func Rank(participants []string, attempts []Attempt, start time.Time, penaltyMinutes int) []Standing {
 	return RankFrozen(participants, attempts, start, penaltyMinutes, time.Time{})
@@ -77,15 +101,50 @@ func RankFrozen(participants []string, attempts []Attempt, start time.Time, pena
 	return RankRows(rows, attempts, start, penaltyMinutes, freezeAt)
 }
 
+// progress is what ranking a problem of a row needs beyond its cell.
+type progress struct {
+	// best holds each group's best score and whole the best all-or-nothing score, both in hundredths.
+	best  []int64
+	whole int64
+	// wrong counts every wrong run, and before those before the last run that raised the score.
+	wrong, before int
+}
+
+// score adds the attempt's scores and returns the problem's score: each group's best summed, as at JOI and IOI
+// (ADR 0025), and never more than the full score.
+func (p *progress) score(a Attempt) int64 {
+	full := int64(a.Points) * 100
+	if a.Groups == nil {
+		if a.Verdict == "AC" {
+			p.whole = full
+		}
+	}
+	for i, g := range a.Groups {
+		if i >= len(p.best) {
+			p.best = append(p.best, make([]int64, i+1-len(p.best))...)
+		}
+		p.best[i] = max(p.best[i], g)
+	}
+	total := int64(0)
+	for _, g := range p.best {
+		total += g
+	}
+	return min(max(total, p.whole), full)
+}
+
 // RankRows ranks rows, participants keyed by Handle or teams keyed by Team.ID, with the rules of RankFrozen. An attempt
 // counts toward its Team's row, or its Handle's outside teams; one for a key not in rows adds a row.
+// A run that raises the problem's score improves it; a judged run that does not, CE and JE aside, is wrong. The
+// problem's time is the last improvement, and the penalty counts the wrong runs before it. Rows rank by total score,
+// then by the latest problem time plus the penalty. For all-or-nothing problems the only improvement is the first AC,
+// so these are the rules of a contest without partial scores (ADR 0025).
 func RankRows(rows []Standing, attempts []Attempt, start time.Time, penaltyMinutes int, freezeAt time.Time) []Standing {
 	users := map[string]*Standing{}
 	for _, row := range rows {
 		row.Problems = map[string]*Score{}
 		users[row.key()] = &row
 	}
-	last := map[string]time.Time{}
+	states := map[*Score]*progress{}
 	for _, a := range attempts {
 		key := a.key()
 		u := users[key]
@@ -100,6 +159,7 @@ func RankRows(rows []Standing, attempts []Attempt, start time.Time, penaltyMinut
 		if p == nil {
 			p = &Score{}
 			u.Problems[a.ProblemID] = p
+			states[p] = &progress{}
 		}
 		if p.AcceptedAt != nil {
 			continue
@@ -109,32 +169,51 @@ func RankRows(rows []Standing, attempts []Attempt, start time.Time, penaltyMinut
 			continue
 		}
 		switch a.Verdict {
-		case "AC":
-			at := a.CreatedAt
-			p.AcceptedAt = &at
-			p.Points = a.Points
-			u.Points += a.Points
-			u.TimeMS += int64(p.Wrong) * int64(penaltyMinutes) * 60000
-			if at.After(last[key]) {
-				last[key] = at
-			}
-		case "WA", "RE", "TLE", "MLE", "OLE":
-			p.Wrong++
+		case "AC", "WA", "RE", "TLE", "MLE", "OLE":
 		case "":
 			p.Pending++
+			continue
+		default:
+			continue
+		}
+		state := states[p]
+		score := state.score(a)
+		if score <= p.Score {
+			state.wrong++
+			continue
+		}
+		at := a.CreatedAt
+		p.Score, p.ScoredAt, state.before = score, &at, state.wrong
+		if score >= int64(a.Points)*100 {
+			p.AcceptedAt = &at
 		}
 	}
 	result := make([]Standing, 0, len(users))
-	for key, u := range users {
-		if at, ok := last[key]; ok {
-			u.TimeMS += at.Sub(start).Milliseconds()
+	for _, u := range users {
+		var last time.Time
+		for _, p := range u.Problems {
+			state := states[p]
+			p.Wrong = state.wrong
+			if p.ScoredAt != nil {
+				p.Wrong = state.before
+				u.TimeMS += int64(state.before) * int64(penaltyMinutes) * 60000
+				if p.ScoredAt.After(last) {
+					last = *p.ScoredAt
+				}
+			}
+			p.Points, p.ScoreText = int(p.Score/100), ScoreText(p.Score)
+			u.Score += p.Score
 		}
+		if !last.IsZero() {
+			u.TimeMS += last.Sub(start).Milliseconds()
+		}
+		u.Points, u.ScoreText = int(u.Score/100), ScoreText(u.Score)
 		result = append(result, *u)
 	}
 	sort.Slice(result, func(i, j int) bool {
 		a, b := result[i], result[j]
-		if a.Points != b.Points {
-			return a.Points > b.Points
+		if a.Score != b.Score {
+			return a.Score > b.Score
 		}
 		if a.TimeMS != b.TimeMS {
 			return a.TimeMS < b.TimeMS
@@ -148,11 +227,11 @@ func RankRows(rows []Standing, attempts []Attempt, start time.Time, penaltyMinut
 	return result
 }
 
-// rank numbers sorted rows from 1; rows with the same points and time share the rank of the first of them.
+// rank numbers sorted rows from 1; rows with the same score and time share the rank of the first of them.
 func rank(rows []Standing) {
 	for i := range rows {
 		rows[i].Rank = i + 1
-		if i > 0 && rows[i].Points == rows[i-1].Points && rows[i].TimeMS == rows[i-1].TimeMS {
+		if i > 0 && rows[i].Score == rows[i-1].Score && rows[i].TimeMS == rows[i-1].TimeMS {
 			rows[i].Rank = rows[i-1].Rank
 		}
 	}
@@ -221,7 +300,10 @@ func (s *Store) Standings(ctx context.Context, id, viewer string, live, onsite b
 	if err != nil {
 		return nil, err
 	}
-	rows, err = s.Pool.Query(ctx, `SELECT s.owner_id,s.problem_id,COALESCE(s.result->>'verdict',''),cp.points,s.created_at
+	// A partially scored result brings its group scores; the others score by their verdict.
+	rows, err = s.Pool.Query(ctx, `SELECT s.owner_id,s.problem_id,COALESCE(s.result->>'verdict',''),cp.points,
+ CASE WHEN jsonb_typeof(s.result->'scoring'->'groups')='array' THEN ARRAY(SELECT (g->>'score')::bigint
+  FROM jsonb_array_elements(s.result->'scoring'->'groups') WITH ORDINALITY x(g,i) ORDER BY i) END,s.created_at
  FROM submissions s JOIN contests c ON c.id=s.contest_id JOIN contest_problems cp ON cp.contest_id=c.id AND cp.problem_id=s.problem_id
  WHERE c.id=$1 AND s.owner_id=ANY($2::text[]) AND s.created_at>=c.starts_at AND s.created_at<c.ends_at
  AND NOT COALESCE((s.job->>'easyTest')::boolean,false)
@@ -232,7 +314,7 @@ func (s *Store) Standings(ctx context.Context, id, viewer string, live, onsite b
 	attempts, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Attempt, error) {
 		var a Attempt
 		var by string
-		e := row.Scan(&by, &a.ProblemID, &a.Verdict, &a.Points, &a.CreatedAt)
+		e := row.Scan(&by, &a.ProblemID, &a.Verdict, &a.Points, &a.Groups, &a.CreatedAt)
 		a.Handle, a.Team = handleOf[by], teamOf[by]
 		return a, e
 	})
