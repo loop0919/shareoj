@@ -81,17 +81,19 @@ test('test cases', async ({ page }) => {
 })
 
 test('scoring', async ({ page }) => {
-  await page.setViewportSize({ width: 1200, height: 760 })
+  await page.setViewportSize({ width: 1200, height: 860 })
   // A subtask problem: the samples stay out of the groups, and the largest case counts in both (ADR 0025).
   await savedProblem(page, { draft: {
     scoring: { mode: 'groups', groups: [{ name: '小課題1', points: 30 }, { name: '小課題2', points: 70 }] },
     testCases: [...draft.testCases.slice(0, 2), { ...draft.testCases[2], groups: ['小課題2'] }, { name: 'small_1', input: '1 2\n', output: '3\n', isSample: false, groups: ['小課題1', '小課題2'] }],
   } })
   await page.getByRole('button', { name: '採点', exact: true }).click()
-  const modes = page.getByRole('group', { name: '採点方式' })
-  await expect(modes.getByRole('radio', { name: 'グループ', exact: true })).toBeChecked()
+  const methods = page.getByRole('group', { name: '採点方式' })
+  await expect(methods.getByRole('radio', { name: '部分点採点' })).toBeChecked()
+  await expect(page.getByRole('switch', { name: '集計コードで採点する' })).not.toBeChecked()
   await annotate(page, [
-    { target: modes, badge: 'top-right' },
+    { target: methods, badge: 'top-right' },
+    { target: page.locator('.scoring-switch'), badge: 'right' },
     { target: page.locator('.scoring-groups'), badge: 'top-right' },
     page.getByRole('button', { name: 'グループを追加' }),
   ])
