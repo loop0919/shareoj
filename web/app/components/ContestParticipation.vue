@@ -45,10 +45,14 @@ async function join() {
 }
 async function goOnsite() {
   if (saving.value) return
+  // required accepts spaces, which the server trims away; such a request could only change nothing.
+  if (!venue.value.trim()) { error.value = '会場の合言葉を入力してください。'; return }
   const result = await send({ onsitePassphrase: venue.value })
   if (!result) return
-  venue.value = ''
   emit('joined', result)
+  // Success is what the contest says now, so the page never reports onsite while the participant stays open.
+  if (!result.onsite) { error.value = 'オンサイト参加に変わりませんでした。ページを再読み込みしてから、もう一度お試しください。'; return }
+  venue.value = ''
   showToast('オンサイト参加に変わりました')
 }
 </script>
