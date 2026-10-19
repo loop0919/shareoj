@@ -40,7 +40,16 @@ watch(teamSizeOn, (on) => {
 const onsiteOn = ref(false)
 // Setters only: drafts return it as typed, and a published contest reads it from the setters' venue route.
 const passphrase = ref('')
-watch(onsiteOn, (on) => { if (!on) passphrase.value = '' })
+// Turning the switch on fills in a passphrase easy to read out and to type on a phone: lower case, without the
+// characters join codes leave out. Loading a contest sets both refs directly, so nothing is filled in then.
+const passphraseAlphabet = 'abcdefghjkmnpqrstvwxyz23456789'
+function setOnsite(on: boolean) {
+  onsiteOn.value = on
+  if (!on) passphrase.value = ''
+  else if (!passphrase.value) passphrase.value = Array.from(crypto.getRandomValues(new Uint8Array(8)), byte => passphraseAlphabet[byte % passphraseAlphabet.length]).join('')
+}
+// The server compares the passphrase after NFKC and trimming, so its length is checked the same way.
+const passphraseLength = () => [...passphrase.value.normalize('NFKC').trim()].length
 const maxTeamMembers = 50
 const version = ref(0)
 const available = ref<AccountSummary[]>([])
@@ -482,6 +491,9 @@ async function save() {
   if (!Number.isFinite(start.getTime()) || start.getTime() <= Date.now() || !end) {
     section.value = 'schedule'; message.value = '未来の開始日時と、1分以上のコンテスト時間を指定してください。'; return
   }
+  if (onsiteOn.value && (passphraseLength() < 4 || passphraseLength() > 64)) {
+    section.value = 'participation'; message.value = `${issueText('venue_passphrase_invalid')}。`; return
+  }
   busy.value = true; message.value = ''
   try {
     await $fetch(`/api/my/contests/${id.value}`, { method: 'PUT', body: { title: title.value, description: description.value, startsAt: start.toISOString(), endsAt: end.toISOString(), penaltyMinutes: penaltyMinutes.value, freezeMinutes: freezeOn.value ? freezeMinutes.value : null, ...participationBody(teamSizeOn.value ? Number(maxTeamSize.value) : null), version: version.value, problems: selected.value.map(({ id, points }) => ({ id, points })) } })
@@ -624,8 +636,10 @@ async function save() {
                   <template v-if="teamSizeOn"><label for="contest-team-size">1チームの人数の上限（人）</label><input id="contest-team-size" v-model.number="maxTeamSize" type="number" min="2" :max="maxTeamMembers" step="1" required></template>
                 </template>
               </section>
-              <section class="settings-section"><h3>オンサイト区分</h3><InlineSwitch v-model="onsiteOn" class="settings-switch" describedby="contest-onsite-note">オンサイト区分を設ける</InlineSwitch><p id="contest-onsite-note" class="muted">会場の合言葉を入れて参加した人をオンサイト参加とし、順位表と提出一覧で絞り込めるようにします。</p>
-                <template v-if="onsiteOn"><label for="contest-passphrase">会場の合言葉</label><input id="contest-passphrase" v-model="passphrase" required minlength="4" maxlength="64" autocomplete="off" spellcheck="false" aria-describedby="contest-passphrase-note"><p id="contest-passphrase-note" class="muted passphrase-note">4〜64文字で、作成者だけが見られます。会場の参加者に配ってください。</p></template>
+              <section class="settings-section"><h3>オンサイト区分</h3><InlineSwitch :model-value="onsiteOn" class="settings-switch" describedby="contest-onsite-note" @update:model-value="setOnsite">オンサイト区分を設ける</InlineSwitch><p id="contest-onsite-note" class="muted">会場の合言葉を入れて参加した人をオンサイト参加とし、順位表と提出一覧で絞り込めるようにします。</p>
+                <!-- After the start the editor does not read the passphrase; it lives in the contest page's tools. -->
+                <p v-if="onsiteOn && settersOnly" class="muted">会場の合言葉は、コンテストのページの「参加者の管理」で確認できます。</p>
+                <template v-else-if="onsiteOn"><label for="contest-passphrase">会場の合言葉</label><input id="contest-passphrase" v-model="passphrase" required minlength="4" maxlength="64" autocomplete="off" spellcheck="false" aria-describedby="contest-passphrase-note"><p id="contest-passphrase-note" class="muted passphrase-note">4〜64文字で、作成者だけが見られます。会場の参加者に配ってください。</p></template>
               </section>
             </fieldset>
             <p class="muted">開始後は参加形式とオンサイト区分を変更できません。会場の合言葉の差し替えと参加者の区分の切り替えは、コンテストのページの「参加者の管理」でできます。</p>
