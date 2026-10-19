@@ -973,6 +973,32 @@ func TestContestTeamLocksPostgres(t *testing.T) {
 	if n := f.count(`SELECT count(*) FROM contest_teams WHERE name='Carried' AND onsite_via='setter'`); n != 1 || !f.contest(tc, "carol").Onsite {
 		t.Fatal("the team lost the setter's switch")
 	}
+	// A move into a team that waited past the start is refused, since the participant could submit alone meanwhile.
+	f.join(tc, "dan", nil)
+	f.exec(`UPDATE contests SET starts_at=clock_timestamp()+interval '1 second',ends_at=clock_timestamp()+interval '1 hour' WHERE id=$1`, tc)
+	tx, err := f.store.Pool().Begin(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	if _, err = tx.Exec(f.ctx, `SELECT 1 FROM contest_participants WHERE contest_id=$1 AND owner_id='dan' FOR UPDATE`, tc); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan *httptest.ResponseRecorder, 1)
+	r := f.newRequest("POST", path, "dan", create("Late Start"))
+	go func() { done <- f.do(r) }()
+	select {
+	case w := <-done:
+		t.Fatalf("returned before the start: %d %s", w.Code, w.Body.String())
+	case <-time.After(1200 * time.Millisecond):
+	}
+	if err = tx.Commit(f.ctx); err != nil {
+		t.Fatal(err)
+	}
+	expect(t, <-done, 409, "contest_individual_locked")
+	if dan := f.contest(tc, "dan"); dan.Team != nil || f.count(`SELECT count(*) FROM contest_teams WHERE name='Late Start'`) != 0 {
+		t.Fatalf("moved after the start: %+v", dan.Team)
+	}
 }
 
 // ADR 0024: deleting an account before the start takes it out of the contest and its team; after the start it stays.

@@ -273,6 +273,14 @@ func enterTeam(ctx context.Context, tx pgx.Tx, id, owner, team string) error {
 		}
 		return err
 	}
+	// The locks may have kept the request waiting past the start, when the participant can already submit alone.
+	var upcoming bool
+	if err := tx.QueryRow(ctx, `SELECT starts_at>clock_timestamp() FROM contests WHERE id=$1`, id).Scan(&upcoming); err != nil {
+		return err
+	}
+	if !upcoming {
+		return ErrIndividualLocked
+	}
 	if _, err := tx.Exec(ctx, `UPDATE contest_participants SET team_id=$3,onsite_at=NULL,onsite_via=NULL,created_at=clock_timestamp()
  WHERE contest_id=$1 AND owner_id=$2`, id, owner, team); err != nil {
 		return err
