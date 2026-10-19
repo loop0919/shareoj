@@ -168,6 +168,12 @@ func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) 
 		if err != nil {
 			return Submission{}, err
 		}
+		// A move from an individual registration into a team locks this row and checks that the contest has not
+		// started. Holding it here orders the two: the submission waits and is the team's, or the move waits and is
+		// refused, so an individual's submission never counts for a team (ADR 0024).
+		if _, err = tx.Exec(ctx, `SELECT 1 FROM contest_participants WHERE contest_id=$1 AND owner_id=$2 FOR SHARE`, contestID, owner); err != nil {
+			return Submission{}, err
+		}
 		var eligible bool
 		// Former staff stay out even if they registered before leaving the staff.
 		err = tx.QueryRow(ctx, `SELECT clock_timestamp()>=c.ends_at OR contest_staff(c.id,$2)

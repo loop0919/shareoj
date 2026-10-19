@@ -974,6 +974,7 @@ func TestContestTeamLocksPostgres(t *testing.T) {
 		t.Fatal("the team lost the setter's switch")
 	}
 	// A move into a team that waited past the start is refused, since the participant could submit alone meanwhile.
+	// The row is held as a submission at the start holds it.
 	f.join(tc, "dan", nil)
 	f.exec(`UPDATE contests SET starts_at=clock_timestamp()+interval '1 second',ends_at=clock_timestamp()+interval '1 hour' WHERE id=$1`, tc)
 	tx, err := f.store.Pool().Begin(f.ctx)
@@ -981,7 +982,7 @@ func TestContestTeamLocksPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	if _, err = tx.Exec(f.ctx, `SELECT 1 FROM contest_participants WHERE contest_id=$1 AND owner_id='dan' FOR UPDATE`, tc); err != nil {
+	if _, err = tx.Exec(f.ctx, `SELECT 1 FROM contest_participants WHERE contest_id=$1 AND owner_id='dan' FOR SHARE`, tc); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan *httptest.ResponseRecorder, 1)
@@ -998,6 +999,18 @@ func TestContestTeamLocksPostgres(t *testing.T) {
 	expect(t, <-done, 409, "contest_individual_locked")
 	if dan := f.contest(tc, "dan"); dan.Team != nil || f.count(`SELECT count(*) FROM contest_teams WHERE name='Late Start'`) != 0 {
 		t.Fatalf("moved after the start: %+v", dan.Team)
+	}
+	// A submission at the start waits for a move that passed its check before the start, so it is made as the team's
+	// member and never as an individual's that the team then takes over.
+	w = f.waits(f.newRequest("POST", "/my/submissions", "erin", map[string]any{"problemId": pa, "contestId": tc, "runtime": "cpp17", "source": "int main() {}"}),
+		`SELECT 1 FROM contest_participants WHERE contest_id='`+tc+`' AND owner_id='erin' AND team_id IS NULL FOR UPDATE`,
+		`UPDATE contest_participants SET team_id=(SELECT id FROM contest_teams WHERE name='Carried'),created_at=clock_timestamp() WHERE contest_id='`+tc+`' AND owner_id='erin'`)
+	if w.Code != 202 {
+		t.Fatalf("submission at the start: %d %s", w.Code, w.Body.String())
+	}
+	if n := f.count(`SELECT count(*) FROM submissions s JOIN contest_participants p ON p.contest_id=s.contest_id AND p.owner_id=s.owner_id
+ WHERE s.owner_id='erin' AND p.team_id IS NOT NULL AND s.created_at>p.created_at`); n != 1 {
+		t.Fatal("the submission was made before the move")
 	}
 }
 
