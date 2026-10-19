@@ -5,6 +5,7 @@ import { shortId } from '~~/shared/utils/short-id'
 import { accountError } from '~/utils/account-problems'
 import { issueMessage } from '~/utils/problem-readiness'
 import { searchProblems } from '~/utils/problem-search'
+import { venuePassphraseRule, venuePassphraseValid } from '~/utils/venue-passphrase'
 const props = defineProps<{ contestId?: string }>()
 const route = useRoute()
 const router = useRouter()
@@ -41,15 +42,14 @@ const onsiteOn = ref(false)
 // Setters only: drafts return it as typed, and a published contest reads it from the setters' venue route.
 const passphrase = ref('')
 // Turning the switch on fills in a passphrase easy to read out and to type on a phone: lower case, without the
-// characters join codes leave out. Loading a contest sets both refs directly, so nothing is filled in then.
+// characters join codes leave out, so it always meets the rule. Loading a contest sets both refs directly, so nothing
+// is filled in then.
 const passphraseAlphabet = 'abcdefghjkmnpqrstvwxyz23456789'
 function setOnsite(on: boolean) {
   onsiteOn.value = on
   if (!on) passphrase.value = ''
   else if (!passphrase.value) passphrase.value = Array.from(crypto.getRandomValues(new Uint8Array(8)), byte => passphraseAlphabet[byte % passphraseAlphabet.length]).join('')
 }
-// The server compares the passphrase after NFKC and trimming, so its length is checked the same way.
-const passphraseLength = () => [...passphrase.value.normalize('NFKC').trim()].length
 const maxTeamMembers = 50
 const version = ref(0)
 const available = ref<AccountSummary[]>([])
@@ -114,7 +114,7 @@ const issueGuide: Record<string, [string, Section]> = {
   penalty_invalid: ['誤答ペナルティを0〜1440分の整数で入力してください', 'schedule'],
   freeze_invalid: ['順位表を凍結する時間は、コンテスト時間以内の1分以上の整数で入力するか、凍結をオフにしてください', 'schedule'],
   team_size_invalid: ['チームの人数の上限は2〜50人の整数で入力するか、上限をオフにしてください', 'participation'],
-  venue_passphrase_invalid: ['会場の合言葉は4〜64文字で入力するか、オンサイト区分をオフにしてください', 'participation'],
+  venue_passphrase_invalid: ['会場の合言葉は英数字とアンダースコア（_）の4〜64文字で入力するか、オンサイト区分をオフにしてください', 'participation'],
   problems_missing: ['問題を1問以上選んでください', 'problems'],
   points_invalid: ['配点を1〜1,000,000点の整数で入力してください', 'problems'],
   problem_unavailable: ['公開済み・削除済み・他のコンテストに登録済みの問題と、作成者の誰も作者・テスターではない問題を外してください', 'problems'],
@@ -491,7 +491,8 @@ async function save() {
   if (!Number.isFinite(start.getTime()) || start.getTime() <= Date.now() || !end) {
     section.value = 'schedule'; message.value = '未来の開始日時と、1分以上のコンテスト時間を指定してください。'; return
   }
-  if (onsiteOn.value && (passphraseLength() < 4 || passphraseLength() > 64)) {
+  // The server checks the passphrase after NFKC and trimming; the field's own check covers what the browser can see.
+  if (onsiteOn.value && !venuePassphraseValid(passphrase.value)) {
     section.value = 'participation'; message.value = `${issueText('venue_passphrase_invalid')}。`; return
   }
   busy.value = true; message.value = ''
@@ -629,7 +630,7 @@ async function save() {
             <fieldset :disabled="!ready || locked || busy">
               <section class="settings-section"><h3>個人戦・チーム戦</h3>
                 <div class="team-mode"><SegmentedChoice v-model="teamMode" legend="個人戦・チーム戦" name="contest-team-mode" :options="teamModes" hide-legend /></div>
-                <p class="muted">チーム戦では、参加者がチームを作るか参加コードでチームに入り、順位表にはチームごとに並びます。参加登録があると切り替えられません。</p>
+                <p class="muted">チーム戦では、参加者がチームを作るか参加コードでチームに入り、順位表にはチームごとに並びます。個人で参加した人も1人で並びます。参加登録があると切り替えられません。</p>
                 <template v-if="teamMode === 'team'">
                   <InlineSwitch v-model="teamSizeOn" class="settings-switch" describedby="contest-team-size-note">人数の上限を設ける</InlineSwitch>
                   <p id="contest-team-size-note" class="muted">オフのときも、1チーム{{ maxTeamMembers }}人までです。</p>
@@ -639,10 +640,10 @@ async function save() {
               <section class="settings-section"><h3>オンサイト区分</h3><InlineSwitch :model-value="onsiteOn" class="settings-switch" describedby="contest-onsite-note" @update:model-value="setOnsite">オンサイト区分を設ける</InlineSwitch><p id="contest-onsite-note" class="muted">会場の合言葉を入れて参加した人をオンサイト参加とし、順位表と提出一覧で絞り込めるようにします。</p>
                 <!-- After the start the editor does not read the passphrase; it lives in the contest page's tools. -->
                 <p v-if="onsiteOn && settersOnly" class="muted">会場の合言葉は、コンテストのページの「参加者の管理」で確認できます。</p>
-                <template v-else-if="onsiteOn"><label for="contest-passphrase">会場の合言葉</label><input id="contest-passphrase" v-model="passphrase" required minlength="4" maxlength="64" autocomplete="off" spellcheck="false" aria-describedby="contest-passphrase-note"><p id="contest-passphrase-note" class="muted passphrase-note">4〜64文字で、作成者だけが見られます。会場の参加者に配ってください。</p></template>
+                <template v-else-if="onsiteOn"><label for="contest-passphrase">会場の合言葉</label><VenuePassphraseInput id="contest-passphrase" v-model="passphrase" required aria-describedby="contest-passphrase-note" /><p id="contest-passphrase-note" class="muted passphrase-note">{{ venuePassphraseRule }}で、大文字と小文字は区別します。作成者だけが見られます。会場の参加者に配ってください。</p></template>
               </section>
             </fieldset>
-            <p class="muted">開始後は参加形式とオンサイト区分を変更できません。会場の合言葉の差し替えと参加者の区分の切り替えは、コンテストのページの「参加者の管理」でできます。</p>
+            <p class="muted">開始後は参加形式とオンサイト区分を変更できません。会場の合言葉の差し替えと、オープン参加の人とチームをオンサイト参加にする操作は、コンテストのページの「参加者の管理」でできます。</p>
           </div>
         </section>
         <section v-show="section === 'manage'" class="problem-management" data-section="manage" aria-labelledby="contest-manage-title">
