@@ -1,13 +1,14 @@
 <script setup lang="ts">
 // A small on/off switch with its label beside it, for lists and toolbars. The parent places it through a class.
-// label names the switch for screen readers when the visible text is short, as in a table row.
-defineProps<{ describedby?: string, label?: string }>()
+// label names the switch for screen readers when the visible text is short, as in a table row. disabled is for a switch
+// outside a disabled fieldset; attributes on the component land on the label, not the input.
+defineProps<{ describedby?: string, label?: string, disabled?: boolean }>()
 const on = defineModel<boolean>({ required: true })
 </script>
 
 <template>
   <label class="inline-switch">
-    <input v-model="on" type="checkbox" role="switch" :aria-describedby="describedby" :aria-label="label">
+    <input v-model="on" type="checkbox" role="switch" :aria-describedby="describedby" :aria-label="label" :disabled="disabled">
     <span class="switch-track" aria-hidden="true"><span class="switch-thumb" /></span>
     <slot />
   </label>

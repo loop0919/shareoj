@@ -2,8 +2,9 @@
 import { maxFullScore, maxScoringGroups, type ProblemDraft, type Scoring } from '~~/shared/types/problem-draft'
 import { fullScore, groupNameError, type ScoringMemory, type TestCase } from '~/utils/problem-draft'
 
-// Partial scoring (ADR 0025): the mode, the groups with their points, and the aggregator's code. Cases join groups in
-// the test case editor; this editor keeps their membership in step when a group is renamed or removed.
+// Partial scoring (ADR 0025): 一括採点 or 部分点採点, the groups with their points, and whether an aggregator scores the
+// groups. Cases join groups in the test case editor; this editor keeps their membership in step when a group is renamed
+// or removed.
 const scoring = defineModel<ProblemDraft['scoring']>('scoring', { required: true })
 const cases = defineModel<TestCase[]>('cases', { required: true })
 const props = defineProps<{ disabled: boolean, contest: boolean, memory: ScoringMemory }>()
@@ -11,60 +12,79 @@ const emit = defineEmits<{ 'show-cases': [] }>()
 const { data: catalog, error: catalogError } = useJudgeCatalog()
 const available = computed(() => catalogError.value || catalog.value?.maintenance ? [] : catalog.value?.items ?? [])
 const specOpen = useState('code-spec-open', () => false)
-type Mode = 'binary' | Scoring['mode']
-const modes: { value: Mode, label: string }[] = [{ value: 'binary', label: '一括' }, { value: 'groups', label: 'グループ' }, { value: 'aggregate', label: '集計コード' }]
-const modeNotes: Record<Mode, string> = {
+// The method is whether the problem has partial scores at all; within 部分点採点, the switch picks the aggregate mode
+// over the groups mode.
+type Method = 'binary' | 'partial'
+const methods: { value: Method, label: string }[] = [{ value: 'binary', label: '一括採点' }, { value: 'partial', label: '部分点採点' }]
+const methodNotes: Record<Method, string> = {
   binary: 'すべてのケースでACなら正解です。部分点はありません。',
-  groups: 'グループに属するケースがすべてACなら、そのグループの配点を与えます。提出の得点は、グループの得点の合計です。',
-  aggregate: '集計コードが、ケースの判定と点からグループごとの得点を決めます。提出の得点は、グループの得点の合計です。',
+  partial: 'ケースをグループに分け、グループごとに得点を付けます。提出の得点は、グループの得点の合計です。',
 }
-// Switching back to 一括 clears the groups from the draft, and switching to グループ clears the aggregator. The page keeps
-// them in memory, so switching again restores them even after another section was opened.
+// Switching back to 一括採点 clears the groups from the draft, and turning the switch off clears the aggregator. The
+// page keeps them in memory, so switching again restores them even after another section was opened.
 const defaultRuntime = () => available.value.find(item => item.id === 'cpp23-gcc')?.id ?? available.value[0]?.id ?? 'cpp23-gcc'
-// Leaving a partial mode, or the aggregate one, takes work out of the draft, so it is confirmed first.
-function confirmSwitch(current: Scoring | null, next: Mode) {
-  if (!current) return true
-  const code = current.mode === 'aggregate' && !!current.aggregator?.source.trim()
-  if (next === 'binary' && (current.groups.length || cases.value.some(item => item.groups?.length) || code))
-    return window.confirm(`一括にすると、グループと配点、ケースの所属${code ? '、集計コード' : ''}を下書きから外します。このページを開いている間は、方式を戻すと元に戻ります。一括にしますか？`)
-  if (next === 'groups' && code)
-    return window.confirm('グループにすると、集計コードを下書きから外します。このページを開いている間は、集計コードに戻すと元に戻ります。グループにしますか？')
-  return true
+const hasCode = (current: Scoring) => current.mode === 'aggregate' && !!current.aggregator?.source.trim()
+const hasWork = (current: Scoring) => !!current.groups.length || cases.value.some(item => item.groups?.length) || hasCode(current)
+const root = ref<HTMLElement>()
+// A declined switch leaves the model as it was, so nothing re-renders the control that already moved. The radios and
+// the switch go back to the values that stay, and focus returns to the control that was used (on its selected radio),
+// so the arrow keys or Space start from there.
+function keepChoices(used: 'method' | 'aggregate') {
+  nextTick(() => {
+    const radios = [...root.value?.querySelectorAll<HTMLInputElement>('input[name="scoring-method"]') ?? []]
+    for (const input of radios) input.checked = input.value === method.value
+    const toggle = root.value?.querySelector<HTMLInputElement>('input[role="switch"]')
+    if (toggle) toggle.checked = aggregating.value
+    const target = used === 'method' ? radios.find(input => input.checked) : toggle
+    target?.focus()
+  })
 }
-const mode = computed<Mode>({
-  get: () => scoring.value?.mode ?? 'binary',
+const method = computed<Method>({
+  get: () => scoring.value ? 'partial' : 'binary',
   set: next => {
     const current = scoring.value
-    if (!confirmSwitch(current, next)) {
-      // The radio has already moved; put it back on the mode that stays.
-      nextTick(() => { for (const input of document.querySelectorAll<HTMLInputElement>('input[name="scoring-mode"]')) input.checked = input.value === mode.value })
-      return
-    }
     const memory = props.memory
     if (next === 'binary') {
       if (!current) return
-      memory.previous = { scoring: structuredClone(toRaw(current)), membership: new WeakMap(cases.value.map(item => [toRaw(item), [...item.groups ?? []]])) }
+      // Leaving 部分点採点 takes work out of the draft, so it is confirmed first.
+      if (hasWork(current)) {
+        if (!window.confirm(`一括採点にすると、グループと配点、ケースの所属${hasCode(current) ? '、集計コード' : ''}を下書きから外します。このページを開いている間は、部分点採点に戻すと元に戻ります。一括採点にしますか？`)) return keepChoices('method')
+        memory.previous = { scoring: structuredClone(toRaw(current)), membership: new WeakMap(cases.value.map(item => [toRaw(item), [...item.groups ?? []]])) }
+      } else memory.previous = undefined
+      if (current.aggregator) memory.aggregator = structuredClone(toRaw(current.aggregator))
       for (const item of cases.value) item.groups = []
       scoring.value = null
       return
     }
-    let groups = current?.groups.map(group => ({ ...group }))
-    let aggregator = current?.aggregator ?? memory.aggregator
-    if (!groups) {
-      // A new partial problem starts with one group holding every case but the samples, which scores like 一括.
-      const previous = memory.previous
-      groups = previous?.scoring.groups.map(group => ({ ...group })) ?? [{ name: '小課題1', points: 100 }]
-      aggregator ??= previous?.scoring.aggregator
-      const names = new Set(groups.map(group => group.name))
-      for (const item of cases.value) {
-        const kept = previous?.membership.get(toRaw(item))
-        item.groups = kept ? kept.filter(name => names.has(name)) : !previous && !item.isSample ? [groups[0]!.name] : []
-      }
+    if (current) return
+    // Work taken out by 一括採点 comes back as it was, the switch included. Otherwise a partial problem starts with the
+    // switch off and one group holding every case but the samples, which scores like 一括採点.
+    const previous = memory.previous
+    const restored: Scoring = previous ? structuredClone(previous.scoring) : { mode: 'groups', groups: [{ name: '小課題1', points: 100 }], aggregator: undefined }
+    const names = new Set(restored.groups.map(group => group.name))
+    for (const item of cases.value) {
+      const kept = previous?.membership.get(toRaw(item))
+      item.groups = kept ? kept.filter(name => names.has(name)) : !previous && !item.isSample ? [restored.groups[0]!.name] : []
     }
-    if (next === 'aggregate') aggregator ??= { runtime: defaultRuntime(), source: '' }
-    else if (aggregator) memory.aggregator = structuredClone(toRaw(aggregator))
     // The draft's scoring is replaced at once: the model only reflects it after the parent renders.
-    scoring.value = { mode: next, groups, aggregator: next === 'aggregate' ? aggregator : undefined }
+    scoring.value = restored
+  },
+})
+// 「集計コードで採点する」: on is the aggregate mode, off the groups mode. Both keep the groups.
+const aggregating = computed<boolean>({
+  get: () => scoring.value?.mode === 'aggregate',
+  set: on => {
+    const current = scoring.value
+    if (!current || (current.mode === 'aggregate') === on) return
+    const memory = props.memory
+    const kept = current.groups.map(group => ({ ...group }))
+    if (!on) {
+      if (hasCode(current) && !window.confirm('「集計コードで採点する」をオフにすると、集計コードを下書きから外します。このページを開いている間は、オンに戻すと元に戻ります。オフにしますか？')) return keepChoices('aggregate')
+      if (current.aggregator) memory.aggregator = structuredClone(toRaw(current.aggregator))
+      scoring.value = { mode: 'groups', groups: kept, aggregator: undefined }
+      return
+    }
+    scoring.value = { mode: 'aggregate', groups: kept, aggregator: memory.aggregator ? structuredClone(memory.aggregator) : { runtime: defaultRuntime(), source: '' } }
   },
 })
 const groups = computed(() => scoring.value?.groups ?? [])
@@ -124,7 +144,6 @@ function removeGroup(index: number) {
   for (const errors of [nameErrors, pointErrors]) for (const key of Object.keys(errors)) delete errors[Number(key)]
 }
 // A draft from the CLI may be in the aggregate mode without an aggregator; the first edit creates it.
-const aggregating = computed(() => scoring.value?.mode === 'aggregate')
 function aggregatorDraft() {
   const current = scoring.value!
   current.aggregator ??= { runtime: defaultRuntime(), source: '' }
@@ -143,16 +162,21 @@ const aggregatorError = computed(() => aggregating.value && (!aggregatorSource.v
 </script>
 
 <template>
-  <section class="problem-management scoring-editor" aria-labelledby="scoring-title">
+  <section ref="root" class="problem-management scoring-editor" aria-labelledby="scoring-title">
     <div class="management-content">
       <header>
         <h1 id="scoring-title">採点</h1>
         <p class="muted">提出の得点の付け方を選びます。<NuxtLink to="/docs/authoring#scoring" target="_blank" rel="noopener noreferrer">部分点の設定 ↗</NuxtLink></p>
       </header>
       <div class="scoring-mode">
-        <SegmentedChoice v-model="mode" legend="採点方式" name="scoring-mode" :options="modes" :disabled="props.disabled" />
-        <p class="scoring-note">{{ modeNotes[mode] }}</p>
-        <p v-if="contest" class="scoring-note">コンテストの開始後は、採点方式とグループの名前・配点・順番を変えられません。</p>
+        <SegmentedChoice v-model="method" legend="採点方式" name="scoring-method" :options="methods" :disabled="props.disabled" />
+        <p class="scoring-note">{{ methodNotes[method] }}</p>
+        <!-- The switch belongs to 部分点採点, so it sits indented under it. -->
+        <div v-if="scoring" class="scoring-partial">
+          <InlineSwitch v-model="aggregating" class="scoring-switch" describedby="scoring-aggregate-note" :disabled="props.disabled">集計コードで採点する</InlineSwitch>
+          <p id="scoring-aggregate-note" class="scoring-note">{{ aggregating ? '集計コードが、ケースの判定と点からグループごとの得点を決めます。コードは下の「集計コード」に書きます。' : 'グループに属するケースがすべてACなら、そのグループの配点を与えます。' }}</p>
+        </div>
+        <p v-if="contest" class="scoring-note">コンテストの開始後は、採点方式、集計コードで採点するかどうか、グループの名前・配点・順番を変えられません。</p>
       </div>
       <section v-if="scoring" class="scoring-block" aria-labelledby="scoring-groups-title">
         <div class="scoring-heading"><h2 id="scoring-groups-title">グループ</h2><p>満点 <strong>{{ total }}</strong> 点</p></div>
@@ -213,6 +237,10 @@ const aggregatorError = computed(() => aggregating.value && (!aggregatorSource.v
  * pre-emit critique: P4 H4 E4 S5 R5 V4 · the full score sits beside the groups that make it up */
 .scoring-mode { max-width: 32rem; }
 .scoring-note { margin: 8px 0 0; color: var(--color-muted); font-size: .8125rem; line-height: 1.7; }
+.scoring-partial { margin-top: 16px; padding-left: 14px; border-left: 2px solid var(--color-line); }
+/* InlineSwitch places itself; the class only sizes its text like the legend above (and outranks its own rule). */
+.scoring-partial .scoring-switch { font-size: .875rem; font-weight: 600; }
+.scoring-partial .scoring-note { margin-top: 0; }
 .scoring-block { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--color-line); }
 .scoring-block h2 { margin: 0 0 12px; font-size: 1rem; }
 .scoring-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
