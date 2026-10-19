@@ -21,6 +21,10 @@ const failed = ref(false)
 const renaming = ref(false)
 const newName = ref('')
 const copied = ref(false)
+// Swapping the form for the button, or removing a member's row, would drop focus to the page; these take it instead.
+const renameButton = ref<HTMLButtonElement>()
+const renameInput = ref<HTMLInputElement>()
+const memberList = ref<HTMLUListElement>()
 let copiedTimer: ReturnType<typeof setTimeout> | undefined
 onBeforeUnmount(() => clearTimeout(copiedTimer))
 function report(text: string, error = false) { message.value = text; failed.value = error }
@@ -36,9 +40,20 @@ async function load() {
   catch (error) { report(contestTeamError(error, '参加コードを取得できませんでした。ページを再読み込みしてください。'), true) }
   finally { action.value = '' }
 }
-onMounted(load)
+// After the end nobody joins, so the code is neither read nor shown.
+onMounted(() => { if (running.value) void load() })
 // Removing a member renews the code, so a changed member list from the polled contest rereads it.
-watch(() => `${props.contest.team?.id}:${props.contest.team?.members.join(',')}`, (now, old) => { if (now !== old && !action.value) void load() })
+watch(() => `${props.contest.team?.id}:${props.contest.team?.members.join(',')}`, (now, old) => { if (now !== old && !action.value && running.value) void load() })
+// Another member may renew the code without changing the members, so the panel rereads it quietly as the contest is
+// polled; a dead code on screen would be read out to people at the venue.
+async function refresh() {
+  if (action.value) return
+  try {
+    const latest = await $fetch<MyTeam>(base.value)
+    if (!action.value) team.value = latest
+  } catch { /* A removal shows in the polled contest; the next round tries again. */ }
+}
+usePolling(refresh, 15000, () => running.value)
 async function renewCode() {
   if (action.value || !window.confirm('参加コードを作り直しますか？今のコードではチームに入れなくなります。')) return
   action.value = 'code'; report('')
@@ -57,17 +72,29 @@ async function copyCode() {
     copiedTimer = setTimeout(() => { copied.value = false }, 2000)
   } catch { report('参加コードを選択してコピーしてください。', true) }
 }
-function startRename() { newName.value = name.value; renaming.value = true; report('') }
+async function startRename() {
+  newName.value = name.value; renaming.value = true; report('')
+  await nextTick()
+  renameInput.value?.focus()
+}
+async function closeRename() {
+  renaming.value = false
+  await nextTick()
+  renameButton.value?.focus()
+}
 async function rename() {
   if (action.value) return
   action.value = 'name'; report('')
+  let renamed = false
   try {
     team.value = await $fetch<MyTeam>(`${base.value}/name`, { method: 'PUT', body: { name: newName.value } })
-    renaming.value = false
     report('チーム名を変更しました。')
     emit('changed')
+    renamed = true
   } catch (error) { report(teamError(error), true) }
   finally { action.value = '' }
+  // The button is enabled again only now, so it can take focus.
+  if (renamed) await closeRename()
 }
 async function remove(handle: string) {
   if (action.value || !window.confirm(`${handle}をチームから外しますか？外した人の参加登録は取り消され、参加コードは作り直されます。`)) return
@@ -76,6 +103,8 @@ async function remove(handle: string) {
     await $fetch(`${base.value}/members/${encodeURIComponent(handle)}`, { method: 'DELETE' })
     report(`${handle}をチームから外しました。参加コードを作り直しました。`)
     emit('changed')
+    // The focused 「外す」 button goes with the row once the contest is read again.
+    memberList.value?.focus()
     action.value = ''
     await load()
   } catch (error) { report(teamError(error), true) }
@@ -96,26 +125,27 @@ async function leave() {
 <template>
   <section class="team-panel" aria-labelledby="team-panel-title">
     <h2 id="team-panel-title">チーム</h2>
-    <div v-if="!renaming" class="team-name"><strong>{{ name }}</strong><button v-if="running" type="button" class="editor-button" :disabled="!!action" @click="startRename">チーム名を変更</button></div>
+    <div v-if="!renaming" class="team-name"><strong>{{ name }}</strong><button v-if="running" ref="renameButton" type="button" class="editor-button" :disabled="!!action" @click="startRename">チーム名を変更</button></div>
     <form v-else class="team-rename" @submit.prevent="rename">
       <label for="team-new-name">新しいチーム名</label>
-      <div class="team-row"><input id="team-new-name" v-model="newName" required autocomplete="off"><button type="submit" class="editor-button" :disabled="!!action" :aria-busy="action === 'name'">{{ action === 'name' ? '保存中…' : '保存' }}</button><button type="button" class="editor-button" :disabled="action === 'name'" @click="renaming = false">キャンセル</button></div>
+      <div class="team-row"><input id="team-new-name" ref="renameInput" v-model="newName" required autocomplete="off"><button type="submit" class="editor-button" :disabled="!!action" :aria-busy="action === 'name'">{{ action === 'name' ? '保存中…' : '保存' }}</button><button type="button" class="editor-button" :disabled="action === 'name'" @click="closeRename">キャンセル</button></div>
     </form>
-    <ul class="team-members" aria-label="メンバー">
+    <ul ref="memberList" class="team-members" aria-label="メンバー" tabindex="-1">
       <li v-for="handle in members" :key="handle">
         <span class="team-member"><UserLink :handle="handle" /><span v-if="handle === me" class="team-tag">自分</span></span>
         <button v-if="beforeStart && handle !== me" type="button" class="editor-button" :disabled="!!action" :aria-label="`${handle}をチームから外す`" @click="remove(handle)">外す</button>
       </li>
     </ul>
-    <div class="team-code">
+    <div v-if="running" class="team-code">
       <label for="team-join-code">参加コード</label>
       <div class="team-row">
         <input id="team-join-code" :value="team?.code ?? ''" readonly :placeholder="action === 'load' ? '読み込み中…' : ''" aria-describedby="team-code-help" @focus="($event.target as HTMLInputElement).select()">
         <button type="button" class="editor-button team-copy" :disabled="!team" :aria-label="copied ? 'コピーしました' : '参加コードをコピー'" :title="copied ? 'コピーしました' : '参加コードをコピー'" @click="copyCode"><svg v-if="copied" class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L19 8" /></svg><svg v-else class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V4H4v12h4" /></svg></button>
-        <button v-if="running" type="button" class="editor-button" :disabled="!!action || !team" :aria-busy="action === 'code'" @click="renewCode">{{ action === 'code' ? '作り直し中…' : '作り直す' }}</button>
+        <button type="button" class="editor-button" :disabled="!!action || !team" :aria-busy="action === 'code'" @click="renewCode">{{ action === 'code' ? '作り直し中…' : '作り直す' }}</button>
       </div>
       <p id="team-code-help" class="muted">参加コードを伝えた人は「チームに入る」から加われます。開始後はメンバーを外せませんが、参加コードを作り直すと、それ以降の加入を止められます。</p>
     </div>
+    <p v-else class="muted">終了したため、チームには入れません。</p>
     <button v-if="beforeStart" type="button" class="editor-button danger team-leave" :disabled="!!action" @click="leave">チームを抜ける</button>
     <p v-if="message" :class="failed ? 'notice notice-error' : 'team-message'" :role="failed ? 'alert' : 'status'">{{ message }}</p>
   </section>
