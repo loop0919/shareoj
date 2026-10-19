@@ -373,22 +373,31 @@ func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft
 		}
 		p, err = scan(tx.QueryRow(ctx, `INSERT INTO problem_drafts (id, owner_id, draft) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING RETURNING id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at`, id, owner, data))
 	} else {
+		// Lock the contest that holds the problem before the problem, in the order of a contest save. Submissions
+		// being created hold the contest FOR SHARE, so none of them meets a scoring change that this save makes
+		// before the start with the previous definition (ADR 0025).
+		if _, err = tx.Exec(ctx, `SELECT 1 FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id
+ WHERE cp.problem_id=$1 AND can_manage_problem(cp.problem_id,$2) FOR NO KEY UPDATE OF c`, id, owner); err != nil {
+			return Problem{}, err
+		}
 		p, err = scan(tx.QueryRow(ctx, `UPDATE problem_drafts SET draft=$4, published_draft=CASE WHEN published_draft IS NOT NULL THEN $4::jsonb ELSE NULL END, published_version=CASE WHEN published_draft IS NOT NULL THEN version+1 ELSE 0 END, version=version+1, updated_at=clock_timestamp() WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at`, owner, id, version, data))
 	}
+	var started bool
 	if err == nil && version != 0 {
-		err = checkSave(ctx, tx, id, p.PublishedVersion > 0, draft, rules)
+		started, err = checkSave(ctx, tx, id, p.PublishedVersion > 0, draft, rules)
 	}
 	if err == nil {
 		// Contest saves also lock the source problem before changing contest_problems.
 		// Keep statement, judging settings and version atomic for new submissions.
 		var full *int
-		if total := draft.Scoring.FullScore(); draft.Scoring != nil && total >= 1 {
+		if total := draft.Scoring.FullScore(); draft.Scoring != nil && total >= 1 && !started {
 			full = &total
 		}
 		p.ContestID = ""
-		err = tx.QueryRow(ctx, `UPDATE contest_problems cp SET draft=$2,problem_version=$3,
- points=CASE WHEN $4::integer IS NOT NULL AND c.starts_at>clock_timestamp() THEN $4::integer ELSE cp.points END
- FROM contests c WHERE c.id=cp.contest_id AND cp.problem_id=$1 RETURNING cp.contest_id::text`, id, data, p.Version, full).Scan(&p.ContestID)
+		// The points follow the start that checkSave judged: reading the clock again here could keep the old points
+		// with a scoring change that the lock let through just before the start.
+		err = tx.QueryRow(ctx, `UPDATE contest_problems cp SET draft=$2,problem_version=$3,points=COALESCE($4::integer,cp.points)
+ WHERE cp.problem_id=$1 RETURNING cp.contest_id::text`, id, data, p.Version, full).Scan(&p.ContestID)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return Problem{}, err
 		}
@@ -406,33 +415,34 @@ func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft
 }
 
 // checkSave runs after the problem row is locked, so a contest cannot take the problem in between. The contest's copy
-// still holds the previous draft, and its scoring is what the started contest judges with.
-func checkSave(ctx context.Context, tx pgx.Tx, id string, published bool, draft Draft, rules []ContentRules) error {
+// still holds the previous draft, and its scoring is what the started contest judges with. It reports whether the
+// contest had started, so that the contest's points follow the same reading of the clock.
+func checkSave(ctx context.Context, tx pgx.Tx, id string, published bool, draft Draft, rules []ContentRules) (bool, error) {
 	var previous []byte
 	var started, final bool
 	err := tx.QueryRow(ctx, `SELECT cp.draft->'scoring',c.starts_at<=clock_timestamp(),contest_results_final(c)
  FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=$1`, id).Scan(&previous, &started, &final)
 	inContest := err == nil
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return err
+		return false, err
 	}
 	if started {
 		var scoring *Scoring
 		if previous != nil {
 			if err = json.Unmarshal(previous, &scoring); err != nil {
-				return err
+				return false, err
 			}
 		}
 		if !scoring.SameDefinition(draft.Scoring) {
-			return ErrScoringLocked
+			return false, ErrScoringLocked
 		}
 	}
 	for _, r := range rules {
 		if (published || (inContest && !final)) && !Publishable(draft, r.KnownRuntimes, r.EnabledRuntimes) {
-			return ErrIncomplete
+			return false, ErrIncomplete
 		}
 	}
-	return nil
+	return started, nil
 }
 
 func validateTestFiles(ctx context.Context, query func(context.Context, string, ...any) (pgx.Rows, error), owner, problemID string, cases []TestCase) error {
