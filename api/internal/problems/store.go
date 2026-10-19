@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,6 +21,10 @@ var (
 	ErrNotFound      = errors.New("problem not found")
 	ErrConflict      = errors.New("problem changed")
 	ErrTestFile      = errors.New("invalid test file")
+	// ErrIncomplete refuses a save that a published problem or a contest whose results are not final cannot take.
+	ErrIncomplete = errors.New("problem misses what its destination requires")
+	// ErrScoringLocked refuses a change of the scoring definition once a contest with the problem has started.
+	ErrScoringLocked = errors.New("problem scoring is locked by a contest")
 )
 
 type Generator struct {
@@ -51,6 +56,46 @@ type Scoring struct {
 type ScoringGroup struct {
 	Name   string `json:"name"`
 	Points int    `json:"points"`
+}
+
+const (
+	ScoringGroups    = "groups"
+	ScoringAggregate = "aggregate"
+)
+
+// FullScore is the sum of the groups' points, and 0 without scoring.
+func (s *Scoring) FullScore() int {
+	total := 0
+	if s != nil {
+		for _, g := range s.Groups {
+			total += g.Points
+		}
+	}
+	return total
+}
+
+// SameDefinition reports whether two scorings define the same scores: the mode and the groups' names, points and
+// order, which results refer to. Membership, test cases and the aggregator's code are not part of it (ADR 0025).
+func (s *Scoring) SameDefinition(other *Scoring) bool {
+	if s == nil || other == nil {
+		return s == other
+	}
+	return s.Mode == other.Mode && slices.Equal(s.Groups, other.Groups)
+}
+
+// ScoringSummary is what readers see of a partially scored problem (ADR 0025): its full score and the points of its
+// groups. The mode and the aggregator stay with the problem's editors.
+type ScoringSummary struct {
+	FullScore int            `json:"fullScore"`
+	Groups    []ScoringGroup `json:"groups"`
+}
+
+// PublicScoring summarizes the draft's scoring for its readers, or returns nil for an all-or-nothing problem.
+func (d Draft) PublicScoring() *ScoringSummary {
+	if d.Scoring == nil {
+		return nil
+	}
+	return &ScoringSummary{FullScore: d.Scoring.FullScore(), Groups: append([]ScoringGroup{}, d.Scoring.Groups...)}
 }
 
 type Draft struct {
@@ -148,8 +193,13 @@ type Cursor struct {
 type Repository interface {
 	Get(context.Context, string, string) (Problem, error)
 	List(context.Context, string, *Cursor) ([]Summary, error)
-	Save(context.Context, string, string, int64, Draft) (Problem, error)
+	Save(context.Context, string, string, int64, Draft, ...ContentRules) (Problem, error)
 	Delete(context.Context, string, string, int64) error
+}
+
+// ContentRules are the runtimes that the content rules of a save judge against (ADR 0021).
+type ContentRules struct {
+	KnownRuntimes, EnabledRuntimes []string
 }
 
 type Store struct{ pool *pgxpool.Pool }
@@ -295,7 +345,11 @@ func SummaryState(p Summary, applications int) ProblemState {
 	return state
 }
 
-func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft Draft) (Problem, error) {
+// Save writes the draft and copies it into the contest that holds the problem. Once that contest has started, the
+// scoring definition stays as it is (ADR 0025); before, the contest's points follow a partial problem's full score.
+// With rules, a published problem and one in a contest whose results are not final must also meet the content rules,
+// since their judging uses the saved draft at once; setup code that writes test data leaves them out.
+func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft Draft, rules ...ContentRules) (Problem, error) {
 	if err := validateTestFiles(ctx, s.pool.Query, owner, id, draft.TestCases); err != nil {
 		return Problem{}, err
 	}
@@ -317,11 +371,20 @@ func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft
 	} else {
 		p, err = scan(tx.QueryRow(ctx, `UPDATE problem_drafts SET draft=$4, published_draft=CASE WHEN published_draft IS NOT NULL THEN $4::jsonb ELSE NULL END, published_version=CASE WHEN published_draft IS NOT NULL THEN version+1 ELSE 0 END, version=version+1, updated_at=clock_timestamp() WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at`, owner, id, version, data))
 	}
+	if err == nil && version != 0 {
+		err = checkSave(ctx, tx, id, p.PublishedVersion > 0, draft, rules)
+	}
 	if err == nil {
 		// Contest saves also lock the source problem before changing contest_problems.
 		// Keep statement, judging settings and version atomic for new submissions.
+		var full *int
+		if total := draft.Scoring.FullScore(); draft.Scoring != nil && total >= 1 {
+			full = &total
+		}
 		p.ContestID = ""
-		err = tx.QueryRow(ctx, `UPDATE contest_problems SET draft=$2,problem_version=$3 WHERE problem_id=$1 RETURNING contest_id::text`, id, data, p.Version).Scan(&p.ContestID)
+		err = tx.QueryRow(ctx, `UPDATE contest_problems cp SET draft=$2,problem_version=$3,
+ points=CASE WHEN $4::integer IS NOT NULL AND c.starts_at>clock_timestamp() THEN $4::integer ELSE cp.points END
+ FROM contests c WHERE c.id=cp.contest_id AND cp.problem_id=$1 RETURNING cp.contest_id::text`, id, data, p.Version, full).Scan(&p.ContestID)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return Problem{}, err
 		}
@@ -336,6 +399,36 @@ func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft
 		return Problem{}, getErr
 	}
 	return Problem{}, ErrConflict
+}
+
+// checkSave runs after the problem row is locked, so a contest cannot take the problem in between. The contest's copy
+// still holds the previous draft, and its scoring is what the started contest judges with.
+func checkSave(ctx context.Context, tx pgx.Tx, id string, published bool, draft Draft, rules []ContentRules) error {
+	var previous []byte
+	var started, final bool
+	err := tx.QueryRow(ctx, `SELECT cp.draft->'scoring',c.starts_at<=clock_timestamp(),contest_results_final(c)
+ FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=$1`, id).Scan(&previous, &started, &final)
+	inContest := err == nil
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	if started {
+		var scoring *Scoring
+		if previous != nil {
+			if err = json.Unmarshal(previous, &scoring); err != nil {
+				return err
+			}
+		}
+		if !scoring.SameDefinition(draft.Scoring) {
+			return ErrScoringLocked
+		}
+	}
+	for _, r := range rules {
+		if (published || (inContest && !final)) && !Publishable(draft, r.KnownRuntimes, r.EnabledRuntimes) {
+			return ErrIncomplete
+		}
+	}
+	return nil
 }
 
 func validateTestFiles(ctx context.Context, query func(context.Context, string, ...any) (pgx.Rows, error), owner, problemID string, cases []TestCase) error {

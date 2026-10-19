@@ -177,7 +177,8 @@ type RunInput struct {
 }
 
 // CreateRun pins the selected problem version and cases in the insertion statement. A sample check never scores, so
-// its job has no scoring (ADR 0025), and the local Docker judge does not score at all.
+// its job has no scoring (ADR 0025), and the local Docker judge does not score at all. Scoring without groups, or an
+// aggregate one without its aggregator, waits like missing judge code, since the judge would turn every run into JE.
 func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) {
 	owner, id, problemID, source, image, runtime := in.Owner, in.ID, in.ProblemID, in.Source, in.Image, in.Runtime
 	easyTest, contestID, checkerRuntimes := in.EasyTest, in.ContestID, in.CheckerRuntimes
@@ -257,7 +258,8 @@ func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) 
      selected_draft->'interactor'->>'runtime'=ANY($7::text[]) AND
      length(btrim(selected_draft->'interactor'->>'source', E' \t\r\n'))>0))
   AND ($8::boolean OR COALESCE(selected_draft->'scoring','null'::jsonb) = 'null'::jsonb OR
-    ($6 <> 'cpp17-local' AND (selected_draft->'scoring'->>'mode' <> 'aggregate' OR
+    ($6 <> 'cpp17-local' AND CASE WHEN jsonb_typeof(selected_draft->'scoring'->'groups')='array' THEN jsonb_array_length(selected_draft->'scoring'->'groups') ELSE 0 END > 0 AND
+     (selected_draft->'scoring'->>'mode' <> 'aggregate' OR
      (selected_draft->'scoring'->'aggregator'->>'runtime'=ANY($7::text[]) AND
       length(btrim(selected_draft->'scoring'->'aggregator'->>'source', E' \t\r\n'))>0))))
   RETURNING `+columns, id, owner, problemID, source, image, runtime, checkerRuntimes, easyTest, contestID))

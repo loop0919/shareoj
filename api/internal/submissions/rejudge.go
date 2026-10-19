@@ -90,7 +90,8 @@ func (s *Store) Rejudge(ctx context.Context, in RejudgeInput) (int64, error) {
      t.draft->'interactor'->>'runtime'=ANY($5::text[]) AND
      length(btrim(t.draft->'interactor'->>'source', E' \t\r\n'))>0))
   AND (COALESCE(t.draft->'scoring','null'::jsonb) = 'null'::jsonb OR
-    (s.runtime <> 'cpp17-local' AND (t.draft->'scoring'->>'mode' <> 'aggregate' OR
+    (s.runtime <> 'cpp17-local' AND CASE WHEN jsonb_typeof(t.draft->'scoring'->'groups')='array' THEN jsonb_array_length(t.draft->'scoring'->'groups') ELSE 0 END > 0 AND
+     (t.draft->'scoring'->>'mode' <> 'aggregate' OR
      (t.draft->'scoring'->'aggregator'->>'runtime'=ANY($5::text[]) AND
       length(btrim(t.draft->'scoring'->'aggregator'->>'source', E' \t\r\n'))>0))))`,
 		in.ProblemID, in.Runtimes, in.SubmissionIDs, in.Image, in.CheckerRuntimes)

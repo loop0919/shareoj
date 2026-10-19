@@ -18,6 +18,12 @@ const (
 	IssueInteractorSource  Issue = "interactor_source_missing"
 	IssueInteractorRuntime Issue = "interactor_runtime_unavailable"
 	IssueTestCases         Issue = "test_cases_missing"
+	// Partial scoring (ADR 0025).
+	IssueScoringGroups     Issue = "scoring_groups_missing"
+	IssueScoringGroupEmpty Issue = "scoring_group_empty"
+	IssueTestCaseUngrouped Issue = "test_case_ungrouped"
+	IssueAggregatorSource  Issue = "aggregator_source_missing"
+	IssueAggregatorRuntime Issue = "aggregator_runtime_unavailable"
 	IssueDifficulty        Issue = "difficulty_missing"
 	IssueEditorial         Issue = "editorial_missing"
 	IssuePublished         Issue = "published"
@@ -78,11 +84,49 @@ func ContentIssues(d Draft, knownRuntimes, enabledRuntimes []string) []Issue {
 			issues = append(issues, judge.language)
 		}
 	}
+	// The aggregator is judge code too, and an aggregate-mode problem cannot do without it.
+	if d.Scoring != nil && d.Scoring.Mode == ScoringAggregate {
+		a := d.Scoring.Aggregator
+		if a == nil || strings.TrimSpace(a.Source) == "" {
+			issues = append(issues, IssueAggregatorSource)
+		}
+		if a != nil && !slices.Contains(enabledRuntimes, a.Runtime) {
+			issues = append(issues, IssueAggregatorRuntime)
+		}
+	}
 	if len(d.TestCases) == 0 {
 		issues = append(issues, IssueTestCases)
 	}
+	issues = append(issues, scoringIssues(d)...)
 	if strings.TrimSpace(d.Editorial) == "" {
 		issues = append(issues, IssueEditorial)
+	}
+	return issues
+}
+
+// scoringIssues lists what partial scoring misses (ADR 0025). An empty group would give its points to every run, and a
+// case in no group would run without counting, so both wait until the author places every case.
+func scoringIssues(d Draft) []Issue {
+	if d.Scoring == nil {
+		return nil
+	}
+	issues := []Issue{}
+	if len(d.Scoring.Groups) == 0 {
+		issues = append(issues, IssueScoringGroups)
+	}
+	used := map[string]bool{}
+	ungrouped := false
+	for _, c := range d.TestCases {
+		for _, name := range c.Groups {
+			used[name] = true
+		}
+		ungrouped = ungrouped || (!c.IsSample && len(c.Groups) == 0)
+	}
+	if slices.ContainsFunc(d.Scoring.Groups, func(g ScoringGroup) bool { return !used[g.Name] }) {
+		issues = append(issues, IssueScoringGroupEmpty)
+	}
+	if ungrouped {
+		issues = append(issues, IssueTestCaseUngrouped)
 	}
 	return issues
 }

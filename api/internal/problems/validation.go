@@ -24,8 +24,7 @@ func ValidDraft(d Draft, knownRuntimes []string) bool {
 	if (d.Checker != nil && d.Interactor != nil) || !tags.Valid(d.Tags) {
 		return false
 	}
-	// Partial scoring stays off until every judge host can score (ADR 0025); an old judge would ignore the groups.
-	if d.Scoring != nil || slices.ContainsFunc(d.TestCases, func(c TestCase) bool { return c.Groups != nil }) {
+	if !validScoring(d, knownRuntimes) {
 		return false
 	}
 	for _, code := range []*Generator{d.Checker, d.Interactor} {
@@ -85,6 +84,52 @@ func ValidDraft(d Draft, knownRuntimes []string) bool {
 	return utf8.RuneCountInString(d.Title) <= 120 && utf8.RuneCountInString(d.Markdown) <= 100000 && utf8.RuneCountInString(d.Editorial) <= 100000 &&
 		!strings.ContainsRune(d.Title+d.Markdown+d.Editorial, '\x00') && len(d.TimeLimitMS) <= 10 && len(d.MemoryLimitMB) <= 10 &&
 		e2 == nil && memory >= 64 && memory <= 512
+}
+
+// MaxFullScore bounds a problem's full score like a contest's points, and MaxScoringGroups the number of its groups.
+const (
+	MaxFullScore     = 1_000_000
+	MaxScoringGroups = 100
+)
+
+// validScoring checks the structure of partial scoring with the judge's limits (ADR 0025). A draft without groups, a
+// group without cases and a case in no group are content issues instead, so that the editor can save on the way.
+func validScoring(d Draft, knownRuntimes []string) bool {
+	s := d.Scoring
+	if s == nil {
+		return !slices.ContainsFunc(d.TestCases, func(c TestCase) bool { return len(c.Groups) > 0 })
+	}
+	if (s.Mode != ScoringGroups && s.Mode != ScoringAggregate) || len(s.Groups) > MaxScoringGroups || (s.Aggregator != nil && s.Mode != ScoringAggregate) {
+		return false
+	}
+	// Cases refer to groups by name, so names follow the rules of case names and are never blank.
+	trimmed, exact := map[string]bool{}, map[string]bool{}
+	total := 0
+	for _, g := range s.Groups {
+		name := strings.TrimSpace(g.Name)
+		if name == "" || utf8.RuneCountInString(g.Name) > 64 || strings.IndexFunc(g.Name, unicode.IsControl) >= 0 || trimmed[name] || g.Points < 0 || g.Points > MaxFullScore {
+			return false
+		}
+		trimmed[name], exact[g.Name] = true, true
+		total += g.Points
+	}
+	if len(s.Groups) > 0 && (total < 1 || total > MaxFullScore) {
+		return false
+	}
+	for _, c := range d.TestCases {
+		seen := map[string]bool{}
+		for _, name := range c.Groups {
+			if !exact[name] || seen[name] {
+				return false
+			}
+			seen[name] = true
+		}
+	}
+	// The aggregator is judge code: it runs in the judge's sandbox and has no protocol to choose.
+	if a := s.Aggregator; a != nil && (!slices.Contains(knownRuntimes, a.Runtime) || a.Protocol != "" || len(a.Source) > 65536 || !utf8.ValidString(a.Source) || strings.ContainsRune(a.Source, 0)) {
+		return false
+	}
+	return true
 }
 
 // Publishable adds publication requirements to the rules for a saved draft.

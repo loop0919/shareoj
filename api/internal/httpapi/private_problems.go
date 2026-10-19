@@ -85,17 +85,14 @@ func (p problemHandler) problem(w http.ResponseWriter, r *http.Request, owner st
 				problemError(w, err)
 				return
 			}
-			// Save checks this version again, so publication cannot change between validation and writing.
 			if current.Version != input.Version {
 				problemError(w, problems.ErrConflict)
 				return
 			}
-			if current.PublishedVersion > 0 && !problems.Publishable(input.Draft, submissions.RuntimeIDs(), p.Judging.RuntimeIDs()) {
-				authError(w, 400, "incomplete_problem")
-				return
-			}
 		}
-		result, err = p.Store.Save(ctx, owner, id, input.Version, input.Draft)
+		// Save checks the content rules under the problem's lock, so that neither publication nor a contest can take
+		// the problem between the check and the write.
+		result, err = p.Store.Save(ctx, owner, id, input.Version, input.Draft, problems.ContentRules{KnownRuntimes: submissions.RuntimeIDs(), EnabledRuntimes: p.Judging.RuntimeIDs()})
 	case http.MethodDelete:
 		version, parseErr := strconv.ParseInt(r.URL.Query().Get("version"), 10, 64)
 		if parseErr != nil || version <= 0 {
@@ -228,6 +225,10 @@ func problemError(w http.ResponseWriter, err error) {
 		authError(w, 409, "featured_limit")
 	case errors.Is(err, problems.ErrContestLocked):
 		authError(w, 409, "contest_problem_locked")
+	case errors.Is(err, problems.ErrIncomplete):
+		authError(w, 400, "incomplete_problem")
+	case errors.Is(err, problems.ErrScoringLocked):
+		authError(w, 409, "problem_scoring_locked")
 	case errors.Is(err, problems.ErrParticipantLocked):
 		authError(w, 409, "contest_participant_locked")
 	case errors.Is(err, problems.ErrNotFound):
