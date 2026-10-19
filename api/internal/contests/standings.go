@@ -197,11 +197,14 @@ func (s *Store) Standings(ctx context.Context, id, viewer string, live, onsite b
 	}
 	var owners []string
 	var entries []Standing
-	teams, teamOf := map[string]int{}, map[string]string{}
+	// Attempts are tied to rows by owner, as read here: a handle changed between the two queries would otherwise add a
+	// row of its own.
+	teams, handleOf, teamOf := map[string]int{}, map[string]string{}, map[string]string{}
 	var owner, handle, team, name string
 	var on bool
 	_, err = pgx.ForEachRow(rows, []any{&owner, &handle, &team, &name, &on}, func() error {
 		owners = append(owners, owner)
+		handleOf[owner], teamOf[owner] = handle, team
 		if team == "" {
 			entries = append(entries, Standing{Handle: handle, Onsite: on})
 			return nil
@@ -212,15 +215,13 @@ func (s *Store) Standings(ctx context.Context, id, viewer string, live, onsite b
 			entries = append(entries, Standing{Team: &TeamSummary{ID: team, Name: name, Members: []string{}, Onsite: on}, Onsite: on})
 		}
 		entries[i].Team.Members = append(entries[i].Team.Members, handle)
-		teamOf[handle] = team
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	rows, err = s.Pool.Query(ctx, `SELECT u.handle,s.problem_id,COALESCE(s.result->>'verdict',''),cp.points,s.created_at
+	rows, err = s.Pool.Query(ctx, `SELECT s.owner_id,s.problem_id,COALESCE(s.result->>'verdict',''),cp.points,s.created_at
  FROM submissions s JOIN contests c ON c.id=s.contest_id JOIN contest_problems cp ON cp.contest_id=c.id AND cp.problem_id=s.problem_id
- JOIN user_profiles u ON u.owner_id=s.owner_id
  WHERE c.id=$1 AND s.owner_id=ANY($2::text[]) AND s.created_at>=c.starts_at AND s.created_at<c.ends_at
  AND NOT COALESCE((s.job->>'easyTest')::boolean,false)
  ORDER BY s.created_at,s.id`, id, owners)
@@ -229,8 +230,9 @@ func (s *Store) Standings(ctx context.Context, id, viewer string, live, onsite b
 	}
 	attempts, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Attempt, error) {
 		var a Attempt
-		e := row.Scan(&a.Handle, &a.ProblemID, &a.Verdict, &a.Points, &a.CreatedAt)
-		a.Team = teamOf[a.Handle]
+		var by string
+		e := row.Scan(&by, &a.ProblemID, &a.Verdict, &a.Points, &a.CreatedAt)
+		a.Handle, a.Team = handleOf[by], teamOf[by]
 		return a, e
 	})
 	if err != nil {
