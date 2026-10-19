@@ -437,8 +437,8 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 - `PUT /my/problems/{id}/publication`、`PUT /my/posts/{id}/publication`: `{ "version": 1, "publish": true }` で現在の保存内容を公開。`false` で非公開に戻す。
 
 公開中の問題を保存すると、問題文、解説、採点設定を公開内容とともに更新します。
-公開条件を満たさない入力は 400 `incomplete_problem` で拒否し、保存済みの内容を保ちます。
-公開条件は公開・公開予約・コンテスト・定期便で共通で、タイトル、本文、難易度、テストケース1件以上、解説と、判定用コードを使う問題ではジャッジで使える言語の判定用コードです（[ADR 0021](../docs/adr/0021-unify-problem-requirements.md)）。
+公開中の問題と結果確定前のコンテストに入っている問題では、公開条件を満たさない入力を 400 `incomplete_problem` で拒否し、保存済みの内容を保ちます。
+公開条件は公開・公開予約・コンテスト・定期便で共通で、タイトル、本文、難易度、テストケース1件以上、解説と、判定用コードを使う問題ではジャッジで使える言語の判定用コード、部分点の問題では下の「部分点」の条件です（[ADR 0021](../docs/adr/0021-unify-problem-requirements.md)）。
 未公開の問題と記事は、保存しても公開されません。
 予約投稿は予約時の内容を保持するため、編集を反映するには予約を更新してください。
 保存、公開、非公開への変更ではバージョンを検証し、他画面の更新と競合した場合は 409 を返します。
@@ -481,6 +481,27 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 公開問題詳細APIと提出結果APIはテストケース本体を返さない。サンプル専用APIは公開版のサンプルケースだけを返す。
 ローカルジャッジの起動に必要な設定は`JUDGE_CPP_IMAGE`であり、`JUDGE_TEST_DIR`は使用しない。
 
+### 部分点
+
+[ADR 0025](../docs/adr/0025-score-partially-with-test-groups.md)に従い、問題ごとに一括方式、グループ方式、集計コード方式のどれかで採点する。
+
+- 下書きの`scoring`は`{"mode":"groups","groups":[{"name":"小課題1","points":30}]}`の形で、集計コード方式は`"mode":"aggregate"`と`"aggregator":{"runtime":"cpp23-gcc","source":"..."}`にする。ケースは`testCases[].groups`にグループ名を並べる。`scoring`がないかnullなら一括方式。
+- 保存のたびに構造を確かめ、満たさなければ400 `invalid_draft`とする。グループは100個まで、名前はケース名の規則に加えて空にできず、前後の空白を除いて重ならない。配点は0〜1,000,000の整数で、グループがあれば合計（満点）を1〜1,000,000にする。ケースのグループは存在する名前を重ねずに挙げる。集計コードは集計コード方式だけに置け、判定用コードと同じ言語と大きさの規則で、`protocol`を持たない。
+- 内容の条件のコードは`scoring_groups_missing`（グループがない）、`scoring_group_empty`（ケースのないグループがある）、`test_case_ungrouped`（サンプル以外にどのグループにも属さないケースがある）、`aggregator_source_missing`、`aggregator_runtime_unavailable`。
+- 開始したコンテストに入っている問題は、方式、グループの名前、配点、順番を変える保存（部分点の有無の切り替えを含む）を409 `problem_scoring_locked`で拒む。ケースの所属、テストケース、集計コードは直せ、既存の提出にはリジャッジで反映する。
+- 部分点の問題のコンテストの配点は満点とし、開始前は問題を保存するたびに`contest_problems.points`をそろえる。コンテストの保存では部分点の問題の`points`を読まない（0か省略でよい）。一括方式の問題の`points`が0なら400 `invalid_contest`とし、下書きの`points_invalid`も一括方式の問題だけで判定する。下書きの応答の`problems[]`は、部分点の問題に`partial`と`fullScore`を付ける。
+- 「解いた」は満点の提出で決める（SQL関数`submission_full_score(result)`。`scoring`のない結果はACを満点とする）。解いた人数、`GET /my/solved-problems`、初AC通知、定期便の順位が対象で、定期便では満点に届かない判定済みの提出を誤答に数え、得点は出さない。
+- 問題詳細とコンテストの問題は、部分点の問題に`scoring`（`fullScore`と`groups`の`name`、`points`）を返す。方式と集計コードは返さない。
+- コンテスト詳細は`partialScoring`（部分点の問題があるか。開始前も返す）と`problems[].partial`を返す。`problems[].solved`は、グループごとの最高点の合計が満点に達した問題に付く（チーム戦ではチームの提出から求める）。
+- 配布時は`040_submission_full_score.sql`だけのコミットを先に配布して適用し、その後にAPIを配布する。部分点の保存を有効にするAPIは、[配布と検証の手順](../docs/judge/deployment-checks.md)の「部分点を有効にする前の配布」が終わってから配布する。
+
+順位表は、問題ごとにグループごとの全提出の最高点をとって合計する（JOIとIOIの規則）。
+
+- 行とセルは`score`（得点の100倍の整数）、`scoreText`（表示用の文字列。端数がなければ整数、あれば小数第2位までの`37.50`の形）、`points`（得点の整数部分。古いクライアント向け）を返す。順位は`score`で比べる。
+- セルの`scoredAt`は最後に得点を伸ばした提出の時刻、`acceptedAt`は満点になった提出の時刻とする。
+- 得点を伸ばさなかった判定済みの提出（CEとJEを除く）を誤答とし、ペナルティには最後に得点を伸ばした提出より前の誤答を数える。セルの`wrong`は、得点0の問題ではすべての誤答、それ以外ではペナルティに数えた誤答とする。`pending`は満点の提出より前の判定待ちを数える。
+- 一括方式の問題では、最後に得点を伸ばした提出が初ACなので、これまでと同じ値になる。
+
 ### 難易度投票
 
 公開問題では、プロフィール登録済みのユーザーが1〜10の難易度を1人1票で投票できます。
@@ -496,7 +517,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 
 - `PUT /my/contests/{id}/draft`：`{"version":0,"draft":{...}}`で下書きを作成し、以降は返された`version`で更新します。`draft`は`title`、`description`、`startsAt`（null可）、`durationMinutes`（null可）、`penaltyMinutes`（null可）、`freezeMinutes`（null で凍結なし、省くと保存済みの値を保つ）、`teamMode`、`maxTeamSize`、`onsiteDivision`、`onsitePassphrase`（下の「チーム戦とオンサイト」、省くと保存済みの値を保つ）、`problems`（`id`と、null可の`points`）です。
 - 下書きは未入力や範囲外の値を含んでいても保存できます。拒否するのは、タイトル120文字・説明100,000文字・問題100件の上限超過、不正または重複した問題ID、絶対値が10億を超える数値だけです（400 `invalid_contest`）。
-- 応答は`id`、`version`、`updatedAt`、`draft`と、公開できない理由のコード一覧`issues`を返します。コードは`title_missing`、`start_missing`、`start_past`、`duration_invalid`、`penalty_invalid`、`freeze_invalid`（1分からコンテスト時間までの範囲外）、`problems_missing`、`points_invalid`、`problem_unavailable`（公開済み・削除済み・他のコンテストに登録済み）、`problem_incomplete`（コンテストの内容の条件を満たさない）です。
+- 応答は`id`、`version`、`updatedAt`、`draft`と、公開できない理由のコード一覧`issues`を返します。コードは`title_missing`、`start_missing`、`start_past`、`duration_invalid`、`penalty_invalid`、`freeze_invalid`（1分からコンテスト時間までの範囲外）、`problems_missing`、`points_invalid`（部分点の問題を除く）、`problem_unavailable`（公開済み・削除済み・他のコンテストに登録済み）、`problem_incomplete`（コンテストの内容の条件を満たさない）です。
 - `GET`で取得、`DELETE ?version=N`で削除し、`GET /my/contests/drafts?offset=0`で自分の下書きを更新日時の降順に50件ずつ返します。一覧の各要素の`author`はオーナーのユーザーIDです。
 - `PUT /my/contests/{id}/publication`に`{"version":N}`を送ると、保存済みの下書きを同じ`id`のコンテストとして公開し、コンテスト詳細を返します。終了日時は`startsAt`に`durationMinutes`を足した時刻です。`issues`が残っていれば409 `contest_not_ready`、古い`version`や問題の競合は409 `contest_conflict`です。
 - 下書きは`contests`とは別の`contest_drafts`に置くため、公開APIの一覧・詳細・順位表・参加登録からは見えません。他人の下書きは404です。
