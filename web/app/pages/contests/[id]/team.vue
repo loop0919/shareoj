@@ -10,7 +10,7 @@ const { user } = useAccount()
 const id = fullId(route.params.id)
 const { data: contest, error, refresh } = await useContest(id)
 if (error.value || !contest.value) throw createError({ statusCode: error.value?.statusCode === 404 ? 404 : 502, statusMessage: 'コンテストを取得できませんでした', fatal: true })
-useSeoMeta({ title: () => `チーム参加 | ${contest.value?.title} | ShareOJ`, robots: 'noindex' })
+useSeoMeta({ title: () => `チーム | ${contest.value?.title} | ShareOJ`, robots: 'noindex' })
 const overview = `/contests/${shortId(id)}`
 const member = computed(() => !!contest.value?.participating && !!contest.value.team)
 const individual = computed(() => !!contest.value?.participating && !contest.value.team)
@@ -21,9 +21,9 @@ usePolling(() => refresh(), 15000)
 
 <template>
   <div v-if="contest" class="problem-page contest-page">
-    <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink :to="overview">{{ contest.title }}</NuxtLink><span aria-hidden="true">/</span><span>チーム参加</span></nav></div>
+    <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink :to="overview">{{ contest.title }}</NuxtLink><span aria-hidden="true">/</span><span>チーム</span></nav></div>
     <section class="contest-section contest-team-page" aria-labelledby="team-page-title">
-      <h1 id="team-page-title">チーム参加</h1>
+      <h1 id="team-page-title">チーム</h1>
       <p v-if="!contest.teamMode" class="notice">このコンテストは個人戦です。<NuxtLink :to="overview">概要ページ</NuxtLink>から参加してください。</p>
       <div v-else class="contest-participation">
         <p v-if="user && contest.excluded" class="muted">このコンテストのスタッフを務めたため、参加できません。</p>

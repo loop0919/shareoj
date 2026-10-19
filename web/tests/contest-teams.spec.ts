@@ -77,7 +77,7 @@ async function noHorizontalScroll(page: Page) {
 async function openTeam(page: Page, link: string) {
   await page.locator('.contest-participation').getByRole('link', { name: link, exact: true }).click()
   await expect(page).toHaveURL(`/contests/${shortId(id)}/team`)
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('チーム参加')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('チーム')
 }
 const ruleMessage = '会場の合言葉は、英数字とアンダースコア（_）の4〜64文字で入力してください。'
 const validation = (field: Locator) => field.evaluate((input: HTMLInputElement) => input.validationMessage)
@@ -315,8 +315,8 @@ test('the team page creates a team with the passphrase typed on the overview, an
   // A passphrase typed beside 個人参加 goes along to the team page, so it is not typed twice.
   await page.getByLabel('会場の合言葉（オンサイト参加者のみ）', { exact: true }).fill('Venue_2026')
   await openTeam(page, 'チーム参加')
-  await expect(page).toHaveTitle(`チーム参加 | ${title} | ShareOJ`)
-  await expect(page.getByRole('navigation', { name: 'パンくずリスト' })).toHaveText(`${title}/チーム参加`)
+  await expect(page).toHaveTitle(`チーム | ${title} | ShareOJ`)
+  await expect(page.getByRole('navigation', { name: 'パンくずリスト' })).toHaveText(`${title}/チーム`)
   // The page belongs to the overview, which the contest menu keeps marked.
   await expect(page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '概要', exact: true })).toHaveAttribute('aria-current', 'true')
   await expect(page.getByRole('group', { name: '参加のしかた' }).getByRole('radio', { name: 'チームを作る' })).toBeChecked()
@@ -340,7 +340,7 @@ test('the team page creates a team with the passphrase typed on the overview, an
   await expect(page.getByRole('alert')).toHaveText('チーム名は1〜40文字で入力してください。改行や見えない文字は使えません。')
   await name.fill('Alpha')
   await page.getByRole('button', { name: '参加する', exact: true }).click()
-  const panel = page.getByRole('region', { name: 'チーム', exact: true })
+  const panel = page.getByRole('region', { name: '所属チーム', exact: true })
   await expect(panel.locator('.team-name strong')).toHaveText('Alpha')
   await expect(panel.getByLabel('参加コード', { exact: true })).toHaveValue('ABCDEFGHJK')
   // The panel names the team, so the state line names only the division.
@@ -354,7 +354,7 @@ test('the team page creates a team with the passphrase typed on the overview, an
   // On the contest page a member sees the team and a link back here instead of the panel.
   await page.getByRole('navigation', { name: 'パンくずリスト' }).getByRole('link', { name: title }).click()
   await expect(page.locator('.participation-state')).toHaveText('参加済みオンサイト参加チーム Alpha')
-  await expect(page.getByRole('region', { name: 'チーム', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: '所属チーム', exact: true })).toHaveCount(0)
   await expect(page.locator('.contest-participation').getByRole('link', { name: 'チームのページ', exact: true })).toHaveAttribute('href', `/contests/${shortId(id)}/team`)
   await expect(page.locator('.contest-participation')).toContainText('メンバーと参加コードは、チームのページで確認できます。')
   await menu(page, 'standings')
@@ -460,7 +460,7 @@ test('a member of an open team turns the whole team onsite on the team page, bes
   await page.route(`**/api/my/contests/${id}/team`, route => route.fulfill({ json: { ...team, code: 'ABCDEFGHJK' } }))
   await open(page)
   await openTeam(page, 'チームのページ')
-  await expect(page.getByRole('region', { name: 'チーム', exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: '所属チーム', exact: true })).toBeVisible()
   await expect(page.locator('.participation-division')).toHaveText('オープン参加')
   const field = page.getByLabel('会場の合言葉（オンサイト参加者のみ）', { exact: true })
   await expect(field).toHaveAccessibleDescription('英数字とアンダースコア（_）で4〜64文字です。会場で配られた合言葉を入れると、終了までオンサイト参加に変えられます。メンバーの1人が入れると、チーム全体がオンサイト参加になります。オンサイト参加は順位表に表示されます。')
@@ -469,7 +469,7 @@ test('a member of an open team turns the whole team onsite on the team page, bes
   await expect(page.locator('.participation-division')).toHaveText('オンサイト参加')
   await expect(page.locator('.toast').getByRole('status')).toHaveText('オンサイト参加に変わりました')
   await expect(field).toHaveCount(0)
-  await expect(page.getByRole('region', { name: 'チーム', exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: '所属チーム', exact: true })).toBeVisible()
   expect(bodies).toEqual([{ onsitePassphrase: 'Venue_2026' }])
 })
 
@@ -498,7 +498,7 @@ test('the team panel copies and renews the code, renames the team, and before th
   })
   await open(page)
   await openTeam(page, 'チームのページ')
-  const panel = page.getByRole('region', { name: 'チーム', exact: true })
+  const panel = page.getByRole('region', { name: '所属チーム', exact: true })
   await expect(panel.locator('.team-name strong')).toHaveText('Alpha')
   await expect(panel.getByRole('list', { name: 'メンバー' }).getByRole('listitem')).toHaveText(['ui_test自分', 'bob外す', 'carol外す'])
   const code = panel.getByLabel('参加コード', { exact: true })
@@ -574,7 +574,7 @@ test('after the start members only rename and renew, and after the end nothing c
   await page.route(`**/api/my/contests/${id}/team`, route => route.fulfill({ json: { ...team, code: 'ABCDEFGHJK' } }))
   await open(page)
   await openTeam(page, 'チームのページ')
-  const panel = page.getByRole('region', { name: 'チーム', exact: true })
+  const panel = page.getByRole('region', { name: '所属チーム', exact: true })
   await expect(panel.getByLabel('参加コード', { exact: true })).toHaveValue('ABCDEFGHJK')
   await expect(panel.getByRole('button', { name: 'チーム名を変更' })).toBeVisible()
   await expect(panel.getByRole('button', { name: '作り直す', exact: true })).toBeVisible()
@@ -599,7 +599,7 @@ test('the team panel follows a join code that another member renewed', async ({ 
   await page.route(`**/api/my/contests/${id}/team`, route => route.fulfill({ json: { ...team, code } }))
   await open(page)
   await openTeam(page, 'チームのページ')
-  const panel = page.getByRole('region', { name: 'チーム', exact: true })
+  const panel = page.getByRole('region', { name: '所属チーム', exact: true })
   await expect(panel.getByLabel('参加コード', { exact: true })).toHaveValue('ABCDEFGHJK')
   // Bob renews the code; the members stay the same, and the panel still reads the new one.
   code = 'MNPQRSTVWX'
@@ -658,9 +658,9 @@ test('setters open the participant tools, replace the venue passphrase, move ope
   await expect(venue.getByRole('textbox', { name: '会場の合言葉' })).toHaveValue('Venue_2026')
   await expect(tools.locator('.setter-tools-body > p').first()).toHaveText('会場の合言葉は終了まで差し替えられます。オープン参加の人とチームは、結果が確定するまでオンサイト参加にできます。オープン参加には戻せません。')
   // Teams and those who joined alone share one table.
-  await expect(tools.getByRole('heading', { name: 'チームと個人参加 チーム 2・個人 1' })).toBeVisible()
+  await expect(tools.getByRole('heading', { name: 'チーム・個人 チーム 2・個人 1' })).toBeVisible()
   const table = tools.getByRole('region', { name: '参加者の一覧' })
-  await expect(table.locator('thead th')).toHaveText(['チーム・参加者', '区分', 'オンサイトになった時刻（日本時間）', '登録日時（日本時間）'])
+  await expect(table.locator('thead th')).toHaveText(['チーム・個人', '区分', 'オンサイトになった時刻（日本時間）', '登録日時（日本時間）'])
   await expect(table.locator('tbody th')).toHaveText([/^Alpha名前を変更bob、carol$/, 'erin個人参加', /^Beta名前を変更dave$/])
   await expect(table.locator('tbody tr').first().locator('td').nth(1)).toHaveText('2099/10/01 11:30（合言葉）')
   // Replacing the passphrase checks the rule first and explains a refusal, keeping the input. Focus follows the form
@@ -766,6 +766,8 @@ test('setters of an individual contest move participants onsite by handle, and o
   })
   await open(page)
   await page.locator('details.setter-tools summary').click()
+  // An individual contest has no teams to mention.
+  await expect(page.locator('.setter-tools-body > p').first()).toHaveText('会場の合言葉は終了まで差し替えられます。オープン参加の人は、結果が確定するまでオンサイト参加にできます。オープン参加には戻せません。')
   await expect(page.getByRole('heading', { name: '参加者 1 人' })).toBeVisible()
   const table = page.getByRole('region', { name: '参加者の一覧' })
   await expect(table.locator('thead th').first()).toHaveText('参加者')
@@ -804,7 +806,7 @@ test('team standings name each team with its members beside those who joined alo
   await expect(alphaRow.locator('.standing-onsite')).toHaveCount(0)
   await expect(table.locator('tbody tr').filter({ hasText: 'Beta' }).locator('.standing-onsite')).toHaveText('オンサイト')
   await expect(table.locator('tfoot tr').first().locator('td').first()).toContainText('Alpha')
-  await expect(table.locator('tfoot th')).toHaveText(['FA（初正解）', '正解チーム・個人数 / 提出チーム・個人数'])
+  await expect(table.locator('tfoot th')).toHaveText(['FA（初正解）', '正解数 / 提出数（チーム・個人）'])
   await expect(table.locator('tfoot tr').nth(1).locator('td')).toHaveText(['2 / 2'])
   const scopes = page.getByRole('group', { name: '表示する参加者' })
   await expect(scopes.getByRole('radio', { name: '全員' })).toBeChecked()
@@ -814,7 +816,7 @@ test('team standings name each team with its members beside those who joined alo
   // The rank is among the onsite rows; the whole table's rank stands beside it, and FA and counts follow the rows shown.
   await expect(table.locator('tbody tr').first().locator('td').first()).toHaveText('1全体 2 位')
   await expect(table.locator('.standing-onsite')).toHaveCount(0)
-  await expect(table.locator('tfoot th')).toHaveText(['FA（初正解・オンサイト）', '正解チーム・個人数 / 提出チーム・個人数（オンサイト）'])
+  await expect(table.locator('tfoot th')).toHaveText(['FA（初正解・オンサイト）', '正解数 / 提出数（チーム・個人、オンサイト）'])
   await expect(table.locator('tfoot tr').first().locator('td').first()).toContainText('Beta')
   await expect(table.locator('tfoot tr').nth(1).locator('td')).toHaveText(['1 / 1'])
   await expect(page.getByText('オンサイト参加のチームと個人だけを、振り直した順位で表示しています。小さい数字は全体の順位です。')).toBeVisible()

@@ -124,7 +124,7 @@ async function leave() {
 
 <template>
   <section class="team-panel" aria-labelledby="team-panel-title">
-    <h2 id="team-panel-title">チーム</h2>
+    <h2 id="team-panel-title">所属チーム</h2>
     <div v-if="!renaming" class="team-name"><strong>{{ name }}</strong><button v-if="running" ref="renameButton" type="button" class="editor-button" :disabled="!!action" @click="startRename">チーム名を変更</button></div>
     <form v-else class="team-rename" @submit.prevent="rename">
       <label for="team-new-name">新しいチーム名</label>

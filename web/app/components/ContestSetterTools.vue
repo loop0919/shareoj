@@ -107,7 +107,7 @@ async function rename(row: Entrant) {
   <details ref="root" class="setter-tools" @toggle="toggle">
     <summary><span>参加者の管理</span><span class="muted">作成者だけに表示</span></summary>
     <div class="setter-tools-body">
-      <p class="muted">{{ division ? '会場の合言葉は終了まで差し替えられます。オープン参加の人とチームは、結果が確定するまでオンサイト参加にできます。オープン参加には戻せません。' : 'チーム名は、結果が確定するまで変更できます。' }}</p>
+      <p class="muted">{{ division ? `会場の合言葉は終了まで差し替えられます。${teamMode ? 'オープン参加の人とチーム' : 'オープン参加の人'}は、結果が確定するまでオンサイト参加にできます。オープン参加には戻せません。` : 'チーム名は、結果が確定するまで変更できます。' }}</p>
       <p v-if="loadError" class="notice notice-error" role="alert">{{ loadError }}</p>
       <LoadingSpinner v-else-if="!entrants" label="参加者の一覧を読み込み中" />
       <template v-else>
@@ -122,11 +122,11 @@ async function rename(row: Entrant) {
           <p class="muted">会場の参加者に配ります。差し替えると前の合言葉は使えなくなりますが、すでにオンサイト参加の人はそのままです。</p>
         </section>
         <section class="setter-entrants" aria-labelledby="setter-entrants-title">
-          <div class="setter-heading"><h3 id="setter-entrants-title">{{ teamMode ? 'チームと個人参加' : '参加者' }} <span class="muted">{{ teamMode ? `チーム ${teams}・個人 ${entrants.length - teams}` : `${entrants.length} 人` }}</span></h3><RefreshButton label="参加者の一覧を更新" :busy="loading" :disabled="loading" @click="load" /></div>
+          <div class="setter-heading"><h3 id="setter-entrants-title">{{ teamMode ? 'チーム・個人' : '参加者' }} <span class="muted">{{ teamMode ? `チーム ${teams}・個人 ${entrants.length - teams}` : `${entrants.length} 人` }}</span></h3><RefreshButton label="参加者の一覧を更新" :busy="loading" :disabled="loading" @click="load" /></div>
           <p v-if="!entrants.length" class="muted">まだ誰も参加していません。</p>
           <div v-else class="content-table-scroll" role="region" aria-label="参加者の一覧" tabindex="0">
             <table class="content-table setter-table">
-              <thead><tr><th scope="col">{{ teamMode ? 'チーム・参加者' : '参加者' }}</th><th v-if="division" scope="col">区分</th><th v-if="division" scope="col">オンサイトになった時刻（日本時間）</th><th scope="col">登録日時（日本時間）</th></tr></thead>
+              <thead><tr><th scope="col">{{ teamMode ? 'チーム・個人' : '参加者' }}</th><th v-if="division" scope="col">区分</th><th v-if="division" scope="col">オンサイトになった時刻（日本時間）</th><th scope="col">登録日時（日本時間）</th></tr></thead>
               <tbody>
                 <tr v-for="row in entrants" :key="key(row)">
                   <th scope="row">

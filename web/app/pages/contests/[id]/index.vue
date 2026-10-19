@@ -209,7 +209,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
           </tbody>
           <tfoot>
             <tr><th colspan="4" scope="row">{{ onsiteOnly ? 'FA（初正解・オンサイト）' : 'FA（初正解）' }}</th><td v-for="(stat, i) in problemStats" :key="stat.id || i"><template v-if="stat.accepted"><span v-for="row in stat.first" :key="standingKey(row)" class="standing-fa"><template v-if="row.team">{{ row.team.name }}</template><UserLink v-else :handle="row.handle" /></span><small>{{ stat.time }}</small></template><span v-else class="muted">—</span></td></tr>
-            <tr><th colspan="4" scope="row">{{ teamContest ? '正解チーム・個人数 / 提出チーム・個人数' : '正解者数 / 提出者数' }}{{ onsiteOnly ? '（オンサイト）' : '' }}</th><td v-for="(stat, i) in problemStats" :key="stat.id || i"><span class="standing-accepted">{{ stat.accepted }}</span> / {{ stat.submitted }}</td></tr>
+            <tr><th colspan="4" scope="row">{{ teamContest ? `正解数 / 提出数（チーム・個人${onsiteOnly ? '、オンサイト' : ''}）` : `正解者数 / 提出者数${onsiteOnly ? '（オンサイト）' : ''}` }}</th><td v-for="(stat, i) in problemStats" :key="stat.id || i"><span class="standing-accepted">{{ stat.accepted }}</span> / {{ stat.submitted }}</td></tr>
           </tfoot>
         </table>
       </div>
