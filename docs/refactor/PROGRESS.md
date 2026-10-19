@@ -64,17 +64,17 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | ID | 内容 | 主なファイル | リスク・効果・規模 | 反証（価値・安全） | 状態 |
 | --- | --- | --- | --- | --- | --- |
 | C01 | CLI pushの下書き合成を関数に切り出し、規則を特性テストで固定 | `cli/main.go` | 低・高・S | 修正・修正 | 完了（`0c17328`） |
-| C02 | SQLの文字列置換をやめ、テスター用一覧と提出詳細の非公開列を明示的に組み立てる | `api/internal/problems/store.go`、`api/internal/submissions/store.go` | 低・高・S | 修正・維持 | 未着手 |
+| C02 | SQLの文字列置換をやめ、テスター用一覧と提出詳細の非公開列を明示的に組み立てる | `api/internal/problems/store.go`、`api/internal/submissions/store.go` | 低・高・S | 修正・維持 | 計画済み（範囲を`problems/store.go`の`list()`に限定。submissions側は除外） |
 | C03 | BFFのエラー変換を切り出し、画面へ渡すエラーコードを名前付きの一覧にする | `web/server/utils/private-api.ts` | 低・高・S | 修正・維持 | 未着手 |
-| C04 | useProblemDraftの既定値と自動保存の再予約をまとめる | `web/app/composables/useProblemDraft.ts` | 低・高・S | 維持・修正 | 未着手 |
+| C04 | useProblemDraftの既定値と自動保存の再予約をまとめる | `web/app/composables/useProblemDraft.ts` | 低・高・S | 維持・修正 | 計画済み |
 | C05 | ジャッジの失敗判定と上限検証をそれぞれ1か所にまとめる | `judge/sandbox.py`、`judge/host.py`、`judge/interactive.py` | 低・中・S | 修正・維持 | 未着手 |
-| C06 | コンテスト提出の閲覧条件をSQL断片1つにまとめ、2つの一覧で共有する | `api/internal/submissions/contest.go`、`problem.go` | 中・高・S | 維持・維持 | 計画済み |
+| C06 | コンテスト提出の閲覧条件をSQL断片1つにまとめ、2つの一覧で共有する | `api/internal/submissions/contest.go`、`problem.go` | 中・高・S | 維持・維持 | 完了（`da26be1`） |
 | C07 | 提出とリジャッジで重複する「採点できる下書きか」の条件を1か所で生成する | `api/internal/submissions/store.go`、`rejudge.go` | 中・高・M | 修正・修正 | 未着手 |
 | C08 | 問題とプロフィールのストアを具体型で持ち、実行時の型アサーションをやめる | `api/internal/httpapi/routes.go`ほか | 中・高・M | 修正・修正 | 未着手 |
 | C09 | 「利用できる言語」の判定と既定の言語を1か所にまとめる | `web/app/composables/useJudgeCatalog.ts`ほか | 低・中・S | 修正・維持 | 未着手 |
 | C10 | 自分の問題の詳細と一覧のスキーマを共通化 | `web/shared/types/account-problems.ts` | 低・中・S | 却下・却下 | 却下（変更漏れの根拠が履歴の読み違いで、共通化するとサーバー側の差が隠れる） |
 | C11 | problems.scanが読む列のリストを共有する | `api/internal/problems/store.go`ほか | 低・中・S | 修正・維持 | 未着手 |
-| C12 | 問題ページとコンテストの問題ページで、下書きから公開用の項目へ写す処理を共有する | `api/internal/problems/publication.go`、`api/internal/contests/store.go` | 低・中・S | 維持・維持 | 未着手 |
+| C12 | 問題ページとコンテストの問題ページで、下書きから公開用の項目へ写す処理を共有する | `api/internal/problems/publication.go`、`api/internal/contests/store.go` | 低・中・S | 維持・維持 | 計画済み |
 | C13 | サイトマップと共有画像の静的ページ一覧を1つにする | `web/server/routes/sitemap.xml.get.ts`、`web/shared/social-pages.ts` | 低・中・S | 修正・修正 | 未着手 |
 | C14 | 送り出しの順序と待ち時間の起点を1つのSQL断片で定義する | `api/internal/submissions/store.go`、`api/cmd/judge-bridge/` | 低・中・S | 却下・維持 | 却下（変更漏れの実例がなく、既に振る舞いのテストで固定済み） |
 | C15 | コンテストAPIの、パス末尾とメソッドの順序に依存する分岐をルートごとに分ける | `api/internal/httpapi/contests.go`、`routes.go` | 中・高・L | 未検証 | 未着手 |
@@ -112,6 +112,17 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 - 検証（最終tree）: `cli`で`go test -count=1 ./...`、`go vet ./...`、`CGO_ENABLED=0 go build -trimpath`、`gofmt -l .`がすべて成功。
 - 軽微（未対応）: 追加テストは`errors.As`で判定するため、デコードエラーを包み直す変更は検出しない。
 
+### C06 コンテスト提出の閲覧条件（`da26be1`）
+
+- 計画: [plans/C06-contest-submission-visibility.md](plans/C06-contest-submission-visibility.md)。計画レビューは承認（軽微な指摘4件。実装時に反映）。
+- 変更: `contestPublic`と`problemSubmissionVisible`に写しで書かれていた4条件（公開、スタッフ、終了後の本人、開始後のチームメイト）を`contestSubmissionVisible(contest string) string`にまとめた。規則を変えた直近4コミットはどれも両ファイルを同時に直していた。
+- 守った点: `contestPublic`の生成SQLはバイト単位で同じ。問題側の差は`(SELECT contest_staff(c.id,$3))`と`IN (SELECT unnest(...))`の2か所の書き換えだけ（WHERE内のORで意味は同じ）。変更前後のSQL文字列とEXPLAINを一時テストで比べた（一時ファイルは削除済み）。
+- 特性テスト: 問題ページ側（コンテスト指定あり・なし）で、終了後のスタッフ・本人・チームメイトの見え方を5件固定。引数の取り違え（`c.id`の代わりに`NULLIF($2,'')::uuid`）を2件のテストが検出することを確かめた。
+- simplify: 引数の約束（1つのコンテストに固定する呼び出しはパラメーター、複数にまたがる呼び出しは`c.id`）を関数のdocコメントに移した。問題側の副問い合わせが行ごとに評価される点は、関数の仕事が同じで差が小さいため見送り。
+- レビュー: 必須1件。断片内の`created_at`の表名修飾が外れても、テストのフィクスチャ（作成後に開始時刻を過去へ動かす）では検出できなかった。2つのテストでコンテストの作成時刻を開始前に置き、変異を検出するようにした。
+- 検証（最終tree）: API `go test -count=1 ./...`（DB連携）、`go vet`、`gofmt -l`、`make package package-judge`、webの`npm run build`、アカウント系Playwright（30件）がすべて成功。
+- 軽微（未対応）: コンテスト外の枝の`(SELECT contest_staff($1::uuid,$3))`を副問い合わせにする理由のコメントが、simplifyで消えた。本人とチームメイトの枝の「開始後」の条件を丸ごと消しても検出するテストがない（変更前からの穴）。ほかのテストのフィクスチャも、作成後に開始時刻を過去へ動かすだけである。
+
 ## 保留事項
 
 調査で見つけた別件の不具合と、仕様の判断が要る点。直さずに記録だけする。
@@ -141,8 +152,11 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | D21 | BFFがAPIの`invalid_accounts`を画面へ渡さず、専用の文言が出ない | `web/server/utils/private-api.ts:32` | 汎用の「保存できませんでした」が出る |
 | D22 | テストファイルのBFFルートが、ルートパラメーターを検証せずに上流のパスへ埋め込む | `web/server/api/my/problems/[id]/test-files/[file].get.ts:8`ほか | `%2e%2e`がURL解析で正規化される可能性（未検証。多層防御の穴） |
 | D23 | タグで絞り込んだ一覧ページの`og:image`が404のURLを指す | `web/app/pages/problems/index.vue:34,44` | 共有時にプレビュー画像が出ない |
+| D24 | 問題の編集画面で、ダイアログを閉じるときに保留中の自動保存タイマーを消さずに張り直す | `web/app/composables/useProblemDraft.ts`（離脱確認と削除確認を閉じる処理） | ダイアログの裏で草稿が非同期に変わると（保存して移動の途中のファイル準備、生成の完了）、タイマーが2本になりPUTが1回多く起きうる |
 
 ## 現在の作業と次の手順
 
 - 実行順の目安は、C01、C06、C12、C04、C02、C03、C05、C11、C09、C07、C08、C13。C15〜C20は着手前に反証を行う。
-- C06は計画済み（計画レビュー承認、軽微な指摘4件）。次はC06の実装。
+- C12、C04、C02は計画済み（いずれも計画レビュー承認）。次はC12の実装。
+- 前の候補のレビュー中に、次の候補の計画を読み取りだけで進める（計画は`.local/`に書くので、固定したtreeに影響しない）。
+- Ruling（C04）: 計画は「閉じるときに保留中のタイマーを消す」微差を受け入れていたが、ダイアログの裏で草稿が非同期に変わったときのPUTの回数が変わるため採らない。`scheduleAutosave()`は`clearTimeout`を含めず、呼び出し側の`clearTimeout`は今の位置のまま残す。誤っていた場合の損失: 二重のタイマー（計画のD2）が別件として残る。
