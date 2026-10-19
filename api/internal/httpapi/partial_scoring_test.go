@@ -1,7 +1,10 @@
 package httpapi
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"net/http/httptest"
 	"net/url"
 	"slices"
 	"strings"
@@ -9,7 +12,11 @@ import (
 	"time"
 
 	"judge/api/internal/contests"
+	"judge/api/internal/images"
+	"judge/api/internal/notifications"
 	"judge/api/internal/problems"
+	"judge/api/internal/profiles"
+	"judge/api/internal/submissions"
 )
 
 // scoredDraft is a groups-mode problem that every destination takes: 小課題1 (30 points) holds case 01 and 小課題2
@@ -52,8 +59,30 @@ func scoredResult(verdict string, first, second int64) string {
 const acceptedResult = `{"verdict":"AC","passed":3,"total":3}`
 
 // save writes the draft as owner through the API at the problem's current version and returns the saved problem, or
-// the response body when the save is refused.
+// the response body when the save is refused. Like the editor, it always names scoring, as null when there is none.
 func (f teamTest) save(owner, id string, d problems.Draft, want int) (problems.Problem, string) {
+	f.t.Helper()
+	return f.saveDraft(owner, id, sentScoring(f.t, d, true), want)
+}
+
+// sentScoring is the draft as a JSON object, with or without the scoring key when it has no scoring.
+func sentScoring(t *testing.T, d problems.Draft, named bool) map[string]any {
+	t.Helper()
+	data, err := json.Marshal(d)
+	var body map[string]any
+	if err == nil {
+		err = json.Unmarshal(data, &body)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := body["scoring"]; named && !ok {
+		body["scoring"] = nil
+	}
+	return body
+}
+
+func (f teamTest) saveDraft(owner, id string, d map[string]any, want int) (problems.Problem, string) {
 	f.t.Helper()
 	version := int64(0)
 	if w := f.do(f.newRequest("GET", "/my/problems/"+id, owner, nil)); w.Code == 200 {
@@ -449,4 +478,128 @@ func TestPartialScoringStandingsPostgres(t *testing.T) {
 		"Beta": "1 10000 100 20", "Beta " + teamed: "10000 100 0 0 0 20 20",
 		"gus": "2 3000 30 5", "gus " + teamed: "3000 30 0 0 0 5 -1",
 	})
+}
+
+// A client that does not know partial scoring sends neither scoring nor the cases' groups. Its save is refused as
+// outdated instead of making the problem all-or-nothing; switching back is an explicit null.
+func TestPartialScoringNeedsScoringNamedPostgres(t *testing.T) {
+	f := newTeamTest(t, "alice")
+	const (
+		private = "f3000000-0000-4000-8000-000000000001"
+		plain   = "f3000000-0000-4000-8000-000000000002"
+	)
+	f.save("alice", private, scoredDraft(), 200)
+	old := sentScoring(t, allOrNothing(), false)
+	if _, ok := old["scoring"]; ok {
+		t.Fatal("the old body names scoring")
+	}
+	f.fail("PUT", "/my/problems/"+private, "alice", map[string]any{"version": 1, "draft": old}, 409, "version_conflict")
+	var kept problems.Problem
+	f.decode(f.request("GET", "/my/problems/"+private, "alice", nil, 200), &kept)
+	if kept.Version != 1 || kept.Draft.Scoring == nil || !slices.Equal(kept.Draft.TestCases[1].Groups, []string{"小課題1", "小課題2"}) {
+		t.Fatalf("draft changed: %+v", kept.Draft)
+	}
+	if saved, _ := f.saveDraft("alice", private, sentScoring(t, allOrNothing(), true), 200); saved.Draft.Scoring != nil {
+		t.Fatalf("null kept scoring: %+v", saved.Draft.Scoring)
+	}
+	// A problem without scoring saves as before, with or without the key.
+	f.saveDraft("alice", plain, old, 200)
+	f.saveDraft("alice", plain, old, 200)
+}
+
+// The start is read once: a save that passed the lock just before the start brings the contest's points along even when
+// it writes the contest's copy after the start, so the points always match the full score of that copy.
+func TestPartialScoringSaveAtTheStartPostgres(t *testing.T) {
+	f := newTeamTest(t, "alice")
+	const (
+		partial = "f4000000-0000-4000-8000-000000000001"
+		cid     = "f4000000-0000-4000-8000-000000000002"
+	)
+	f.save("alice", partial, scoredDraft(), 200)
+	f.create(cid, partial, nil)
+	version := func() int64 {
+		var current problems.Problem
+		f.decode(f.request("GET", "/my/problems/"+partial, "alice", nil, 200), &current)
+		return current.Version
+	}
+	more := scoredDraft()
+	more.Scoring.Groups[0].Points = 50
+	// A submission being created holds the contest; the save waits for it rather than racing its judging.
+	if w := f.waits(f.newRequest("PUT", "/my/problems/"+partial, "alice", map[string]any{"version": version(), "draft": sentScoring(t, more, true)}),
+		`SELECT 1 FROM contests WHERE id='`+cid+`' FOR SHARE`); w.Code != 200 {
+		t.Fatalf("save after a submission: %d %s", w.Code, w.Body.String())
+	}
+	if c := f.contest(cid, "alice"); c.Problems[0].Points != 120 {
+		t.Fatalf("points before the start: %+v", c.Problems)
+	}
+
+	ctx, cancel := context.WithTimeout(f.ctx, 5*time.Second)
+	defer cancel()
+	r := f.newRequest("PUT", "/my/problems/"+partial, "alice", map[string]any{"version": version(), "draft": sentScoring(t, scoredDraft(), true)})
+	f.exec(`UPDATE contests SET starts_at=clock_timestamp()+interval '300 milliseconds' WHERE id=$1`, cid)
+	// Hold the contest's copy, so that the save writes it only after the start. Writing the row makes the save
+	// evaluate its update again once the lock is free.
+	tx, err := f.store.Pool().Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	if _, err = tx.Exec(ctx, `UPDATE contest_problems SET points=points WHERE problem_id=$1`, partial); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() { done <- f.do(r) }()
+	time.Sleep(600 * time.Millisecond)
+	if err = tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var w *httptest.ResponseRecorder
+	select {
+	case w = <-done:
+	case <-ctx.Done():
+		t.Fatal("save did not finish")
+	}
+	if w.Code != 200 {
+		t.Fatalf("save across the start: %d %s", w.Code, w.Body.String())
+	}
+	var points, full int
+	if err = f.store.Pool().QueryRow(f.ctx, `SELECT cp.points,(SELECT sum((g->>'points')::int) FROM jsonb_array_elements(cp.draft->'scoring'->'groups') g)
+ FROM contest_problems cp WHERE cp.problem_id=$1`, partial).Scan(&points, &full); err != nil {
+		t.Fatal(err)
+	}
+	if points != 100 || full != 100 {
+		t.Fatalf("points %d for a full score of %d", points, full)
+	}
+	// From now on the definition stays, and so do the points.
+	f.save("alice", partial, more, 409)
+}
+
+// During judge maintenance no runtime is enabled, but problems with judge code in a contest, or published, still save
+// (ADR 0010); the readiness tells that they wait for the judge.
+func TestProblemSaveDuringMaintenancePostgres(t *testing.T) {
+	f := newTeamTest(t, "alice")
+	const (
+		special = "f5000000-0000-4000-8000-000000000001"
+		pub     = "f5000000-0000-4000-8000-000000000002"
+		cid     = "f5000000-0000-4000-8000-000000000003"
+	)
+	checked := scoredDraft()
+	checked.Scoring.Mode, checked.Scoring.Aggregator = problems.ScoringAggregate, &problems.Generator{Runtime: "cpp17", Source: "int main(){}"}
+	checked.Checker = &problems.Generator{Runtime: "cpp17", Source: "int main(){}"}
+	f.save("alice", special, checked, 200)
+	f.save("alice", pub, checked, 200)
+	f.publish("alice", pub, true, 200)
+	f.create(cid, special, nil)
+	pool := f.store.Pool()
+	f.handler = newHandler(AuthConfig{}, handlerDependencies{Store: f.store, Contests: &contests.Store{Pool: pool}, Images: &images.Store{Pool: pool}, Notifications: &notifications.Store{Pool: pool}, Profiles: profiles.New(pool), Submissions: &submissions.Store{Pool: pool}, JudgeImage: "sha256:" + strings.Repeat("a", 64), JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: "none", Verifier: newCognitoVerifier(f.sign.server.URL, "client")})
+	checked.Markdown = "typo fixed"
+	for _, id := range []string{special, pub} {
+		saved, _ := f.save("alice", id, checked, 200)
+		if saved.Readiness == nil || !slices.Contains(saved.Readiness.Contest, problems.IssueCheckerRuntime) || !slices.Contains(saved.Readiness.Contest, problems.IssueAggregatorRuntime) {
+			t.Fatalf("readiness during maintenance: %+v", saved.Readiness)
+		}
+	}
+	// What is really missing is still refused.
+	f.save("alice", special, ungrouped(checked), 400)
+	f.save("alice", pub, ungrouped(checked), 400)
 }
