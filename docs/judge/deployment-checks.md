@@ -116,6 +116,22 @@ python3 judge/rollout.py finish --config judge/.build/rollout.json --run-dir "$J
   --report "$JUDGE_RELEASE_RUN/verify/report.json"
 ```
 
+## 部分点を有効にする前の配布
+
+[ADR 0025](../adr/0025-score-partially-with-test-groups.md)の部分点は、ジョブと結果の形式を変えるので、次の順で配布する。
+
+1. ワーカー、bridge、結果の形式を部分点に対応させ、APIが部分点の設定の保存を拒む版のコミットをpushする。
+   APIとWebはGitHub Actionsで配布されるが、部分点の設定を保存できないので、採点は変わらない。
+2. 参加者のいるコンテストのない時間に、そのコミットからワーカーとbridgeの配布物を作り、`judge/rollout.py run`を実行する。
+   `state.json`が`status: passed`と`step: complete`になるまで完了させる。
+3. 完了を確かめてから、部分点の設定の保存と表示を有効にするコミットをpushする。
+
+`rolling`は使わない。
+`run`はコンテストの予定を確かめないので、受付停止から完了までの間にコンテストが重ならないことを、開始前に確かめる。
+手順2の前に部分点の設定を保存できると、古いbridgeがジョブの`scoring`を落とし、ワーカーは一括方式で採点する。
+手順3の後にbridgeを手順1より前の版へ戻すと、部分点の設定がワーカーに届かず、得点のない結果をJEにする安全網も働かない。
+手順3以降にbridgeのコード（結果の確認と保存）を変えた場合は、もう一度`run`で配布する。
+
 ## OS更新はローリング更新で配布する
 
 OSのセキュリティ更新は`judge/rollout.py rolling`で配布する。
