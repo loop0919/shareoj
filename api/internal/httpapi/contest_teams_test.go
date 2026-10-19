@@ -483,13 +483,20 @@ func TestContestTeamDraftsPostgres(t *testing.T) {
 	}
 	f.fail("PUT", "/my/contests/"+did+"/publication", "alice", map[string]any{"version": saved.Version}, 409, "contest_not_ready")
 	f.fail("PUT", "/my/contests/"+did+"/draft", "alice", body(saved.Version, map[string]any{"onsitePassphrase": strings.Repeat("x", 1001)}), 400, "invalid_contest")
-	f.decode(f.request("PUT", "/my/contests/"+did+"/draft", "alice", body(saved.Version, map[string]any{"maxTeamSize": 4, "onsitePassphrase": " ｓｅｃｒｅｔ "}), 200), &saved)
+	// Only ASCII letters, digits and underscores make a passphrase, after full-width ones fold into them.
+	for _, bad := range []string{"two words", "se-cret", "合言葉です"} {
+		f.decode(f.request("PUT", "/my/contests/"+did+"/draft", "alice", body(saved.Version, map[string]any{"maxTeamSize": 4, "onsitePassphrase": bad}), 200), &saved)
+		if !slices.Equal(saved.Issues, []string{contests.IssuePassphrase}) || *saved.Draft.OnsitePassphrase != bad {
+			t.Fatalf("draft passphrase %q: %+v", bad, saved)
+		}
+	}
+	f.decode(f.request("PUT", "/my/contests/"+did+"/draft", "alice", body(saved.Version, map[string]any{"maxTeamSize": 4, "onsitePassphrase": " ｓｅｃｒｅｔ＿１ "}), 200), &saved)
 	if len(saved.Issues) != 0 || !*saved.Draft.TeamMode || !*saved.Draft.OnsiteDivision {
 		t.Fatalf("draft: %+v", saved)
 	}
 	// A client from before the settings keeps them in the draft.
 	f.decode(f.request("PUT", "/my/contests/"+did+"/draft", "alice", body(saved.Version, nil), 200), &saved)
-	if !*saved.Draft.TeamMode || *saved.Draft.MaxTeamSize.Value != 4 || *saved.Draft.OnsitePassphrase != " ｓｅｃｒｅｔ " {
+	if !*saved.Draft.TeamMode || *saved.Draft.MaxTeamSize.Value != 4 || *saved.Draft.OnsitePassphrase != " ｓｅｃｒｅｔ＿１ " {
 		t.Fatalf("legacy save: %+v", saved.Draft)
 	}
 	f.fail("GET", "/my/contests/"+did+"/draft", "bob", nil, 404, "contest_not_found")
@@ -500,7 +507,7 @@ func TestContestTeamDraftsPostgres(t *testing.T) {
 	}
 	var venue contests.Venue
 	f.decode(f.request("GET", "/my/contests/"+did+"/onsite", "alice", nil, 200), &venue)
-	if !venue.OnsiteDivision || venue.Passphrase == nil || *venue.Passphrase != "secret" {
+	if !venue.OnsiteDivision || venue.Passphrase == nil || *venue.Passphrase != "secret_1" {
 		t.Fatalf("venue: %+v", venue)
 	}
 	// A draft that turns a setting off publishes without its size or passphrase.
