@@ -224,6 +224,32 @@ class BudgetTests(unittest.TestCase):
         self.assertEqual((result['verdict'], result['passed']), ('AC', 3))
         self.assertEqual(result['scoring']['score'], 4000)
 
+    def test_aggregate_jobs_score_the_executed_cases_with_the_aggregator(self):
+        for interactive_mode in (False, True):
+            with self.subTest(interactive=interactive_mode):
+                job = scoring_job('aggregate', members=(['a'], ['a'], ['b'], ['b'], []))
+                job['cases'][4]['isSample'] = True
+                job['interactor' if interactive_mode else 'checker'] = dict(runtime='cpp17', source='judge')
+                now = [0]
+                def tick(reply):
+                    now[0] += 500
+                    return reply
+                judge = Judge(self, submission=lambda i: tick(finished()),
+                              checker=lambda i: finished(scoreFile=b'5', checkerLog=''),
+                              interactor=lambda i: tick(dict(verdict='AC', scoreFile=b'5', judgeExitCode=0, cpuTimeMs=1, wallTimeMs=1, memoryBytes=1)),
+                              aggregator=aggregator_output('40 12.5'))
+                with patch.object(host.time, 'monotonic', lambda: now[0]):
+                    result = judge(job)
+                self.assertEqual(judge.executed, [0, 1, 2])
+                # Skipped cases reach the aggregator without a score, and nothing is read for them.
+                self.assertEqual(judge.aggregator_input, '5 2\n40\n60\nAC 5 0 1 0\nAC 5 0 1 0\nAC 5 0 1 1\nSKIPPED - 0 1 1\nSKIPPED - 1 0\n')
+                self.assertEqual([call[0] for call in judge.calls].count('interact' if interactive_mode else 'check'), 3)
+                self.assertEqual(judge.calls[-1], ('aggregate',))
+                self.assertEqual([c['verdict'] for c in result['cases']], ['AC', 'AC', 'AC', 'SKIPPED', 'SKIPPED'])
+                self.assertEqual(result['scoring'], dict(score=5250, maxScore=10000, groups=[dict(score=4000, maxScore=4000),
+                                                                                             dict(score=1250, maxScore=6000)]))
+                self.assertIsNone(judge.failure)
+
     def test_binary_jobs_keep_the_deadline(self):
         job = scoring_job(members=([], [], [], [], []))
         del job['scoring']
