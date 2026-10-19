@@ -684,6 +684,13 @@ func TestContestOnsitePostgres(t *testing.T) {
 	if list := f.entrants(ic); len(list) != 2 || list[0].Handle != "gina" || list[0].OnsiteVia != "passphrase" || list[1].Handle != "hank" || list[1].OnsiteVia != "setter" {
 		t.Fatalf("individual entrants: %+v", list)
 	}
+	// Someone the standings leave out, such as a participant who became staff, is out of the setters' list and switches.
+	f.exec(`INSERT INTO contest_setters(contest_id,owner_id) VALUES($1,'hank')`, ic)
+	if list := f.entrants(ic); len(list) != 1 || list[0].Handle != "gina" {
+		t.Fatalf("entrants with staff: %+v", list)
+	}
+	f.fail("PUT", "/my/contests/"+ic+"/participants/hank/onsite", "alice", map[string]any{"onsite": false}, 404, "participant_not_found")
+	f.exec(`DELETE FROM contest_setters WHERE contest_id=$1 AND owner_id='hank'`, ic)
 
 	// Setters replace the passphrase; the old one stops working, and an editor holding it cannot save it back.
 	before := f.contest(ic, "alice")
@@ -998,4 +1005,121 @@ func TestContestTeamAccountDeletionPostgres(t *testing.T) {
 		t.Fatalf("members after deletion: %v", members)
 	}
 	f.fail("POST", "/my/contests/"+tc+"/participation", "gina", joinCode(pair.Code), 400, "incorrect_team_code")
+}
+
+// Without a limit of its own, a team still stops at the internal cap, so one row cannot gather the submission rate of
+// any number of accounts (ADR 0024).
+func TestContestTeamCapPostgres(t *testing.T) {
+	f := newTeamTest(t, "alice", "bob", "carol", "dan")
+	const (
+		tc = "c0000000-0000-4000-8000-000000000001"
+		pa = "a0000000-0000-4000-8000-000000000001"
+	)
+	f.problem(pa)
+	if c := f.create(tc, pa, map[string]any{"teamMode": true, "maxTeamSize": nil}); c.MaxTeamSize != nil {
+		t.Fatalf("unlimited: %+v", c)
+	}
+	f.join(tc, "bob", create("Crowd"))
+	crowd := f.team(tc, "bob")
+	others := contests.MaxTeamMembers - 2
+	f.exec(`INSERT INTO user_profiles(owner_id,handle) SELECT 'member'||n,'member'||n FROM generate_series(1,$1::int) n`, others)
+	f.exec(`INSERT INTO contest_participants(contest_id,owner_id,team_id) SELECT $1,'member'||n,$2 FROM generate_series(1,$3::int) n`, tc, crowd.ID, others)
+	if joined := f.join(tc, "carol", joinCode(crowd.Code)); len(joined.Team.Members) != contests.MaxTeamMembers {
+		t.Fatalf("members: %d", len(joined.Team.Members))
+	}
+	f.fail("POST", "/my/contests/"+tc+"/participation", "dan", joinCode(crowd.Code), 409, "team_full")
+	if f.contest(tc, "dan").Participating {
+		t.Fatal("a full team took another member")
+	}
+}
+
+// Dropping the division before the start forgets the teams' divisions and the setters' switches too, so turning it on
+// again with a new passphrase starts every team open.
+func TestContestTeamOnsiteDropPostgres(t *testing.T) {
+	f := newTeamTest(t, "alice", "bob", "carol")
+	const (
+		tc = "c0000000-0000-4000-8000-000000000001"
+		pa = "a0000000-0000-4000-8000-000000000001"
+	)
+	f.problem(pa)
+	c := f.create(tc, pa, map[string]any{"teamMode": true, "onsiteDivision": true, "onsitePassphrase": "first"})
+	if alpha := f.join(tc, "bob", withOnsite(create("Alpha"), "first")); !alpha.Onsite {
+		t.Fatalf("onsite team: %+v", alpha)
+	}
+	beta := f.join(tc, "carol", create("Beta")).Team
+	f.request("PUT", "/my/contests/"+tc+"/teams/"+beta.ID+"/onsite", "alice", map[string]any{"onsite": false}, 200)
+	c = f.contest(tc, "alice")
+	f.decode(f.request("PUT", "/my/contests/"+tc, "alice", update(c, map[string]any{"onsiteDivision": false}), 200), &c)
+	if n := f.count(`SELECT count(*) FROM contest_teams WHERE contest_id=$1 AND (onsite_at IS NOT NULL OR onsite_via IS NOT NULL OR kept_open)`, tc); n != 0 {
+		t.Fatalf("teams keep %d divisions", n)
+	}
+	f.decode(f.request("PUT", "/my/contests/"+tc, "alice", update(c, map[string]any{"onsiteDivision": true, "onsitePassphrase": "second"}), 200), &c)
+	if f.contest(tc, "bob").Onsite {
+		t.Fatal("the team is onsite under the new division")
+	}
+	for _, e := range f.entrants(tc) {
+		if e.Onsite || e.OnsiteAt != nil || e.OnsiteVia != "" || e.KeptOpen || e.Team.Onsite {
+			t.Fatalf("entrant under the new division: %+v", e)
+		}
+	}
+	var rows []contests.Standing
+	f.decode(f.request("GET", "/contests/"+tc+"/standings?scope=onsite", "", nil, 200), &rows)
+	if len(rows) != 0 {
+		t.Fatalf("onsite standings: %+v", rows)
+	}
+	// The team a setter had kept open takes the new passphrase.
+	if upgraded := f.join(tc, "carol", map[string]any{"onsitePassphrase": "second"}); !upgraded.Onsite {
+		t.Fatalf("kept open under the new division: %+v", upgraded)
+	}
+}
+
+// A team-contest registration without a team can only come from the API before teams, during a deploy. It stays out
+// of the standings, may not become onsite alone, and still creates or joins a team, which then counts what it did.
+func TestContestTeamLegacyRegistrationPostgres(t *testing.T) {
+	f := newTeamTest(t, "alice", "bob", "erin")
+	const (
+		tc = "c0000000-0000-4000-8000-000000000001"
+		pa = "a0000000-0000-4000-8000-000000000001"
+		ac = "d0000000-0000-4000-8000-000000000001"
+	)
+	f.problem(pa)
+	f.create(tc, pa, map[string]any{"teamMode": true, "onsiteDivision": true, "onsitePassphrase": "correct"})
+	f.join(tc, "bob", create("Alpha"))
+	f.exec(`INSERT INTO contest_participants(contest_id,owner_id) VALUES($1,'erin')`, tc)
+	path := "/my/contests/" + tc + "/participation"
+	// An empty body, as the old page sends, changes nothing.
+	if c := f.join(tc, "erin", nil); !c.Participating || c.Team != nil {
+		t.Fatalf("legacy registration: %+v", c)
+	}
+	f.fail("POST", path, "erin", map[string]any{"onsitePassphrase": "correct"}, 409, "contest_team_required")
+	if n := f.count(`SELECT count(*) FROM contest_participants WHERE owner_id='erin' AND team_id IS NULL AND onsite_at IS NULL`); n != 1 {
+		t.Fatalf("legacy rows: %d", n)
+	}
+	standings := func() []contests.Standing {
+		t.Helper()
+		var rows []contests.Standing
+		f.decode(f.request("GET", "/contests/"+tc+"/standings", "", nil, 200), &rows)
+		return rows
+	}
+	if rows := standings(); len(rows) != 1 || rows[0].Team == nil || rows[0].Team.Name != "Alpha" || rows[0].Handle != "" {
+		t.Fatalf("standings with a legacy registration: %+v", rows)
+	}
+	// After the start the registration still enters a team, keeping its row, and its earlier submissions count there.
+	f.schedule(tc, "running")
+	f.exec(`INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,result,contest_id,created_at,finished_at)
+ VALUES($1,'erin',$2,1,'Team','cpp17','code','{}'::jsonb,'DONE','{"verdict":"AC","passed":1,"total":1}'::jsonb,$3,now()-interval '30 minutes',now())`, ac, pa, tc)
+	late := f.join(tc, "erin", create("Late"))
+	if late.Team == nil || late.Team.Name != "Late" || !slices.Equal(late.Team.Members, []string{"erin"}) {
+		t.Fatalf("late team: %+v", late.Team)
+	}
+	if n := f.count(`SELECT count(*) FROM contest_participants WHERE owner_id='erin'`); n != 1 {
+		t.Fatalf("erin's rows: %d", n)
+	}
+	if n := f.count(`SELECT count(*) FROM contest_teams t WHERE NOT EXISTS(SELECT 1 FROM contest_participants p WHERE p.team_id=t.id)`); n != 0 {
+		t.Fatalf("empty teams: %d", n)
+	}
+	rows := standings()
+	if len(rows) != 2 || rows[0].Team == nil || rows[0].Team.ID != late.Team.ID || rows[0].Points != 100 || rows[1].Team.Name != "Alpha" {
+		t.Fatalf("standings after joining: %+v", rows)
+	}
 }

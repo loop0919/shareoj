@@ -114,6 +114,23 @@ func TestRankRowsCountsMembersTowardTheirTeam(t *testing.T) {
 		onsite[1].Team.Name != "Beta" || onsite[1].Rank != 2 || onsite[1].OverallRank != 3 || rows[2].Rank != 3 {
 		t.Fatalf("onsite: %+v", onsite)
 	}
+	// Tied onsite rows share the onsite rank too, whatever open row ties with them.
+	tied := RankRows([]Standing{
+		{Team: &TeamSummary{ID: "t1", Name: "Alpha", Onsite: true}, Onsite: true},
+		{Team: &TeamSummary{ID: "t2", Name: "Beta"}},
+		{Team: &TeamSummary{ID: "t3", Name: "Gamma", Onsite: true}, Onsite: true},
+	}, []Attempt{
+		{Team: "t1", ProblemID: "A", Verdict: "AC", Points: 100, CreatedAt: at(5)},
+		{Team: "t2", ProblemID: "A", Verdict: "AC", Points: 100, CreatedAt: at(5)},
+		{Team: "t3", ProblemID: "A", Verdict: "AC", Points: 100, CreatedAt: at(5)},
+	}, start, 5, time.Time{})
+	if len(tied) != 3 || tied[0].Rank != 1 || tied[1].Rank != 1 || tied[2].Rank != 1 {
+		t.Fatalf("tied: %+v", tied)
+	}
+	if onsiteTied := OnsiteRows(tied); len(onsiteTied) != 2 || onsiteTied[0].Team.Name != "Alpha" || onsiteTied[1].Team.Name != "Gamma" ||
+		onsiteTied[0].Rank != 1 || onsiteTied[1].Rank != 1 || onsiteTied[0].OverallRank != 1 || onsiteTied[1].OverallRank != 1 {
+		t.Fatalf("tied onsite: %+v", onsiteTied)
+	}
 	if none := OnsiteRows(Rank([]string{"a"}, nil, start, 5)); none == nil || len(none) != 0 {
 		t.Fatalf("no onsite rows: %#v", none)
 	}
