@@ -236,6 +236,17 @@ test('the switch starts off, turns on and off without asking while there is no c
   await page.getByRole('group', { name: '採点方式' }).getByRole('radio', { name: '部分点採点' }).check()
   await expect(aggregate).not.toBeChecked()
   expect((await stored(page)).scoring).toEqual({ mode: 'groups', groups: [{ name: '小課題1', points: 100 }] })
+  // On and off again before the autosave leaves nothing to save, so the status returns to 保存済み without a request.
+  let puts = 0
+  page.on('request', request => { if (request.method() === 'PUT') puts++ })
+  await page.clock.install()
+  await page.clock.pauseAt(new Date(Date.now() + 1000))
+  await aggregate.check()
+  await aggregate.uncheck()
+  await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'dirty')
+  await page.clock.resume()
+  await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
+  expect(puts).toBe(0)
   // On shows the aggregator below with a fresh, empty code; off again asks nothing while the code is empty.
   await aggregate.check()
   await expect(page.getByLabel('集計コードの言語')).toBeVisible()
@@ -392,6 +403,11 @@ test('a draft whose full score is out of range is not sent', async ({ page }) =>
   await expect(page.locator('.scoring-block [role=alert]')).toHaveText('満点（配点の合計）を1〜1,000,000点にしてください。')
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.locator('.editor-notices').getByRole('alert')).toHaveText('満点（配点の合計）を1〜1,000,000点にしてください。')
+  expect(puts).toBe(0)
+  // Putting the points back leaves nothing to save: the refusal goes and the draft is 保存済み again without a request.
+  await page.getByLabel('グループ1の配点').fill('100')
+  await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
+  await expect(page.locator('.editor-notices').getByRole('alert')).toHaveCount(0)
   expect(puts).toBe(0)
 })
 

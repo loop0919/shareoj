@@ -97,7 +97,12 @@ export function useProblemDraft() {
     if (manual) dismissToast()
     const testError = testCaseError(draft.testCases) || scoringError(draft)
     if (testError) { saveState.value = 'dirty'; storageError.value = testError; return false }
-    if (!manual && fingerprint() === saved) return true
+    if (!manual && fingerprint() === saved) {
+      // An edit undone before its autosave leaves nothing to save, and an earlier refusal no longer applies. A save in
+      // flight sets the status itself when it ends.
+      if (!inFlight) { saveState.value = cloudVersion.value ? 'saved' : 'new'; storageError.value = '' }
+      return true
+    }
     if (!manual && manualSaveOnly.value) { storageError.value = '変更を反映するには保存ボタンを押してください。'; return false }
     clearTimeout(saveTimer)
     if (inFlight) {
