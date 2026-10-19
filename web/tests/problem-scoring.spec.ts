@@ -127,16 +127,33 @@ test('the scoring editor switches modes, edits groups and membership, and keeps 
   await expect(page.getByRole('textbox', { name: '集計コード', exact: true })).toHaveText('n, g = map(int, input().split())')
   await expect(page.locator('.group-count')).toHaveText(['3 件', '2 件'])
 
-  // Back to the groups mode the aggregator leaves the draft; back to 一括 the membership goes too. This session restores them.
+  // Back to the groups mode the aggregator leaves the draft, so the switch asks first; declining keeps everything.
+  const messages: string[] = []
+  page.once('dialog', dialog => { messages.push(dialog.message()); return dialog.dismiss() })
+  await modes.getByRole('radio', { name: 'グループ', exact: true }).click()
+  await expect(modes.getByRole('radio', { name: '集計コード' })).toBeChecked()
+  await expect(modes.getByRole('radio', { name: 'グループ', exact: true })).not.toBeChecked()
+  await expect(page.getByRole('textbox', { name: '集計コード', exact: true })).toHaveText('n, g = map(int, input().split())')
+  page.once('dialog', dialog => { messages.push(dialog.message()); return dialog.accept() })
   await modes.getByRole('radio', { name: 'グループ', exact: true }).check()
   await expect(page.getByRole('textbox', { name: '集計コード', exact: true })).toHaveCount(0)
   draft = await stored(page)
   expect(draft.scoring).toEqual({ mode: 'groups', groups: [{ name: '小課題1', points: 30 }, { name: 'large', points: 70 }] })
+  // Back to 一括 the membership goes too, after confirming. The page keeps both while it is open, in any section.
+  page.once('dialog', dialog => { messages.push(dialog.message()); return dialog.accept() })
   await modes.getByRole('radio', { name: '一括' }).check()
   await expect(page.getByLabel('グループ1の名前')).toHaveCount(0)
+  expect(messages).toEqual([
+    'グループにすると、集計コードを下書きから外します。このページを開いている間は、集計コードに戻すと元に戻ります。グループにしますか？',
+    'グループにすると、集計コードを下書きから外します。このページを開いている間は、集計コードに戻すと元に戻ります。グループにしますか？',
+    '一括にすると、グループと配点、ケースの所属を下書きから外します。このページを開いている間は、方式を戻すと元に戻ります。一括にしますか？',
+  ])
   draft = await stored(page)
   expect(draft.scoring).toBeNull()
   expect(draft.testCases.every((item: { groups?: string[] }) => item.groups === undefined)).toBe(true)
+  await page.getByRole('button', { name: 'テストケース', exact: true }).click()
+  await page.getByRole('button', { name: '採点', exact: true }).click()
+  await expect(modes.getByRole('radio', { name: '一括' })).toBeChecked()
   await modes.getByRole('radio', { name: '集計コード' }).check()
   await expect(page.getByLabel('グループ2の名前')).toHaveValue('large')
   await expect(page.getByRole('textbox', { name: '集計コード', exact: true })).toHaveText('n, g = map(int, input().split())')
@@ -205,4 +222,74 @@ test('a draft whose full score is out of range is not sent', async ({ page }) =>
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.locator('.editor-notices').getByRole('alert')).toHaveText('満点（配点の合計）を1〜1,000,000点にしてください。')
   expect(puts).toBe(0)
+})
+
+test('a problem in the aggregate mode without an aggregator, as the CLI may push it, gets the aggregator editor', async ({ page }) => {
+  const id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+  let sent: { scoring?: unknown } | undefined
+  await page.route('**/api/runtimes', route => route.fulfill({ json: { items: [{ id: 'cpp23-gcc', label: 'C++23' }, { id: 'python314', label: 'Python' }] } }))
+  await page.route(`**/api/my/problems/${id}`, async (route) => {
+    const draft = {
+      title: 'CLIの問題', markdown: '本文', difficulty: 3, timeLimitMs: '2000', memoryLimitMb: '256',
+      scoring: { mode: 'aggregate', groups: [{ name: '小課題1', points: 100 }] },
+      testCases: [{ name: '01', input: '1', output: '1', groups: ['小課題1'] }],
+    }
+    if (route.request().method() === 'PUT') {
+      sent = route.request().postDataJSON().draft
+      return route.fulfill({ json: { id, version: 3, updatedAt: '2026-10-10T00:00:00Z', draft: sent } })
+    }
+    return route.fulfill({ json: { id, version: 2, updatedAt: '2026-10-10T00:00:00Z', draft } })
+  })
+  await page.goto(`/problems/new?problem=${id}`)
+  await expect(page.locator('#problem-title')).toHaveValue('CLIの問題')
+  await page.getByRole('button', { name: '採点', exact: true }).click()
+  await expect(page.getByRole('group', { name: '採点方式' }).getByRole('radio', { name: '集計コード' })).toBeChecked()
+  await expect(page.getByLabel('集計コードの言語')).toHaveValue('cpp23-gcc')
+  await expect(page.locator('.scoring-block').getByRole('alert')).toContainText('集計コードを1〜65,536バイトで')
+  // Opening the section changes nothing (an automatic save would follow within a second); the first edit creates the
+  // aggregator.
+  await page.waitForTimeout(1000)
+  expect(sent).toBeUndefined()
+  await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
+  await page.getByRole('textbox', { name: '集計コード', exact: true }).fill('print(100)')
+  await page.getByLabel('集計コードの言語').selectOption('python314')
+  await expect.poll(() => sent?.scoring).toEqual({ mode: 'aggregate', groups: [{ name: '小課題1', points: 100 }], aggregator: { runtime: 'python314', source: 'print(100)' } })
+})
+
+test('on narrow screens each group keeps a usable name field', async ({ page }, testInfo) => {
+  await page.goto('/problems/new?fresh=1')
+  await page.getByLabel('問題のタイトル').fill('狭い画面の採点')
+  await addCases(page, 1)
+  await page.getByRole('button', { name: '採点', exact: true }).click()
+  await page.getByRole('group', { name: '採点方式' }).getByRole('radio', { name: 'グループ', exact: true }).check()
+  await page.getByRole('button', { name: 'グループを追加' }).click()
+  for (const width of [320, 375, 1280]) {
+    await page.setViewportSize({ width, height: 800 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    for (const label of ['グループ1の名前', 'グループ2の名前']) {
+      const name = (await page.getByLabel(label).boundingBox())!
+      expect(name.width).toBeGreaterThanOrEqual(8 * 14)
+    }
+    const remove = (await page.getByRole('button', { name: '「小課題2」を削除' }).boundingBox())!
+    expect(remove.x + remove.width).toBeLessThanOrEqual(width)
+    await page.screenshot({ path: testInfo.outputPath(`scoring-groups-${width}.png`), fullPage: true })
+  }
+  // The table still reads as a table with its column names.
+  await expect(page.getByRole('columnheader', { name: '配点' })).toHaveCount(1)
+  await expect(page.getByRole('row')).toHaveCount(3)
+})
+
+test.describe('touch screens', () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 800 } })
+  test('the link to the groups is a full-size touch target', async ({ page }) => {
+    await page.goto('/problems/new?fresh=1')
+    await addCases(page, 1)
+    await page.getByRole('button', { name: '採点', exact: true }).click()
+    await page.getByRole('group', { name: '採点方式' }).getByRole('radio', { name: 'グループ', exact: true }).check()
+    await page.getByRole('button', { name: 'テストケース', exact: true }).click()
+    const link = page.getByRole('button', { name: 'グループを編集' })
+    expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+    await link.click()
+    await expect(page.getByRole('heading', { name: '採点', exact: true })).toBeVisible()
+  })
 })

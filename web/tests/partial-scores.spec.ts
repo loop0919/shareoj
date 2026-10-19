@@ -219,3 +219,60 @@ test('the contest editor shows a partially scored problem\'s points as its full 
   expect(saved[0]!.problems).toEqual([{ id: items[0]!.id, points: 120 }, { id: items[1]!.id, points: 300 }])
   await expect(page.getByRole('heading', { name: /出題順・配点/ })).toContainText('合計 420 点')
 })
+
+test('the contest editor takes another setter\'s partial problem\'s full score from the saved draft', async ({ page }) => {
+  const updatedAt = '2026-10-01T00:00:00Z'
+  const draftId = 'dddddddd-0000-4000-8000-000000000001'
+  const other = { id: '33333333-cccc-4ccc-8ccc-000000000003', title: '共同作成者の部分点の問題' }
+  const saved: { problems: { id: string, points: number | null }[] }[] = []
+  // The setter's own list does not hold the problem; only the draft tells that it is partial.
+  await page.route('**/api/my/problems**', route => route.fulfill({ json: { items: [], nextCursor: '' } }))
+  await page.route(`**/api/my/contests/${draftId}/draft`, (route) => {
+    const body = route.request().method() === 'PUT' ? route.request().postDataJSON() : undefined
+    if (body) saved.push(body.draft)
+    const draft = body?.draft ?? { title: '共同のコンテスト', description: '', startsAt: null, durationMinutes: 60, penaltyMinutes: 5, freezeMinutes: null, problems: [{ id: other.id, points: null }] }
+    return route.fulfill({ json: { id: draftId, version: body ? body.version + 1 : 1, updatedAt, issues: ['start_missing'], authors: ['ui_test', 'alice'], owner: true,
+      problems: [{ id: other.id, title: other.title, author: 'alice', issues: [], partial: true, fullScore: 150 }], draft } })
+  })
+  await page.goto(`/my/contests/${shortId(draftId)}`)
+  await page.getByRole('button', { name: '問題・配点', exact: true }).click()
+  const row = page.locator('.selected li').first()
+  await expect(row).toContainText(other.title)
+  await expect(row.locator('.points-fixed')).toHaveText('配点 150 点（満点）')
+  await expect(row.getByRole('spinbutton')).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: /出題順・配点/ })).toContainText('1 問 · 合計 150 点')
+  await page.getByRole('button', { name: '下書きを保存' }).click()
+  await expect.poll(() => saved.length).toBe(1)
+  expect(saved[0]!.problems).toEqual([{ id: other.id, points: 150 }])
+})
+
+test('the contest editor takes a published contest\'s partial problem\'s points as its full score', async ({ page }) => {
+  const id = 'dddddddd-0000-4000-8000-000000000002'
+  const other = { id: '33333333-cccc-4ccc-8ccc-000000000004', title: '共同作成者の部分点の問題' }
+  const plain = { id: '33333333-cccc-4ccc-8ccc-000000000005', title: '共同作成者の一括の問題' }
+  const contest: Contest = {
+    id, title: '公開済みの部分点コンテスト', author: 'alice', authors: ['alice', 'ui_test'], problemAuthors: [], testers: [], description: '',
+    startsAt: '2099-10-01T00:00:00Z', endsAt: '2099-10-01T02:00:00Z', penaltyMinutes: 5, version: 3, status: 'scheduled',
+    canEdit: true, participating: false, official: false, staff: true, setter: true, owner: false, canViewSubmissions: true, partialScoring: true,
+    problems: [{ ...other, points: 120, partial: true }, { ...plain, points: 200 }],
+  }
+  const bodies: { problems: { id: string, points: number }[] }[] = []
+  await page.route('**/api/my/problems**', route => route.fulfill({ json: { items: [], nextCursor: '' } }))
+  await page.route(`**/api/my/contests/${id}/draft`, route => route.fulfill({ status: 404, json: {} }))
+  await page.route(`**/api/my/contests/${id}`, (route) => {
+    if (route.request().method() !== 'PUT') return route.fulfill({ json: contest })
+    bodies.push(route.request().postDataJSON())
+    return route.fulfill({ json: { ...contest, version: contest.version + 1 } })
+  })
+  await page.goto(`/my/contests/${shortId(id)}`)
+  await page.getByRole('button', { name: '問題・配点', exact: true }).click()
+  const rows = page.locator('.selected li')
+  await expect(rows.nth(0).locator('.points-fixed')).toHaveText('配点 120 点（満点）')
+  await expect(rows.nth(0).getByRole('spinbutton')).toHaveCount(0)
+  await expect(rows.nth(1).getByRole('spinbutton', { name: '配点' })).toHaveValue('200')
+  await rows.nth(1).getByRole('spinbutton', { name: '配点' }).fill('250')
+  await expect(page.getByRole('heading', { name: /出題順・配点/ })).toContainText('2 問 · 合計 370 点')
+  await page.getByRole('button', { name: '変更を保存' }).click()
+  await expect.poll(() => bodies.length).toBe(1)
+  expect(bodies[0]!.problems).toEqual([{ id: other.id, points: 120 }, { id: plain.id, points: 250 }])
+})

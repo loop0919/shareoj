@@ -65,6 +65,7 @@ test('posting lists unpublished problems across pages, explains blocked ones and
   await page.route(`**/api/my/problems/${id}/publication`, route => {
     expect(route.request().postDataJSON()).toEqual({ version: 4, publish: true })
     attempts++
+    if (attempts === 2) return route.fulfill({ status: 400, json: { statusCode: 400, data: { code: 'incomplete_problem' } } })
     return route.fulfill(attempts === 1 ? { status: 409, json: {} } : { json: {} })
   })
   await page.goto('/problems')
@@ -93,6 +94,10 @@ test('posting lists unpublished problems across pages, explains blocked ones and
   await submit.click()
   await expect(page.getByRole('alert')).toContainText('別の画面で更新されています')
   await expect(page.locator('.toast').getByRole('status')).toHaveCount(0)
+  // The draft lost something after the list loaded: the refusal speaks of publishing, not of saving.
+  await submit.click()
+  await expect(page.getByRole('alert')).toContainText('足りない項目があるため公開できません。')
+  await expect(page.getByRole('alert')).not.toContainText('保存')
   await submit.click()
   await expect(page).toHaveURL(`/problems/${shortId(id)}`)
   await expect(page.locator('.toast').getByRole('status')).toHaveText('公開しました')
