@@ -13,7 +13,7 @@ def run(digest, runtimes, judge):
     for runtime in ('cpp23-gcc-isolate', 'cpp23-clang-isolate'):
         if runtime not in runtimes:
             continue
-        def check(code, expected, *, interactive=False, answer=3, aggregate=None):
+        def check(code, expected, *, interactive=False, answer=3, aggregate=None, sample=False):
             solution = ('#include <cstdio>\nint main(){int n;if(scanf("%d",&n)!=1)return 1;printf("%d\\n",VALUE);fflush(stdout);}'
                         if interactive else '#include <cstdio>\nint main(){puts("VALUE");}').replace('VALUE', str(answer))
             job = dict(runtime=runtime, runtimeDigest=digest, source=solution,
@@ -25,11 +25,17 @@ def run(digest, runtimes, judge):
                 job['cases'] = [dict(input='3\n', output='3\n', isSample=False, groups=['all'])] * 2
                 job['scoring'] = dict(mode='aggregate', groups=[dict(name='all', points=100)],
                                       aggregator=dict(runtime=runtime.removesuffix('-isolate'), source=exact_aggregator(stdin, output)))
+            if sample:
+                # A sample check of an aggregate-mode problem accepts quitp like a scored run but keeps no score.
+                job.update(easyTest=True, acceptPoints=True, cases=[dict(input='3\n', output='3\n', isSample=True)] * 2)
             result = judge(job, digest)
             assert result['verdict'] == expected, (runtime, interactive, expected, result)
             if aggregate is not None and expected != 'JE':
                 assert result['scoring'] == dict(score=score, maxScore=10000, groups=[dict(score=score, maxScore=10000)]), (runtime, result)
-            print(runtime, 'testlib', 'interactor' if interactive else 'checker', expected, 'aggregate' if aggregate else '', 'OK', flush=True)
+            if sample:
+                assert 'scoring' not in result and all('score' not in c for c in result.get('cases', [])), (runtime, result)
+            print(runtime, 'testlib', 'interactor' if interactive else 'checker', expected,
+                  'aggregate' if aggregate else 'sample' if sample else '', 'OK', flush=True)
         checker = '''#include "testlib.h"
 int main(int argc,char** argv){registerTestlibCmd(argc,argv);
  int n=inf.readInt();int expected=ans.readInt();int actual=ouf.readInt();
@@ -56,6 +62,8 @@ int main(int argc,char** argv){registerInteraction(argc,argv);
             check(code, 'WA', interactive=interactive, answer=4, aggregate=('2 1\n100\nWA - 0 1 0\nWA - 0 1 0\n', '0', 0))
             for termination in ('quitp(0.5,"partial")', 'quitf(_pc(1),"partially correct")'):
                 check(code.replace('quitf(_ok,"accepted")', termination), 'JE', interactive=interactive, aggregate=('', '0', 0))
+            check(points, 'AC', interactive=interactive, sample=True)
+            check(code.replace('quitf(_ok,"accepted")', 'quitp(0.5,"partial")'), 'JE', interactive=interactive, sample=True)
         # Check the actual argv/file contract, including binary contestant output.
         contract = '''#include "testlib.h"
 #include <fstream>

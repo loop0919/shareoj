@@ -423,6 +423,77 @@ class AggregatorTests(unittest.TestCase):
         self.assertEqual(judge.failure, ('judge_code', 'judge_score_invalid'))
 
 
+
+def sample_job(protocol='testlib', interactive_mode=False, **changes):
+    """A sample check of an aggregate-mode problem: no scoring, but acceptPoints."""
+    job = scoring_job(members=([], []))
+    del job['scoring']
+    for case in job['cases']:
+        case['isSample'] = True
+    job['interactor' if interactive_mode else 'checker'] = dict(runtime='cpp23-gcc' if protocol == 'testlib' else 'cpp17',
+                                                                protocol=protocol, source='judge')
+    job.update(dict(easyTest=True, acceptPoints=True), **changes)
+    return job
+
+
+class SampleCheckTests(unittest.TestCase):
+    def test_accept_points_only_on_sample_checks_without_scoring(self):
+        host.validate_job(sample_job(), 'sha256:test')
+        for job in [sample_job(acceptPoints='true'), sample_job(acceptPoints=1), sample_job(easyTest=False),
+                    sample_job(scoring=scoring_job()['scoring'])]:
+            with self.subTest(job={key: job.get(key) for key in ('easyTest', 'acceptPoints', 'scoring')}), self.assertRaises(ValueError):
+                host.validate_job(job, 'sha256:test')
+
+    def test_quitp_is_ac_without_a_score(self):
+        quitp = testlib_result(b'points', b'37 partial', b'37.0')
+        judge = Judge(self, checker=lambda i: finished(exitCode=7, status='RE', scoreFile=quitp, checkerLog='checker note'))
+        result = judge(sample_job())
+        self.assertEqual((result['verdict'], result['passed']), ('AC', 2))
+        self.assertNotIn('scoring', result)
+        self.assertTrue(all('score' not in c and 'sampleDetails' in c for c in result['cases']))
+        # The result file is read as in a scored run, and no aggregator runs.
+        self.assertEqual([call for call in judge.calls if call[0] == 'check'], [('check', 0, True), ('check', 1, True)])
+        self.assertNotIn(('aggregate',), judge.calls)
+        self.assertIn('ケース1: AC\nchecker note', result['checkerLog'])
+        self.assertIn('結果ファイル: 37 partial', result['checkerLog'])
+        self.assertNotIn('点: 37', result['checkerLog'])
+        self.assertNotIn('部分点', result['checkerLog'])
+        self.assertIsNone(judge.failure)
+
+    def test_invalid_points_stay_je(self):
+        for protocol, exit_code, data in [('testlib', 7, testlib_result(b'points', b'', b'0.5')),
+                                          ('testlib', 1, testlib_result(b'partially-correct', b'', pctype=b'1')),
+                                          ('legacy', 0, b'1.5')]:
+            with self.subTest(protocol=protocol, data=data):
+                judge = Judge(self, checker=lambda i: finished(exitCode=exit_code, status='RE' if exit_code else '', scoreFile=data, checkerLog=''))
+                result = judge(sample_job(protocol))
+                self.assertEqual(result['verdict'], 'JE')
+                self.assertEqual(judge.failure, ('judge_code', 'judge_score_invalid'))
+        judge = Judge(self, checker=lambda i: finished(scoreFile=b' 5\n', checkerLog=''))
+        result = judge(sample_job('legacy'))
+        self.assertEqual(result['verdict'], 'AC')
+        self.assertTrue(all('score' not in c for c in result['cases']))
+
+    def test_interactor_quitp_is_ac_without_a_score(self):
+        reply = dict(verdict='AC', scoreFile=testlib_result(b'points', b'12 ok', b'12.0'), judgeExitCode=7,
+                     cpuTimeMs=1, wallTimeMs=1, memoryBytes=1)
+        judge = Judge(self, interactor=lambda i: dict(reply))
+        result = judge(sample_job(interactive_mode=True))
+        self.assertEqual(result['verdict'], 'AC')
+        self.assertEqual([call for call in judge.calls if call[0] == 'interact'], [('interact', 0, True), ('interact', 1, True)])
+        self.assertNotIn('scoring', result)
+        self.assertTrue(all(set(c) == {'name', 'verdict', 'cpuTimeMs', 'wallTimeMs', 'memoryBytes', 'checkerLog'} for c in result['cases']))
+        self.assertNotIn('点: 12', result['checkerLog'])
+
+    def test_sample_checks_of_other_problems_keep_quitp_as_je(self):
+        job = sample_job()
+        del job['acceptPoints']
+        judge = Judge(self, checker=lambda i: finished(exitCode=7, status='RE', checkerLog=''))
+        result = judge(job)
+        self.assertEqual(result['verdict'], 'JE')
+        self.assertIn('testlibの部分点（_points）は未対応です。', result['checkerLog'])
+        self.assertTrue(all(call[2] is False for call in judge.calls if call[0] == 'check'))
+
 class SandboxContractTests(unittest.TestCase):
     def test_result_file_arguments_only_in_aggregate_mode(self):
         with tempfile.TemporaryDirectory() as tmp:
