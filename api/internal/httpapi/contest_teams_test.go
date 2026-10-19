@@ -281,8 +281,9 @@ func TestContestTeamsPostgres(t *testing.T) {
 	if len(alpha.Code) != 10 || alpha.ID != joined.Team.ID || alpha.Name != "Team Alpha" {
 		t.Fatalf("team: %+v", alpha)
 	}
-	// Names are unique regardless of case and width.
+	// Names are unique regardless of case and width, and an invisible character cannot make a look-alike.
 	f.fail("POST", path, "carol", create("ＴＥＡＭ alpha"), 409, "team_name_taken")
+	f.fail("POST", path, "carol", create("Team Alpha\ufe0f"), 400, "invalid_team_name")
 	// Joining takes the code alone, as people type it: in lower case, with a hyphen.
 	joined = f.join(tc, "carol", joinCode(strings.ToLower(alpha.Code[:5])+"-"+alpha.Code[5:]))
 	if !slices.Equal(joined.Team.Members, []string{"bob", "carol"}) || joined.Team.ID != alpha.ID {

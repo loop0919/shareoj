@@ -105,15 +105,26 @@ func NormalizeTeamName(name string) string {
 func teamKey(name string) string { return strings.ToLower(NormalizeTeamName(name)) }
 
 // hidden reports characters that do not show as themselves: control and format characters (zero-width characters,
-// direction controls), line and paragraph separators, and private-use characters.
+// direction controls), the other default-ignorable ones (variation selectors, the combining grapheme joiner, Hangul
+// fillers), the blank Braille pattern, line and paragraph separators, and private-use characters. Each could make a
+// name that looks like another team's yet has another key (ADR 0024).
 func hidden(r rune) bool {
-	return unicode.In(r, unicode.Cc, unicode.Cf, unicode.Co, unicode.Zl, unicode.Zp)
+	return r == '\u2800' || unicode.In(r, unicode.Cc, unicode.Cf, unicode.Co, unicode.Zl, unicode.Zp, unicode.Variation_Selector,
+		unicode.Other_Default_Ignorable_Code_Point)
+}
+
+// visible reports a character that shows on its own, so a text of combining marks alone is not a name.
+func visible(r rune) bool { return unicode.In(r, unicode.L, unicode.N, unicode.P, unicode.S) }
+
+// shown accepts normalized text that has a visible character and no hidden one.
+func shown(s string) bool {
+	return strings.IndexFunc(s, hidden) < 0 && strings.IndexFunc(s, visible) >= 0
 }
 
 // ValidTeamName accepts 1 to 40 characters after normalization, without hidden characters.
 func ValidTeamName(name string) bool {
 	n := utf8.RuneCountInString(NormalizeTeamName(name))
-	return utf8.ValidString(name) && strings.IndexFunc(norm.NFKC.String(name), hidden) < 0 && n >= 1 && n <= maxTeamName
+	return utf8.ValidString(name) && shown(norm.NFKC.String(name)) && n >= 1 && n <= maxTeamName
 }
 
 // NormalizePassphrase trims and folds width variants: the venue passphrase is read out or handed out on paper, so
@@ -126,7 +137,7 @@ func NormalizePassphrase(passphrase string) string {
 func ValidPassphrase(passphrase string) bool {
 	p := NormalizePassphrase(passphrase)
 	n := utf8.RuneCountInString(p)
-	return utf8.ValidString(p) && strings.IndexFunc(p, hidden) < 0 && n >= minPassphrase && n <= maxPassphrase
+	return utf8.ValidString(p) && shown(p) && n >= minPassphrase && n <= maxPassphrase
 }
 
 // passphrase is the normalized passphrase to store: only when the save turns the division on, which requires one.

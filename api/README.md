@@ -610,7 +610,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 参加の本文は`{"team":{"action":"create","name":"..."}}`か`{"team":{"action":"join","code":"..."}}`と、任意の`onsitePassphrase`である。
 
 - チーム戦ではチームの指定が必要で（409 `contest_team_required`）、個人戦では指定できない（409 `contest_team_unavailable`）。
-- チーム名はNFKCで正規化して空白をまとめ、1〜40文字にする。制御文字と書式文字を含む名前は400 `invalid_team_name`、大文字と小文字だけが違う名前を含めて同じ名前は409 `team_name_taken`。
+- チーム名はNFKCで正規化して空白をまとめ、1〜40文字にする。制御文字と書式文字、異体字セレクタやハングルの埋め字などの表示されない文字を含む名前と、見える文字のない名前は400 `invalid_team_name`、大文字と小文字だけが違う名前を含めて同じ名前は409 `team_name_taken`。
 - 1人が入れるチームは1つで、2つ目は409 `team_already_joined`とする。自分のチームのコードを再び送っても何も変えない。満員のチームは409 `team_full`。
 - 参加コードはサーバーが作る10文字で、0、O、1、I、L、Uを使わない。大文字と小文字、全角、空白とハイフンの違いは無視し、誤りは400 `incorrect_team_code`。
 - 会場の合言葉が正しければ本人（チーム戦ではチーム）をオンサイトにし、誤りは400 `incorrect_venue_passphrase`として何も登録しない。区分のないコンテストでは409 `contest_onsite_unavailable`。

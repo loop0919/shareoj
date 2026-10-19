@@ -22,9 +22,18 @@ func TestTeamNames(t *testing.T) {
 	if !ValidTeamName(strings.Repeat("あ", 40)) {
 		t.Error("40 characters must be valid")
 	}
-	for _, bad := range []string{"", "   ", strings.Repeat("あ", 41), "a\u200bb", "a\u202eb", "a\nb", "a\tb", "a\u2028b", "a\ufeffb", "a\ue000b", "a\x00b"} {
+	for _, bad := range []string{"", "   ", strings.Repeat("あ", 41), "a\u200bb", "a\u202eb", "a\nb", "a\tb", "a\u2028b", "a\ufeffb", "a\ue000b", "a\x00b",
+		// Default-ignorable characters outside the format category would copy a name under another key.
+		"Alpha\ufe0f", "Alpha\ufe00", "Al\u034fpha", "Alpha\u180b", "Alpha\U000e0100", "Alpha\u3164", "Alpha\u17b4",
+		// Blank characters and marks alone show no name.
+		"\u3164", "\uffa0", "\u115f", "\u1160", "\u2800", "\u17b4", "\u0301", "\u0301\u0302"} {
 		if ValidTeamName(bad) {
 			t.Errorf("ValidTeamName(%q) = true", bad)
+		}
+	}
+	for _, good := range []string{"!!", "★", "é", "e\u0301", "가", "チーム1"} {
+		if !ValidTeamName(good) {
+			t.Errorf("ValidTeamName(%q) = false", good)
 		}
 	}
 }
@@ -35,7 +44,7 @@ func TestVenuePassphrases(t *testing.T) {
 	}
 	for in, want := range map[string]bool{
 		"abcd": true, " ａｂｃ ": false, "abc": false, strings.Repeat("x", 64): true, strings.Repeat("x", 65): false,
-		"two words": true, "a\u200bbcd": false, "ab\ncd": false, "": false,
+		"two words": true, "a\u200bbcd": false, "ab\ncd": false, "": false, "abcd\ufe0f": false, "\u2800\u2800\u2800\u2800": false,
 	} {
 		if got := ValidPassphrase(in); got != want {
 			t.Errorf("ValidPassphrase(%q) = %t, want %t", in, got, want)
