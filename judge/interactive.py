@@ -90,7 +90,7 @@ def points_note(job):
     # Jobs without scoring keep the diagnostic they had before ADR 0025.
     if job.get('scoring') is None:
         return 'testlibの部分点（_points）は未対応です。\n'
-    return 'testlibの部分点（_points）は、集計コード方式の問題でだけ使えます。\n'
+    return 'testlibの部分点（_points）は、「集計コードで採点する」をオンにした問題でだけ使えます。\n'
 
 
 def execute(job, case, artifact, diagnostic, score_file=False):

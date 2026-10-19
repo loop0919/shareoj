@@ -390,7 +390,7 @@ class AggregatorTests(unittest.TestCase):
         self.assertEqual(judge.aggregator_input, '2 1\n100\nWA - 0 1 0\nWA - 0 1 0\n')
 
     def test_testlib_points_stay_je_outside_aggregate_mode(self):
-        for scoring, note in [(True, 'testlibの部分点（_points）は、集計コード方式の問題でだけ使えます。'),
+        for scoring, note in [(True, 'testlibの部分点（_points）は、「集計コードで採点する」をオンにした問題でだけ使えます。'),
                               (False, 'testlibの部分点（_points）は未対応です。')]:
             job = scoring_job()
             if not scoring:
