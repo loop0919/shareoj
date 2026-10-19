@@ -85,6 +85,7 @@ func exportDraft(ctx context.Context, root *os.Root, remote problem, c *apiClien
 		Difficulty                 *int
 		Generators                 map[string]program
 		Checker, Interactor        *program
+		Scoring                    *scoring
 		TestCases                  []testCase
 	}
 	data, err := json.Marshal(remote.Draft)
@@ -144,6 +145,22 @@ func exportDraft(ctx context.Context, root *os.Root, remote problem, c *apiClien
 		return errors.New("too many test cases from server")
 	}
 	config.Tests = &testConfig{Directory: "tests", Suffix: ".out", Samples: []string{}, Names: map[string]string{}}
+	// Groups keep their order, which results refer to; loadProblem below checks names and points.
+	groups := map[string]int{}
+	if s := d.Scoring; s != nil {
+		config.Scoring = &scoringConfig{Mode: s.Mode}
+		if s.Aggregator != nil {
+			code, err := exportProgram(root, "aggregator", *s.Aggregator)
+			if err != nil {
+				return err
+			}
+			config.Scoring.Aggregator = &code
+		}
+		for i, g := range s.Groups {
+			groups[g.Name] = i
+			config.Tests.Groups = append(config.Tests.Groups, groupConfig{Name: g.Name, Points: g.Points, Cases: []string{}})
+		}
+	}
 	if err := root.Mkdir("tests", 0700); err != nil {
 		return err
 	}
@@ -154,6 +171,13 @@ func exportDraft(ctx context.Context, root *os.Root, remote problem, c *apiClien
 		config.Tests.Names[name] = test.Name
 		if test.IsSample {
 			config.Tests.Samples = append(config.Tests.Samples, name)
+		}
+		for _, group := range test.Groups {
+			i, ok := groups[group]
+			if !ok {
+				return errors.New("test case refers to an unknown scoring group")
+			}
+			config.Tests.Groups[i].Cases = append(config.Tests.Groups[i].Cases, name)
 		}
 		for _, side := range []struct {
 			suffix, text string

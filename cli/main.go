@@ -101,6 +101,9 @@ func push(ctx context.Context, directory string, c *apiClient, expected int64) (
 		return s, fmt.Errorf("version conflict: local %d, remote %d; review the web draft before using --expect-version %d", version, remote.Version, remote.Version)
 	}
 	d := remote.Draft
+	if err := mergeScoring(local, d); err != nil {
+		return s, err
+	}
 	if local["generators"] != nil {
 		generators, updates := map[string]program{}, map[string]program{}
 		if d["generators"] != nil && string(d["generators"]) != "null" {
@@ -166,6 +169,32 @@ func push(ctx context.Context, directory string, c *apiClient, expected int64) (
 		return s, fmt.Errorf("remote save succeeded at version %d, but local state could not be saved: %w", s.Version, err)
 	}
 	return s, nil
+}
+
+// mergeScoring keeps a remote aggregator that problem.toml omits, like other optional programs. It refuses to replace
+// the tests of a partially scored problem without [scoring], since the rebuilt cases would belong to no group.
+func mergeScoring(local, remote draft) error {
+	partial := remote["scoring"] != nil && string(remote["scoring"]) != "null"
+	if local["scoring"] == nil {
+		if partial && local["testCases"] != nil {
+			return errors.New("the remote draft uses partial scoring: add [scoring] and [[tests.groups]] to problem.toml (shareoj pull writes them) or omit [tests]; switching back to all-or-nothing is done on the website")
+		}
+		return nil
+	}
+	var s scoring
+	if err := decodeJSON(local["scoring"], &s); err != nil {
+		return err
+	}
+	if s.Mode != "aggregate" || s.Aggregator != nil || !partial {
+		return nil
+	}
+	var r scoring
+	if err := decodeJSON(remote["scoring"], &r); err != nil {
+		return errors.New("invalid scoring in the remote draft")
+	}
+	s.Aggregator = r.Aggregator
+	local.set("scoring", s)
+	return nil
 }
 
 const template = `title = "A + B"
@@ -328,8 +357,13 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		}
 		fmt.Fprintln(out, "Created", directory)
 	case "check":
-		if _, err := loadProblem(directory); err != nil {
+		_, notes, err := readProblem(directory)
+		if err != nil {
 			return err
+		}
+		// Drafts are saved with these, but publishing and unfinished contests refuse them.
+		for _, note := range notes {
+			fmt.Fprintln(out, "warning:", note)
 		}
 		fmt.Fprintln(out, "OK: configuration and files checked; code was not compiled or executed")
 	default:
