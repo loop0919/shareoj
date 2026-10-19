@@ -9,6 +9,7 @@ const messages: Record<string, string> = {
   contest_team_required: 'チームを作るか、チームに入って参加してください。',
   contest_team_unavailable: 'このコンテストは個人戦です。ページを再読み込みしてください。',
   contest_onsite_unavailable: 'このコンテストにはオンサイト区分がありません。ページを再読み込みしてください。',
+  onsite_kept_open: '作成者がオープン参加に変更したため、会場の合言葉ではオンサイト参加にできません。',
   invalid_venue_passphrase: '会場の合言葉は4〜64文字で入力してください。改行や見えない文字は使えません。',
   team_not_found: 'チームが見つかりません。ページを再読み込みしてください。',
   team_member_not_found: 'このメンバーはもうチームにいません。ページを再読み込みしてください。',

@@ -93,7 +93,7 @@ async function rename(row: Entrant) {
   <details class="setter-tools" @toggle="toggle">
     <summary><span>参加者の管理</span><span class="muted">作成者だけに表示</span></summary>
     <div class="setter-tools-body">
-      <p class="muted">{{ division ? '会場の合言葉は終了まで差し替えられます。参加者の区分は、結果が確定するまで切り替えられます。' : 'チーム名は、結果が確定するまで変更できます。' }}</p>
+      <p class="muted">{{ division ? '会場の合言葉は終了まで差し替えられます。参加者の区分は、結果が確定するまで切り替えられます。オープン参加に戻した参加者は、合言葉ではオンサイト参加に戻れません。' : 'チーム名は、結果が確定するまで変更できます。' }}</p>
       <p v-if="loadError" class="notice notice-error" role="alert">{{ loadError }}</p>
       <LoadingSpinner v-else-if="!entrants" label="参加者の一覧を読み込み中" />
       <template v-else>
@@ -123,7 +123,7 @@ async function rename(row: Entrant) {
                     <UserLink v-else :handle="row.handle" />
                   </th>
                   <td v-if="division"><fieldset :disabled="final || !!busy"><InlineSwitch :model-value="row.onsite" :label="`${label(row)}をオンサイト参加にする`" @update:model-value="value => setOnsite(row, value)">オンサイト</InlineSwitch></fieldset></td>
-                  <td v-if="division" class="setter-time">{{ row.onsiteAt ? `${contestDate(row.onsiteAt)}（${row.onsiteVia === 'setter' ? '作成者' : '合言葉'}）` : '—' }}</td>
+                  <td v-if="division" class="setter-time">{{ row.onsiteAt ? `${contestDate(row.onsiteAt)}（${row.onsiteVia === 'setter' ? '作成者' : '合言葉'}）` : row.keptOpen ? '—（作成者がオープンに変更）' : '—' }}</td>
                   <td class="setter-time">{{ contestDate(row.createdAt) }}</td>
                 </tr>
               </tbody>

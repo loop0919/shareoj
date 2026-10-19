@@ -24,7 +24,8 @@ export type TeamSummary = { id: string, name: string, members: string[], onsite:
 export type MyTeam = TeamSummary & { code: string }
 // One row of the setters' list: a participant in an individual contest, a team in a team contest. onsiteVia is empty
 // while open.
-export type Entrant = { handle: string, team: TeamSummary | null, onsite: boolean, onsiteAt: string | null, onsiteVia: 'passphrase' | 'setter' | '', createdAt: string }
+// keptOpen marks one a setter moved to open; the venue passphrase no longer makes them onsite.
+export type Entrant = { handle: string, team: TeamSummary | null, onsite: boolean, onsiteAt: string | null, onsiteVia: 'passphrase' | 'setter' | '', keptOpen?: boolean, createdAt: string }
 // The onsite division and its passphrase, for setters only.
 export type Venue = { onsiteDivision: boolean, passphrase: string | null }
 // The participation body: an empty one joins an individual contest as open.
