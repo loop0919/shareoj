@@ -119,19 +119,28 @@ func (s *Store) PublicGet(ctx context.Context, id, viewer string) (PublicProblem
 	if err = json.Unmarshal(data, &d); err != nil {
 		return p, err
 	}
+	p.SetStatement(d)
+	p.Editorial = d.Editorial
+	p.Tags = d.Tags
+	p.Testers, err = s.Testers(ctx, id)
+	return p, err
+}
+
+// SetStatement sets, from the draft, the fields that the problem page and a contest problem page both show to whoever
+// can open them. The editorial and the tags are left to the caller because the two pages hide them differently: the
+// problem page hides them by viewer and during a 定期便 round, while a contest problem page shows the editorial only
+// after the end or to the contest's setters and the problem's author and testers, hides it until the 定期便 reveal,
+// and never shows the tags (ADR 0018).
+func (p *PublicProblem) SetStatement(d Draft) {
 	p.Title = d.Title
 	p.Difficulty = d.Difficulty
 	p.Markdown = d.Markdown
-	p.Editorial = d.Editorial
-	p.Tags = d.Tags
 	p.TimeLimitMS = d.TimeLimitMS
 	p.MemoryLimitMB = d.MemoryLimitMB
 	p.SpecialJudge = d.Checker != nil
 	p.Interactive = d.Interactor != nil
 	p.HasSamples = d.HasSamples()
 	p.Scoring = d.PublicScoring()
-	p.Testers, err = s.Testers(ctx, id)
-	return p, err
 }
 
 // PublicList returns at most 51 problems, newest first. A tag matches only while the problem's tags are public.
