@@ -39,7 +39,7 @@ class InteractiveTests(unittest.TestCase):
                 self.assertIn(f'--cg-mem={memory * 1024}', commands[0])
                 self.assertIn('--cg-mem=262144', commands[1])
 
-    def run_pair(self, source, interactor, wall=3, statuses=None, protocol='legacy'):
+    def run_pair(self, source, interactor, wall=3, statuses=None, protocol='legacy', points=False):
         processes = [subprocess.Popen([sys.executable, '-c', code], stdin=subprocess.PIPE,
                                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
                      for code in (source, interactor)]
@@ -51,7 +51,7 @@ class InteractiveTests(unittest.TestCase):
             return dict(status='' if code == 0 else 'RE', exitCode=max(0, code),
                         signal=max(0, -code), overflow=False, oom=False) | (statuses or {}).get(i, {})
         try:
-            return interactive.relay(processes, observe, wall, log.append, protocol), ''.join(log)
+            return interactive.relay(processes, observe, wall, log.append, protocol, points), ''.join(log)
         finally:
             for p in processes:
                 if p.poll() is None:
@@ -88,6 +88,20 @@ class InteractiveTests(unittest.TestCase):
             self.assertEqual(result, expected)
         result, _ = self.run_pair('import time; time.sleep(10)', 'import os,signal; os.kill(os.getpid(),signal.SIGABRT)', protocol='testlib')
         self.assertEqual(result, 'JE')
+
+    def test_testlib_points_wait_for_the_submission_in_aggregate_mode(self):
+        result, _ = self.run_pair('pass', 'import time; time.sleep(.1); raise SystemExit(7)', protocol='testlib', points=True)
+        self.assertEqual(result, 'AC')
+        result, _ = self.run_pair('import time; time.sleep(10)', 'raise SystemExit(7)', wall=.3, protocol='testlib', points=True)
+        self.assertEqual(result, 'TLE')
+        result, _ = self.run_pair('raise SystemExit(2)', 'raise SystemExit(7)', protocol='testlib', points=True)
+        self.assertEqual(result, 'RE')
+        for code, expected in [(1, 'WA'), (3, 'JE')]:
+            result, _ = self.run_pair('import time; time.sleep(10)', f'raise SystemExit({code})', protocol='testlib', points=True)
+            self.assertEqual(result, expected)
+        # Legacy interactors have no points exit code.
+        result, _ = self.run_pair('import time; time.sleep(10)', 'raise SystemExit(7)', points=True)
+        self.assertEqual(result, 'WA')
 
     def test_acceptance_requires_submission_exit_and_waits_have_shared_deadline(self):
         for interactor in ('pass', 'input()'):
