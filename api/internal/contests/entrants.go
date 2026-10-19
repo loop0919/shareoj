@@ -48,50 +48,49 @@ func (s *Store) RotatePassphrase(ctx context.Context, id, actor, passphrase stri
 	return Venue{OnsiteDivision: true, Passphrase: &p}, tx.Commit(ctx)
 }
 
-// entrantTeams and entrantParticipants read the rows of the setters' list, oldest first; $2 narrows them to one team
-// or one handle. Participants left out of the standings are left out here too.
-var (
-	entrantTeams = `SELECT t.id,t.name,` + members("t") + `,c.onsite_division AND t.onsite_at IS NOT NULL,t.onsite_at,COALESCE(t.onsite_via,''),t.kept_open,t.created_at
- FROM contest_teams t JOIN contests c ON c.id=t.contest_id WHERE c.id=$1 AND ($2='' OR t.id::text=$2) ORDER BY t.created_at,t.id`
-	entrantParticipants = `SELECT u.handle,c.onsite_division AND p.onsite_at IS NOT NULL,p.onsite_at,COALESCE(p.onsite_via,''),p.kept_open,p.created_at
+// entrants reads the rows of the setters' list, oldest first: the teams, and the participants in no team, whom the
+// standings show as rows of their own. $2 narrows it to one team, $3 to one participant. Participants left out of
+// the standings are left out here too.
+var entrants = `SELECT * FROM (
+ SELECT '' handle,t.id::text team,t.name,` + members("t") + ` members,c.onsite_division AND t.onsite_at IS NOT NULL onsite,t.onsite_at,
+  COALESCE(t.onsite_via,'') via,t.created_at
+ FROM contest_teams t JOIN contests c ON c.id=t.contest_id WHERE c.id=$1 AND ($2='' AND $3='' OR t.id::text=$2)
+ UNION ALL
+ SELECT u.handle,NULL,'',ARRAY[]::text[],c.onsite_division AND p.onsite_at IS NOT NULL,p.onsite_at,COALESCE(p.onsite_via,''),p.created_at
  FROM contest_participants p JOIN contests c ON c.id=p.contest_id JOIN user_profiles u ON u.owner_id=p.owner_id
- WHERE c.id=$1 AND contest_competitor(c,p.owner_id) AND ($2='' OR u.handle=$2) ORDER BY p.created_at,u.handle`
-)
+ WHERE c.id=$1 AND p.team_id IS NULL AND contest_competitor(c,p.owner_id) AND ($2='' AND $3='' OR u.handle=$3)) e
+ ORDER BY e.created_at,e.handle,e.team`
 
-func readEntrants(ctx context.Context, q querier, id string, teamMode bool, only string) ([]Entrant, error) {
-	query := entrantParticipants
-	if teamMode {
-		query = entrantTeams
-	}
-	rows, err := q.Query(ctx, query, id, only)
+func readEntrants(ctx context.Context, q querier, id, team, handle string) ([]Entrant, error) {
+	rows, err := q.Query(ctx, entrants, id, team, handle)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Entrant, error) {
 		var e Entrant
-		if !teamMode {
-			err := row.Scan(&e.Handle, &e.Onsite, &e.OnsiteAt, &e.OnsiteVia, &e.KeptOpen, &e.CreatedAt)
-			return e, err
+		var t TeamSummary
+		var teamID *string
+		err := row.Scan(&e.Handle, &teamID, &t.Name, &t.Members, &e.Onsite, &e.OnsiteAt, &e.OnsiteVia, &e.CreatedAt)
+		if teamID != nil {
+			t.ID, t.Onsite = *teamID, e.Onsite
+			e.Team = &t
 		}
-		e.Team = &TeamSummary{}
-		err := row.Scan(&e.Team.ID, &e.Team.Name, &e.Team.Members, &e.Onsite, &e.OnsiteAt, &e.OnsiteVia, &e.KeptOpen, &e.CreatedAt)
-		e.Team.Onsite = e.Onsite
 		return e, err
 	})
 }
 
-// Entrants lists, for setters, the participants of an individual contest or the teams of a team contest, with when
-// and how each became onsite, so a late switch by passphrase stands out.
+// Entrants lists, for setters, the teams and the participants who entered alone, with when and how each became
+// onsite, so a late switch by passphrase stands out.
 func (s *Store) Entrants(ctx context.Context, id, actor string) ([]Entrant, error) {
-	var teamMode bool
-	if err := s.Pool.QueryRow(ctx, `SELECT team_mode FROM contests WHERE id=$1 AND contest_setter(id,$2)`, id, actor).Scan(&teamMode); err != nil {
+	var found int
+	if err := s.Pool.QueryRow(ctx, `SELECT 1 FROM contests WHERE id=$1 AND contest_setter(id,$2)`, id, actor).Scan(&found); err != nil {
 		return nil, err
 	}
-	return readEntrants(ctx, s.Pool, id, teamMode, "")
+	return readEntrants(ctx, s.Pool, id, "", "")
 }
 
 // changeEntrant runs change for a setter until the results are final, after locking the contest as joining does, so
-// the onsite division cannot be dropped meanwhile. teamMode tells which list the target belongs to.
+// the onsite division cannot be dropped meanwhile. teamMode tells whether the contest has teams.
 func (s *Store) changeEntrant(ctx context.Context, id, actor string, change func(tx pgx.Tx, teamMode, division bool) error) error {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
@@ -120,10 +119,10 @@ func (s *Store) changeEntrant(ctx context.Context, id, actor string, change func
 }
 
 // one reads the single entrant a change touched.
-func one(ctx context.Context, tx pgx.Tx, id string, teamMode bool, only string) (Entrant, error) {
-	list, err := readEntrants(ctx, tx, id, teamMode, only)
+func one(ctx context.Context, tx pgx.Tx, id, team, handle string) (Entrant, error) {
+	list, err := readEntrants(ctx, tx, id, team, handle)
 	if err == nil && len(list) == 0 {
-		err = ErrParticipantNotFound
+		err = notFound(team)
 	}
 	if err != nil {
 		return Entrant{}, err
@@ -131,28 +130,27 @@ func one(ctx context.Context, tx pgx.Tx, id string, teamMode bool, only string) 
 	return list[0], nil
 }
 
-// SetOnsite moves a participant (by handle, in an individual contest) or a team (by id, in a team contest) between the
-// divisions until the results are final, in case the passphrase leaked or someone at the venue missed it (ADR 0024).
-// Becoming onsite again keeps the first time and route; becoming open clears them and keeps them open: the passphrase
-// no longer makes them onsite, or a team member at the venue could undo the switch up to the end.
+// SetOnsite makes a team (by id) or a participant who entered alone (by handle) onsite until the results are final,
+// for someone at the venue who missed the passphrase (ADR 0024). A switch keeps the first time and route. Nobody is
+// moved back to open: the setters decided that no path back is needed.
 func (s *Store) SetOnsite(ctx context.Context, id, actor, handle, team string, onsite bool) (Entrant, error) {
 	var e Entrant
-	err := s.changeEntrant(ctx, id, actor, func(tx pgx.Tx, teamMode, division bool) error {
+	err := s.changeEntrant(ctx, id, actor, func(tx pgx.Tx, _, division bool) error {
 		var tag pgconn.CommandTag
 		var err error
 		switch {
-		case teamMode != (team != ""):
-			return notFound(team)
+		case !onsite:
+			return ErrOnsiteIrreversible
 		case !division:
 			return ErrOnsiteUnavailable
-		case teamMode:
-			tag, err = tx.Exec(ctx, `UPDATE contest_teams SET onsite_at=CASE WHEN $3 THEN COALESCE(onsite_at,clock_timestamp()) END,
- onsite_via=CASE WHEN $3 THEN COALESCE(onsite_via,'setter') END,kept_open=NOT $3 WHERE contest_id=$1 AND id::text=$2`, id, team, onsite)
+		case team != "":
+			tag, err = tx.Exec(ctx, `UPDATE contest_teams SET onsite_at=COALESCE(onsite_at,clock_timestamp()),onsite_via=COALESCE(onsite_via,'setter')
+ WHERE contest_id=$1 AND id::text=$2`, id, team)
 		default:
-			tag, err = tx.Exec(ctx, `UPDATE contest_participants p SET onsite_at=CASE WHEN $3 THEN COALESCE(p.onsite_at,clock_timestamp()) END,
- onsite_via=CASE WHEN $3 THEN COALESCE(p.onsite_via,'setter') END,kept_open=NOT $3
+			// A member's division is their team's, so a member's handle names no entrant.
+			tag, err = tx.Exec(ctx, `UPDATE contest_participants p SET onsite_at=COALESCE(p.onsite_at,clock_timestamp()),onsite_via=COALESCE(p.onsite_via,'setter')
  FROM contests c, user_profiles u WHERE c.id=p.contest_id AND u.owner_id=p.owner_id AND p.contest_id=$1 AND u.handle=$2
- AND contest_competitor(c,p.owner_id)`, id, handle, onsite)
+ AND p.team_id IS NULL AND contest_competitor(c,p.owner_id)`, id, handle)
 		}
 		if err == nil && tag.RowsAffected() == 0 {
 			err = notFound(team)
@@ -160,7 +158,7 @@ func (s *Store) SetOnsite(ctx context.Context, id, actor, handle, team string, o
 		if err != nil {
 			return err
 		}
-		e, err = one(ctx, tx, id, teamMode, team+handle)
+		e, err = one(ctx, tx, id, team, handle)
 		return err
 	})
 	return e, err
@@ -180,7 +178,7 @@ func (s *Store) RenameEntrantTeam(ctx context.Context, id, actor, team, name str
 			err = renameTeam(ctx, tx, id, team, name)
 		}
 		if err == nil {
-			e, err = one(ctx, tx, id, true, team)
+			e, err = one(ctx, tx, id, team, "")
 		}
 		return err
 	})

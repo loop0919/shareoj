@@ -96,7 +96,7 @@ func onsiteParameter(description string) *huma.Param {
 
 // onsiteSubmissionParameters are the parameters of a contest's submission lists.
 func onsiteSubmissionParameters() []*huma.Param {
-	return append(offsetParameters(), onsiteParameter("onsiteを指定すると、表示した時点でオンサイト区分の参加者（チーム戦ではオンサイトのチームのメンバー）がこのコンテストに出した提出だけを返します。スタッフの提出と、参加登録していない人の練習の提出は含みません。"))
+	return append(offsetParameters(), onsiteParameter("onsiteを指定すると、表示した時点でオンサイト区分の参加者（チーム戦では、オンサイトのチームのメンバーと、個人で参加したオンサイトの参加者）がこのコンテストに出した提出だけを返します。スタッフの提出と、参加登録していない人の練習の提出は含みません。"))
 }
 
 func intPointer(v int) *int           { return &v }

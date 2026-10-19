@@ -18,9 +18,9 @@ type Score struct {
 	AcceptedAt *time.Time `json:"acceptedAt,omitempty"`
 }
 
-// Standing is a row of the standings: a participant in an individual contest, a team in a team contest (ADR 0024).
-// Handle names the participant and is empty in a team row, whose Team holds the name and the members. Onsite marks the
-// onsite division. OverallRank is the rank among all rows; it differs from Rank only in the onsite division's table.
+// Standing is a row of the standings: a team, or a participant who is in no team (ADR 0024). Handle names the
+// participant and is empty in a team row, whose Team holds the name and the members. Onsite marks the onsite division.
+// OverallRank is the rank among all rows; it differs from Rank only in the onsite division's table.
 type Standing struct {
 	Rank        int               `json:"rank"`
 	OverallRank int               `json:"overallRank"`
@@ -32,7 +32,7 @@ type Standing struct {
 	Problems    map[string]*Score `json:"problems"`
 }
 
-// Attempt is a submission to rank. Team is the submitter's team in a team contest; the attempt counts toward its row.
+// Attempt is a submission to rank. Team is the submitter's team, if any; the attempt counts toward its row.
 type Attempt struct {
 	Handle, ProblemID, Verdict string
 	Team                       string
@@ -172,8 +172,8 @@ func OnsiteRows(rows []Standing) []Standing {
 }
 
 // Standings returns the frozen table until the results are final. Only staff may ask for the live one (ADR 0023).
-// A team contest has a row per team, ranked on all its members' submissions (ADR 0024). onsite keeps the onsite
-// division's rows, ranked again among themselves.
+// A team contest has a row per team, ranked on all its members' submissions, and a row per participant who entered
+// alone, under the same rules (ADR 0024). onsite keeps the onsite division's rows, ranked again among themselves.
 func (s *Store) Standings(ctx context.Context, id, viewer string, live, onsite bool) ([]Standing, error) {
 	c, err := s.Get(ctx, id, viewer)
 	if err != nil {
@@ -184,13 +184,14 @@ func (s *Store) Standings(ctx context.Context, id, viewer string, live, onsite b
 		freezeAt = *c.FreezeAt
 	}
 	// Staff and former staff are left out. A participant who became a tester after the results were final keeps the final rank.
-	// In a team contest each competing member counts toward their team, listed in the order they joined; a registration
-	// without a team, left by the API from before teams, is in no row until it joins one.
+	// In a team contest each competing member counts toward their team, listed in the order they joined. Someone in no
+	// team has a row of their own and their own division; they enter a team only before the start, so no submission of
+	// theirs ever counts for a team.
 	rows, err := s.Pool.Query(ctx, `SELECT p.owner_id,u.handle,COALESCE(t.id::text,''),COALESCE(t.name,''),
- c.onsite_division AND CASE WHEN c.team_mode THEN t.onsite_at ELSE p.onsite_at END IS NOT NULL
+ c.onsite_division AND CASE WHEN t.id IS NULL THEN p.onsite_at ELSE t.onsite_at END IS NOT NULL
  FROM contest_participants p JOIN contests c ON c.id=p.contest_id JOIN user_profiles u ON u.owner_id=p.owner_id
- LEFT JOIN contest_teams t ON t.id=p.team_id AND c.team_mode
- WHERE c.id=$1 AND contest_competitor(c,p.owner_id) AND (NOT c.team_mode OR t.id IS NOT NULL)
+ LEFT JOIN contest_teams t ON t.id=p.team_id
+ WHERE c.id=$1 AND contest_competitor(c,p.owner_id)
  ORDER BY t.created_at,t.id,p.created_at,p.owner_id`, id)
 	if err != nil {
 		return nil, err

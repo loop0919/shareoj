@@ -30,19 +30,19 @@ func TestContestTeamVisibilityPostgres(t *testing.T) {
 	start := time.Now().Add(time.Hour)
 	body := map[string]any{"title": "Teams", "description": "", "startsAt": start, "endsAt": start.Add(2 * time.Hour), "penaltyMinutes": 5, "version": 0,
 		"problems": []map[string]any{{"id": pa, "points": 100}, {"id": pb, "points": 200}}, "teamMode": true, "freezeMinutes": 30,
-		"onsiteDivision": true, "onsitePassphrase": "Venue-2026"}
+		"onsiteDivision": true, "onsitePassphrase": "Venue_2026"}
 	f.request("PUT", "/my/contests/"+tc, "alice", body, 200)
-	f.create(ic, pc, map[string]any{"onsiteDivision": true, "onsitePassphrase": "open sesame"})
+	f.create(ic, pc, map[string]any{"onsiteDivision": true, "onsitePassphrase": "open_sesame"})
 	f.create(nc, pd, nil)
 	f.exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'tess')`, pa)
 
 	// Alpha enters the onsite division by the passphrase, Gamma by a setter; Beta stays open.
-	f.join(tc, "bob", map[string]any{"team": map[string]any{"action": "create", "name": "Alpha"}, "onsitePassphrase": "Venue-2026"})
+	f.join(tc, "bob", map[string]any{"team": map[string]any{"action": "create", "name": "Alpha"}, "onsitePassphrase": "Venue_2026"})
 	f.join(tc, "carol", joinCode(f.team(tc, "bob").Code))
 	beta := f.join(tc, "dan", create("Beta")).Team
 	gamma := f.join(tc, "frank", create("Gamma")).Team
 	f.request("PUT", "/my/contests/"+tc+"/teams/"+gamma.ID+"/onsite", "alice", map[string]any{"onsite": true}, 200)
-	f.join(ic, "hank", map[string]any{"onsitePassphrase": "open sesame"})
+	f.join(ic, "hank", map[string]any{"onsitePassphrase": "open_sesame"})
 	f.join(ic, "ivy", nil)
 	f.join(nc, "ivy", nil)
 	if c := f.contest(tc, "bob"); c.CanViewSubmissions {
@@ -304,7 +304,6 @@ func TestContestTeamVisibilityPostgres(t *testing.T) {
 	f.request("PUT", "/my/contests/"+tc+"/teams/"+beta.ID+"/onsite", "alice", map[string]any{"onsite": true}, 200)
 	expect("/contests/"+tc+"/submissions?scope=onsite", "", append(onsiteRows, danAC)...)
 	check(standings+"?scope=onsite", "", "1/1 "+strings.Replace(frozenBeta, "onsite=false", "onsite=true", 1), "2/2 "+frozenAlpha, "3/3 "+gammaRow)
-	f.request("PUT", "/my/contests/"+tc+"/teams/"+beta.ID+"/onsite", "alice", map[string]any{"onsite": false}, 200)
 
 	// Once revealed, frozen submissions are public, and compile errors still reach teammates only.
 	f.request("POST", "/my/contests/"+tc+"/reveal", "alice", nil, 200)
@@ -313,8 +312,9 @@ func TestContestTeamVisibilityPostgres(t *testing.T) {
 	detail("/submissions/"+carolCE, "", false)
 	detail("/my/submissions/"+carolCE+"/public", "dan", false)
 	detail("/my/submissions/"+carolCE+"/public", "erin", true)
-	check(standings, "", "1/1 "+liveBeta, "2/2 "+liveAlpha, "3/3 "+gammaRow)
-	check(standings+"?scope=onsite", "", "1/2 "+liveAlpha, "2/3 "+gammaRow)
+	onsiteBeta := strings.Replace(liveBeta, "onsite=false", "onsite=true", 1)
+	check(standings, "", "1/1 "+onsiteBeta, "2/2 "+liveAlpha, "3/3 "+gammaRow)
+	check(standings+"?scope=onsite", "", "1/1 "+onsiteBeta, "2/2 "+liveAlpha, "3/3 "+gammaRow)
 
 	// A participant who became a setter after the results were final leaves the standings, and the onsite filter too.
 	f.exec(`INSERT INTO contest_setters(contest_id,owner_id) VALUES($1,'hank')`, ic)

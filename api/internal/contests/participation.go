@@ -26,8 +26,8 @@ func participantProblem(ctx context.Context, q querier, id string, ids []string)
 }
 
 // JoinInput is the body of POST /my/contests/{id}/participation (ADR 0024). An empty body registers an individual,
-// open participant, so clients from before teams keep working. A team contest needs Team. A registered participant
-// who sends only OnsitePassphrase becomes onsite, with their team in a team contest.
+// open participant, so clients from before teams keep working; in a team contest, too, Team is optional. A registered
+// participant who sends only OnsitePassphrase becomes onsite, with their team if they are in one.
 type JoinInput struct {
 	Team             *TeamAction `json:"team"`
 	OnsitePassphrase *string     `json:"onsitePassphrase"`
@@ -105,9 +105,9 @@ func samePassphrase(sent, stored string) bool {
 }
 
 // Join registers the actor (ADR 0024). Staff, former staff and, after the end, newcomers are refused as before.
-// In a team contest the actor creates a team or joins one by its code; one person is in one team. A correct venue
-// passphrase makes the participant, or the whole team, onsite until the end, unless a setter moved them to open;
-// a wrong one registers nothing.
+// In a team contest the actor enters alone, creates a team or joins one by its code; one person is in one team, and
+// someone who entered alone may move into a team only before the start. A correct venue passphrase makes the
+// participant, or the whole team, onsite until the end; a wrong one registers nothing.
 func (s *Store) Join(ctx context.Context, id, owner string, in JoinInput) error {
 	passphrase := ""
 	if in.OnsitePassphrase != nil {
@@ -129,15 +129,15 @@ func (s *Store) Join(ctx context.Context, id, owner string, in JoinInput) error 
 		return err
 	}
 	var st struct {
-		competitor, ended, teamMode, division, registered bool
-		size                                              int
-		stored, code                                      string
-		team                                              *string
+		competitor, started, ended, teamMode, division, registered bool
+		size                                                       int
+		stored, code                                               string
+		team                                                       *string
 	}
-	if err = tx.QueryRow(ctx, `SELECT contest_competitor(c,$2),c.ends_at<=clock_timestamp(),c.team_mode,COALESCE(c.max_team_size,$3),
- c.onsite_division,COALESCE(c.onsite_passphrase,''),p.owner_id IS NOT NULL,p.team_id,COALESCE(t.join_code,'')
+	if err = tx.QueryRow(ctx, `SELECT contest_competitor(c,$2),c.starts_at<=clock_timestamp(),c.ends_at<=clock_timestamp(),c.team_mode,
+ COALESCE(c.max_team_size,$3),c.onsite_division,COALESCE(c.onsite_passphrase,''),p.owner_id IS NOT NULL,p.team_id,COALESCE(t.join_code,'')
  FROM contests c LEFT JOIN contest_participants p ON p.contest_id=c.id AND p.owner_id=$2 LEFT JOIN contest_teams t ON t.id=p.team_id
- WHERE c.id=$1`, id, owner, MaxTeamMembers).Scan(&st.competitor, &st.ended, &st.teamMode, &st.size, &st.division, &st.stored,
+ WHERE c.id=$1`, id, owner, MaxTeamMembers).Scan(&st.competitor, &st.started, &st.ended, &st.teamMode, &st.size, &st.division, &st.stored,
 		&st.registered, &st.team, &st.code); err != nil {
 		return err
 	}
@@ -157,9 +157,10 @@ func (s *Store) Join(ctx context.Context, id, owner string, in JoinInput) error 
 		return ErrAlreadyInTeam
 	}
 	entering := in.Team != nil && st.team == nil
-	// A registration without a team can only come from an API before teams; it may still enter a team.
-	if st.teamMode && st.team == nil && !entering && !(st.registered && in.OnsitePassphrase == nil) {
-		return ErrTeamRequired
+	// Someone who entered alone moves into a team only before the start, when they have submitted nothing: a team
+	// counts every submission of its members, and an individual's must stay their own.
+	if entering && st.registered && st.started {
+		return ErrIndividualLocked
 	}
 	if st.ended && (entering || passphrase != "" || upgrading) {
 		return ErrParticipationUnavailable
@@ -192,11 +193,9 @@ func (s *Store) Join(ctx context.Context, id, owner string, in JoinInput) error 
 		}
 	}
 	var team string
-	// Whether a setter moved the team, or the participant, to open. Their switch updates the same row this locks.
-	var kept bool
 	switch {
 	case joining:
-		err = tx.QueryRow(ctx, `SELECT id,kept_open FROM contest_teams WHERE contest_id=$1 AND join_code=$2 FOR UPDATE`, id, NormalizeJoinCode(in.Team.Code)).Scan(&team, &kept)
+		err = tx.QueryRow(ctx, `SELECT id FROM contest_teams WHERE contest_id=$1 AND join_code=$2 FOR UPDATE`, id, NormalizeJoinCode(in.Team.Code)).Scan(&team)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return failAttempt(ctx, tx, id, owner, ErrIncorrectTeamCode)
 		}
@@ -206,7 +205,7 @@ func (s *Store) Join(ctx context.Context, id, owner string, in JoinInput) error 
 	case st.team != nil:
 		// A member may be removed, or leave, meanwhile; the team's lock orders that, and membership is read again.
 		var member bool
-		err = tx.QueryRow(ctx, `SELECT id,kept_open FROM contest_teams WHERE id=$1 FOR UPDATE`, *st.team).Scan(&team, &kept)
+		err = tx.QueryRow(ctx, `SELECT id FROM contest_teams WHERE id=$1 FOR UPDATE`, *st.team).Scan(&team)
 		if err == nil {
 			err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM contest_participants WHERE contest_id=$1 AND owner_id=$2 AND team_id=$3)`, id, owner, team).Scan(&member)
 		}
@@ -216,17 +215,9 @@ func (s *Store) Join(ctx context.Context, id, owner string, in JoinInput) error 
 		if err != nil {
 			return err
 		}
-	case st.registered && passphrase != "":
-		err = tx.QueryRow(ctx, `SELECT kept_open FROM contest_participants WHERE contest_id=$1 AND owner_id=$2 FOR UPDATE`, id, owner).Scan(&kept)
-		if err != nil {
-			return err
-		}
 	}
-	// The setter's decision stands, whoever holds the passphrase; it is not a guess, so nothing is counted.
-	if passphrase != "" && kept {
-		return ErrOnsiteKeptOpen
-	}
-	if passphrase != "" && !samePassphrase(passphrase, st.stored) {
+	// A passphrase outside the allowed characters cannot be the venue's, so it is a wrong guess like any other.
+	if passphrase != "" && (!ValidPassphrase(passphrase) || !samePassphrase(passphrase, st.stored)) {
 		return failAttempt(ctx, tx, id, owner, ErrIncorrectPassphrase)
 	}
 	if joining {
@@ -251,13 +242,13 @@ func (s *Store) Join(ctx context.Context, id, owner string, in JoinInput) error 
 	case !st.registered:
 		_, err = tx.Exec(ctx, `INSERT INTO contest_participants(contest_id,owner_id,team_id) VALUES($1,$2,$3)`, id, owner, teamID)
 	case entering:
-		_, err = tx.Exec(ctx, `UPDATE contest_participants SET team_id=$3 WHERE contest_id=$1 AND owner_id=$2 AND team_id IS NULL`, id, owner, teamID)
+		err = enterTeam(ctx, tx, id, owner, team)
 	}
 	if err != nil {
 		return err
 	}
 	if passphrase != "" {
-		if st.teamMode {
+		if team != "" {
 			_, err = tx.Exec(ctx, `UPDATE contest_teams SET onsite_at=clock_timestamp(),onsite_via='passphrase' WHERE id=$1 AND onsite_at IS NULL`, team)
 		} else {
 			_, err = tx.Exec(ctx, `UPDATE contest_participants SET onsite_at=clock_timestamp(),onsite_via='passphrase'
@@ -268,4 +259,27 @@ func (s *Store) Join(ctx context.Context, id, owner string, in JoinInput) error 
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+// enterTeam moves the registration of someone who entered alone into a team, before the start. It counts from now, so
+// members stay in the order they joined. Nobody turns from onsite to open (ADR 0024): an onsite participant makes the
+// team onsite, as if they had entered the passphrase for it, and the division then lives on the team alone. The row is
+// locked first, since a setter may switch it meanwhile.
+func enterTeam(ctx context.Context, tx pgx.Tx, id, owner, team string) error {
+	var via *string
+	if err := tx.QueryRow(ctx, `SELECT onsite_via FROM contest_participants WHERE contest_id=$1 AND owner_id=$2 AND team_id IS NULL FOR UPDATE`, id, owner).Scan(&via); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			err = ErrConflict
+		}
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE contest_participants SET team_id=$3,onsite_at=NULL,onsite_via=NULL,created_at=clock_timestamp()
+ WHERE contest_id=$1 AND owner_id=$2`, id, owner, team); err != nil {
+		return err
+	}
+	if via == nil {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `UPDATE contest_teams SET onsite_at=clock_timestamp(),onsite_via=$2 WHERE id=$1 AND onsite_at IS NULL`, team, *via)
+	return err
 }

@@ -58,9 +58,10 @@ type Contest struct {
 	CanViewLiveStandings bool `json:"canViewLiveStandings"`
 	// CanRevealResults lets a setter or an operator reveal an ended frozen contest (POST /my/contests/{id}/reveal).
 	CanRevealResults bool `json:"canRevealResults"`
-	// TeamMode makes every standings row a team (ADR 0024). MaxTeamSize is null in individual contests and in team
-	// contests without a limit of their own; MaxTeamMembers still caps every team. OnsiteDivision tells whether the
-	// venue passphrase can make participants onsite; the passphrase itself is only in setter responses.
+	// TeamMode lets participants form teams, each a row of the standings; those who enter alone keep rows of their own
+	// (ADR 0024). MaxTeamSize is null in individual contests and in team contests without a limit of their own;
+	// MaxTeamMembers still caps every team. OnsiteDivision tells whether the venue passphrase can make participants
+	// onsite; the passphrase itself is only in setter responses.
 	TeamMode           bool   `json:"teamMode"`
 	MaxTeamSize        *int   `json:"maxTeamSize"`
 	OnsiteDivision     bool   `json:"onsiteDivision"`
@@ -74,8 +75,8 @@ type Contest struct {
 	Excluded           bool   `json:"excluded"`
 	IsSetter           bool   `json:"setter"`
 	IsOwner            bool   `json:"owner"`
-	// Team is the viewer's team in a team contest, without its join code. Onsite tells whether the viewer, or their
-	// team, is in the onsite division.
+	// Team is the viewer's team in a team contest, without its join code, and null for someone who entered alone.
+	// Onsite tells whether the viewer, or their team, is in the onsite division.
 	Team     *TeamSummary `json:"team"`
 	Onsite   bool         `json:"onsite"`
 	Problems []Problem    `json:"problems"`
@@ -167,7 +168,7 @@ func (s *Store) Get(ctx context.Context, id, viewer string) (Contest, error) {
 	}
 	err = tx.QueryRow(ctx, `SELECT contest_setter(c.id,$2),c.owner_id=$2,contest_staff(c.id,$2),$2<>'' AND contest_competitor(c,$2),
  $2<>'' AND NOT contest_staff(c.id,$2) AND NOT contest_competitor(c,$2),
- vp.owner_id IS NOT NULL,c.onsite_division AND COALESCE(CASE WHEN c.team_mode THEN vt.onsite_at ELSE vp.onsite_at END IS NOT NULL,false),
+ vp.owner_id IS NOT NULL,c.onsite_division AND COALESCE(CASE WHEN vt.id IS NULL THEN vp.onsite_at ELSE vt.onsite_at END IS NOT NULL,false),
  vt.id,COALESCE(vt.name,''),`+members("vt")+`,
  COALESCE((SELECT array_agg(DISTINCT u.handle ORDER BY u.handle)
   FROM contest_problems cp JOIN problem_drafts d ON d.id=cp.problem_id JOIN user_profiles u ON u.owner_id=d.owner_id

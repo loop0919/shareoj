@@ -39,12 +39,15 @@ func TestTeamNames(t *testing.T) {
 }
 
 func TestVenuePassphrases(t *testing.T) {
-	if got := NormalizePassphrase("　Ｖｅｎｕｅ-2026 "); got != "Venue-2026" {
+	if got := NormalizePassphrase("　Ｖｅｎｕｅ＿２０２６ "); got != "Venue_2026" {
 		t.Errorf("NormalizePassphrase = %q", got)
 	}
+	// After normalization only ASCII letters, digits and underscores count, 4 to 64 of them.
 	for in, want := range map[string]bool{
-		"abcd": true, " ａｂｃ ": false, "abc": false, strings.Repeat("x", 64): true, strings.Repeat("x", 65): false,
-		"two words": true, "a\u200bbcd": false, "ab\ncd": false, "": false, "abcd\ufe0f": false, "\u2800\u2800\u2800\u2800": false,
+		"abcd": true, " ａｂｃｄ ": true, "ＡＢＣ１２３": true, "a_b_": true, "____": true, "Venue_2026": true, strings.Repeat("x", 64): true,
+		"abc": false, " ａｂｃ ": false, strings.Repeat("x", 65): false, "": false,
+		"two words": false, "Venue-2026": false, "pass.word": false, "ａｂｃｄ！": false, "合言葉です": false, "café": false, "abcd\u00e9": false,
+		"a\u200bbcd": false, "ab\ncd": false, "abcd\ufe0f": false, "\u2800\u2800\u2800\u2800": false, "abc\x00": false,
 	} {
 		if got := ValidPassphrase(in); got != want {
 			t.Errorf("ValidPassphrase(%q) = %t, want %t", in, got, want)

@@ -18,7 +18,7 @@ const (
 	// MaxTeamMembers caps every team, also in contests without a limit of their own. Rate limits apply per account,
 	// so a larger team would submit to one standings row, and load the judges, like that many individuals (ADR 0024).
 	MaxTeamMembers = 50
-	// MinTeamSize is the smallest limit a setter may choose; one person enters a team contest as a team of one.
+	// MinTeamSize is the smallest limit a setter may choose; one person may still form a team of one, or enter alone.
 	MinTeamSize   = 2
 	maxTeamName   = 40
 	minPassphrase = 4
@@ -32,14 +32,15 @@ const (
 )
 
 var (
-	// ErrTeamRequired means a team contest was joined without creating or joining a team.
-	ErrTeamRequired = errors.New("a team contest needs a team")
 	// ErrTeamUnavailable means a team was named in an individual contest.
 	ErrTeamUnavailable = errors.New("the contest is not a team contest")
+	// ErrIndividualLocked refuses a team to someone who entered a team contest alone, once it has started: their
+	// submissions so far are their own and must never count for a team (ADR 0024).
+	ErrIndividualLocked = errors.New("an individual participant cannot enter a team after the start")
 	// ErrOnsiteUnavailable means a venue passphrase, or an onsite change, was sent for a contest without the division.
 	ErrOnsiteUnavailable = errors.New("the contest has no onsite division")
-	// ErrOnsiteKeptOpen refuses the venue passphrase from a participant, or for a team, that a setter moved to open.
-	ErrOnsiteKeptOpen = errors.New("a setter keeps the participant open")
+	// ErrOnsiteIrreversible refuses a setter's switch to open: participants and teams only ever become onsite.
+	ErrOnsiteIrreversible = errors.New("onsite participants stay onsite")
 	// ErrIncorrectTeamCode and ErrIncorrectPassphrase count toward the attempt limit.
 	ErrIncorrectTeamCode   = errors.New("no team has this join code")
 	ErrIncorrectPassphrase = errors.New("the venue passphrase is incorrect")
@@ -80,16 +81,14 @@ type Team struct {
 	Code string `json:"code"`
 }
 
-// Entrant is one row of the setters' participant list: a participant in an individual contest, a team in a team
-// contest. OnsiteVia tells how they became onsite, "passphrase" or "setter", and is empty while they are open.
-// KeptOpen marks one a setter moved to open, whom the venue passphrase no longer makes onsite.
+// Entrant is one row of the setters' participant list: a team, or a participant who entered alone, as in the standings.
+// OnsiteVia tells how they became onsite, "passphrase" or "setter", and is empty while they are open.
 type Entrant struct {
 	Handle    string       `json:"handle"`
 	Team      *TeamSummary `json:"team"`
 	Onsite    bool         `json:"onsite"`
 	OnsiteAt  *time.Time   `json:"onsiteAt"`
 	OnsiteVia string       `json:"onsiteVia"`
-	KeptOpen  bool         `json:"keptOpen"`
 	CreatedAt time.Time    `json:"createdAt"`
 }
 
@@ -137,11 +136,13 @@ func NormalizePassphrase(passphrase string) string {
 	return strings.TrimSpace(norm.NFKC.String(passphrase))
 }
 
-// ValidPassphrase accepts 4 to 64 characters after normalization, without hidden characters.
+// ValidPassphrase accepts 4 to 64 ASCII letters, digits and underscores after normalization, so full-width input
+// still counts. Other characters are hard to read out or type on a phone at the venue, and some look alike.
 func ValidPassphrase(passphrase string) bool {
 	p := NormalizePassphrase(passphrase)
-	n := utf8.RuneCountInString(p)
-	return utf8.ValidString(p) && shown(p) && n >= minPassphrase && n <= maxPassphrase
+	return len(p) >= minPassphrase && len(p) <= maxPassphrase && strings.IndexFunc(p, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_')
+	}) < 0
 }
 
 // passphrase is the normalized passphrase to store: only when the save turns the division on, which requires one.
@@ -188,7 +189,7 @@ func members(t string) string {
 // keepRegistrations refuses settings that would split the registrations (ADR 0024): the team mode cannot change once
 // someone has registered, and the maximum team size cannot drop below the largest team. Joining holds the contest row
 // in share mode, so the registrations read here stay until the save commits. Dropping the onsite division before the
-// start makes everyone open again and forgets the setters' switches, so a division turned on later starts afresh.
+// start makes everyone open again, so a division turned on later starts afresh.
 func keepRegistrations(ctx context.Context, tx pgx.Tx, id string, teamMode bool, in Input) error {
 	var registered bool
 	var largest int
@@ -204,7 +205,7 @@ func keepRegistrations(ctx context.Context, tx pgx.Tx, id string, teamMode bool,
 	}
 	if in.OnsiteDivision != nil && !*in.OnsiteDivision {
 		for _, table := range []string{"contest_participants", "contest_teams"} {
-			if _, err := tx.Exec(ctx, `UPDATE `+table+` SET onsite_at=NULL,onsite_via=NULL,kept_open=false WHERE contest_id=$1 AND (onsite_at IS NOT NULL OR kept_open)`, id); err != nil {
+			if _, err := tx.Exec(ctx, `UPDATE `+table+` SET onsite_at=NULL,onsite_via=NULL WHERE contest_id=$1 AND onsite_at IS NOT NULL`, id); err != nil {
 				return err
 			}
 		}

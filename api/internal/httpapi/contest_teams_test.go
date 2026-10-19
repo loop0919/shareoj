@@ -262,9 +262,8 @@ func TestContestTeamsPostgres(t *testing.T) {
 	f.exec(`INSERT INTO contest_setters(contest_id,owner_id) VALUES($1,'cos')`, tc)
 	f.exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'tess')`, pa)
 
-	// A team contest needs a team; names are normalized, and hidden characters are refused.
+	// Names are normalized, and hidden characters are refused.
 	path := "/my/contests/" + tc + "/participation"
-	f.fail("POST", path, "bob", nil, 409, "contest_team_required")
 	f.fail("POST", path, "bob", create("Team\u200bAlpha"), 400, "invalid_team_name")
 	f.fail("POST", path, "bob", create(strings.Repeat("a", 41)), 400, "invalid_team_name")
 	f.fail("POST", path, "bob", map[string]any{"team": map[string]any{"action": "leave"}}, 400, "invalid_request")
@@ -272,6 +271,10 @@ func TestContestTeamsPostgres(t *testing.T) {
 	f.fail("POST", path, "bob", map[string]any{"teams": nil}, 400, "invalid_request")
 	if n := f.count(`SELECT count(*) FROM contest_participants`); n != 0 {
 		t.Fatalf("refused requests registered %d", n)
+	}
+	// An empty body enters a team contest alone; before the start that registration still becomes a team's.
+	if alone := f.join(tc, "bob", nil); !alone.Participating || alone.Team != nil {
+		t.Fatalf("alone: %+v", alone)
 	}
 	joined := f.join(tc, "bob", create("  Ｔｅａｍ　 Alpha "))
 	if !joined.Participating || joined.Team == nil || joined.Team.Name != "Team Alpha" || !slices.Equal(joined.Team.Members, []string{"bob"}) || joined.Onsite {
@@ -440,7 +443,7 @@ func TestContestTeamsPostgres(t *testing.T) {
 	f.fail("PUT", "/my/contests/"+tc+"/teams/"+alpha.ID+"/name", "alice", map[string]any{"name": "beta"}, 409, "team_name_taken")
 	f.fail("PUT", "/my/contests/"+tc+"/teams/"+pa+"/name", "alice", map[string]any{"name": "Nobody"}, 404, "team_not_found")
 	f.fail("PUT", "/my/contests/"+tc+"/teams/"+alpha.ID+"/onsite", "alice", map[string]any{"onsite": true}, 409, "contest_onsite_unavailable")
-	f.fail("PUT", "/my/contests/"+tc+"/participants/bob/onsite", "alice", map[string]any{"onsite": true}, 404, "participant_not_found")
+	f.fail("PUT", "/my/contests/"+tc+"/participants/bob/onsite", "alice", map[string]any{"onsite": true}, 409, "contest_onsite_unavailable")
 	var fixed contests.Entrant
 	f.decode(f.request("PUT", "/my/contests/"+tc+"/teams/"+alpha.ID+"/name", "cos", map[string]any{"name": " Fixed "}, 200), &fixed)
 	if fixed.Team == nil || fixed.Team.Name != "Fixed" || fixed.Team.ID != alpha.ID {
@@ -516,7 +519,7 @@ func TestContestTeamDraftsPostgres(t *testing.T) {
 }
 
 func TestContestOnsitePostgres(t *testing.T) {
-	f := newTeamTest(t, "alice", "cos", "tess", "bob", "carol", "dan", "erin", "frank", "gina", "hank", "ivan")
+	f := newTeamTest(t, "alice", "cos", "tess", "bob", "carol", "dan", "erin", "frank", "gina", "hank", "ivan", "judy")
 	const (
 		tc = "c0000000-0000-4000-8000-000000000001"
 		ic = "c0000000-0000-4000-8000-000000000002"
@@ -528,18 +531,22 @@ func TestContestOnsitePostgres(t *testing.T) {
 	for _, id := range []string{pa, pb, pp} {
 		f.problem(id)
 	}
-	// Turning the division on needs a passphrase of 4 to 64 characters.
-	for _, bad := range []map[string]any{{"onsiteDivision": true}, {"onsiteDivision": true, "onsitePassphrase": " ａｂｃ "}, {"onsiteDivision": true, "onsitePassphrase": "a\u200bbcd"}} {
-		bad["title"], bad["startsAt"], bad["endsAt"], bad["version"] = "Onsite", time.Now().Add(time.Hour), time.Now().Add(2*time.Hour), 0
-		bad["problems"] = []map[string]any{{"id": pa, "points": 100}}
+	// Turning the division on needs a passphrase of 4 to 64 ASCII letters, digits and underscores after normalization.
+	for _, phrase := range []any{nil, " ａｂｃ ", "a​bcd", "Venue-2026", "two words", "会場の合言葉", "ａｂｃｄ！", strings.Repeat("x", 65)} {
+		bad := map[string]any{"onsiteDivision": true, "title": "Onsite", "startsAt": time.Now().Add(time.Hour), "endsAt": time.Now().Add(2 * time.Hour), "version": 0,
+			"problems": []map[string]any{{"id": pa, "points": 100}}}
+		if phrase != nil {
+			bad["onsitePassphrase"] = phrase
+		}
 		f.fail("PUT", "/my/contests/"+tc, "alice", bad, 400, "invalid_contest")
 	}
-	const phrase = "Venue-2026"
-	c := f.create(tc, pa, map[string]any{"teamMode": true, "onsiteDivision": true, "onsitePassphrase": "　Ｖｅｎｕｅ-2026 "})
+	// Full-width letters, digits and underscores fold into ASCII, and case stays.
+	const phrase = "Venue_2026"
+	c := f.create(tc, pa, map[string]any{"teamMode": true, "onsiteDivision": true, "onsitePassphrase": "　Ｖｅｎｕｅ＿２０２６ "})
 	if !c.OnsiteDivision || !c.TeamMode || c.Onsite {
 		t.Fatalf("onsite contest: %+v", c)
 	}
-	f.create(ic, pb, map[string]any{"onsiteDivision": true, "onsitePassphrase": "open sesame"})
+	f.create(ic, pb, map[string]any{"onsiteDivision": true, "onsitePassphrase": "open_sesame"})
 	f.create(pc, pp, nil)
 	f.exec(`INSERT INTO contest_setters(contest_id,owner_id) VALUES($1,'cos'),($2,'cos')`, tc, ic)
 	f.exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'tess'),($2,'tess')`, pa, pb)
@@ -569,18 +576,24 @@ func TestContestOnsitePostgres(t *testing.T) {
 	}
 	secret()
 
-	// A wrong passphrase creates nothing, not even an open registration.
+	// A wrong passphrase creates nothing, not even an open registration. One with characters a passphrase cannot have
+	// is just as wrong, and counts as a guess.
 	path := "/my/contests/" + tc + "/participation"
 	withPhrase := func(body map[string]any, p string) map[string]any {
 		body["onsitePassphrase"] = p
 		return body
 	}
-	f.fail("POST", path, "erin", withPhrase(create("Gamma"), "venue-2026"), 400, "incorrect_venue_passphrase")
+	f.fail("POST", path, "erin", withPhrase(create("Gamma"), "venue_2026"), 400, "incorrect_venue_passphrase")
+	f.fail("POST", path, "erin", withPhrase(create("Gamma"), "Venue-2026"), 400, "incorrect_venue_passphrase")
+	f.fail("POST", path, "erin", withPhrase(create("Gamma"), "Venue 2026"), 400, "incorrect_venue_passphrase")
+	if n := f.count(`SELECT count(*) FROM contest_attempt_failures WHERE owner_id='erin'`); n != 3 {
+		t.Fatalf("failures: %d", n)
+	}
 	if n := f.count(`SELECT count(*) FROM contest_teams`) + f.count(`SELECT count(*) FROM contest_participants`); n != 0 {
 		t.Fatalf("wrong passphrase registered %d rows", n)
 	}
 	// Width and surrounding spaces do not matter; the whole team is onsite.
-	joined := f.join(tc, "erin", withPhrase(create("Gamma"), " Ｖｅｎｕｅ-2026"))
+	joined := f.join(tc, "erin", withPhrase(create("Gamma"), " Ｖｅｎｕｅ＿２０２６"))
 	if !joined.Onsite || joined.Team == nil || !joined.Team.Onsite {
 		t.Fatalf("onsite team: %+v %+v", joined, joined.Team)
 	}
@@ -606,8 +619,10 @@ func TestContestOnsitePostgres(t *testing.T) {
 	if upgraded := f.join(tc, "carol", map[string]any{"onsitePassphrase": phrase}); !upgraded.Onsite || !f.contest(tc, "bob").Onsite {
 		t.Fatalf("upgrade: %+v", upgraded)
 	}
-	// Someone without a team cannot become onsite alone, and a contest without the division refuses the passphrase.
-	f.fail("POST", path, "dan", map[string]any{"onsitePassphrase": phrase}, 409, "contest_team_required")
+	// Someone in no team enters alone and is onsite on their own; a contest without the division refuses the passphrase.
+	if dan := f.join(tc, "dan", map[string]any{"onsitePassphrase": phrase}); !dan.Participating || dan.Team != nil || !dan.Onsite {
+		t.Fatalf("onsite individual: %+v", dan)
+	}
 	f.fail("POST", "/my/contests/"+pc+"/participation", "dan", map[string]any{"onsitePassphrase": phrase}, 409, "contest_onsite_unavailable")
 	f.join(pc, "dan", nil)
 	f.fail("POST", "/my/contests/"+pc+"/participation", "dan", map[string]any{"onsitePassphrase": ""}, 409, "contest_onsite_unavailable")
@@ -618,127 +633,139 @@ func TestContestOnsitePostgres(t *testing.T) {
 	}
 	secret()
 
-	// Setters see when and how each team became onsite, and switch it either way.
+	// Setters see when and how each team, and each participant who entered alone, became onsite.
+	f.join(tc, "ivan", create("Quiet"))
+	f.join(tc, "hank", create("Calm"))
+	quiet := f.team(tc, "ivan")
 	list := f.entrants(tc)
-	if len(list) != 2 || list[0].Team.Name != "Gamma" || !list[0].Onsite || list[0].OnsiteVia != "passphrase" || list[0].OnsiteAt == nil ||
-		list[1].Team.Name != "Open" || !list[1].Onsite || list[1].OnsiteVia != "passphrase" || !list[1].OnsiteAt.After(*list[0].OnsiteAt) {
+	if len(list) != 5 || list[0].Team.Name != "Gamma" || !list[0].Onsite || list[0].OnsiteVia != "passphrase" || list[0].OnsiteAt == nil ||
+		list[1].Team.Name != "Open" || !list[1].Onsite || list[1].OnsiteVia != "passphrase" || !list[1].OnsiteAt.After(*list[0].OnsiteAt) ||
+		list[2].Handle != "dan" || list[2].Team != nil || !list[2].Onsite || list[2].OnsiteVia != "passphrase" ||
+		list[3].Team.Name != "Quiet" || list[3].Onsite || list[3].OnsiteAt != nil || list[3].OnsiteVia != "" || list[4].Team.Name != "Calm" {
 		t.Fatalf("entrants: %+v", list)
 	}
-	onsite := "/my/contests/" + tc + "/teams/" + gamma.ID + "/onsite"
+	// They make an open team onsite; switching again keeps the first time and route.
+	onsite := "/my/contests/" + tc + "/teams/" + quiet.ID + "/onsite"
 	var e contests.Entrant
-	f.decode(f.request("PUT", onsite, "alice", map[string]any{"onsite": false}, 200), &e)
-	if e.Onsite || e.OnsiteAt != nil || e.OnsiteVia != "" || !e.KeptOpen || e.Team == nil || e.Team.Onsite || f.contest(tc, "frank").Onsite {
-		t.Fatalf("switched open: %+v", e)
-	}
-	// The switch sticks: a member with the passphrase cannot undo it, and nobody joins the team with it either.
-	failures := f.count(`SELECT count(*) FROM contest_attempt_failures`)
-	f.fail("POST", path, "frank", map[string]any{"onsitePassphrase": phrase}, 409, "onsite_kept_open")
-	f.fail("POST", path, "dan", withPhrase(joinCode(gamma.Code), phrase), 409, "onsite_kept_open")
-	if f.contest(tc, "frank").Onsite || f.contest(tc, "dan").Participating || f.count(`SELECT count(*) FROM contest_attempt_failures`) != failures {
-		t.Fatal("the passphrase undid the setter's switch")
-	}
 	f.decode(f.request("PUT", onsite, "cos", map[string]any{"onsite": true}, 200), &e)
-	if !e.Onsite || e.OnsiteVia != "setter" || e.OnsiteAt == nil || e.KeptOpen {
+	if !e.Onsite || e.OnsiteVia != "setter" || e.OnsiteAt == nil || e.Team == nil || !e.Team.Onsite || !f.contest(tc, "ivan").Onsite {
 		t.Fatalf("switched onsite: %+v", e)
 	}
-	// Switching again keeps the first time and route.
 	var again contests.Entrant
 	f.decode(f.request("PUT", onsite, "alice", map[string]any{"onsite": true}, 200), &again)
 	if !again.OnsiteAt.Equal(*e.OnsiteAt) || again.OnsiteVia != "setter" {
 		t.Fatalf("switched twice: %+v", again)
 	}
+	// Nobody is moved back to open, whether a setter or the passphrase made them onsite.
+	for _, target := range []string{onsite, "/my/contests/" + tc + "/teams/" + gamma.ID + "/onsite", "/my/contests/" + tc + "/participants/dan/onsite"} {
+		f.fail("PUT", target, "alice", map[string]any{"onsite": false}, 400, "onsite_irreversible")
+	}
+	if !f.contest(tc, "ivan").Onsite || !f.contest(tc, "frank").Onsite || !f.contest(tc, "dan").Onsite {
+		t.Fatal("a refused switch moved someone to open")
+	}
 	f.fail("PUT", onsite, "alice", map[string]any{}, 400, "invalid_request")
-	f.fail("PUT", onsite, "tess", map[string]any{"onsite": false}, 404, "contest_not_found")
-	f.fail("PUT", onsite, "erin", map[string]any{"onsite": false}, 404, "contest_not_found")
+	f.fail("PUT", onsite, "tess", map[string]any{"onsite": true}, 404, "contest_not_found")
+	f.fail("PUT", onsite, "erin", map[string]any{"onsite": true}, 404, "contest_not_found")
+	// A member's division is their team's, so the participant route does not take a member.
+	f.fail("PUT", "/my/contests/"+tc+"/participants/frank/onsite", "alice", map[string]any{"onsite": true}, 404, "participant_not_found")
 
 	// In an individual contest the division belongs to each participant.
 	ipath := "/my/contests/" + ic + "/participation"
-	if gina := f.join(ic, "gina", map[string]any{"onsitePassphrase": " open sesame "}); !gina.Onsite || gina.Team != nil {
+	if gina := f.join(ic, "gina", map[string]any{"onsitePassphrase": " open_sesame "}); !gina.Onsite || gina.Team != nil {
 		t.Fatalf("onsite participant: %+v", gina)
 	}
 	// A blank passphrase registers open; from someone registered it is a failed upgrade, not a success that changes nothing.
 	if hank := f.join(ic, "hank", map[string]any{"onsitePassphrase": "　"}); hank.Onsite || !hank.Participating {
 		t.Fatalf("open participant: %+v", hank)
 	}
-	failures = f.count(`SELECT count(*) FROM contest_attempt_failures`)
+	failures := f.count(`SELECT count(*) FROM contest_attempt_failures`)
 	f.fail("POST", ipath, "hank", map[string]any{"onsitePassphrase": " 　 "}, 400, "incorrect_venue_passphrase")
 	if f.count(`SELECT count(*) FROM contest_attempt_failures`) != failures {
 		t.Fatal("a blank passphrase counted as an attempt")
 	}
-	f.fail("POST", ipath, "hank", map[string]any{"onsitePassphrase": "Open Sesame"}, 400, "incorrect_venue_passphrase")
-	if hank := f.join(ic, "hank", map[string]any{"onsitePassphrase": "ｏｐｅｎ sesame"}); !hank.Onsite {
+	f.fail("POST", ipath, "hank", map[string]any{"onsitePassphrase": "Open_Sesame"}, 400, "incorrect_venue_passphrase")
+	if hank := f.join(ic, "hank", map[string]any{"onsitePassphrase": "ｏｐｅｎ＿ｓｅｓａｍｅ"}); !hank.Onsite {
 		t.Fatalf("upgraded participant: %+v", hank)
 	}
-	f.fail("POST", ipath, "tess", map[string]any{"onsitePassphrase": "open sesame"}, 409, "contest_participation_unavailable")
-	f.decode(f.request("PUT", "/my/contests/"+ic+"/participants/hank/onsite", "alice", map[string]any{"onsite": false}, 200), &e)
-	if e.Handle != "hank" || e.Team != nil || e.Onsite || !e.KeptOpen || f.contest(ic, "hank").Onsite {
-		t.Fatalf("participant switched open: %+v", e)
-	}
-	f.fail("POST", ipath, "hank", map[string]any{"onsitePassphrase": "open sesame"}, 409, "onsite_kept_open")
-	f.decode(f.request("PUT", "/my/contests/"+ic+"/participants/hank/onsite", "alice", map[string]any{"onsite": true}, 200), &e)
-	if !e.Onsite || e.OnsiteVia != "setter" || e.KeptOpen {
+	f.fail("POST", ipath, "tess", map[string]any{"onsitePassphrase": "open_sesame"}, 409, "contest_participation_unavailable")
+	f.fail("PUT", "/my/contests/"+ic+"/participants/hank/onsite", "alice", map[string]any{"onsite": false}, 400, "onsite_irreversible")
+	f.join(ic, "ivan", nil)
+	f.decode(f.request("PUT", "/my/contests/"+ic+"/participants/ivan/onsite", "alice", map[string]any{"onsite": true}, 200), &e)
+	if e.Handle != "ivan" || e.Team != nil || !e.Onsite || e.OnsiteVia != "setter" || e.OnsiteAt == nil || !f.contest(ic, "ivan").Onsite {
 		t.Fatalf("participant switched onsite: %+v", e)
 	}
-	f.fail("PUT", "/my/contests/"+ic+"/participants/ivan/onsite", "alice", map[string]any{"onsite": true}, 404, "participant_not_found")
+	f.fail("PUT", "/my/contests/"+ic+"/participants/frank/onsite", "alice", map[string]any{"onsite": true}, 404, "participant_not_found")
 	f.fail("PUT", "/my/contests/"+ic+"/teams/"+gamma.ID+"/onsite", "alice", map[string]any{"onsite": true}, 404, "team_not_found")
-	if list := f.entrants(ic); len(list) != 2 || list[0].Handle != "gina" || list[0].OnsiteVia != "passphrase" || list[1].Handle != "hank" || list[1].OnsiteVia != "setter" {
+	if list := f.entrants(ic); len(list) != 3 || list[0].Handle != "gina" || list[0].OnsiteVia != "passphrase" || list[1].Handle != "hank" || list[1].OnsiteVia != "passphrase" ||
+		list[2].Handle != "ivan" || list[2].OnsiteVia != "setter" {
 		t.Fatalf("individual entrants: %+v", list)
 	}
 	// Someone the standings leave out, such as a participant who became staff, is out of the setters' list and switches.
 	f.exec(`INSERT INTO contest_setters(contest_id,owner_id) VALUES($1,'hank')`, ic)
-	if list := f.entrants(ic); len(list) != 1 || list[0].Handle != "gina" {
+	if list := f.entrants(ic); len(list) != 2 || list[0].Handle != "gina" || list[1].Handle != "ivan" {
 		t.Fatalf("entrants with staff: %+v", list)
 	}
-	f.fail("PUT", "/my/contests/"+ic+"/participants/hank/onsite", "alice", map[string]any{"onsite": false}, 404, "participant_not_found")
+	f.fail("PUT", "/my/contests/"+ic+"/participants/hank/onsite", "alice", map[string]any{"onsite": true}, 404, "participant_not_found")
 	f.exec(`DELETE FROM contest_setters WHERE contest_id=$1 AND owner_id='hank'`, ic)
 
-	// Setters replace the passphrase; the old one stops working, and an editor holding it cannot save it back.
+	// Setters replace the passphrase under the same rules; the old one stops working, and an editor holding it cannot
+	// save it back.
 	before := f.contest(ic, "alice")
-	f.fail("PUT", "/my/contests/"+ic+"/onsite", "alice", map[string]any{"passphrase": "abc"}, 400, "invalid_venue_passphrase")
-	f.fail("PUT", "/my/contests/"+ic+"/onsite", "alice", map[string]any{"passphrase": ""}, 400, "invalid_venue_passphrase")
-	f.decode(f.request("PUT", "/my/contests/"+ic+"/onsite", "cos", map[string]any{"passphrase": " New phrase "}, 200), &venue)
-	if *venue.Passphrase != "New phrase" {
+	for _, bad := range []string{"abc", "", "New phrase", "new-phrase", "合言葉です"} {
+		f.fail("PUT", "/my/contests/"+ic+"/onsite", "alice", map[string]any{"passphrase": bad}, 400, "invalid_venue_passphrase")
+	}
+	f.decode(f.request("PUT", "/my/contests/"+ic+"/onsite", "cos", map[string]any{"passphrase": " Ｎｅｗ＿ｐｈｒａｓｅ "}, 200), &venue)
+	if *venue.Passphrase != "New_phrase" {
 		t.Fatalf("rotated: %+v", venue)
 	}
-	f.fail("PUT", "/my/contests/"+ic, "alice", update(before, map[string]any{"onsiteDivision": true, "onsitePassphrase": "open sesame"}), 409, "contest_conflict")
-	f.fail("POST", ipath, "ivan", map[string]any{"onsitePassphrase": "open sesame"}, 400, "incorrect_venue_passphrase")
-	f.join(ic, "ivan", map[string]any{"onsitePassphrase": "New phrase"})
-	f.request("PUT", "/my/contests/"+ic+"/participants/ivan/onsite", "alice", map[string]any{"onsite": false}, 200)
+	f.fail("PUT", "/my/contests/"+ic, "alice", update(before, map[string]any{"onsiteDivision": true, "onsitePassphrase": "open_sesame"}), 409, "contest_conflict")
+	f.fail("POST", ipath, "frank", map[string]any{"onsitePassphrase": "open_sesame"}, 400, "incorrect_venue_passphrase")
+	f.join(ic, "frank", map[string]any{"onsitePassphrase": "New_phrase"})
+	f.fail("PUT", "/my/contests/"+ic, "alice", update(f.contest(ic, "alice"), map[string]any{"onsiteDivision": true, "onsitePassphrase": "New-phrase"}), 400, "invalid_contest")
+	// A passphrase with other characters, such as one stored before the rule, is never correct, even when it matches.
+	f.exec(`UPDATE contests SET onsite_passphrase='old-style' WHERE id=$1`, ic)
+	failures = f.count(`SELECT count(*) FROM contest_attempt_failures`)
+	f.fail("POST", ipath, "judy", map[string]any{"onsitePassphrase": "old-style"}, 400, "incorrect_venue_passphrase")
+	if f.contest(ic, "judy").Participating || f.count(`SELECT count(*) FROM contest_attempt_failures`) != failures+1 {
+		t.Fatal("a passphrase outside the characters was accepted or not counted")
+	}
+	f.request("PUT", "/my/contests/"+ic+"/onsite", "alice", map[string]any{"passphrase": "New_phrase"}, 200)
 
-	// Dropping the division before the start makes everyone open and forgets the passphrase and the setters' switches.
+	// Dropping the division before the start makes everyone open and forgets the passphrase.
 	f.decode(f.request("PUT", "/my/contests/"+ic, "alice", update(f.contest(ic, "alice"), map[string]any{"onsiteDivision": false}), 200), &c)
-	if c.OnsiteDivision || f.contest(ic, "gina").Onsite || f.count(`SELECT count(*) FROM contest_participants WHERE contest_id=$1 AND onsite_at IS NOT NULL`, ic) != 0 {
+	if c.OnsiteDivision || f.contest(ic, "gina").Onsite || f.count(`SELECT count(*) FROM contest_participants WHERE contest_id=$1 AND (onsite_at IS NOT NULL OR onsite_via IS NOT NULL)`, ic) != 0 {
 		t.Fatalf("division dropped: %+v", c)
 	}
 	f.decode(f.request("GET", "/my/contests/"+ic+"/onsite", "alice", nil, 200), &venue)
 	if venue.OnsiteDivision || venue.Passphrase != nil {
 		t.Fatalf("venue after drop: %+v", venue)
 	}
-	f.fail("POST", ipath, "gina", map[string]any{"onsitePassphrase": "New phrase"}, 409, "contest_onsite_unavailable")
+	f.fail("POST", ipath, "gina", map[string]any{"onsitePassphrase": "New_phrase"}, 409, "contest_onsite_unavailable")
 	// Turning it on again starts everyone open.
 	f.decode(f.request("PUT", "/my/contests/"+ic, "alice", update(c, map[string]any{"onsiteDivision": true, "onsitePassphrase": "second"}), 200), &c)
-	if !c.OnsiteDivision || f.contest(ic, "gina").Onsite {
+	if !c.OnsiteDivision || f.contest(ic, "gina").Onsite || f.contest(ic, "ivan").Onsite {
 		t.Fatalf("division again: %+v", c)
 	}
-	if ivan := f.join(ic, "ivan", map[string]any{"onsitePassphrase": "second"}); !ivan.Onsite {
-		t.Fatalf("kept open across the new division: %+v", ivan)
+	if frank := f.join(ic, "frank", map[string]any{"onsitePassphrase": "second"}); !frank.Onsite {
+		t.Fatalf("upgrade under the new division: %+v", frank)
 	}
 
 	// While the contest runs the passphrase still changes and upgrades work; the division itself is fixed.
 	f.schedule(tc, "running")
 	f.decode(f.request("PUT", "/my/contests/"+tc+"/onsite", "alice", map[string]any{"passphrase": "running"}, 200), &venue)
-	f.join(tc, "dan", withPhrase(create("Late"), "running"))
+	f.join(tc, "judy", withPhrase(create("Late"), "running"))
 	f.fail("PUT", "/my/contests/"+tc, "alice", update(f.contest(tc, "alice"), map[string]any{"onsiteDivision": false}), 409, "contest_conflict")
-	// After the end nobody upgrades or replaces the passphrase; setters switch until the results are final.
+	// After the end nobody upgrades or replaces the passphrase; setters make teams onsite until the results are final.
 	f.schedule(tc, "ended")
-	f.fail("POST", path, "bob", map[string]any{"onsitePassphrase": "running"}, 409, "contest_participation_unavailable")
-	f.fail("POST", path, "bob", map[string]any{"onsitePassphrase": ""}, 409, "contest_participation_unavailable")
+	calm := "/my/contests/" + tc + "/teams/" + f.team(tc, "hank").ID + "/onsite"
+	f.fail("POST", path, "hank", map[string]any{"onsitePassphrase": "running"}, 409, "contest_participation_unavailable")
+	f.fail("POST", path, "hank", map[string]any{"onsitePassphrase": ""}, 409, "contest_participation_unavailable")
 	f.fail("PUT", "/my/contests/"+tc+"/onsite", "alice", map[string]any{"passphrase": "after"}, 409, "contest_conflict")
-	f.fail("PUT", onsite, "alice", map[string]any{"onsite": false}, 409, "contest_conflict")
+	f.fail("PUT", calm, "alice", map[string]any{"onsite": true}, 409, "contest_conflict")
 	f.exec(`UPDATE contests SET freeze_minutes=10 WHERE id=$1`, tc)
-	f.request("PUT", onsite, "alice", map[string]any{"onsite": false}, 200)
+	f.request("PUT", calm, "alice", map[string]any{"onsite": true}, 200)
 	f.exec(`UPDATE contests SET revealed_at=now() WHERE id=$1`, tc)
-	f.fail("PUT", onsite, "alice", map[string]any{"onsite": true}, 409, "contest_conflict")
+	f.fail("PUT", calm, "alice", map[string]any{"onsite": true}, 409, "contest_conflict")
 	f.decode(f.request("GET", "/my/contests/"+tc+"/onsite", "alice", nil, 200), &venue)
 	if *venue.Passphrase != "running" {
 		t.Fatalf("venue after the end: %+v", venue)
@@ -920,10 +947,6 @@ func TestContestTeamLocksPostgres(t *testing.T) {
 	if n := f.count(`SELECT count(*) FROM contest_teams WHERE onsite_at IS NOT NULL`); n != 0 {
 		t.Fatal("removed member made the team onsite")
 	}
-	// A setter's switch to open, made while a member enters the passphrase, holds.
-	w = f.waits(f.newRequest("POST", path, "bob", map[string]any{"onsitePassphrase": "correct"}),
-		`UPDATE contest_teams SET kept_open=true WHERE id='`+team+`'`)
-	expect(t, w, 409, "onsite_kept_open")
 	// A save waits for a registration in progress, then keeps the team mode.
 	c := f.contest(tc, "alice")
 	f.exec(`DELETE FROM contest_participants`)
@@ -932,14 +955,17 @@ func TestContestTeamLocksPostgres(t *testing.T) {
 		`SELECT id FROM contests WHERE id='`+tc+`' FOR SHARE`,
 		`INSERT INTO contest_participants(contest_id,owner_id) VALUES('`+tc+`','erin')`)
 	expect(t, w, 409, "contest_team_mode_locked")
-	// In an individual contest the participant's row orders the passphrase against the setter's switch.
-	const ic, pb = "c0000000-0000-4000-8000-000000000002", "a0000000-0000-4000-8000-000000000002"
-	f.problem(pb)
-	f.create(ic, pb, map[string]any{"onsiteDivision": true, "onsitePassphrase": "correct"})
-	f.join(ic, "carol", nil)
-	w = f.waits(f.newRequest("POST", "/my/contests/"+ic+"/participation", "carol", map[string]any{"onsitePassphrase": "correct"}),
-		`UPDATE contest_participants SET kept_open=true WHERE contest_id='`+ic+`' AND owner_id='carol'`)
-	expect(t, w, 409, "onsite_kept_open")
+	// Someone who entered alone forms a team while a setter makes them onsite: the team waits for the switch and
+	// carries it, so the switch is not lost.
+	f.join(tc, "carol", nil)
+	w = f.waits(f.newRequest("POST", path, "carol", create("Carried")),
+		`UPDATE contest_participants SET onsite_at=now(),onsite_via='setter' WHERE contest_id='`+tc+`' AND owner_id='carol'`)
+	if w.Code != 200 {
+		t.Fatalf("carried: %d %s", w.Code, w.Body.String())
+	}
+	if n := f.count(`SELECT count(*) FROM contest_teams WHERE name='Carried' AND onsite_via='setter'`); n != 1 || !f.contest(tc, "carol").Onsite {
+		t.Fatal("the team lost the setter's switch")
+	}
 }
 
 // ADR 0024: deleting an account before the start takes it out of the contest and its team; after the start it stays.
@@ -1033,10 +1059,10 @@ func TestContestTeamCapPostgres(t *testing.T) {
 	}
 }
 
-// Dropping the division before the start forgets the teams' divisions and the setters' switches too, so turning it on
-// again with a new passphrase starts every team open.
+// Dropping the division before the start forgets the divisions of teams and of participants who entered alone, the
+// setters' switches included, so turning it on again with a new passphrase starts everyone open.
 func TestContestTeamOnsiteDropPostgres(t *testing.T) {
-	f := newTeamTest(t, "alice", "bob", "carol")
+	f := newTeamTest(t, "alice", "bob", "carol", "dan")
 	const (
 		tc = "c0000000-0000-4000-8000-000000000001"
 		pa = "a0000000-0000-4000-8000-000000000001"
@@ -1047,79 +1073,36 @@ func TestContestTeamOnsiteDropPostgres(t *testing.T) {
 		t.Fatalf("onsite team: %+v", alpha)
 	}
 	beta := f.join(tc, "carol", create("Beta")).Team
-	f.request("PUT", "/my/contests/"+tc+"/teams/"+beta.ID+"/onsite", "alice", map[string]any{"onsite": false}, 200)
+	f.request("PUT", "/my/contests/"+tc+"/teams/"+beta.ID+"/onsite", "alice", map[string]any{"onsite": true}, 200)
+	if dan := f.join(tc, "dan", map[string]any{"onsitePassphrase": "first"}); !dan.Onsite || dan.Team != nil {
+		t.Fatalf("onsite individual: %+v", dan)
+	}
 	c = f.contest(tc, "alice")
 	f.decode(f.request("PUT", "/my/contests/"+tc, "alice", update(c, map[string]any{"onsiteDivision": false}), 200), &c)
-	if n := f.count(`SELECT count(*) FROM contest_teams WHERE contest_id=$1 AND (onsite_at IS NOT NULL OR onsite_via IS NOT NULL OR kept_open)`, tc); n != 0 {
-		t.Fatalf("teams keep %d divisions", n)
+	if n := f.count(`SELECT count(*) FROM contest_teams WHERE contest_id=$1 AND (onsite_at IS NOT NULL OR onsite_via IS NOT NULL)`, tc) +
+		f.count(`SELECT count(*) FROM contest_participants WHERE contest_id=$1 AND (onsite_at IS NOT NULL OR onsite_via IS NOT NULL)`, tc); n != 0 {
+		t.Fatalf("%d divisions kept", n)
 	}
 	f.decode(f.request("PUT", "/my/contests/"+tc, "alice", update(c, map[string]any{"onsiteDivision": true, "onsitePassphrase": "second"}), 200), &c)
-	if f.contest(tc, "bob").Onsite {
-		t.Fatal("the team is onsite under the new division")
+	if f.contest(tc, "bob").Onsite || f.contest(tc, "dan").Onsite {
+		t.Fatal("onsite under the new division")
 	}
-	for _, e := range f.entrants(tc) {
-		if e.Onsite || e.OnsiteAt != nil || e.OnsiteVia != "" || e.KeptOpen || e.Team.Onsite {
+	list := f.entrants(tc)
+	for _, e := range list {
+		if e.Onsite || e.OnsiteAt != nil || e.OnsiteVia != "" || e.Team != nil && e.Team.Onsite {
 			t.Fatalf("entrant under the new division: %+v", e)
 		}
+	}
+	if len(list) != 3 {
+		t.Fatalf("entrants: %+v", list)
 	}
 	var rows []contests.Standing
 	f.decode(f.request("GET", "/contests/"+tc+"/standings?scope=onsite", "", nil, 200), &rows)
 	if len(rows) != 0 {
 		t.Fatalf("onsite standings: %+v", rows)
 	}
-	// The team a setter had kept open takes the new passphrase.
+	// The team a setter had made onsite takes the new passphrase like any other.
 	if upgraded := f.join(tc, "carol", map[string]any{"onsitePassphrase": "second"}); !upgraded.Onsite {
-		t.Fatalf("kept open under the new division: %+v", upgraded)
-	}
-}
-
-// A team-contest registration without a team can only come from the API before teams, during a deploy. It stays out
-// of the standings, may not become onsite alone, and still creates or joins a team, which then counts what it did.
-func TestContestTeamLegacyRegistrationPostgres(t *testing.T) {
-	f := newTeamTest(t, "alice", "bob", "erin")
-	const (
-		tc = "c0000000-0000-4000-8000-000000000001"
-		pa = "a0000000-0000-4000-8000-000000000001"
-		ac = "d0000000-0000-4000-8000-000000000001"
-	)
-	f.problem(pa)
-	f.create(tc, pa, map[string]any{"teamMode": true, "onsiteDivision": true, "onsitePassphrase": "correct"})
-	f.join(tc, "bob", create("Alpha"))
-	f.exec(`INSERT INTO contest_participants(contest_id,owner_id) VALUES($1,'erin')`, tc)
-	path := "/my/contests/" + tc + "/participation"
-	// An empty body, as the old page sends, changes nothing.
-	if c := f.join(tc, "erin", nil); !c.Participating || c.Team != nil {
-		t.Fatalf("legacy registration: %+v", c)
-	}
-	f.fail("POST", path, "erin", map[string]any{"onsitePassphrase": "correct"}, 409, "contest_team_required")
-	if n := f.count(`SELECT count(*) FROM contest_participants WHERE owner_id='erin' AND team_id IS NULL AND onsite_at IS NULL`); n != 1 {
-		t.Fatalf("legacy rows: %d", n)
-	}
-	standings := func() []contests.Standing {
-		t.Helper()
-		var rows []contests.Standing
-		f.decode(f.request("GET", "/contests/"+tc+"/standings", "", nil, 200), &rows)
-		return rows
-	}
-	if rows := standings(); len(rows) != 1 || rows[0].Team == nil || rows[0].Team.Name != "Alpha" || rows[0].Handle != "" {
-		t.Fatalf("standings with a legacy registration: %+v", rows)
-	}
-	// After the start the registration still enters a team, keeping its row, and its earlier submissions count there.
-	f.schedule(tc, "running")
-	f.exec(`INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,result,contest_id,created_at,finished_at)
- VALUES($1,'erin',$2,1,'Team','cpp17','code','{}'::jsonb,'DONE','{"verdict":"AC","passed":1,"total":1}'::jsonb,$3,now()-interval '30 minutes',now())`, ac, pa, tc)
-	late := f.join(tc, "erin", create("Late"))
-	if late.Team == nil || late.Team.Name != "Late" || !slices.Equal(late.Team.Members, []string{"erin"}) {
-		t.Fatalf("late team: %+v", late.Team)
-	}
-	if n := f.count(`SELECT count(*) FROM contest_participants WHERE owner_id='erin'`); n != 1 {
-		t.Fatalf("erin's rows: %d", n)
-	}
-	if n := f.count(`SELECT count(*) FROM contest_teams t WHERE NOT EXISTS(SELECT 1 FROM contest_participants p WHERE p.team_id=t.id)`); n != 0 {
-		t.Fatalf("empty teams: %d", n)
-	}
-	rows := standings()
-	if len(rows) != 2 || rows[0].Team == nil || rows[0].Team.ID != late.Team.ID || rows[0].Points != 100 || rows[1].Team.Name != "Alpha" {
-		t.Fatalf("standings after joining: %+v", rows)
+		t.Fatalf("upgrade under the new division: %+v", upgraded)
 	}
 }

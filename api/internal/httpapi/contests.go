@@ -396,8 +396,8 @@ func (p contestHandler) venue(w http.ResponseWriter, r *http.Request, actor stri
 	writeAuthJSON(w, 200, result)
 }
 
-// entrants serves the setters' participant list and their changes: the onsite division of a participant or a team,
-// and a team's name.
+// entrants serves the setters' participant list and their changes: making a participant or a team onsite, and a
+// team's name.
 func (p contestHandler) entrants(w http.ResponseWriter, r *http.Request, actor string) {
 	if p.Contests == nil {
 		authError(w, 503, "database_unavailable")
@@ -482,14 +482,14 @@ func contestError(w http.ResponseWriter, err error) {
 		authError(w, 409, "contest_participant_problem")
 	case errors.Is(err, contests.ErrResultsPending):
 		authError(w, 409, "contest_results_pending")
-	case errors.Is(err, contests.ErrTeamRequired):
-		authError(w, 409, "contest_team_required")
 	case errors.Is(err, contests.ErrTeamUnavailable):
 		authError(w, 409, "contest_team_unavailable")
+	case errors.Is(err, contests.ErrIndividualLocked):
+		authError(w, 409, "contest_individual_locked")
 	case errors.Is(err, contests.ErrOnsiteUnavailable):
 		authError(w, 409, "contest_onsite_unavailable")
-	case errors.Is(err, contests.ErrOnsiteKeptOpen):
-		authError(w, 409, "onsite_kept_open")
+	case errors.Is(err, contests.ErrOnsiteIrreversible):
+		authError(w, 400, "onsite_irreversible")
 	case errors.Is(err, contests.ErrIncorrectTeamCode):
 		authError(w, 400, "incorrect_team_code")
 	case errors.Is(err, contests.ErrIncorrectPassphrase):
