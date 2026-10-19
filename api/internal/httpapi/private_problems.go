@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"mime"
 	"net/http"
@@ -21,6 +23,23 @@ var problemID = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab]
 type problemReadiness interface {
 	ApplicationCount(context.Context, string) (int, error)
 	State(context.Context, string, string) (problems.ProblemState, error)
+}
+
+// sentDraft is a draft as a client sent it, remembering whether it named scoring at all.
+type sentDraft struct {
+	problems.Draft
+	scoringSent bool
+}
+
+func (d *sentDraft) UnmarshalJSON(data []byte) error {
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(data, &keys); err != nil {
+		return err
+	}
+	_, d.scoringSent = keys["scoring"]
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	return decoder.Decode(&d.Draft)
 }
 
 // withReadiness tells the author where the saved problem can go; testers receive none.
@@ -64,8 +83,8 @@ func (p problemHandler) problem(w http.ResponseWriter, r *http.Request, owner st
 		result, err = p.Store.Get(ctx, owner, id)
 	case http.MethodPut:
 		var input struct {
-			Version int64          `json:"version"`
-			Draft   problems.Draft `json:"draft"`
+			Version int64     `json:"version"`
+			Draft   sentDraft `json:"draft"`
 		}
 		media, _, mediaErr := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if mediaErr != nil || media != "application/json" {
@@ -75,7 +94,7 @@ func (p problemHandler) problem(w http.ResponseWriter, r *http.Request, owner st
 		if !readJSONBody(w, r, &input, 3<<20) {
 			return
 		}
-		if input.Version < 0 || input.Version > 9007199254740990 || !problems.ValidDraft(input.Draft, submissions.RuntimeIDs()) {
+		if input.Version < 0 || input.Version > 9007199254740990 || !problems.ValidDraft(input.Draft.Draft, submissions.RuntimeIDs()) {
 			authError(w, 400, "invalid_draft")
 			return
 		}
@@ -89,6 +108,13 @@ func (p problemHandler) problem(w http.ResponseWriter, r *http.Request, owner st
 				problemError(w, problems.ErrConflict)
 				return
 			}
+			// A client older than partial scoring drops the scoring and the cases' groups it does not know, and would
+			// silently make the problem all-or-nothing. Asking it to reload brings the current editor; switching back
+			// is an explicit "scoring": null (ADR 0025).
+			if current.Draft.Scoring != nil && !input.Draft.scoringSent {
+				problemError(w, problems.ErrConflict)
+				return
+			}
 		}
 		// Save checks the content rules under the problem's lock, so that neither publication nor a contest can take
 		// the problem between the check and the write.
@@ -98,7 +124,7 @@ func (p problemHandler) problem(w http.ResponseWriter, r *http.Request, owner st
 			// submissions still check the runtimes when the judge is back.
 			enabled = submissions.RuntimeIDs()
 		}
-		result, err = p.Store.Save(ctx, owner, id, input.Version, input.Draft, problems.ContentRules{KnownRuntimes: submissions.RuntimeIDs(), EnabledRuntimes: enabled})
+		result, err = p.Store.Save(ctx, owner, id, input.Version, input.Draft.Draft, problems.ContentRules{KnownRuntimes: submissions.RuntimeIDs(), EnabledRuntimes: enabled})
 	case http.MethodDelete:
 		version, parseErr := strconv.ParseInt(r.URL.Query().Get("version"), 10, 64)
 		if parseErr != nil || version <= 0 {
