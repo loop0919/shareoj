@@ -263,6 +263,25 @@ func renewCode(ctx context.Context, tx pgx.Tx, id, team string) error {
 	return ErrConflict
 }
 
+// RenewTeamCodes gives each of the teams that still exists a new join code. Account deletion takes the account out of
+// teams the caller has locked, and the person behind it knows their codes.
+func RenewTeamCodes(ctx context.Context, tx pgx.Tx, teams []string) error {
+	rows, err := tx.Query(ctx, `SELECT contest_id::text,id::text FROM contest_teams WHERE id=ANY($1::uuid[]) ORDER BY id`, teams)
+	if err != nil {
+		return err
+	}
+	left, err := pgx.CollectRows(rows, pgx.RowToStructByPos[struct{ Contest, Team string }])
+	if err != nil {
+		return err
+	}
+	for _, t := range left {
+		if err = renewCode(ctx, tx, t.Contest, t.Team); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 var teamColumns = `t.id,t.name,c.onsite_division AND t.onsite_at IS NOT NULL,` + members("t") + `,t.join_code`
 
 // MyTeam returns the actor's team with its join code; only members see the code.
@@ -342,8 +361,9 @@ func (s *Store) RenameTeam(ctx context.Context, id, actor, name string) (Team, e
 }
 
 // RemoveTeamMember takes a member off the actor's team before the start: the actor leaves when handle is their own.
-// A removed member's registration goes with them, and the code is renewed so they cannot come back with the one they
-// know. The last member to leave deletes the team (ADR 0024).
+// The member's registration goes with them, and the code is renewed whoever goes: one who left could otherwise come
+// back, or send in another account that nobody can remove after the start. The last member to leave deletes the team
+// (ADR 0024).
 func (s *Store) RemoveTeamMember(ctx context.Context, id, actor, handle string) error {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
@@ -366,13 +386,11 @@ func (s *Store) RemoveTeamMember(ctx context.Context, id, actor, handle string) 
 	if t.started {
 		return ErrTeamLocked
 	}
-	if err = dropMember(ctx, tx, id, t.id, member); err != nil {
+	if err = renewCode(ctx, tx, id, t.id); err != nil {
 		return err
 	}
-	if member != actor {
-		if err = renewCode(ctx, tx, id, t.id); err != nil {
-			return err
-		}
+	if err = dropMember(ctx, tx, id, t.id, member); err != nil {
+		return err
 	}
 	return tx.Commit(ctx)
 }

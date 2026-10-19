@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"judge/api/internal/contests"
 	"judge/api/internal/profiles"
 )
 
@@ -126,6 +127,7 @@ func (s *Store) delete(ctx context.Context, owner, handle string, removeIdentity
 
 // leaveUpcoming takes the account out of contests that have not started, with its teams; a team left empty goes too
 // (ADR 0024). Those registrations hold no results, and a member who stayed would keep a place in the team.
+// The teams that remain get new join codes, as when a member leaves, since the person behind the account knows them.
 // It locks the contests as joining does, then the teams, so a member leaving meanwhile cannot leave an empty team.
 func leaveUpcoming(ctx context.Context, tx pgx.Tx, owner string) error {
 	rows, err := tx.Query(ctx, `SELECT c.id::text FROM contests c JOIN contest_participants p ON p.contest_id=c.id
@@ -149,8 +151,10 @@ func leaveUpcoming(ctx context.Context, tx pgx.Tx, owner string) error {
 	if _, err = tx.Exec(ctx, `DELETE FROM contest_participants WHERE owner_id=$1 AND contest_id=ANY($2::uuid[])`, owner, ids); err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `DELETE FROM contest_teams t WHERE t.id=ANY($1::uuid[]) AND NOT EXISTS(SELECT 1 FROM contest_participants p WHERE p.team_id=t.id)`, teams)
-	return err
+	if _, err = tx.Exec(ctx, `DELETE FROM contest_teams t WHERE t.id=ANY($1::uuid[]) AND NOT EXISTS(SELECT 1 FROM contest_participants p WHERE p.team_id=t.id)`, teams); err != nil {
+		return err
+	}
+	return contests.RenewTeamCodes(ctx, tx, teams)
 }
 
 // handOver gives the owner's drafts and contests whose results are not final to the co-setter who joined first.

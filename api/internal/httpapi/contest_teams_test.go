@@ -374,7 +374,7 @@ func TestContestTeamsPostgres(t *testing.T) {
 	}
 	f.fail("POST", path, "judy", joinCode(alpha.Code), 400, "incorrect_team_code")
 
-	// Before the start members leave or remove others. Removal renews the code; leaving does not.
+	// Before the start members leave or remove others. Either renews the code, so whoever went cannot use it.
 	members := "/my/contests/" + tc + "/team/members/"
 	f.fail("DELETE", members+"erin", "bob", nil, 404, "team_member_not_found")
 	f.fail("DELETE", members+"Not-A-Handle", "bob", nil, 404, "team_member_not_found")
@@ -388,9 +388,10 @@ func TestContestTeamsPostgres(t *testing.T) {
 		t.Fatalf("after removal: %+v", after)
 	}
 	f.request("DELETE", members+"dan", "dan", nil, 204)
-	if left := f.team(tc, "bob"); left.Code != after.Code || !slices.Equal(left.Members, []string{"bob"}) {
+	if left := f.team(tc, "bob"); left.Code == after.Code || !slices.Equal(left.Members, []string{"bob"}) {
 		t.Fatalf("after leaving: %+v", left)
 	}
+	f.fail("POST", path, "dan", joinCode(after.Code), 400, "incorrect_team_code")
 	// The last member to leave takes the team with them; the name is free again.
 	f.request("DELETE", members+"bob", "bob", nil, 204)
 	if n := f.count(`SELECT count(*) FROM contest_teams WHERE id=$1`, alpha.ID); n != 0 {
@@ -923,6 +924,7 @@ func TestContestTeamAccountDeletionPostgres(t *testing.T) {
 	f.join(ic, "erin", nil)
 	f.join(rc, "frank", create("Live"))
 	f.join(rc, "gina", joinCode(f.team(rc, "frank").Code))
+	pair, live := f.team(tc, "carol"), f.team(rc, "gina")
 	f.fail("POST", "/my/contests/"+tc+"/participation", "bob", map[string]any{"onsitePassphrase": "wrong"}, 400, "incorrect_venue_passphrase")
 	f.schedule(rc, "running")
 	remove := func(owner string) {
@@ -945,6 +947,11 @@ func TestContestTeamAccountDeletionPostgres(t *testing.T) {
 	if !slices.Equal(teams, []string{"Live:2", "Pair:1"}) {
 		t.Fatalf("teams after deletion: %v", teams)
 	}
+	// The person behind a deleted account knew the code of the team it left, so the team gets a new one. A team of a
+	// started contest keeps its member and its code.
+	if f.team(tc, "carol").Code == pair.Code || f.team(rc, "gina").Code != live.Code {
+		t.Fatal("join codes after deletion")
+	}
 	if n := f.count(`SELECT count(*) FROM contest_participants WHERE contest_id=$1`, ic); n != 0 {
 		t.Fatalf("upcoming individual registration kept: %d", n)
 	}
@@ -956,4 +963,5 @@ func TestContestTeamAccountDeletionPostgres(t *testing.T) {
 	if len(members) != 2 || !strings.HasPrefix(members[0], "deleted_") || members[1] != "gina" {
 		t.Fatalf("members after deletion: %v", members)
 	}
+	f.fail("POST", "/my/contests/"+tc+"/participation", "gina", joinCode(pair.Code), 400, "incorrect_team_code")
 }
