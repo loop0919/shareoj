@@ -78,7 +78,9 @@ func TestPublicDocumentation(t *testing.T) {
 				t.Fatal("missing generated model", name)
 			}
 		}
-		for name, fields := range map[string][]string{"Contest": {"authors", "setter", "owner", "teamMode", "maxTeamSize", "onsiteDivision", "team", "onsite"}, "ContestProblem": {"authors", "canReadEditorial", "author", "markdown"}, "TeamSummary": {"id", "name", "members", "onsite"}, "Standing": {"handle", "team", "onsite", "overallRank"}} {
+		for name, fields := range map[string][]string{"Contest": {"authors", "setter", "owner", "teamMode", "maxTeamSize", "onsiteDivision", "team", "onsite"}, "ContestProblem": {"authors", "canReadEditorial", "author", "markdown"}, "TeamSummary": {"id", "name", "members", "onsite"}, "Standing": {"handle", "team", "onsite", "overallRank"},
+			// Partial scores are public like verdicts (ADR 0025).
+			"Result": {"scoring"}, "CaseResult": {"score"}, "SubmissionScore": {"score", "maxScore", "groups"}, "GroupScore": {"name", "score", "maxScore", "cases"}} {
 			for _, field := range fields {
 				if _, ok := doc.Components.Schemas[name].Properties[field]; !ok {
 					t.Fatal("missing field", name, field)

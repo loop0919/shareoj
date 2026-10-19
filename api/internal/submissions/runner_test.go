@@ -257,3 +257,16 @@ func TestSamplePreview(t *testing.T) {
 		t.Fatalf("empty output: %+v", got)
 	}
 }
+
+func TestLocalJudgeRefusesPartialScoring(t *testing.T) {
+	job := Job{Image: "sha256:local", TimeLimitMS: 1000, MemoryLimitMB: 256, Cases: []Case{{Input: "1", Output: "1", Groups: []string{"a"}}},
+		Scoring: &problems.Scoring{Mode: "groups", Groups: []problems.ScoringGroup{{Name: "a", Points: 100}}}}
+	result := Judge(context.Background(), "int main(){}", job)
+	if result.Verdict != "JE" || result.Scoring != nil || len(result.Cases) != 0 || !strings.Contains(result.CheckerLog, "isolate") {
+		t.Fatalf("local judge scored a partial-scoring job: %+v", result)
+	}
+	// FinishAttempt stores this JE for a partial-scoring job.
+	if err := scoreResult(job, &result); err != nil {
+		t.Fatal(err)
+	}
+}

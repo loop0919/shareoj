@@ -830,6 +830,25 @@ func TestConflictingJudgeModes(t *testing.T) {
 	}
 }
 
+// Partial scoring stays off until the judge rollout has finished (ADR 0025).
+func TestPartialScoringDraftsStayRejected(t *testing.T) {
+	scoring := &problems.Scoring{Mode: "groups", Groups: []problems.ScoringGroup{{Name: "小課題1", Points: 100}}}
+	for name, d := range map[string]problems.Draft{
+		"scoring":    {TimeLimitMS: "1000", MemoryLimitMB: "512", Scoring: scoring},
+		"membership": {TimeLimitMS: "1000", MemoryLimitMB: "512", TestCases: []problems.TestCase{{Groups: []string{"小課題1"}}}},
+		"empty list": {TimeLimitMS: "1000", MemoryLimitMB: "512", TestCases: []problems.TestCase{{Groups: []string{}}}},
+	} {
+		if validDraft(d) {
+			t.Fatal("accepted", name)
+		}
+	}
+	// JSON null is the same as an absent key.
+	var d problems.Draft
+	if err := json.Unmarshal([]byte(`{"timeLimitMs":"1000","memoryLimitMb":"512","scoring":null,"testCases":[{"input":"1","output":"1","groups":null}]}`), &d); err != nil || !validDraft(d) {
+		t.Fatal("null rejected", err)
+	}
+}
+
 func TestJudgeProtocolsAreExplicitAndBoundToSupportedRuntimes(t *testing.T) {
 	for _, tc := range []struct {
 		runtime, protocol string

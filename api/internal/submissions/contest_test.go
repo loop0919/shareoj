@@ -74,3 +74,39 @@ func TestResultUsageSummary(t *testing.T) {
 		t.Fatal("unmeasured result must stay empty")
 	}
 }
+
+func TestPublicSubmissionScores(t *testing.T) {
+	cpu, memory, score := 1.0, int64(1024), int64(MaxCaseScore)
+	original := Submission{Result: &Result{
+		Verdict: "WA", Passed: 1, Total: 2, CheckerLog: "集計コードの標準エラー:\nprivate aggregator log",
+		Cases: []CaseResult{
+			{Name: "01", Verdict: "AC", CPUTimeMS: &cpu, WallTimeMS: &cpu, MemoryBytes: &memory, Score: &score},
+			{Name: "02", Verdict: "WA", CPUTimeMS: &cpu, WallTimeMS: &cpu, MemoryBytes: &memory},
+		},
+		Scoring: &SubmissionScore{Score: 3750, MaxScore: 10000, Groups: []GroupScore{
+			{Name: "小課題1", Score: 3000, MaxScore: 3000, Cases: []int{0}},
+			{Name: "小課題2", Score: 750, MaxScore: 7000, Cases: []int{0, 1}},
+		}},
+	}}
+	got := publicSubmission(original)
+	data, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"score":1000000000000000000`, `"scoring":{"score":3750,"maxScore":10000`, `{"name":"小課題2","score":750,"maxScore":7000,"cases":[0,1]}`} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("missing %s: %s", want, data)
+		}
+	}
+	if strings.Contains(string(data), "private") || strings.Contains(string(data), "checkerLog") {
+		t.Fatalf("exposed the aggregator log: %s", data)
+	}
+	// Lists show the score without the group table, and leave the detail alone.
+	got.Result.Scoring.Groups = nil
+	if len(original.Result.Scoring.Groups) != 2 {
+		t.Fatal("modified original groups")
+	}
+	if team := teamSubmission(original, true); team.Result.Scoring == nil || team.Result.Cases[0].Score == nil {
+		t.Fatal("teammates lost the scores")
+	}
+}

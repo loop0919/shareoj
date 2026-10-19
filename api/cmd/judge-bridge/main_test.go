@@ -162,6 +162,93 @@ func TestKnockoutResultValidation(t *testing.T) {
 	}
 }
 
+func TestScoringResultValidation(t *testing.T) {
+	cpu, wall, memory := 1.0, 2.0, int64(1024)
+	// result builds a scored result in hundredths from verdicts and two group scores of a 30 + 70 point problem.
+	result := func(first, second int64, verdicts ...string) submissions.Result {
+		r := submissions.Result{Verdict: "AC", Total: len(verdicts), Scoring: &submissions.SubmissionScore{Score: first + second, MaxScore: 10000,
+			Groups: []submissions.GroupScore{{Score: first, MaxScore: 3000}, {Score: second, MaxScore: 7000}}}}
+		for _, v := range verdicts {
+			c := submissions.CaseResult{Name: "case", Verdict: v}
+			if v != "SKIPPED" {
+				c.CPUTimeMS, c.WallTimeMS, c.MemoryBytes = &cpu, &wall, &memory
+				if v == "AC" {
+					r.Passed++
+				} else if r.Verdict == "AC" {
+					r.Verdict = v
+				}
+			}
+			r.Cases = append(r.Cases, c)
+		}
+		return r
+	}
+	score := func(v int64) *int64 { return &v }
+	for _, tc := range []struct {
+		name   string
+		change func(*submissions.Result)
+		valid  bool
+	}{
+		{"scored result", func(*submissions.Result) {}, true},
+		{"old result without scores", func(r *submissions.Result) { r.Scoring = nil }, true},
+		{"skipped in the middle", func(r *submissions.Result) { *r = result(0, 7000, "TLE", "SKIPPED", "AC") }, true},
+		{"skipped in the middle without scores", func(r *submissions.Result) { *r = result(0, 7000, "TLE", "SKIPPED", "AC"); r.Scoring = nil }, false},
+		{"accepted with skipped cases after the budget", func(r *submissions.Result) { *r = result(3000, 0, "AC", "SKIPPED", "SKIPPED") }, true},
+		{"verdict from executed cases", func(r *submissions.Result) { *r = result(0, 0, "SKIPPED", "WA"); r.Verdict = "AC" }, false},
+		{"skipped case with a measurement", func(r *submissions.Result) { *r = result(0, 0, "AC", "SKIPPED"); r.Cases[1].MemoryBytes = &memory }, false},
+		{"skipped case with a score", func(r *submissions.Result) { *r = result(0, 0, "AC", "SKIPPED"); r.Cases[1].Score = score(1) }, false},
+		{"case scores on AC and WA", func(r *submissions.Result) {
+			r.Cases[0].Score, r.Cases[1].Score = score(0), score(submissions.MaxCaseScore)
+		}, true},
+		{"case score over 10^18", func(r *submissions.Result) { r.Cases[1].Score = score(submissions.MaxCaseScore + 1) }, false},
+		{"negative case score", func(r *submissions.Result) { r.Cases[0].Score = score(-1) }, false},
+		{"case score on TLE", func(r *submissions.Result) { r.Cases[2].Score = score(1) }, false},
+		{"case score without scores", func(r *submissions.Result) { r.Scoring = nil; r.Cases[0].Score = score(1) }, false},
+		{"group over its maximum", func(r *submissions.Result) { r.Scoring.Groups[0].Score, r.Scoring.Score = 3001, 3751 }, false},
+		{"negative group", func(r *submissions.Result) { r.Scoring.Groups[1].Score, r.Scoring.Score = -1, 2999 }, false},
+		{"total is not the sum", func(r *submissions.Result) { r.Scoring.Score = 10000 }, false},
+		{"full score is not the sum", func(r *submissions.Result) { r.Scoring.MaxScore = 9900 }, false},
+		{"group maximum not whole points", func(r *submissions.Result) { r.Scoring.Groups[0].MaxScore, r.Scoring.MaxScore = 3050, 10050 }, false},
+		{"no group", func(r *submissions.Result) { r.Scoring = &submissions.SubmissionScore{} }, false},
+		{"full score 0", func(r *submissions.Result) {
+			r.Scoring = &submissions.SubmissionScore{Groups: []submissions.GroupScore{{}}}
+		}, false},
+		{"full score over 1,000,000 points", func(r *submissions.Result) {
+			r.Scoring = &submissions.SubmissionScore{MaxScore: 100*1_000_000 + 100, Groups: []submissions.GroupScore{{MaxScore: 100 * 1_000_000}, {MaxScore: 100}}}
+		}, false},
+		{"101 groups", func(r *submissions.Result) {
+			r.Scoring = &submissions.SubmissionScore{MaxScore: 10100, Groups: make([]submissions.GroupScore, 101)}
+			for i := range r.Scoring.Groups {
+				r.Scoring.Groups[i].MaxScore = 100
+			}
+		}, false},
+		{"compile error scores 0", func(r *submissions.Result) {
+			*r = submissions.Result{Verdict: "CE", Total: 3, Scoring: &submissions.SubmissionScore{MaxScore: 10000, Groups: []submissions.GroupScore{{MaxScore: 3000}, {MaxScore: 7000}}}}
+		}, true},
+		{"compile error with points", func(r *submissions.Result) {
+			*r = submissions.Result{Verdict: "CE", Total: 3, Scoring: &submissions.SubmissionScore{Score: 3000, MaxScore: 10000, Groups: []submissions.GroupScore{{Score: 3000, MaxScore: 3000}, {MaxScore: 7000}}}}
+		}, false},
+		{"judge error with scores", func(r *submissions.Result) {
+			*r = submissions.Result{Verdict: "JE", Total: 3, Scoring: &submissions.SubmissionScore{MaxScore: 10000, Groups: []submissions.GroupScore{{MaxScore: 3000}, {MaxScore: 7000}}}}
+		}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := result(3000, 750, "AC", "WA", "TLE")
+			tc.change(&r)
+			if validResult(r) != tc.valid {
+				t.Fatalf("unexpected validation: %+v", r)
+			}
+		})
+	}
+	// A case score that is not an int64 integer cannot even be decoded.
+	for score, valid := range map[string]bool{"37": true, "1000000000000000000": true, "37.5": false, "1e18": false, "9223372036854775808": false, `"37"`: false} {
+		body := `{"submissionId":"s","attemptId":"a","result":{"verdict":"AC","passed":1,"total":1,"cases":[{"name":"01","verdict":"AC","score":` + score + `,"cpuTimeMs":1,"wallTimeMs":1,"memoryBytes":1}],"scoring":{"score":100,"maxScore":100,"groups":[{"score":100,"maxScore":100}]}}}`
+		var e envelope
+		if (json.Unmarshal([]byte(body), &e) == nil && validResult(*e.Result)) != valid {
+			t.Fatal("case score", score)
+		}
+	}
+}
+
 func TestOutboxAndResultIdempotency(t *testing.T) {
 	for _, runtime := range []string{"cpp17-isolate", "rust2024-isolate"} {
 		for _, memory := range []int{64, 315, 512} {
