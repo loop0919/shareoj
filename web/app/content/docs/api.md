@@ -34,6 +34,7 @@ curl https://api.share-oj.net/problems
 チームの行は `handle` が空文字なので、`team.id` で区別してください。
 個人参加の行は、`team` が `null` です。
 順位表と、コンテストの提出の一覧（`/contests/{id}/submissions` など）は、`scope=onsite` を付けると、オンサイト参加の行と提出だけを返します。
+部分点のあるコンテストでは、順位表の `score` が100倍した得点、`scoreText` が表示用の得点（`37.50` など）で、`points` は得点の整数部分です。
 
 すべてのエンドポイントと応答の形式は、仕様書で確認してください。
 

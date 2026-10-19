@@ -61,7 +61,7 @@ test('problem editor', async ({ page }) => {
   await expandSidebar(page)
   const nav = page.getByRole('navigation', { name: '問題作成メニュー' })
   await annotate(page, [
-    ...['問題文', 'テストケース', '生成・検証・判定', '解説', '問題管理'].map(name => ({ target: nav.getByRole('button', { name, exact: true }), pad: 2, badge: 'right' as const })),
+    ...['問題文', 'テストケース', '生成・検証・判定', '採点', '解説', '問題管理'].map(name => ({ target: nav.getByRole('button', { name, exact: true }), pad: 2, badge: 'right' as const })),
     { target: page.getByRole('button', { name: '保存', exact: true }), badge: 'bottom' },
   ])
   await shoot(page, 'problem-editor')
@@ -78,6 +78,24 @@ test('test cases', async ({ page }) => {
     page.getByRole('button', { name: 'サンプルを問題文に追加' }),
   ])
   await shoot(page, 'problem-tests')
+})
+
+test('scoring', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 760 })
+  // A subtask problem: the samples stay out of the groups, and the largest case counts in both (ADR 0025).
+  await savedProblem(page, { draft: {
+    scoring: { mode: 'groups', groups: [{ name: '小課題1', points: 30 }, { name: '小課題2', points: 70 }] },
+    testCases: [...draft.testCases.slice(0, 2), { ...draft.testCases[2], groups: ['小課題2'] }, { name: 'small_1', input: '1 2\n', output: '3\n', isSample: false, groups: ['小課題1', '小課題2'] }],
+  } })
+  await page.getByRole('button', { name: '採点', exact: true }).click()
+  const modes = page.getByRole('group', { name: '採点方式' })
+  await expect(modes.getByRole('radio', { name: 'グループ', exact: true })).toBeChecked()
+  await annotate(page, [
+    { target: modes, badge: 'top-right' },
+    { target: page.locator('.scoring-groups'), badge: 'top-right' },
+    page.getByRole('button', { name: 'グループを追加' }),
+  ])
+  await shoot(page, 'problem-scoring', [page.locator('.scoring-editor header'), page.locator('.scoring-editor .scoring-note').last()])
 })
 
 test('problem management', async ({ page }) => {

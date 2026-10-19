@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { docPages, legacyDocPaths } from '../shared/docs'
 
-for (const [slug, codeBlocks, tables] of [['generator', 3, 1], ['checkers', 3, 1], ['languages', 0, 11]] as const) {
+for (const [slug, codeBlocks, tables] of [['generator', 3, 1], ['checkers', 4, 1], ['languages', 0, 11]] as const) {
   test(`${slug} renders Markdown, highlighted code and stable section links`, async ({ page, request }, testInfo) => {
     const path = `/docs/${slug}`
     const response = await request.get(path)

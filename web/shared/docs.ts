@@ -31,7 +31,7 @@ export const docSections: { title: string, pages: DocPage[] }[] = [
       { slug: 'authoring', title: '問題の作成と公開', label: '問題の作成と公開', description: 'ShareOJの作問画面で問題を作り、保存して公開するまでの流れと、テスターの招き方を説明します。', lead: '問題文とテストケースを用意して保存し、条件を確かめてから公開します。' },
       { slug: 'markdown', title: 'Markdown と数式の書き方', label: 'Markdown と数式', description: 'ShareOJ の Markdown エディターで、問題文、数式、複数行の入力形式を書く方法を例とともに紹介します。', lead: '問題の構成は自由です。Markdown で文章を組み立て、必要なところに数式を添えられます。' },
       { slug: 'generator', title: '入出力生成と入力検証の使い方', label: '入出力の生成と検証', description: 'コードによる入力と期待出力の生成、入力の制約を検証する手順をC++17の例で紹介します。', lead: 'テストケースをコードで作れます。ケース番号から入力を生成し、その入力を解答プログラムに渡して期待出力を揃えましょう。' },
-      { slug: 'checkers', title: '判定方法の設定', label: '判定方法', description: 'スペシャルジャッジとインタラクティブ問題の判定コードの書き方、testlib形式、判定コードの上限と診断を説明します。', lead: '答えが複数ある問題や対話形式の問題は、判定コードで採点します。' },
+      { slug: 'checkers', title: '判定方法の設定', label: '判定方法', description: 'スペシャルジャッジとインタラクティブ問題の判定コードの書き方、testlib形式、部分点の集計コード、判定コードの上限と診断を説明します。', lead: '答えが複数ある問題や対話形式の問題は、判定コードで採点します。' },
       { slug: 'cli', title: '作問CLI', label: '作問CLI', description: 'ShareOJの作問CLIのインストール、ログイン、問題の保存と取得、problem.tomlの書き方を説明します。', lead: '手元のエディターやAIエージェントで問題を作り、ShareOJに保存できます。' },
     ],
   },
