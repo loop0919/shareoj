@@ -92,7 +92,13 @@ func (p problemHandler) problem(w http.ResponseWriter, r *http.Request, owner st
 		}
 		// Save checks the content rules under the problem's lock, so that neither publication nor a contest can take
 		// the problem between the check and the write.
-		result, err = p.Store.Save(ctx, owner, id, input.Version, input.Draft, problems.ContentRules{KnownRuntimes: submissions.RuntimeIDs(), EnabledRuntimes: p.Judging.RuntimeIDs()})
+		enabled := p.Judging.RuntimeIDs()
+		if p.Judging.Maintenance() {
+			// No runtime is enabled during judge maintenance, but saving goes on (ADR 0010). Publication, contests and
+			// submissions still check the runtimes when the judge is back.
+			enabled = submissions.RuntimeIDs()
+		}
+		result, err = p.Store.Save(ctx, owner, id, input.Version, input.Draft, problems.ContentRules{KnownRuntimes: submissions.RuntimeIDs(), EnabledRuntimes: enabled})
 	case http.MethodDelete:
 		version, parseErr := strconv.ParseInt(r.URL.Query().Get("version"), 10, 64)
 		if parseErr != nil || version <= 0 {
