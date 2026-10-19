@@ -604,7 +604,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 - 参加登録があると、個人戦とチーム戦は切り替えられず（409 `contest_team_mode_locked`）、最大人数は最も大きいチームの人数より下げられない（409 `contest_team_size_locked`）。
 - 開始前に区分をなしにすると、記録したオンサイトを消し、合言葉も消す。
 - コンテストの詳細と一覧は`teamMode`、`maxTeamSize`、`onsiteDivision`を返す。
-  閲覧者向けに、`team`（自分のチームの`id`、`name`、`members`、`onsite`）と`onsite`（自分かチームがオンサイトか）を返す。
+  閲覧者向けに、`team`（自分のチームの`id`、`name`、`members`、`onsite`。個人で参加した人はnull）と`onsite`（自分かチームがオンサイトか）を返す。
 - 会場の合言葉と参加コードは、公開の`Contest`を含む公開APIの型に載せない。
 
 参加の本文は`{"team":{"action":"create","name":"..."}}`か`{"team":{"action":"join","code":"..."}}`と、任意の`onsitePassphrase`である。
