@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { accountError } from '~/utils/account-problems'
+import type { ScoringMemory } from '~/utils/problem-draft'
 import type { EditorSection } from '~/utils/problem-readiness'
 import { maxTags } from '~~/shared/types/tag'
 import { shortId } from '~~/shared/utils/short-id'
@@ -47,6 +48,8 @@ async function copyTesterLink() {
 }
 onBeforeUnmount(() => clearTimeout(copiedTimer))
 const section = ref<'statement' | 'editorial' | 'tests' | 'generators' | 'scoring' | 'management'>('statement')
+// What a scoring mode switch took out of the draft, kept while the page is open.
+const scoringMemory: ScoringMemory = {}
 const judging = ref(false)
 function jump(target: EditorSection) {
   judging.value = target === 'checker'
@@ -226,7 +229,7 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
     <TestCaseGenerator v-if="ready" v-show="section === 'generators'" v-model="draft.testCases" v-model:config="draft.generators" v-model:busy="generating" v-model:judging="judging" :save="saveDraft" :disabled="publishing" :problem-id="cloudId" @show-cases="section = 'tests'">
       <template #checker><ProblemChecker v-model="draft.checker" v-model:interactor="draft.interactor" :scoring-mode="draft.scoring?.mode" :disabled="publishing" :problem-id="cloudId" :save="saveDraft" :published="!!publishedVersion" /></template>
     </TestCaseGenerator>
-    <ScoringEditor v-if="section === 'scoring'" v-model:scoring="draft.scoring" v-model:cases="draft.testCases" :disabled="!ready || publishing || generating" :contest="!!contestId" @show-cases="section = 'tests'" />
+    <ScoringEditor v-if="section === 'scoring'" v-model:scoring="draft.scoring" v-model:cases="draft.testCases" :disabled="!ready || publishing || generating" :contest="!!contestId" :memory="scoringMemory" @show-cases="section = 'tests'" />
     <section v-if="managing" class="problem-management" aria-labelledby="management-title">
       <div class="management-content">
         <header><h1 id="management-title">問題管理</h1><p class="manage-problem-title">{{ draft.title.trim() || '無題の問題' }}</p><p class="muted">{{ saveLocation }}</p></header>

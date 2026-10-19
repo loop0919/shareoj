@@ -56,6 +56,13 @@ export function persistedDraft<T extends { testCases: TestCase[] }>(draft: T) {
   }
 }
 
+// What the scoring editor took out of the draft on a mode switch. The page keeps it, so that opening another section
+// does not lose it; switching the mode back restores it.
+export interface ScoringMemory {
+  previous?: { scoring: Scoring, membership: WeakMap<TestCase, string[]> }
+  aggregator?: Scoring['aggregator']
+}
+
 // The full score of a partially scored problem: the sum of its groups' points (ADR 0025).
 export const fullScore = (scoring: Pick<Scoring, 'groups'>) => scoring.groups.reduce((total, group) => total + group.points, 0)
 

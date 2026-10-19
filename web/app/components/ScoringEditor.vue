@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { maxFullScore, maxScoringGroups, type ProblemDraft, type Scoring } from '~~/shared/types/problem-draft'
-import { fullScore, groupNameError, type TestCase } from '~/utils/problem-draft'
+import { fullScore, groupNameError, type ScoringMemory, type TestCase } from '~/utils/problem-draft'
 
 // Partial scoring (ADR 0025): the mode, the groups with their points, and the aggregator's code. Cases join groups in
 // the test case editor; this editor keeps their membership in step when a group is renamed or removed.
 const scoring = defineModel<ProblemDraft['scoring']>('scoring', { required: true })
 const cases = defineModel<TestCase[]>('cases', { required: true })
-const props = defineProps<{ disabled: boolean, contest: boolean }>()
+const props = defineProps<{ disabled: boolean, contest: boolean, memory: ScoringMemory }>()
 const emit = defineEmits<{ 'show-cases': [] }>()
 const { data: catalog, error: catalogError } = useJudgeCatalog()
 const available = computed(() => catalogError.value || catalog.value?.maintenance ? [] : catalog.value?.items ?? [])
@@ -18,25 +18,41 @@ const modeNotes: Record<Mode, string> = {
   groups: 'グループに属するケースがすべてACなら、そのグループの配点を与えます。提出の得点は、グループの得点の合計です。',
   aggregate: '集計コードが、ケースの判定と点からグループごとの得点を決めます。提出の得点は、グループの得点の合計です。',
 }
-// Switching back to 一括 clears the groups from the draft; this session keeps them, so switching again restores them.
-let previous: { scoring: Scoring, membership: WeakMap<TestCase, string[]> } | undefined
-let previousAggregator: Scoring['aggregator']
+// Switching back to 一括 clears the groups from the draft, and switching to グループ clears the aggregator. The page keeps
+// them in memory, so switching again restores them even after another section was opened.
 const defaultRuntime = () => available.value.find(item => item.id === 'cpp23-gcc')?.id ?? available.value[0]?.id ?? 'cpp23-gcc'
+// Leaving a partial mode, or the aggregate one, takes work out of the draft, so it is confirmed first.
+function confirmSwitch(current: Scoring | null, next: Mode) {
+  if (!current) return true
+  const code = current.mode === 'aggregate' && !!current.aggregator?.source.trim()
+  if (next === 'binary' && (current.groups.length || cases.value.some(item => item.groups?.length) || code))
+    return window.confirm(`一括にすると、グループと配点、ケースの所属${code ? '、集計コード' : ''}を下書きから外します。このページを開いている間は、方式を戻すと元に戻ります。一括にしますか？`)
+  if (next === 'groups' && code)
+    return window.confirm('グループにすると、集計コードを下書きから外します。このページを開いている間は、集計コードに戻すと元に戻ります。グループにしますか？')
+  return true
+}
 const mode = computed<Mode>({
   get: () => scoring.value?.mode ?? 'binary',
   set: next => {
     const current = scoring.value
+    if (!confirmSwitch(current, next)) {
+      // The radio has already moved; put it back on the mode that stays.
+      nextTick(() => { for (const input of document.querySelectorAll<HTMLInputElement>('input[name="scoring-mode"]')) input.checked = input.value === mode.value })
+      return
+    }
+    const memory = props.memory
     if (next === 'binary') {
       if (!current) return
-      previous = { scoring: structuredClone(toRaw(current)), membership: new WeakMap(cases.value.map(item => [toRaw(item), [...item.groups ?? []]])) }
+      memory.previous = { scoring: structuredClone(toRaw(current)), membership: new WeakMap(cases.value.map(item => [toRaw(item), [...item.groups ?? []]])) }
       for (const item of cases.value) item.groups = []
       scoring.value = null
       return
     }
     let groups = current?.groups.map(group => ({ ...group }))
-    let aggregator = current?.aggregator ?? previousAggregator
+    let aggregator = current?.aggregator ?? memory.aggregator
     if (!groups) {
       // A new partial problem starts with one group holding every case but the samples, which scores like 一括.
+      const previous = memory.previous
       groups = previous?.scoring.groups.map(group => ({ ...group })) ?? [{ name: '小課題1', points: 100 }]
       aggregator ??= previous?.scoring.aggregator
       const names = new Set(groups.map(group => group.name))
@@ -46,7 +62,7 @@ const mode = computed<Mode>({
       }
     }
     if (next === 'aggregate') aggregator ??= { runtime: defaultRuntime(), source: '' }
-    else if (aggregator) previousAggregator = aggregator
+    else if (aggregator) memory.aggregator = structuredClone(toRaw(aggregator))
     // The draft's scoring is replaced at once: the model only reflects it after the parent renders.
     scoring.value = { mode: next, groups, aggregator: next === 'aggregate' ? aggregator : undefined }
   },
