@@ -23,13 +23,13 @@ const selected = defineModel<T>({ required: true })
 </template>
 
 <style scoped>
-/* Hallmark · component: two-way segmented radio · genre: modern-minimal · theme: existing ShareOJ tokens (Plain)
+/* Hallmark · component: segmented radio · genre: modern-minimal · theme: existing ShareOJ tokens (Plain)
  * states: default · hover · focus-visible · active · checked (border, fill, weight) · option disabled · group disabled
- * Equal halves always fit one row; the whole half is the radio's hit area. */
+ * Equal parts always fit one row; the whole part is the radio's hit area. */
 .segments { min-width: 0; margin: 0; padding: 0; border: 0; }
 legend { margin-bottom: 8px; padding: 0; font-size: .875rem; font-weight: 600; line-height: 32px; }
 legend[data-hidden] { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+div { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; }
 label { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 6px 10px; border: 1px solid var(--color-line); border-radius: 999px; font-size: .875rem; white-space: nowrap; cursor: pointer; }
 input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 label:has(input:checked) { border-color: var(--color-accent); background: var(--color-accent-soft); font-weight: 600; }

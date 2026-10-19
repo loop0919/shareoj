@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import type { ProblemDraft } from '~~/shared/types/problem-draft'
 import { testCaseError, type TestCase } from '~/utils/problem-draft'
 import { downloadTestFile } from '~/utils/test-files'
 import { importTestCaseFiles, mergeTestCases } from '~/utils/import-test-cases'
 const cases = defineModel<TestCase[]>({ required: true })
 const markdown = defineModel<string>('markdown', { required: true })
-const props = defineProps<{ disabled: boolean, problemId?: string }>()
+// scoring lets each case join the groups of a partially scored problem (ADR 0025).
+const props = defineProps<{ disabled: boolean, problemId?: string, scoring?: ProblemDraft['scoring'] }>()
+const emit = defineEmits<{ 'show-scoring': [] }>()
 const error = computed(() => testCaseError(cases.value))
 const selected = ref(0)
 const inputFiles = ref<HTMLInputElement>()
@@ -115,6 +118,17 @@ watch([selected, () => current.value?.inputFile?.id, () => current.value?.output
 function remove() {
   if (current.value && window.confirm(`「${fileName(current.value, selected.value)}」の入力と出力を削除しますか？`)) cases.value.splice(selected.value, 1)
 }
+// New cases join no group: the readiness names them until the author decides (ADR 0025).
+const ungrouped = (item: TestCase) => !!props.scoring && !item.isSample && !item.groups?.length
+// Membership follows the groups' order, whichever way the chips were clicked.
+function toggleGroup(name: string, member: boolean) {
+  const item = current.value
+  if (!item || !props.scoring) return
+  const groups = new Set(item.groups ?? [])
+  if (member) groups.add(name)
+  else groups.delete(name)
+  item.groups = props.scoring.groups.map(group => group.name).filter(value => groups.has(value))
+}
 function add() {
   if (locked.value || cases.value.length >= 100) return
   const used = new Set(cases.value.map(item => item.name?.trim()))
@@ -153,7 +167,7 @@ function add() {
           <li v-for="(item, index) in cases" :key="index">
             <button type="button" :aria-current="selected === index ? 'true' : undefined" :disabled="locked" :title="fileName(item, index)" @click="selected = index">
               <svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H5v20h14V7Zm0 0v5h5M8 12h8M8 16h6" /></svg>
-              <span>{{ fileName(item, index) }}</span><svg v-if="item.isSample" class="sample-flag" viewBox="0 0 24 24" role="img" aria-label="サンプルケース"><path d="M5 21V3m0 1c5-4 9 4 14 0v10c-5 4-9-4-14 0" /></svg>
+              <span>{{ fileName(item, index) }}</span><span v-if="ungrouped(item)" class="case-ungrouped" title="どのグループにも属していません">無所属</span><svg v-if="item.isSample" class="sample-flag" viewBox="0 0 24 24" role="img" aria-label="サンプルケース"><path d="M5 21V3m0 1c5-4 9 4 14 0v10c-5 4-9-4-14 0" /></svg>
             </button>
           </li>
         </ul>
@@ -165,6 +179,13 @@ function add() {
           <label class="sample-option"><input v-model="current.isSample" type="checkbox" :disabled="locked">サンプルケースにする</label>
           <button type="button" class="editor-button case-delete" :disabled="locked" :aria-label="`ケース${selected + 1}を削除`" title="選択中のケースの入力と出力を削除" @click="remove"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" /></svg>削除</button>
         </div>
+        <fieldset v-if="scoring" class="case-groups" :disabled="locked">
+          <legend>所属するグループ</legend>
+          <label v-for="group in scoring.groups" :key="group.name" class="group-chip"><input type="checkbox" :checked="current.groups?.includes(group.name) ?? false" @change="toggleGroup(group.name, ($event.target as HTMLInputElement).checked)">{{ group.name }}</label>
+          <span v-if="!scoring.groups.length" class="case-groups-note">グループは「採点」で追加します。</span>
+          <span v-else-if="ungrouped(current)" class="case-groups-note case-groups-missing">サンプル以外のケースは、どれかのグループに入れてください。</span>
+          <button type="button" class="case-groups-link" @click="emit('show-scoring')">グループを編集</button>
+        </fieldset>
         <div :key="selected" class="case-fields">
           <TestDataEditor :id="`case-input-${selected}`" v-model="current.input" label="入力" :disabled="locked" :stored-bytes="current.inputFile?.size" :loading="loading.input" :error="loadError.input" @update:model-value="current._inputDirty = true" />
           <TestDataEditor :id="`case-output-${selected}`" v-model="current.output" label="出力" :disabled="locked" :stored-bytes="current.outputFile?.size" :loading="loading.output" :error="loadError.output" @update:model-value="current._outputDirty = true" />
@@ -259,6 +280,20 @@ function add() {
 .case-delete:active:not(:disabled) { transform: translateY(1px); }
 .case-delete:disabled, .case-add:disabled, .case-import:disabled { opacity: .5; cursor: not-allowed; }
 @media (pointer: coarse) { .case-delete, .case-add { min-height: 44px; } .case-import { width: 44px; min-height: 44px; } }
+.case-files li button .case-ungrouped { flex-shrink: 0; margin-left: auto; padding: 0 4px; border: 1px solid var(--color-error); border-radius: 3px; color: var(--color-error); font-size: .6875rem; line-height: 1.5; overflow: visible; }
+.case-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0; padding: 8px 12px; border: 0; border-bottom: 1px solid var(--color-line); min-width: 0; }
+.case-groups legend { float: left; margin-right: 4px; padding: 0; font-size: .75rem; }
+.group-chip { position: relative; display: inline-flex; align-items: center; min-height: 32px; padding: 2px 12px; border: 1px solid var(--color-line); border-radius: 999px; background: var(--color-paper); font-size: .8125rem; cursor: pointer; overflow-wrap: anywhere; }
+.group-chip input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.group-chip:has(input:checked) { border-color: var(--color-accent); background: var(--color-accent-soft); color: var(--color-accent); font-weight: 600; }
+.group-chip:has(input:checked)::before { content: '✓'; margin-right: 4px; }
+.group-chip:has(input:focus-visible) { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.case-groups:disabled .group-chip { opacity: .5; cursor: not-allowed; }
+.case-groups-note { color: var(--color-muted); font-size: .75rem; }
+.case-groups-missing { color: var(--color-error); }
+.case-groups-link { margin-left: auto; padding: 4px 2px; border: 0; background: none; color: var(--color-accent); font: inherit; font-size: .75rem; text-decoration: underline; cursor: pointer; }
+@media (hover: hover) { .group-chip:not(:has(input:checked)):hover { background: var(--color-surface); } }
+@media (pointer: coarse) { .group-chip { min-height: 44px; } }
 .case-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 1; min-height: 0; }
 .empty-editor { display: flex; flex-direction: column; padding: 16px; overflow-y: auto; }
 .empty-editor > * { margin-block: auto; }

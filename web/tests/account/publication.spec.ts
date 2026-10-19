@@ -106,7 +106,7 @@ test('published problem saves update the public content', async ({ page, browser
   await page.locator('#problem-source').fill('')
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.locator('.draft-status').getByRole('status')).toHaveText('保存に失敗しました')
-  await expect(page.getByRole('alert')).toContainText('公開内容は変更されていません')
+  await expect(page.getByRole('alert')).toContainText('保存済みの内容は変わっていません')
   expect((await (await guest.request.get(`/api/problems/${id}`)).json()).markdown).toBe('ショートカットで公開する変更')
   await page.getByRole('button', { name: '問題管理', exact: true }).click()
   await expect(page.getByRole('button', { name: '公開内容を更新' })).toHaveCount(0)

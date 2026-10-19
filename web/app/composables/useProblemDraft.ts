@@ -1,7 +1,7 @@
 import { accountProblemSchema, type AccountProblem, type Readiness } from '~~/shared/types/account-problems'
 import { accountError } from '~/utils/account-problems'
 import { problemDraftSchema, emptyGenerators, inlineTestDataLimit, inlineTestSetLimit, type ProblemDraft } from '~~/shared/types/problem-draft'
-import { draftErrors, initialEditorialMarkdown, initialProblemMarkdown, persistedDraft, testCaseError, type TestCase } from '~/utils/problem-draft'
+import { draftErrors, initialEditorialMarkdown, initialProblemMarkdown, persistedDraft, scoringError, testCaseError, type TestCase } from '~/utils/problem-draft'
 import { uploadTestFile } from '~/utils/test-files'
 import { readProblemCache, writeProblemCache, removeProblemCache } from '~/utils/problem-cache'
 
@@ -53,7 +53,7 @@ export function useProblemDraft() {
   let inFlight: Promise<boolean> | undefined
   const saveLocation = computed(() => publishedVersion.value ? '公開中' : '非公開')
   function refreshOnFocus() { void refreshAccount().catch(() => {}) }
-  const draft = reactive({ checker: null as ProblemDraft['checker'], interactor: null as ProblemDraft['interactor'], difficulty: null as number | null, title: '', markdown: initialProblemMarkdown, editorial: initialEditorialMarkdown, tags: [] as string[], generators: emptyGenerators(), timeLimitMs: '2000', memoryLimitMb: '512', testCases: [] as TestCase[] })
+  const draft = reactive({ checker: null as ProblemDraft['checker'], interactor: null as ProblemDraft['interactor'], scoring: null as ProblemDraft['scoring'], difficulty: null as number | null, title: '', markdown: initialProblemMarkdown, editorial: initialEditorialMarkdown, tags: [] as string[], generators: emptyGenerators(), timeLimitMs: '2000', memoryLimitMb: '512', testCases: [] as TestCase[] })
   const ready = ref(false)
   const saveState = ref<keyof typeof saveMessages>('loading')
   const status = computed(() => saveMessages[saveState.value])
@@ -95,7 +95,7 @@ export function useProblemDraft() {
   async function saveDraft(manual = false, updateLocation = true): Promise<boolean> {
     if (disposed || deleted || publishing.value || confirmingDelete.value || !ready.value || (!manual && !allowAutosave)) return false
     if (manual) dismissToast()
-    const testError = testCaseError(draft.testCases)
+    const testError = testCaseError(draft.testCases) || scoringError(draft)
     if (testError) { saveState.value = 'dirty'; storageError.value = testError; return false }
     if (!manual && fingerprint() === saved) return true
     if (!manual && manualSaveOnly.value) { storageError.value = '変更を反映するには保存ボタンを押してください。'; return false }
@@ -210,7 +210,7 @@ export function useProblemDraft() {
         saveState.value = 'saved'
       } catch (error) {
         removeProblemCache(cloudOwner, cloudId.value)
-        Object.assign(draft, { checker: null, interactor: null, difficulty: null as number | null, title: '', markdown: initialProblemMarkdown, editorial: initialEditorialMarkdown, tags: [] as string[], generators: emptyGenerators(), timeLimitMs: '2000', memoryLimitMb: '512', testCases: [] })
+        Object.assign(draft, { checker: null, interactor: null, scoring: null, difficulty: null as number | null, title: '', markdown: initialProblemMarkdown, editorial: initialEditorialMarkdown, tags: [] as string[], generators: emptyGenerators(), timeLimitMs: '2000', memoryLimitMb: '512', testCases: [] })
         saveState.value = 'load-failed'
         storageError.value = accountError(error)
         return

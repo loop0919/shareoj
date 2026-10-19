@@ -4,7 +4,9 @@ import { shortId } from '~~/shared/utils/short-id'
 
 const checker = defineModel<ProblemDraft['checker']>({ required: true })
 const interactor = defineModel<ProblemDraft['interactor']>('interactor', { required: true })
-const props = defineProps<{ disabled: boolean, problemId: string, published: boolean, save: () => Promise<boolean> }>()
+// In the aggregate mode the score file and testlib's quitp give each case its score (ADR 0025).
+const props = defineProps<{ disabled: boolean, problemId: string, published: boolean, save: () => Promise<boolean>, scoringMode?: 'groups' | 'aggregate' }>()
+const aggregate = computed(() => props.scoringMode === 'aggregate')
 const { data: catalog, error: catalogError } = useJudgeCatalog()
 const available = computed(() => catalogError.value || catalog.value?.maintenance ? [] : catalog.value?.items ?? [])
 let previousCode: ProblemDraft['checker'] = null
@@ -82,11 +84,12 @@ const error = computed(() => code.value && (!code.value.source.trim() || new Tex
           </template>
           <div v-else-if="protocol === 'legacy'"><dt>標準入力</dt><dd>提出の出力</dd></div>
           <div v-if="protocol === 'testlib'"><dt>初期化</dt><dd><code>testlib.h</code> を include し、<code>{{ interactor ? 'registerInteraction' : 'registerTestlibCmd' }}(argc, argv)</code> を呼びます。<NuxtLink to="/docs/checkers#testlib" target="_blank" rel="noopener noreferrer">コード例 ↗</NuxtLink></dd></div>
-          <div v-if="protocol === 'legacy'"><dt>引数</dt><dd>入力・期待出力・提出ソース・スコアのファイルパス（この順）。期待出力は空でもよく、スコアは採点に使いません。</dd></div>
+          <div v-if="protocol === 'legacy'"><dt>引数</dt><dd>入力・期待出力・提出ソース・スコアのファイルパス（この順）。期待出力は空でもかまいません。</dd></div>
+          <div v-if="protocol === 'legacy'"><dt>スコア</dt><dd v-if="aggregate">ACかWAのケースで、書いた整数（0〜10<sup>18</sup>）をケースの点として集計コードに渡します。空なら点なしで、それ以外の内容はJEです。</dd><dd v-else>集計コード方式の問題でだけ、ケースの点として読みます。</dd></div>
           <div v-else-if="interactor"><dt>引数</dt><dd>入力・tout の書き込み先・正解のファイルパス（この順）。tout は通信に使わず、あとから判定もしません。</dd></div>
           <div v-else><dt>引数</dt><dd>入力・提出出力（ouf）・正解（ans）のファイルパス（この順）</dd></div>
           <div v-if="protocol === 'legacy'"><dt>結果</dt><dd>終了コード0で正解、それ以外（assert の失敗を含む）で不正解</dd></div>
-          <div v-else><dt>結果</dt><dd><code>quitf(_ok, …)</code> で正解、<code>_wa</code>・<code>_pe</code> で不正解、<code>_fail</code> でJE。部分点はありません。</dd></div>
+          <div v-else><dt>結果</dt><dd><code>quitf(_ok, …)</code> で正解、<code>_wa</code>・<code>_pe</code> で不正解、<code>_fail</code> でJE。<template v-if="aggregate"><code>quitp</code> に整数（0〜1,000,000）を渡すと、正解とし、その値をケースの点にします。小数の <code>quitp</code> と <code>_pc</code> はJEです。</template><template v-else><code>quitp</code> は集計コード方式の問題でだけ使えます。</template></dd></div>
           <div><dt>制限</dt><dd>各ケースCPU 5秒・{{ interactor ? 256 : 512 }} MiB。超えるとJEになります。</dd></div>
         </dl>
       </details>

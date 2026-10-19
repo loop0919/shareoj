@@ -16,11 +16,25 @@ export const generatorsSchema = z.object({ input: generatorSchema, output: gener
 export type Generators = z.infer<typeof generatorsSchema>
 export const emptyGenerators = (): Generators => ({ input: { runtime: 'cpp23-gcc', source: '' }, output: { runtime: 'cpp23-gcc', source: '' }, validation: { runtime: 'cpp23-gcc', source: '' } })
 
+// Partial scoring (ADR 0025): groups of cases with points, scored by "groups" (all AC) or by the aggregator's code.
+// Cases name their groups, so a group's name is how membership refers to it.
+export const maxScoringGroups = 100
+export const maxFullScore = 1_000_000
+export const scoringGroupSchema = z.object({ name: z.string(), points: z.number().int() })
+export type ScoringGroup = z.infer<typeof scoringGroupSchema>
+export const scoringSchema = z.object({
+  mode: z.enum(['groups', 'aggregate']),
+  groups: z.array(scoringGroupSchema).nullish().transform(groups => groups ?? []),
+  aggregator: generatorSchema.nullish().transform(code => code ?? undefined),
+})
+export type Scoring = z.infer<typeof scoringSchema>
+
 export const problemDraftSchema = z.object({
   difficulty: difficultySchema,
   checker: judgeCodeSchema.nullable().default(null),
   interactor: judgeCodeSchema.nullable().default(null),
   generators: generatorsSchema.default(emptyGenerators),
+  scoring: scoringSchema.nullable().default(null),
   title: z.string().max(120),
   markdown: z.string().max(100_000),
   editorial: z.string().max(100_000).default(''),
@@ -30,6 +44,7 @@ export const problemDraftSchema = z.object({
   testCases: z.array(z.object({
     name: z.string().optional(), isSample: z.boolean().optional(), input: z.string().default(''), output: z.string().default(''),
     inputFile: testFileSchema.optional(), outputFile: testFileSchema.optional(),
+    groups: z.array(z.string()).nullish().transform(groups => groups ?? []),
   })).default([]),
 })
 export type ProblemDraft = z.infer<typeof problemDraftSchema>

@@ -1,4 +1,4 @@
-import { testFileLimit, testSetLimit, type TestFile, type ProblemDraft } from '~~/shared/types/problem-draft'
+import { maxFullScore, maxScoringGroups, testFileLimit, testSetLimit, type TestFile, type ProblemDraft, type Scoring } from '~~/shared/types/problem-draft'
 
 export type TestCase = {
   isSample?: boolean
@@ -7,6 +7,8 @@ export type TestCase = {
   output: string
   inputFile?: TestFile
   outputFile?: TestFile
+  // Names of the scoring groups the case belongs to (ADR 0025).
+  groups?: string[]
   _inputDirty?: boolean
   _outputDirty?: boolean
 }
@@ -38,6 +40,8 @@ export function persistedDraft<T extends { testCases: TestCase[] }>(draft: T) {
     ...draft,
     testCases: draft.testCases.map((item) => {
       const result: Record<string, unknown> = { name: item.name, isSample: item.isSample ?? false }
+      // Only partially scored problems list groups, so other drafts keep the shape older servers accept.
+      if (item.groups?.length) result.groups = [...item.groups]
       for (const key of ['input', 'output'] as const) {
         const file = item[`${key}File`]
         if (file && !item[`_${key}Dirty`]) {
@@ -52,7 +56,39 @@ export function persistedDraft<T extends { testCases: TestCase[] }>(draft: T) {
   }
 }
 
-export function draftErrors(draft: ProblemDraft) {
+// The full score of a partially scored problem: the sum of its groups' points (ADR 0025).
+export const fullScore = (scoring: Pick<Scoring, 'groups'>) => scoring.groups.reduce((total, group) => total + group.points, 0)
+
+// Why a group name cannot be used, mirroring the server: cases refer to groups by name, so it is never blank and stays
+// unique once trimmed.
+export function groupNameError(name: string, others: string[]) {
+  if (!name.trim() || [...name].length > 64 || /[\u0000-\u001f\u007f-\u009f]/.test(name)) return 'グループ名は64文字以内で、空白だけにせず、改行や制御文字を含めずに入力してください。'
+  if (others.some(other => other.trim() === name.trim())) return `グループ名「${name.trim()}」が重複しています。`
+  return ''
+}
+
+// The structure the server checks at every save (ADR 0025); what is only missing shows in the readiness instead.
+export function scoringError(draft: Pick<ProblemDraft, 'scoring'> & { testCases: TestCase[] }) {
+  const scoring = draft.scoring
+  if (!scoring) return draft.testCases.some(item => item.groups?.length) ? '一括採点の問題では、テストケースをグループに入れられません。' : ''
+  if (scoring.groups.length > maxScoringGroups) return `グループは${maxScoringGroups}個まで作れます。`
+  for (const [index, group] of scoring.groups.entries()) {
+    const error = groupNameError(group.name, scoring.groups.slice(0, index).map(other => other.name))
+    if (error) return error
+    if (!Number.isInteger(group.points) || group.points < 0 || group.points > maxFullScore) return `「${group.name.trim()}」の配点を0〜1,000,000点の整数にしてください。`
+  }
+  const total = fullScore(scoring)
+  if (scoring.groups.length && (total < 1 || total > maxFullScore)) return '満点（配点の合計）を1〜1,000,000点にしてください。'
+  const names = new Set(scoring.groups.map(group => group.name))
+  for (const [index, item] of draft.testCases.entries()) {
+    if (item.groups?.some((name, at) => !names.has(name) || item.groups!.indexOf(name) !== at)) return `ケース${index + 1}が、存在しないグループに属しています。`
+  }
+  const code = scoring.aggregator
+  if (code && (scoring.mode !== 'aggregate' || new TextEncoder().encode(code.source).length > 65536 || code.source.includes('\0'))) return '集計コードを65,536バイト以内で、NUL文字を含めずに入力してください。'
+  return ''
+}
+
+export function draftErrors(draft: Pick<ProblemDraft, 'timeLimitMs' | 'memoryLimitMb' | 'checker' | 'interactor' | 'title' | 'markdown'>) {
   const time = Number(draft.timeLimitMs)
   const memory = Number(draft.memoryLimitMb)
   const code = draft.interactor ?? draft.checker

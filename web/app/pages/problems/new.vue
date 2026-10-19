@@ -46,12 +46,22 @@ async function copyTesterLink() {
   } catch { testerLinkMessage.value = 'リンクを選択してコピーしてください。' }
 }
 onBeforeUnmount(() => clearTimeout(copiedTimer))
-const section = ref<'statement' | 'editorial' | 'tests' | 'generators' | 'management'>('statement')
+const section = ref<'statement' | 'editorial' | 'tests' | 'generators' | 'scoring' | 'management'>('statement')
 const judging = ref(false)
 function jump(target: EditorSection) {
   judging.value = target === 'checker'
   section.value = target === 'checker' ? 'generators' : target
 }
+// The readiness names what to fix where the server only gives a reason: the cases and groups left out (ADR 0025).
+const readinessDetails = computed(() => {
+  const groups = draft.scoring?.groups ?? []
+  const ungrouped = draft.testCases.flatMap((item, index) => !item.isSample && !item.groups?.length ? [item.name?.trim() || `ケース${index + 1}`] : [])
+  const empty = groups.filter(group => !draft.testCases.some(item => item.groups?.includes(group.name))).map(group => group.name)
+  return {
+    ...ungrouped.length ? { test_case_ungrouped: ungrouped.join('、') } : {},
+    ...empty.length ? { scoring_group_empty: empty.join('、') } : {},
+  }
+})
 const activeMarkdown = computed({
   get: () => section.value === 'editorial' ? draft.editorial : draft.markdown,
   set: value => { if (section.value === 'editorial') draft.editorial = value; else draft.markdown = value },
@@ -149,6 +159,7 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
 
           <button type="button" class="editor-button editor-sidebar-item" :disabled="!ready || publishing" :aria-current="section === 'tests' ? 'page' : undefined" aria-label="テストケース" title="テストケース" @click="section = 'tests'"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 6 2 2 3-4m-5 9 2 2 3-4m-5 9 2 2 3-4M12 6h9M12 13h9M12 20h9" /></svg><span class="editor-sidebar-label">テストケース</span></button>
           <button type="button" class="editor-button editor-sidebar-item" :disabled="!ready || publishing" :aria-current="section === 'generators' ? 'page' : undefined" aria-label="生成・検証・判定" title="生成・検証・判定" @click="section = 'generators'"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7-5 5 5 5m10-10 5 5-5 5M14 4l-4 16" /></svg><span class="editor-sidebar-label">生成・検証・判定</span></button>
+          <button type="button" class="editor-button editor-sidebar-item" :disabled="!ready || publishing" :aria-current="section === 'scoring' ? 'page' : undefined" aria-label="採点" title="採点" @click="section = 'scoring'"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16M7 16v-5M12 16V7M17 16v-8" /></svg><span class="editor-sidebar-label">採点</span></button>
           <button type="button" class="editor-button editor-sidebar-item" :disabled="!ready || publishing" :aria-current="section === 'editorial' ? 'page' : undefined" aria-label="解説" title="解説" @click="section = 'editorial'"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5c-3-2-6-2-10-1v15c4-1 7-1 10 1 3-2 6-2 10-1V4c-4-1-7-1-10 1Zm0 0v15" /></svg><span class="editor-sidebar-label">解説</span></button>
           <button type="button" class="editor-button editor-sidebar-item" :disabled="!ready || publishing" :aria-current="managing ? 'page' : undefined" aria-label="問題管理" title="問題管理" @click="openManagement"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3 .6-2h4.8l.6 2 2 1.2 2.1-.5 2.4 4.2-1.5 1.5v2.3l1.5 1.5-2.4 4.2-2.1-.5-2 1.2-.6 2H9l-.6-2-2-1.2-2.1.5-2.4-4.2 1.5-1.5V9.4L1.9 7.9l2.4-4.2 2.1.5Z" transform="translate(0 1)" /><circle cx="12" cy="12" r="3" /></svg><span class="editor-sidebar-label">問題管理</span></button>
         </nav>
@@ -211,14 +222,15 @@ const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
       </section>
     </div>
     </div>
-    <TestCaseEditor v-if="section === 'tests'" v-model="draft.testCases" v-model:markdown="draft.markdown" :disabled="!ready || publishing || generating" :problem-id="cloudId" />
+    <TestCaseEditor v-if="section === 'tests'" v-model="draft.testCases" v-model:markdown="draft.markdown" :scoring="draft.scoring" :disabled="!ready || publishing || generating" :problem-id="cloudId" @show-scoring="section = 'scoring'" />
     <TestCaseGenerator v-if="ready" v-show="section === 'generators'" v-model="draft.testCases" v-model:config="draft.generators" v-model:busy="generating" v-model:judging="judging" :save="saveDraft" :disabled="publishing" :problem-id="cloudId" @show-cases="section = 'tests'">
-      <template #checker><ProblemChecker v-model="draft.checker" v-model:interactor="draft.interactor" :disabled="publishing" :problem-id="cloudId" :save="saveDraft" :published="!!publishedVersion" /></template>
+      <template #checker><ProblemChecker v-model="draft.checker" v-model:interactor="draft.interactor" :scoring-mode="draft.scoring?.mode" :disabled="publishing" :problem-id="cloudId" :save="saveDraft" :published="!!publishedVersion" /></template>
     </TestCaseGenerator>
+    <ScoringEditor v-if="section === 'scoring'" v-model:scoring="draft.scoring" v-model:cases="draft.testCases" :disabled="!ready || publishing || generating" :contest="!!contestId" @show-cases="section = 'tests'" />
     <section v-if="managing" class="problem-management" aria-labelledby="management-title">
       <div class="management-content">
         <header><h1 id="management-title">問題管理</h1><p class="manage-problem-title">{{ draft.title.trim() || '無題の問題' }}</p><p class="muted">{{ saveLocation }}</p></header>
-        <section class="management-row readiness-row" aria-labelledby="readiness-title"><div><h2 id="readiness-title">状態</h2><ProblemReadiness :problem="statusInput" :saved="!!cloudId" @jump="jump" /></div></section>
+        <section class="management-row readiness-row" aria-labelledby="readiness-title"><div><h2 id="readiness-title">状態</h2><ProblemReadiness :problem="statusInput" :saved="!!cloudId" :details="readinessDetails" @jump="jump" /></div></section>
         <section class="management-row"><div><h2>公開設定</h2><p v-if="publishedVersion">「保存」を押すと、問題文・解説・採点設定が公開内容に反映されます。</p><p v-else-if="scheduledAt">{{ new Date(scheduledAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) }}（日本時間）に公開予約中です。<template v-if="!testing">編集を公開内容に反映するには、保存後に予約を更新してください。<NuxtLink :to="{ path: '/problems/post', query: { problem: cloudId } }">予約を変更・取り消す</NuxtLink></template></p><p v-else-if="testing">公開と公開予約は、作者だけができます。</p><p v-else>画面上部の「公開・応募」から、公開するか定期便に応募できます。</p><p v-if="publicationError" class="editor-error" role="alert">{{ publicationError }}</p><NuxtLink v-if="publishedVersion" :to="`/problems/${shortId(cloudId)}`" target="_blank">公開ページを見る</NuxtLink></div><div v-if="publishedVersion" class="publication-actions"><button class="editor-button" :disabled="saving || publishing || generating" @click="unpublishProblem()">非公開に戻す</button></div></section>
         <section class="management-row"><div class="tester-link-row"><h2>テスターリンク</h2><p>リンクから参加したユーザーは、編集・削除・リジャッジと、自分が作成者のコンテストへの登録ができます。公開と定期便への応募は作者だけができます。</p><p v-if="throughContest">コンテストの作成者として編集している問題では、テスターリンクを発行できません。</p><template v-if="testerLink"><label for="tester-link">招待リンク</label><div class="tester-link-field"><input id="tester-link" :value="testerLink" readonly @focus="($event.target as HTMLInputElement).select()"><button type="button" class="editor-button tester-link-copy" :aria-label="testerLinkCopied ? 'コピーしました' : 'リンクをコピー'" :title="testerLinkCopied ? 'コピーしました' : 'リンクをコピー'" @click="copyTesterLink"><svg v-if="testerLinkCopied" class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 5 5L19 8" /></svg><svg v-else class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V4H4v12h4" /></svg></button></div></template><p v-if="testerLinkMessage" role="status">{{ testerLinkMessage }}</p></div><button type="button" class="editor-button" :disabled="!ready || saving || publishing || generating || testerLinkBusy || throughContest" @click="createTesterLink">{{ testerLinkBusy ? '発行中…' : 'リンクを発行' }}</button></section>
         <section v-if="contestEditors" class="management-row" aria-labelledby="contest-editors-title"><div><h2 id="contest-editors-title">コンテストの作成者</h2><p>コンテスト「<NuxtLink :to="`/contests/${shortId(contestEditors.contestId)}`">{{ contestEditors.title.trim() || '無題のコンテスト' }}</NuxtLink>」の作成者（<template v-for="(setter, index) in contestEditors.setters" :key="setter"><span v-if="index">、</span><UserLink :handle="setter" /></template>）は、コンテストの結果が確定するまで、テスターと同じようにこの問題を編集・リジャッジできます。招待したテスターとは別で、テスターリンクは発行できません。</p></div></section>

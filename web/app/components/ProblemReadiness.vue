@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { contentIssues, destinationNames, issueMessage, issueSection, problemStatus, type EditorSection, type ProblemStatusInput } from '~/utils/problem-readiness'
-const props = defineProps<{ problem: ProblemStatusInput, saved: boolean }>()
+// details adds what the editor knows about a reason, such as the names of the cases in no group (ADR 0025).
+const props = defineProps<{ problem: ProblemStatusInput, saved: boolean, details?: Record<string, string> }>()
 const emit = defineEmits<{ jump: [section: EditorSection] }>()
-const sectionNames: Record<EditorSection, string> = { statement: '問題文', tests: 'テストケース', checker: '判定方法', editorial: '解説' }
+const sectionNames: Record<EditorSection, string> = { statement: '問題文', tests: 'テストケース', checker: '判定方法', scoring: '採点', editorial: '解説' }
 const status = computed(() => problemStatus(props.problem))
 // What the author can fix, whatever the problem's state: publishing an update needs it too.
 const issues = computed(() => status.value.kind === 'featured' ? status.value.issues : contentIssues(props.problem.readiness))
@@ -25,7 +26,7 @@ const notes = computed(() => {
       <p v-if="status.kind === 'featured' && issues.length" class="readiness-warning">定期便に応募中ですが、次の項目を直すまで選出されません。</p>
       <ul v-if="issues.length" class="readiness-issues" aria-label="足りない項目">
         <li v-for="code in issues" :key="code">
-          <span>{{ issueMessage(code, status.kind === 'featured' ? 'featured' : undefined) }}</span>
+          <span>{{ issueMessage(code, status.kind === 'featured' ? 'featured' : undefined) }}<template v-if="details?.[code]">：{{ details[code] }}</template></span>
           <button v-if="issueSection(code)" type="button" class="editor-button" @click="emit('jump', issueSection(code)!)">{{ sectionNames[issueSection(code)!] }}を開く</button>
         </li>
       </ul>

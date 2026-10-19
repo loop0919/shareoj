@@ -1,7 +1,7 @@
 import type { Readiness } from '~~/shared/types/account-problems'
 
 export type Destination = keyof Readiness
-export type EditorSection = 'statement' | 'tests' | 'checker' | 'editorial'
+export type EditorSection = 'statement' | 'tests' | 'checker' | 'scoring' | 'editorial'
 export interface ProblemStatusInput { scheduledAt?: string, readiness?: Readiness, publishedVersion: number, contestScheduled: boolean, featuredPreference: string }
 
 export const destinationNames: Record<Destination, string> = { publish: '公開', contest: 'コンテスト', featured: '定期便' }
@@ -15,6 +15,11 @@ const messages: Record<string, string> = {
   interactor_source_missing: '対話用ジャッジのコードが空です',
   interactor_runtime_unavailable: '対話用ジャッジの言語が現在使えません（ジャッジの保守中の可能性があります）',
   test_cases_missing: 'テストケースが1件もありません',
+  scoring_groups_missing: '部分点のグループが1つもありません',
+  scoring_group_empty: 'テストケースが1件も属していないグループがあります',
+  test_case_ungrouped: 'どのグループにも属していないテストケースがあります（サンプルを除く）',
+  aggregator_source_missing: '集計コードが空です',
+  aggregator_runtime_unavailable: '集計コードの言語が現在使えません（ジャッジの保守中の可能性があります）',
   difficulty_missing: '難易度が設定されていません',
   editorial_missing: '解説がありません',
   scheduled: '予約投稿を取り消してから登録してください',
@@ -34,7 +39,8 @@ export const issueMessage = (code: string, destination?: Destination) =>
 
 const sections: Record<string, EditorSection> = {
   title_missing: 'statement', statement_missing: 'statement', difficulty_missing: 'statement',
-  test_cases_missing: 'tests',
+  test_cases_missing: 'tests', scoring_group_empty: 'tests', test_case_ungrouped: 'tests',
+  scoring_groups_missing: 'scoring', aggregator_source_missing: 'scoring', aggregator_runtime_unavailable: 'scoring',
   checker_source_missing: 'checker', checker_runtime_unavailable: 'checker', interactor_source_missing: 'checker', interactor_runtime_unavailable: 'checker',
   editorial_missing: 'editorial',
 }
