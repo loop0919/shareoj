@@ -209,6 +209,9 @@ func TestContestFreezePostgres(t *testing.T) {
 	// The contest runs for two hours and ends in ten minutes; the last 30 minutes are frozen.
 	end := time.Now().Add(10 * time.Minute).Truncate(time.Millisecond)
 	exec(`UPDATE contests SET starts_at=$2,ends_at=$3 WHERE id=$1`, cid, end.Add(-2*time.Hour), end)
+	// Real contests are created before they start. Keeping that order catches a condition that reads the contest's
+	// created_at in place of the submission's.
+	exec(`UPDATE contests SET created_at=$2 WHERE id=$1`, cid, end.Add(-3*time.Hour))
 	exec(`UPDATE problem_testers SET created_at=$1`, end.Add(-3*time.Hour))
 	const (
 		bobWrong   = "a0000000-0000-4000-8000-000000000001"
@@ -326,6 +329,17 @@ func TestContestFreezePostgres(t *testing.T) {
 	}
 	if got := ids("/my/contests/"+cid+"/submissions", "tess"); !slices.Equal(got, all) {
 		t.Fatalf("staff list: %v", got)
+	}
+	// Problem pages follow the same rules, in the contest and out of it.
+	staffProblem := sorted(bobWrong, bobAC, bobLate, carolAC, carolQueue, samEnd)
+	if got := ids("/my/contests/"+cid+"/problems/"+p1+"/submissions", "tess"); !slices.Equal(got, staffProblem) {
+		t.Fatalf("staff contest problem list: %v", got)
+	}
+	if got := ids("/my/contests/"+cid+"/problems/"+p1+"/submissions", "carol"); !slices.Equal(got, sorted(bobWrong, bobAC, samEnd, carolAC, carolQueue)) {
+		t.Fatalf("submitter contest problem list: %v", got)
+	}
+	if got := ids("/my/problems/"+p1+"/submissions", "tess"); !slices.Equal(got, staffProblem) {
+		t.Fatalf("staff problem list: %v", got)
 	}
 	for _, path := range []string{"/contests/" + cid + "/submissions/" + carolAC, "/submissions/" + carolAC, "/problems/" + p1 + "/submissions/" + carolAC} {
 		request("GET", path, "", nil, 404)

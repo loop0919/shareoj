@@ -16,8 +16,8 @@ const (
 )
 
 // Staff can review ordinary draft submissions from the contest problem page.
-// Public views still hide draft runs and ongoing contests, and frozen contest submissions of others until the results are final.
-// Members of a team see their team's contest submissions throughout, frozen ones included (ADR 0024).
+// Public views still hide draft runs, and contest submissions follow contestSubmissionVisible in their own contest
+// (c.id), since $2 may be empty.
 // The author and testers also review a featured problem's submissions before they unlock.
 // Roles in the requested contest are subqueries so that they are checked once, not for every row.
 // $4 is the Scope, and $6 keeps only the contest submissions of participants who are onsite now.
@@ -32,10 +32,7 @@ var problemSubmissionVisible = `problem_id=$1 AND ($2='' OR contest_id=NULLIF($2
   (contest_id IS NULL AND EXISTS(SELECT 1 FROM problem_drafts p WHERE p.id=problem_id
    AND (can_manage_problem(p.id,$3) OR (SELECT contest_staff(NULLIF($2,'')::uuid,$3))
     OR (p.published_draft IS NOT NULL AND NOT COALESCE((submissions.job->>'privateDraft')::boolean,true)))))
-  OR EXISTS(SELECT 1 FROM contests c WHERE c.id=contest_id
-   AND (contest_submission_public(c,submissions.created_at) OR contest_staff(c.id,$3)
-    OR (submissions.owner_id=$3 AND submissions.created_at>=c.starts_at AND c.ends_at<=statement_timestamp())
-    OR (submissions.created_at>=c.starts_at AND submissions.owner_id=ANY(contest_teammates(c.id,$3)))))
+  OR EXISTS(SELECT 1 FROM contests c WHERE c.id=contest_id AND ` + contestSubmissionVisible("c.id") + `)
  )))
  AND (NOT $6 OR (contest_id=NULLIF($2,'')::uuid AND submissions.owner_id IN (` + onsiteParticipants("NULLIF($2,'')::uuid") + `)))
  AND (owner_id=$3 OR can_manage_problem(problem_id,$3) OR COALESCE(featured_reveal_at(problem_id),'-infinity')<=statement_timestamp())`
