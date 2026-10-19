@@ -59,6 +59,8 @@ const tested = reactive(new Set<string>())
 // Problems another current setter authors or tests. Problem routes show a setter only their own, so the draft names
 // these with their contest readiness (ADR 0022).
 const shared = reactive(new Map<string, DraftProblem>())
+// Partially scored problems of a published contest with their points, which are their full scores (ADR 0025).
+const contestPartial = reactive(new Map<string, number>())
 // Authors of the problems a published contest brings to this setter (viaContest), so they are tagged as in the draft.
 const contestAuthorOf = reactive(new Map<string, string>())
 // Published problems that no current setter authors or tests; saving fails until they are removed.
@@ -85,15 +87,25 @@ type Section = 'description' | 'problems' | 'schedule' | 'participation' | 'mana
 const section = ref<Section>(route.query.section === 'manage' ? 'manage' : 'description')
 const sidebarExpanded = ref(false)
 const form = ref<HTMLFormElement>()
-const totalPoints = computed(() => selected.value.reduce((total, p) => total + (Number(p.points) || 0), 0))
+const totalPoints = computed(() => selected.value.reduce((total, p) => total + (fullScoreOf(p.id) ?? (Number(p.points) || 0)), 0))
 const query = ref('')
 const onlyAddable = ref(true)
 const summaries = computed(() => new Map(available.value.map(p => [p.id, p])))
+// A partially scored problem is worth its full score, so its points are shown, not entered (ADR 0025). The author's list
+// knows the setter's own and tested problems, the saved draft other setters' ones, and a published contest its own.
+function fullScoreOf(problemId: string): number | undefined {
+  const summary = summaries.value.get(problemId)
+  if (summary) return summary.partial ? summary.fullScore : undefined
+  const other = shared.get(problemId)
+  if (other) return other.partial ? other.fullScore ?? 0 : undefined
+  return contestPartial.get(problemId)
+}
 const isSelected = (problemId: string) => selected.value.some(item => item.id === problemId)
 const addable = (problemId: string) => !isSelected(problemId) && !issues(problemId).length
 const matches = computed(() => searchProblems(available.value, query.value))
 const candidates = computed(() => onlyAddable.value ? matches.value.filter(p => addable(p.id)) : matches.value)
 const problemName = (title?: string) => title || '無題の問題'
+const partialNote = '部分点の問題は、問題の満点が配点になります。満点は作問画面の「採点」で変えられます。'
 const maxDurationMinutes = 100_000_000
 const endsAt = computed(() => {
   const start = new Date(startsAt.value), minutes = Number(durationMinutes.value)
@@ -207,6 +219,8 @@ async function open(contestId: string) {
   // Saving with the division on sends the passphrase back, so an editable contest reads it first.
   const venue = c.canEdit && c.onsiteDivision ? await $fetch<Venue>(`/api/my/contests/${contestId}/onsite`) : null
   applyParticipation(c.teamMode, c.maxTeamSize, c.onsiteDivision, venue?.passphrase)
+  contestPartial.clear()
+  for (const p of c.problems) if (p.partial) contestPartial.set(p.id, p.points)
   selected.value = c.problems.map(p => ({ id: p.id, title: p.title, points: p.points }))
   if (!c.canEdit) { locked.value = true; settersOnly.value = true; resultsFinal.value = c.resultsFinal ?? c.status === 'ended'; section.value = 'manage' }
 }
@@ -255,7 +269,7 @@ function problemOwner(problemId: string) {
   return summaries.value.has(problemId) ? '' : shared.get(problemId)?.author ?? ''
 }
 function add(p: AccountSummary) {
-  if (addable(p.id)) selected.value.push({ id: p.id, title: p.title, points: 100 })
+  if (addable(p.id)) selected.value.push({ id: p.id, title: p.title, points: p.partial ? p.fullScore : 100 })
 }
 // Enter adds the best match, so a pasted UUID needs no pointer; it must not submit the form.
 function addFirstCandidate() {
@@ -350,7 +364,7 @@ function draftBody(): ContestDraft {
     durationMinutes: integer(durationMinutes.value), penaltyMinutes: integer(penaltyMinutes.value), freezeMinutes: freezeOn.value ? integer(freezeMinutes.value) ?? 0 : null,
     // As with the freeze, a switch left on without a whole number keeps the setting and lists the issue.
     ...participationBody(teamSizeOn.value ? integer(maxTeamSize.value) ?? 0 : null),
-    problems: selected.value.map(p => ({ id: p.id, points: integer(p.points) })),
+    problems: selected.value.map(p => ({ id: p.id, points: fullScoreOf(p.id) ?? integer(p.points) })),
   }
 }
 // Every save sends all four, since the API keeps the stored value of a field left out.
@@ -497,7 +511,7 @@ async function save() {
   }
   busy.value = true; message.value = ''
   try {
-    await $fetch(`/api/my/contests/${id.value}`, { method: 'PUT', body: { title: title.value, description: description.value, startsAt: start.toISOString(), endsAt: end.toISOString(), penaltyMinutes: penaltyMinutes.value, freezeMinutes: freezeOn.value ? freezeMinutes.value : null, ...participationBody(teamSizeOn.value ? Number(maxTeamSize.value) : null), version: version.value, problems: selected.value.map(({ id, points }) => ({ id, points })) } })
+    await $fetch(`/api/my/contests/${id.value}`, { method: 'PUT', body: { title: title.value, description: description.value, startsAt: start.toISOString(), endsAt: end.toISOString(), penaltyMinutes: penaltyMinutes.value, freezeMinutes: freezeOn.value ? freezeMinutes.value : null, ...participationBody(teamSizeOn.value ? Number(maxTeamSize.value) : null), version: version.value, problems: selected.value.map(({ id, points }) => ({ id, points: fullScoreOf(id) ?? points })) } })
     leaving = true
     await navigateTo(`/contests/${shortId(id.value)}`)
   } catch (error) {
@@ -573,7 +587,7 @@ async function save() {
     </div>
         <section v-show="section === 'problems'" class="problem-management" data-section="problems" aria-labelledby="contest-problems-title">
           <div class="management-content">
-            <header><h2 id="contest-problems-title">問題・配点</h2><p class="muted">自分の未公開問題から選び、出題順と配点を設定します。<template v-if="setterList.length > 1">ほかの作成者の問題は、その作成者が追加します。</template></p></header>
+            <header><h2 id="contest-problems-title">問題・配点</h2><p class="muted">自分の未公開問題から選び、出題順と配点を設定します。<template v-if="setterList.length > 1">ほかの作成者の問題は、その作成者が追加します。</template><template v-if="selected.some(p => fullScoreOf(p.id) !== undefined)">{{ partialNote }}</template></p></header>
             <fieldset :disabled="!ready || locked || busy" class="problem-sections">
               <section aria-labelledby="selected-problems-title"><h3 id="selected-problems-title">出題順・配点 <span class="muted">{{ selected.length }} 問 · 合計 {{ totalPoints }} 点</span></h3>
                 <p v-if="!selected.length" class="muted">下の「問題を追加」から出題する問題を選んでください。</p>
@@ -584,7 +598,8 @@ async function save() {
                     <span class="problem-label">{{ problemLabel(slot(index)) }}</span>
                     <div class="problem-entry"><span><strong>{{ problemName(p.title) }}</strong><span v-if="problemOwner(p.id)" class="problem-role">作者 {{ problemOwner(p.id) }}</span></span><code class="problem-uuid">{{ p.id }}</code><p v-if="problemIssue(p.id)" class="problem-issue">{{ problemIssue(p.id) }}</p></div>
                     <div class="selected-controls">
-                      <label class="points-field" :for="`points-${p.id}`">配点 <input :id="`points-${p.id}`" v-model.number="p.points" type="number" min="1" max="1000000" step="1" required> 点</label>
+                      <span v-if="fullScoreOf(p.id) !== undefined" class="points-field points-fixed" :title="partialNote">配点 <span class="points-value">{{ fullScoreOf(p.id) || '—' }}</span> 点<span class="points-note">（満点）</span></span>
+                      <label v-else class="points-field" :for="`points-${p.id}`">配点 <input :id="`points-${p.id}`" v-model.number="p.points" type="number" min="1" max="1000000" step="1" required> 点</label>
                       <button class="editor-button remove-button" type="button" :aria-label="`${problemName(p.title)}を外す`" title="外す" @click="remove(index)"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></button>
                     </div>
                   </li>
@@ -723,6 +738,9 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .problem-issue { margin: 4px 0 0; color: var(--color-error); }
 .selected-controls { grid-area: controls; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
 .points-field { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.points-fixed { gap: 4px; }
+.points-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+.points-note { color: var(--color-muted); font-size: .75rem; }
 .remove-button { width: 36px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; }
 .candidates button { flex-shrink: 0; min-width: 5.5em; }
 .problem-search { margin-bottom: 8px; }
