@@ -221,6 +221,96 @@ func TestPushLifecycle(t *testing.T) {
 	}
 }
 
+func TestPushMergeRules(t *testing.T) {
+	dir := example(t)
+	t.Setenv("SHAREOJ_CONFIG_DIR", t.TempDir())
+	t.Setenv("SHAREOJ_ACCESS_TOKEN", "author")
+	ctx := context.Background()
+	var remote problem
+	puts := 0
+	server := fakeDrafts(t, &remote, &puts)
+	client, err := newClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.http = server.Client()
+	mustPush := func() {
+		t.Helper()
+		if _, err := push(ctx, dir, client, -1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	generatorsOf := func() map[string]program {
+		t.Helper()
+		var generators map[string]program
+		if err := json.Unmarshal(remote.Draft["generators"], &generators); err != nil {
+			t.Fatal(err)
+		}
+		return generators
+	}
+	mustPush()
+	before := generatorsOf()
+	// Generators are replaced per role, so omitted roles keep the remote programs.
+	inputOnly := strings.Replace(template, "[generators.output]\nsource = \"output.cpp\"\nruntime = \"cpp23-gcc\"\n\n", "", 1)
+	inputOnly = strings.Replace(inputOnly, "[generators.validation]\nsource = \"validate.cpp\"\nruntime = \"cpp23-gcc\"\n\n", "", 1)
+	if strings.Contains(inputOnly, "[generators.output]") || strings.Contains(inputOnly, "[generators.validation]") {
+		t.Fatal("template no longer matches the generator blocks this test removes")
+	}
+	write(t, filepath.Join(dir, "problem.toml"), inputOnly)
+	write(t, filepath.Join(dir, "input.cpp"), "// new input\n")
+	mustPush()
+	before["input"] = program{Runtime: "cpp23-gcc", Source: "// new input\n"}
+	if !reflect.DeepEqual(generatorsOf(), before) {
+		t.Fatalf("per-role generators: %s", remote.Draft["generators"])
+	}
+	// A null remote value counts as no generators, so only the local roles remain.
+	remote.Draft["generators"] = json.RawMessage("null")
+	mustPush()
+	if !reflect.DeepEqual(generatorsOf(), map[string]program{"input": before["input"]}) {
+		t.Fatalf("null generators: %s", remote.Draft["generators"])
+	}
+	// A checker replaces a remote interactor, since a draft has one kind of judge.
+	remote.Draft.set("interactor", program{Runtime: "python3", Source: "print(1)\n", Protocol: "legacy"})
+	write(t, filepath.Join(dir, "checker.cpp"), "// checker\n")
+	write(t, filepath.Join(dir, "problem.toml"), template+"\n[checker]\nsource = \"checker.cpp\"\nruntime = \"cpp23-gcc\"\nprotocol = \"testlib\"\n")
+	mustPush()
+	if _, ok := remote.Draft["interactor"]; ok || string(remote.Draft["checker"]) != `{"runtime":"cpp23-gcc","source":"// checker\n","protocol":"testlib"}` {
+		t.Fatalf("checker: %s interactor: %s", remote.Draft["checker"], remote.Draft["interactor"])
+	}
+	// An interactor replaces a remote checker in the same way.
+	interactor := `{"runtime":"python3","source":"print(2)\n","protocol":"legacy"}`
+	write(t, filepath.Join(dir, "interactor.py"), "print(2)\n")
+	write(t, filepath.Join(dir, "problem.toml"), template+"\n[interactor]\nsource = \"interactor.py\"\nruntime = \"python3\"\nprotocol = \"legacy\"\n")
+	mustPush()
+	if _, ok := remote.Draft["checker"]; ok || string(remote.Draft["interactor"]) != interactor {
+		t.Fatalf("interactor: %s checker: %s", remote.Draft["interactor"], remote.Draft["checker"])
+	}
+	// Fields that problem.toml omits, including ones it cannot express, keep their remote values.
+	remote.Draft.set("difficulty", 3)
+	remote.Draft.set("tags", []string{"graph"})
+	write(t, filepath.Join(dir, "problem.toml"), template)
+	mustPush()
+	if string(remote.Draft["difficulty"]) != "3" || string(remote.Draft["tags"]) != `["graph"]` || string(remote.Draft["interactor"]) != interactor {
+		t.Fatalf("omitted fields: difficulty %s tags %s interactor %s", remote.Draft["difficulty"], remote.Draft["tags"], remote.Draft["interactor"])
+	}
+	// Omitting every generator keeps the remote ones, even a null value.
+	noGenerators := strings.Replace(inputOnly, "[generators.input]\nsource = \"input.cpp\"\nruntime = \"cpp23-gcc\"\n\n", "", 1)
+	if strings.Contains(noGenerators, "[generators.") {
+		t.Fatal("template no longer matches the generator blocks this test removes")
+	}
+	write(t, filepath.Join(dir, "problem.toml"), noGenerators)
+	previous := string(remote.Draft["generators"])
+	mustPush()
+	if string(remote.Draft["generators"]) != previous {
+		t.Fatalf("omitted generators: %s, want %s", remote.Draft["generators"], previous)
+	}
+	remote.Draft["generators"] = json.RawMessage("null")
+	mustPush()
+	if string(remote.Draft["generators"]) != "null" {
+		t.Fatalf("omitted generators with a null remote value: %s", remote.Draft["generators"])
+	}
+}
+
 func TestProblemValidationAndRime(t *testing.T) {
 	dir := example(t)
 	if err := initProblem(dir); err == nil {

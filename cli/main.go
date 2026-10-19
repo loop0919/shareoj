@@ -101,32 +101,8 @@ func push(ctx context.Context, directory string, c *apiClient, expected int64) (
 		return s, fmt.Errorf("version conflict: local %d, remote %d; review the web draft before using --expect-version %d", version, remote.Version, remote.Version)
 	}
 	d := remote.Draft
-	if err := mergeScoring(local, d); err != nil {
+	if err := mergeDraft(local, d); err != nil {
 		return s, err
-	}
-	if local["generators"] != nil {
-		generators, updates := map[string]program{}, map[string]program{}
-		if d["generators"] != nil && string(d["generators"]) != "null" {
-			if err := decodeJSON(d["generators"], &generators); err != nil {
-				return s, err
-			}
-		}
-		if err := decodeJSON(local["generators"], &updates); err != nil {
-			return s, err
-		}
-		for role, p := range updates {
-			generators[role] = p
-		}
-		local.set("generators", generators)
-	}
-	for key, value := range local {
-		d[key] = value
-	}
-	if local["checker"] != nil {
-		delete(d, "interactor")
-	}
-	if local["interactor"] != nil {
-		delete(d, "checker")
 	}
 	if local["testCases"] != nil {
 		var cases []testCase
@@ -169,6 +145,42 @@ func push(ctx context.Context, directory string, c *apiClient, expected int64) (
 		return s, fmt.Errorf("remote save succeeded at version %d, but local state could not be saved: %w", s.Version, err)
 	}
 	return s, nil
+}
+
+// mergeDraft applies the update rules of cli/README.md to remote: set fields replace remote ones, omitted optional
+// fields keep them, generators are replaced per role, and a checker and an interactor replace each other. The scoring
+// and generator merges read remote values that the copy from local overwrites, so they run first and write their
+// results into local, which is modified too. push calls it before uploading test files, so that a refusal uploads or
+// saves nothing and the uploaded references then replace the inline cases copied from local.
+func mergeDraft(local, remote draft) error {
+	if err := mergeScoring(local, remote); err != nil {
+		return err
+	}
+	if local["generators"] != nil {
+		generators, updates := map[string]program{}, map[string]program{}
+		if remote["generators"] != nil && string(remote["generators"]) != "null" {
+			if err := decodeJSON(remote["generators"], &generators); err != nil {
+				return err
+			}
+		}
+		if err := decodeJSON(local["generators"], &updates); err != nil {
+			return err
+		}
+		for role, p := range updates {
+			generators[role] = p
+		}
+		local.set("generators", generators)
+	}
+	for key, value := range local {
+		remote[key] = value
+	}
+	if local["checker"] != nil {
+		delete(remote, "interactor")
+	}
+	if local["interactor"] != nil {
+		delete(remote, "checker")
+	}
+	return nil
 }
 
 // mergeScoring keeps a remote aggregator that problem.toml omits, like other optional programs. It refuses to replace
