@@ -433,6 +433,39 @@ test('someone registered alone switches to a team on the team page before the st
   await noHorizontalScroll(page)
 })
 
+test('someone registered open switches to a team with the venue passphrase on the team page, which then makes the team onsite', async ({ page }) => {
+  const contest = { ...base, teamMode: true, maxTeamSize: 3, onsiteDivision: true, participating: true, team: null, onsite: false }
+  const state = await routeContest(page, contest)
+  const team = { id: alpha, name: 'Rocket', members: ['ui_test'], onsite: true }
+  const bodies = await routeJoin(page, state, [
+    { status: 409, code: 'team_name_taken' },
+    { status: 400, code: 'incorrect_venue_passphrase' },
+    { ...contest, team, onsite: true },
+  ])
+  await page.route(`**/api/my/contests/${id}/team`, route => route.fulfill({ json: { ...team, code: 'ABCDEFGHJK' } }))
+  await open(page)
+  await openTeam(page, 'チーム参加に切り替える')
+  await expect(page.locator('.participation-form .notice')).toHaveText('個人参加で登録しています。チームを作るかチームに入ると、個人参加の登録はチームのメンバーとしての登録に置き換わります。開始後は切り替えられません。')
+  await page.getByLabel('チーム名', { exact: true }).fill('Rocket')
+  const venue = page.getByLabel('会場の合言葉（オンサイト参加者のみ）', { exact: true })
+  const submit = page.getByRole('button', { name: 'チーム参加に切り替える', exact: true })
+  // Spaces alone are empty, so the switch goes without a passphrase; a refusal keeps every input.
+  await venue.fill('　 ')
+  await submit.click()
+  await expect(page.getByRole('alert')).toHaveText('このチーム名はほかのチームが使っています。別の名前にしてください。')
+  await venue.fill('Venue_2025')
+  await submit.click()
+  await expect(page.getByRole('alert')).toHaveText('会場の合言葉が違います。会場で配られた合言葉を確かめてください。')
+  await expect(venue).toHaveValue('Venue_2025')
+  await expect(page.getByLabel('チーム名', { exact: true })).toHaveValue('Rocket')
+  await venue.fill('Venue_2026')
+  await submit.click()
+  await expect(page.getByRole('region', { name: '所属チーム', exact: true })).toBeVisible()
+  await expect(page.locator('.participation-division')).toHaveText('オンサイト参加')
+  const create = { team: { action: 'create', name: 'Rocket' } }
+  expect(bodies).toEqual([create, { ...create, onsitePassphrase: 'Venue_2025' }, { ...create, onsitePassphrase: 'Venue_2026' }])
+})
+
 test('the team page explains a contest without teams, and after the start offers no switch to someone registered alone', async ({ page }) => {
   await page.clock.install()
   const state = await routeContest(page, { ...base, status: 'running' })
@@ -450,6 +483,25 @@ test('the team page explains a contest without teams, and after the start offers
   await page.getByRole('navigation', { name: 'パンくずリスト' }).getByRole('link', { name: title }).click()
   await expect(page.locator('.participation-state')).toHaveText('参加済み個人参加')
   await expect(page.locator('.contest-participation').getByRole('link')).toHaveCount(0)
+})
+
+test('the team page gives staff, former staff and visitors after the end the contest page\'s reasons instead of the form', async ({ page }) => {
+  await page.clock.install()
+  const state = await routeContest(page, { ...base, teamMode: true, staff: true, setter: true, official: false })
+  await page.goto(`/contests/${shortId(id)}/team`, { waitUntil: 'networkidle' })
+  const area = page.locator('.contest-team-page .contest-participation')
+  const form = page.getByRole('group', { name: '参加のしかた' })
+  const states: [Contest, string][] = [
+    [state.contest, 'スタッフ（作成者・作問者・テスター）は公式参加の対象外です。'],
+    [{ ...base, teamMode: true, excluded: true }, 'このコンテストのスタッフを務めたため、参加できません。'],
+    [{ ...base, teamMode: true, status: 'ended' }, '参加受付は終了しました。'],
+  ]
+  for (const [contest, reason] of states) {
+    state.contest = contest
+    await page.clock.fastForward(15000)
+    await expect(area).toHaveText(reason)
+    await expect(form).toHaveCount(0)
+  }
 })
 
 test('a member of an open team turns the whole team onsite on the team page, beside the team panel', async ({ page }) => {
