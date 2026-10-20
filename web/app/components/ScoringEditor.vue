@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { maxFullScore, maxScoringGroups, type ProblemDraft, type Scoring } from '~~/shared/types/problem-draft'
 import { fullScore, groupNameError, type ScoringMemory, type TestCase } from '~/utils/problem-draft'
+import { preferredRuntime, usableRuntimes } from '~/utils/judge-catalog'
 
 // Partial scoring (ADR 0025): 一括採点 or 部分点採点, the groups with their points, and whether an aggregator scores the
 // groups. Cases join groups in the test case editor; this editor keeps their membership in step when a group is renamed
@@ -10,7 +11,7 @@ const cases = defineModel<TestCase[]>('cases', { required: true })
 const props = defineProps<{ disabled: boolean, contest: boolean, memory: ScoringMemory }>()
 const emit = defineEmits<{ 'show-cases': [] }>()
 const { data: catalog, error: catalogError } = useJudgeCatalog()
-const available = computed(() => catalogError.value || catalog.value?.maintenance ? [] : catalog.value?.items ?? [])
+const available = computed(() => usableRuntimes(catalog.value, catalogError.value))
 const specOpen = useState('code-spec-open', () => false)
 // The method is whether the problem has partial scores at all; within 部分点採点, the switch picks the aggregate mode
 // over the groups mode.
@@ -22,7 +23,7 @@ const methodNotes: Record<Method, string> = {
 }
 // Switching back to 一括採点 clears the groups from the draft, and turning the switch off clears the aggregator. The
 // page keeps them in memory, so switching again restores them even after another section was opened.
-const defaultRuntime = () => available.value.find(item => item.id === 'cpp23-gcc')?.id ?? available.value[0]?.id ?? 'cpp23-gcc'
+const defaultRuntime = () => preferredRuntime(available.value)
 const hasCode = (current: Scoring) => current.mode === 'aggregate' && !!current.aggregator?.source.trim()
 const hasWork = (current: Scoring) => !!current.groups.length || cases.value.some(item => item.groups?.length) || hasCode(current)
 const root = ref<HTMLElement>()

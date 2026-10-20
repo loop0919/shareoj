@@ -2,6 +2,7 @@
 import type { Submission } from '../../shared/types/submission'
 import { testFileSchema, type Generators } from '~~/shared/types/problem-draft'
 import { testCaseError, persistedDraft, type TestCase } from '~/utils/problem-draft'
+import { usableRuntimes } from '~/utils/judge-catalog'
 
 const cases = defineModel<TestCase[]>({ required: true })
 const config = defineModel<Generators>('config', { required: true })
@@ -17,7 +18,7 @@ const failure = ref('')
 const validationResults = ref<{ name: string, verdict: string }[]>([])
 const modeLabel = computed(() => ({ input: '入力生成', output: '出力生成', validation: '入力検証' })[mode.value])
 const { data: catalog, error: catalogError, refresh: refreshCatalog } = useJudgeCatalog()
-const available = computed(() => catalogError.value || catalog.value?.maintenance ? [] : catalog.value?.items ?? [])
+const available = computed(() => usableRuntimes(catalog.value, catalogError.value))
 const program = computed(() => config.value[mode.value])
 const specOpen = useState('code-spec-open', () => false)
 watch([mode, start, count, () => JSON.stringify(program.value), () => JSON.stringify(persistedDraft({ testCases: cases.value }))], () => {

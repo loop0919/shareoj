@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Submission } from '../../shared/types/submission'
 import { shortId } from '~~/shared/utils/short-id'
+import { usableRuntimes } from '~/utils/judge-catalog'
 
 // team is a team contest's member, whose own submissions are listed as the team's (ADR 0024).
 const props = defineProps<{ problemId: string, hasSamples: boolean, contestId?: string, team?: boolean, beforeSubmit?: () => Promise<boolean>, disabled?: boolean }>()
@@ -9,7 +10,7 @@ const sampleHelpId = useId()
 const source = ref('')
 const runtime = ref('cpp23-gcc')
 const { data: catalog, error: catalogError, refresh: refreshCatalog } = await useJudgeCatalog()
-const available = computed(() => catalogError.value || catalog.value?.maintenance ? [] : catalog.value?.items ?? [])
+const available = computed(() => usableRuntimes(catalog.value, catalogError.value))
 const runtimeStorageKey = 'openoj.submission-runtime'
 onMounted(() => {
   try {
