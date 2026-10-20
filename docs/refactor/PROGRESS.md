@@ -70,7 +70,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | C05 | ジャッジの失敗判定と上限検証をそれぞれ1か所にまとめる | `judge/sandbox.py`、`judge/host.py`、`judge/interactive.py` | 低・中・S | 修正・維持 | 計画済み（失敗判定だけをまとめる。上限検証の共通化は採らない） |
 | C06 | コンテスト提出の閲覧条件をSQL断片1つにまとめ、2つの一覧で共有する | `api/internal/submissions/contest.go`、`problem.go` | 中・高・S | 維持・維持 | 完了（`da26be1`） |
 | C07 | 提出とリジャッジで重複する「採点できる下書きか」の条件を1か所で生成する | `api/internal/submissions/store.go`、`rejudge.go` | 中・高・M | 修正・修正 | 計画済み |
-| C08 | 問題とプロフィールのストアを具体型で持ち、実行時の型アサーションをやめる | `api/internal/httpapi/routes.go`ほか | 中・高・M | 修正・修正 | 計画済み（problemsのストアを具体型にし、16か所の型アサーションをやめる。profilesは別タスク） |
+| C08 | 問題とプロフィールのストアを具体型で持ち、実行時の型アサーションをやめる | `api/internal/httpapi/routes.go`ほか | 中・高・M | 修正・修正 | 完了（`57b902c`） |
 | C09 | 「利用できる言語」の判定と既定の言語を1か所にまとめる | `web/app/composables/useJudgeCatalog.ts`ほか | 低・中・S | 修正・維持 | 計画済み |
 | C10 | 自分の問題の詳細と一覧のスキーマを共通化 | `web/shared/types/account-problems.ts` | 低・中・S | 却下・却下 | 却下（変更漏れの根拠が履歴の読み違いで、共通化するとサーバー側の差が隠れる） |
 | C11 | problems.scanが読む列のリストを共有する | `api/internal/problems/store.go`ほか | 低・中・S | 修正・維持 | 未着手 |
@@ -155,6 +155,17 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 - 検証（最終tree）: API `go test -count=1 ./...`（DB連携）、`go vet`、`gofmt -l`、`make package package-judge`、webの`npm run build`、アカウント系Playwright（30件）がすべて成功。
 - 備考: レビューの`code-review`観点は、サブエージェントからスキルを呼んでも結果が返らないことがあり、その場合はレビュー担当が同じ手順で行っている。最後の累積レビューでは、メインセッションから`code-review`を実行する。
 
+### C08 問題とプロフィールのストアを具体型で持つ（`57b902c`）
+
+- 計画: [plans/C08-concrete-store-types.md](plans/C08-concrete-store-types.md)。計画レビューは承認（軽微な指摘3件）。
+- 変更: `handlerDependencies.Store`、`problemHandler.Store`、`submissions.Service.Problems`を`*problems.Store`に、プロフィールの3フィールドを`*profiles.Store`にした。16か所の実行時の型アサーション（それぞれに503の分岐）を、同じ位置の`nil`判定か、呼び出し側で判定済みの箇所では直接の呼び出しにした。使われなくなった`problems.Repository`、`problems.Publications`、`problemReadiness`、`profiles.Repository`を削除した。`git log -S "p.Store.("`ではこの形を写したコミットが14件あり、写し漏れはコンパイルを通る（常に503を返すか、readinessが応答から消える）。
+- 守った点: ルートごとの入力検証と503の順序、エラーコード、release-on-readの省略、readinessの計算。テスト用の偽物が実在する`Files`のアサーションは残した。
+- 特性テスト: `TestProblemRoutesWithoutDatabase`（ストアなしの35ルートのステータスとエラーコード）、`TestGenerationWithoutProblemStore`。変更前のコードで成功し、ストアをインターフェースに戻す変異（typed nil）を検出することを確かめた。
+- simplify: テストのエラー確認を既存の`expect`にし、`releaseBefore`の引数名を`featured`から`problemStore`にした（単独公開の予約も解放するため）。
+- レビュー: 4観点とも必須の指摘なし。
+- 検証（最終tree）: API `go test -count=1 ./...`（DB連携）、`go vet`、`gofmt -l`、`make package package-judge`、webの`npm run build`、アカウント系Playwright（30件）がすべて成功。
+- 軽微（未対応、変更前からの穴）: 認証付きの`release=true`ルート（`/my/problems/{id}/publication`など）で、期日を過ぎた予約と定期便が解放されることを確かめるテストがない。公開ルート側は既存のテストで検出できる。
+
 ## 保留事項
 
 調査で見つけた別件の不具合と、仕様の判断が要る点。直さずに記録だけする。
@@ -188,8 +199,8 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 
 ## 現在の作業と次の手順
 
-- 計画済み（いずれも計画レビュー承認）: C03、C05、C07、C08、C09、C13、C17、C20。次はC08の実装（C02と同じ`problems/store.go`に触れるため、C02のコミット後）。
-- C11はC02と同じ`api/internal/problems/store.go`に触れるため、C02のコミット後に計画する。C08は未計画。
+- 計画済み（いずれも計画レビュー承認）: C03、C05、C07、C09、C13、C17、C20。次はC03の実装と、C11の計画（C08のコミット後）。
+- C11はC02・C08と同じ`api/internal/problems/store.go`に触れるため、その後に計画する。
 - C15〜C20は2観点の反証を行い、C15を保留、C16・C18・C19を却下、C17・C20を範囲を絞って採用した。
 - 2026-10-20 03:40ごろ利用上限で一時停止し、08:30に再開した。停止時に失敗したエージェント（C04のsimplify、C07の計画レビュー、C20の反証）は、ワークフローの再開で実行し直した。完了済みの作業は重複して実行していない。
 - 前の候補のレビュー中に、次の候補の計画を読み取りだけで進める（計画は`.local/`に書くので、固定したtreeに影響しない）。
