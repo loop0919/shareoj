@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"mime"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -75,11 +74,6 @@ func (p problemHandler) problem(w http.ResponseWriter, r *http.Request, owner st
 		var input struct {
 			Version int64     `json:"version"`
 			Draft   sentDraft `json:"draft"`
-		}
-		media, _, mediaErr := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if mediaErr != nil || media != "application/json" {
-			authError(w, 415, "json_required")
-			return
 		}
 		if !readJSONBody(w, r, &input, 3<<20) {
 			return

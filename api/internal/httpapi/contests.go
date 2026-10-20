@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -15,126 +14,251 @@ import (
 	"judge/api/internal/submissions"
 )
 
-func (p contestHandler) publicContest(w http.ResponseWriter, r *http.Request) { p.contest(w, r, "") }
+// anonymous serves a contest route to a viewer who is not signed in.
+func anonymous(next actorHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) { next(w, r, "") }
+}
 
-func (p contestHandler) contest(w http.ResponseWriter, r *http.Request, owner string) {
+// available keeps contest responses out of caches and refuses them without a database.
+func (p contestHandler) available(w http.ResponseWriter) bool {
 	w.Header().Set("Cache-Control", "no-store")
 	if p.Contests == nil {
 		authError(w, 503, "database_unavailable")
-		return
+		return false
+	}
+	return true
+}
+
+// contestID returns the route's contest id once the contest store is available; notFound is the route's code for an
+// id that cannot exist.
+func (p contestHandler) contestID(w http.ResponseWriter, r *http.Request, notFound string) (string, bool) {
+	if !p.available(w) {
+		return "", false
 	}
 	id := r.PathValue("id")
-	if id != "" && !problemID.MatchString(id) {
-		authError(w, 404, "contest_not_found")
+	if !problemID.MatchString(id) {
+		authError(w, 404, notFound)
+		return "", false
+	}
+	return id, true
+}
+
+// judging refuses the submission routes without a submission store.
+func (p contestHandler) judging(w http.ResponseWriter) bool {
+	if p.Submissions == nil {
+		authError(w, 503, "judging_unavailable")
+		return false
+	}
+	return true
+}
+
+func (p contestHandler) judgePolicy() contests.JudgePolicy {
+	return contests.JudgePolicy{KnownRuntimes: submissions.RuntimeIDs(), EnabledRuntimes: p.Judging.RuntimeIDs()}
+}
+
+func (p contestHandler) contestList(w http.ResponseWriter, r *http.Request, owner string) {
+	if !p.available(w) {
 		return
 	}
-	var result any
-	var err error
-	switch {
-	case id == "":
-		offset, ok := contestOffset(w, r)
-		if !ok {
-			return
-		}
-		list, e := p.Contests.List(r.Context(), owner, offset)
-		err = e
-		more := len(list) > 50
-		if more {
-			list = list[:50]
-		}
-		result = offsetResponse[contests.Contest]{Items: list, HasMore: more}
-	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/reveal"):
-		err = p.Contests.Reveal(r.Context(), id, owner, p.Operators[owner])
-		if err == nil {
-			result, err = p.get(r, id, owner)
-		}
-	case r.Method == http.MethodPost:
-		var in contests.JoinInput
-		if !optionalJSON(w, r, &in) {
-			return
-		}
-		if err = contests.ValidJoin(in); err != nil {
-			joinInputError(w, err)
-			return
-		}
-		err = p.Contests.Join(r.Context(), id, owner, in)
-		if err == nil {
-			result, err = p.Contests.Get(r.Context(), id, owner)
-		}
-	case r.Method == http.MethodPut:
-		var in contests.Input
-		if !contentJSON(w, r, &in) {
-			return
-		}
-		if in.PenaltyMinutes == nil {
-			value := 5
-			in.PenaltyMinutes = &value
-		}
-		if !contests.ValidInput(in) {
-			authError(w, 400, "invalid_contest")
-			return
-		}
-		err = p.Contests.Save(r.Context(), owner, id, in, contests.JudgePolicy{KnownRuntimes: submissions.RuntimeIDs(), EnabledRuntimes: p.Judging.RuntimeIDs()})
-		if err == nil {
-			result, err = p.Contests.Get(r.Context(), id, owner)
-		}
-	case r.PathValue("problem") != "" && !strings.HasSuffix(r.URL.Path, "/submissions"):
-		pid := r.PathValue("problem")
-		if !problemID.MatchString(pid) {
-			authError(w, 404, "problem_not_found")
-			return
-		}
-		result, err = p.Contests.Problem(r.Context(), id, pid, owner)
-	case strings.HasSuffix(r.URL.Path, "/standings"):
-		onsite, ok := onsiteScope(w, r)
-		if !ok {
-			return
-		}
-		// The public route always serves the frozen table; staff ask for the live one through /my (ADR 0023).
-		result, err = p.Contests.Standings(r.Context(), id, owner, owner != "" && r.URL.Query().Get("live") == "1", onsite)
-	case strings.Contains(r.URL.Path, "/submissions"):
-		if p.Submissions == nil {
-			authError(w, 503, "judging_unavailable")
-			return
-		}
-		sid := r.PathValue("submission")
-		if sid != "" {
-			if !problemID.MatchString(sid) {
-				authError(w, 404, "submission_not_found")
-				return
-			}
-			result, err = p.Submissions.ContestGet(r.Context(), id, sid, owner)
-		} else {
-			offset, ok := contestOffset(w, r)
-			if !ok {
-				return
-			}
-			if pid := r.PathValue("problem"); pid != "" {
-				if !problemID.MatchString(pid) {
-					authError(w, 404, "problem_not_found")
-					return
-				}
-				scope, ok := submissionScope(w, r, owner, true)
-				if !ok {
-					return
-				}
-				onsite, ok := onsiteScope(w, r)
-				if !ok {
-					return
-				}
-				// The viewer's own or team's list ignores the onsite filter.
-				result, err = p.Submissions.ProblemList(r.Context(), pid, id, owner, scope, onsite && scope == submissions.ScopeAll, offset)
-			} else {
-				onsite, ok := onsiteScope(w, r)
-				if !ok {
-					return
-				}
-				result, err = p.Submissions.ContestList(r.Context(), id, owner, offset, onsite)
-			}
-		}
-	default:
+	offset, ok := contestOffset(w, r)
+	if !ok {
+		return
+	}
+	list, err := p.Contests.List(r.Context(), owner, offset)
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	more := len(list) > 50
+	if more {
+		list = list[:50]
+	}
+	writeAuthJSON(w, 200, offsetResponse[contests.Contest]{Items: list, HasMore: more})
+}
+
+func (p contestHandler) contestDetail(w http.ResponseWriter, r *http.Request, owner string) {
+	id, ok := p.contestID(w, r, "contest_not_found")
+	if !ok {
+		return
+	}
+	result, err := p.get(r, id, owner)
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, result)
+}
+
+func (p contestHandler) saveContest(w http.ResponseWriter, r *http.Request, owner string) {
+	id, ok := p.contestID(w, r, "contest_not_found")
+	if !ok {
+		return
+	}
+	var in contests.Input
+	if !contentJSON(w, r, &in) {
+		return
+	}
+	if in.PenaltyMinutes == nil {
+		value := 5
+		in.PenaltyMinutes = &value
+	}
+	if !contests.ValidInput(in) {
+		authError(w, 400, "invalid_contest")
+		return
+	}
+	var result contests.Contest
+	err := p.Contests.Save(r.Context(), owner, id, in, p.judgePolicy())
+	if err == nil {
+		result, err = p.Contests.Get(r.Context(), id, owner)
+	}
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, result)
+}
+
+func (p contestHandler) joinContest(w http.ResponseWriter, r *http.Request, owner string) {
+	id, ok := p.contestID(w, r, "contest_not_found")
+	if !ok {
+		return
+	}
+	var in contests.JoinInput
+	if !optionalJSON(w, r, &in) {
+		return
+	}
+	if err := contests.ValidJoin(in); err != nil {
+		joinInputError(w, err)
+		return
+	}
+	var result contests.Contest
+	err := p.Contests.Join(r.Context(), id, owner, in)
+	if err == nil {
 		result, err = p.get(r, id, owner)
 	}
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, result)
+}
+
+func (p contestHandler) revealContest(w http.ResponseWriter, r *http.Request, owner string) {
+	id, ok := p.contestID(w, r, "contest_not_found")
+	if !ok {
+		return
+	}
+	var result contests.Contest
+	err := p.Contests.Reveal(r.Context(), id, owner, p.Operators[owner])
+	if err == nil {
+		result, err = p.get(r, id, owner)
+	}
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, result)
+}
+
+func (p contestHandler) contestProblem(w http.ResponseWriter, r *http.Request, owner string) {
+	id, ok := p.contestID(w, r, "contest_not_found")
+	if !ok {
+		return
+	}
+	pid := r.PathValue("problem")
+	if !problemID.MatchString(pid) {
+		authError(w, 404, "problem_not_found")
+		return
+	}
+	result, err := p.Contests.Problem(r.Context(), id, pid, owner)
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, result)
+}
+
+func (p contestHandler) contestProblemSubmissions(w http.ResponseWriter, r *http.Request, owner string) {
+	id, ok := p.contestID(w, r, "contest_not_found")
+	if !ok || !p.judging(w) {
+		return
+	}
+	offset, ok := contestOffset(w, r)
+	if !ok {
+		return
+	}
+	pid := r.PathValue("problem")
+	if !problemID.MatchString(pid) {
+		authError(w, 404, "problem_not_found")
+		return
+	}
+	scope, ok := submissionScope(w, r, owner, true)
+	if !ok {
+		return
+	}
+	onsite, ok := onsiteScope(w, r)
+	if !ok {
+		return
+	}
+	// The viewer's own or team's list ignores the onsite filter.
+	result, err := p.Submissions.ProblemList(r.Context(), pid, id, owner, scope, onsite && scope == submissions.ScopeAll, offset)
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, result)
+}
+
+func (p contestHandler) contestStandings(w http.ResponseWriter, r *http.Request, owner string) {
+	id, ok := p.contestID(w, r, "contest_not_found")
+	if !ok {
+		return
+	}
+	onsite, ok := onsiteScope(w, r)
+	if !ok {
+		return
+	}
+	// The public route always serves the frozen table; staff ask for the live one through /my (ADR 0023).
+	result, err := p.Contests.Standings(r.Context(), id, owner, owner != "" && r.URL.Query().Get("live") == "1", onsite)
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, result)
+}
+
+func (p contestHandler) contestSubmissions(w http.ResponseWriter, r *http.Request, owner string) {
+	id, ok := p.contestID(w, r, "contest_not_found")
+	if !ok || !p.judging(w) {
+		return
+	}
+	offset, ok := contestOffset(w, r)
+	if !ok {
+		return
+	}
+	onsite, ok := onsiteScope(w, r)
+	if !ok {
+		return
+	}
+	result, err := p.Submissions.ContestList(r.Context(), id, owner, offset, onsite)
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, result)
+}
+
+func (p contestHandler) contestSubmission(w http.ResponseWriter, r *http.Request, owner string) {
+	id, ok := p.contestID(w, r, "contest_not_found")
+	if !ok || !p.judging(w) {
+		return
+	}
+	sid := r.PathValue("submission")
+	if !problemID.MatchString(sid) {
+		authError(w, 404, "submission_not_found")
+		return
+	}
+	result, err := p.Submissions.ContestGet(r.Context(), id, sid, owner)
 	if err != nil {
 		contestError(w, err)
 		return
@@ -151,76 +275,97 @@ func (p contestHandler) get(r *http.Request, id, viewer string) (contests.Contes
 	return c, err
 }
 
-// contestDraft serves unpublished contests. They live in their own table, so contest routes never see them.
+// The draft routes serve unpublished contests. They live in their own table, so contest routes never see them.
+func (p contestHandler) contestDrafts(w http.ResponseWriter, r *http.Request, owner string) {
+	if !p.available(w) {
+		return
+	}
+	offset, ok := contestOffset(w, r)
+	if !ok {
+		return
+	}
+	list, err := p.Contests.Drafts(r.Context(), owner, offset)
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	more := len(list) > 50
+	if more {
+		list = list[:50]
+	}
+	writeAuthJSON(w, 200, offsetResponse[contests.DraftSummary]{Items: list, HasMore: more})
+}
+
 func (p contestHandler) contestDraft(w http.ResponseWriter, r *http.Request, owner string) {
-	w.Header().Set("Cache-Control", "no-store")
-	if p.Contests == nil {
-		authError(w, 503, "database_unavailable")
+	id, ok := p.contestID(w, r, "contest_not_found")
+	if !ok {
 		return
 	}
-	policy := contests.JudgePolicy{KnownRuntimes: submissions.RuntimeIDs(), EnabledRuntimes: p.Judging.RuntimeIDs()}
-	id := r.PathValue("id")
-	if id == "" {
-		offset, ok := contestOffset(w, r)
-		if !ok {
-			return
-		}
-		list, err := p.Contests.Drafts(r.Context(), owner, offset)
-		if err != nil {
-			contestError(w, err)
-			return
-		}
-		more := len(list) > 50
-		if more {
-			list = list[:50]
-		}
-		writeAuthJSON(w, 200, offsetResponse[contests.DraftSummary]{Items: list, HasMore: more})
+	result, err := p.Contests.Draft(r.Context(), owner, id, p.judgePolicy())
+	if err != nil {
+		contestError(w, err)
 		return
 	}
-	if !problemID.MatchString(id) {
-		authError(w, 404, "contest_not_found")
+	writeAuthJSON(w, 200, result)
+}
+
+func (p contestHandler) saveContestDraft(w http.ResponseWriter, r *http.Request, owner string) {
+	id, ok := p.contestID(w, r, "contest_not_found")
+	if !ok {
 		return
 	}
-	var result any
-	var err error
-	switch {
-	case strings.HasSuffix(r.URL.Path, "/publication"):
-		var in struct {
-			Version int64 `json:"version"`
-		}
-		if !contentJSON(w, r, &in) {
-			return
-		}
-		if in.Version <= 0 || in.Version > 9007199254740990 {
-			authError(w, 400, "invalid_version")
-			return
-		}
-		err = p.Contests.Publish(r.Context(), owner, id, in.Version, policy)
-		if err == nil {
-			result, err = p.Contests.Get(r.Context(), id, owner)
-		}
-	case r.Method == http.MethodPut:
-		var in contests.DraftInput
-		if !contentJSON(w, r, &in) {
-			return
-		}
-		if !contests.ValidDraft(in) {
-			authError(w, 400, "invalid_contest")
-			return
-		}
-		result, err = p.Contests.SaveDraft(r.Context(), owner, id, in, policy)
-	case r.Method == http.MethodDelete:
-		version, e := strconv.ParseInt(r.URL.Query().Get("version"), 10, 64)
-		if e != nil || version <= 0 {
-			authError(w, 400, "invalid_version")
-			return
-		}
-		if err = p.Contests.DeleteDraft(r.Context(), owner, id, version); err == nil {
-			w.WriteHeader(204)
-			return
-		}
-	default:
-		result, err = p.Contests.Draft(r.Context(), owner, id, policy)
+	var in contests.DraftInput
+	if !contentJSON(w, r, &in) {
+		return
+	}
+	if !contests.ValidDraft(in) {
+		authError(w, 400, "invalid_contest")
+		return
+	}
+	result, err := p.Contests.SaveDraft(r.Context(), owner, id, in, p.judgePolicy())
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, result)
+}
+
+func (p contestHandler) deleteContestDraft(w http.ResponseWriter, r *http.Request, owner string) {
+	id, ok := p.contestID(w, r, "contest_not_found")
+	if !ok {
+		return
+	}
+	version, err := strconv.ParseInt(r.URL.Query().Get("version"), 10, 64)
+	if err != nil || version <= 0 {
+		authError(w, 400, "invalid_version")
+		return
+	}
+	if err = p.Contests.DeleteDraft(r.Context(), owner, id, version); err != nil {
+		contestError(w, err)
+		return
+	}
+	w.WriteHeader(204)
+}
+
+func (p contestHandler) publishContestDraft(w http.ResponseWriter, r *http.Request, owner string) {
+	id, ok := p.contestID(w, r, "contest_not_found")
+	if !ok {
+		return
+	}
+	var in struct {
+		Version int64 `json:"version"`
+	}
+	if !contentJSON(w, r, &in) {
+		return
+	}
+	if in.Version <= 0 || in.Version > 9007199254740990 {
+		authError(w, 400, "invalid_version")
+		return
+	}
+	var result contests.Contest
+	err := p.Contests.Publish(r.Context(), owner, id, in.Version, p.judgePolicy())
+	if err == nil {
+		result, err = p.Contests.Get(r.Context(), id, owner)
 	}
 	if err != nil {
 		contestError(w, err)
@@ -305,46 +450,66 @@ func joinInputError(w http.ResponseWriter, err error) {
 	authError(w, 400, "invalid_request")
 }
 
-// team serves the viewer's own team: its join code, a new code, a new name, and leaving or removing a member.
-func (p contestHandler) team(w http.ResponseWriter, r *http.Request, actor string) {
-	if p.Contests == nil {
-		authError(w, 503, "database_unavailable")
+// The team routes serve the viewer's own team: its join code, a new code, a new name, and leaving or removing a
+// member.
+func (p contestHandler) myTeam(w http.ResponseWriter, r *http.Request, actor string) {
+	id, ok := p.contestID(w, r, "team_not_found")
+	if !ok {
 		return
 	}
-	id := r.PathValue("id")
-	if !problemID.MatchString(id) {
-		authError(w, 404, "team_not_found")
-		return
-	}
-	var result any
-	var err error
-	switch {
-	case r.Method == http.MethodDelete:
-		handle := r.PathValue("handle")
-		if !userHandle.MatchString(handle) {
-			authError(w, 404, "team_member_not_found")
-			return
-		}
-		if err = p.Contests.RemoveTeamMember(r.Context(), id, actor, handle); err == nil {
-			w.WriteHeader(204)
-			return
-		}
-	case strings.HasSuffix(r.URL.Path, "/code"):
-		result, err = p.Contests.RenewTeamCode(r.Context(), id, actor)
-	case strings.HasSuffix(r.URL.Path, "/name"):
-		name, ok := teamName(w, r)
-		if !ok {
-			return
-		}
-		result, err = p.Contests.RenameTeam(r.Context(), id, actor, name)
-	default:
-		result, err = p.Contests.MyTeam(r.Context(), id, actor)
-	}
+	result, err := p.Contests.MyTeam(r.Context(), id, actor)
 	if err != nil {
 		contestError(w, err)
 		return
 	}
 	writeAuthJSON(w, 200, result)
+}
+
+func (p contestHandler) renewTeamCode(w http.ResponseWriter, r *http.Request, actor string) {
+	id, ok := p.contestID(w, r, "team_not_found")
+	if !ok {
+		return
+	}
+	result, err := p.Contests.RenewTeamCode(r.Context(), id, actor)
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, result)
+}
+
+func (p contestHandler) renameTeam(w http.ResponseWriter, r *http.Request, actor string) {
+	id, ok := p.contestID(w, r, "team_not_found")
+	if !ok {
+		return
+	}
+	name, ok := teamName(w, r)
+	if !ok {
+		return
+	}
+	result, err := p.Contests.RenameTeam(r.Context(), id, actor, name)
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, result)
+}
+
+func (p contestHandler) removeTeamMember(w http.ResponseWriter, r *http.Request, actor string) {
+	id, ok := p.contestID(w, r, "team_not_found")
+	if !ok {
+		return
+	}
+	handle := r.PathValue("handle")
+	if !userHandle.MatchString(handle) {
+		authError(w, 404, "team_member_not_found")
+		return
+	}
+	if err := p.Contests.RemoveTeamMember(r.Context(), id, actor, handle); err != nil {
+		contestError(w, err)
+		return
+	}
+	w.WriteHeader(204)
 }
 
 func teamName(w http.ResponseWriter, r *http.Request) (string, bool) {
@@ -396,51 +561,82 @@ func (p contestHandler) venue(w http.ResponseWriter, r *http.Request, actor stri
 	writeAuthJSON(w, 200, result)
 }
 
-// entrants serves the setters' participant list and their changes: making a participant or a team onsite, and a
-// team's name.
+// The entrant routes serve the setters' participant list and their changes: making a participant or a team onsite,
+// and a team's name.
 func (p contestHandler) entrants(w http.ResponseWriter, r *http.Request, actor string) {
-	if p.Contests == nil {
-		authError(w, 503, "database_unavailable")
+	id, ok := p.contestID(w, r, "contest_not_found")
+	if !ok {
 		return
 	}
-	id, handle, team := r.PathValue("id"), r.PathValue("handle"), r.PathValue("team")
-	switch {
-	case !problemID.MatchString(id):
-		authError(w, 404, "contest_not_found")
+	list, err := p.Contests.Entrants(r.Context(), id, actor)
+	if err != nil {
+		contestError(w, err)
 		return
-	case handle != "" && !userHandle.MatchString(handle):
+	}
+	writeAuthJSON(w, 200, itemsResponse[contests.Entrant]{Items: list})
+}
+
+func (p contestHandler) setParticipantOnsite(w http.ResponseWriter, r *http.Request, actor string) {
+	id, ok := p.contestID(w, r, "contest_not_found")
+	if !ok {
+		return
+	}
+	handle := r.PathValue("handle")
+	if !userHandle.MatchString(handle) {
 		authError(w, 404, "participant_not_found")
 		return
-	case team != "" && !problemID.MatchString(team):
+	}
+	p.setOnsite(w, r, id, actor, handle, "")
+}
+
+func (p contestHandler) setTeamOnsite(w http.ResponseWriter, r *http.Request, actor string) {
+	id, ok := p.contestID(w, r, "contest_not_found")
+	if !ok {
+		return
+	}
+	team := r.PathValue("team")
+	if !problemID.MatchString(team) {
 		authError(w, 404, "team_not_found")
 		return
 	}
-	var result any
-	var err error
-	switch {
-	case r.Method == http.MethodGet:
-		var list []contests.Entrant
-		list, err = p.Contests.Entrants(r.Context(), id, actor)
-		result = itemsResponse[contests.Entrant]{Items: list}
-	case strings.HasSuffix(r.URL.Path, "/name"):
-		name, ok := teamName(w, r)
-		if !ok {
-			return
-		}
-		result, err = p.Contests.RenameEntrantTeam(r.Context(), id, actor, team, name)
-	default:
-		var in struct {
-			Onsite *bool `json:"onsite"`
-		}
-		if !contentJSON(w, r, &in) {
-			return
-		}
-		if in.Onsite == nil {
-			authError(w, 400, "invalid_request")
-			return
-		}
-		result, err = p.Contests.SetOnsite(r.Context(), id, actor, handle, team, *in.Onsite)
+	p.setOnsite(w, r, id, actor, "", team)
+}
+
+// setOnsite makes a participant (by handle) or a team onsite or not.
+func (p contestHandler) setOnsite(w http.ResponseWriter, r *http.Request, id, actor, handle, team string) {
+	var in struct {
+		Onsite *bool `json:"onsite"`
 	}
+	if !contentJSON(w, r, &in) {
+		return
+	}
+	if in.Onsite == nil {
+		authError(w, 400, "invalid_request")
+		return
+	}
+	result, err := p.Contests.SetOnsite(r.Context(), id, actor, handle, team, *in.Onsite)
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, result)
+}
+
+func (p contestHandler) renameEntrantTeam(w http.ResponseWriter, r *http.Request, actor string) {
+	id, ok := p.contestID(w, r, "contest_not_found")
+	if !ok {
+		return
+	}
+	team := r.PathValue("team")
+	if !problemID.MatchString(team) {
+		authError(w, 404, "team_not_found")
+		return
+	}
+	name, ok := teamName(w, r)
+	if !ok {
+		return
+	}
+	result, err := p.Contests.RenameEntrantTeam(r.Context(), id, actor, team, name)
 	if err != nil {
 		contestError(w, err)
 		return

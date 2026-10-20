@@ -333,6 +333,12 @@ test('the tester invitation page explains why a registered participant cannot jo
   expect(accepted).toBe(1)
 })
 
+test('the tester invitation page leaves publishing and 定期便 applications to the author', async ({ page }) => {
+  await page.route(`**/api/my/tester-invitations/${token}`, route => route.fulfill({ json: { id: own, title: 'コンテストの問題', author: 'alice', joined: false } }))
+  await page.goto(`/my/tester-invitations/${token}`)
+  await expect(page.getByText(/^テスターとして参加すると/)).toHaveText('テスターとして参加すると、非公開の問題文・解説・テストケースの閲覧や提出に加え、問題の編集・削除・リジャッジ・非公開に戻す操作、テスターリンクの発行、自分のコンテストへの登録ができます。公開と公開予約、定期便への応募は作者だけができます。')
+})
+
 test('a closed invitation says so instead of offering to join', async ({ page }) => {
   await page.route(`**/api/my/setter-invitations/${token}`, route => route.fulfill({ json: { id, title: '終わったコンテスト', author: 'alice', published: true, joined: false, closed: true } }))
   await page.goto(`/my/contest-invitations/${token}`)

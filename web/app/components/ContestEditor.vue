@@ -349,8 +349,11 @@ function participationBody(size: number | null) {
 }
 // A saved draft or a contest answers 404 once the viewer no longer sets it, so retrying cannot help.
 const noLongerSetter = 'このコンテストの作成者ではなくなったため保存できません。入力内容をコピーしてください。'
+const invalidContest = '保存できない値があります。「タイトル・説明」「問題・配点」「期間・ペナルティ」「参加形式」の内容を確認してください。'
 function failure(error: unknown) {
-  if ((error as { data?: { data?: { code?: string } } }).data?.data?.code === 'creation_quota_exceeded') return accountError(error)
+  const code = (error as { data?: { data?: { code?: string } } }).data?.data?.code
+  if (code === 'creation_quota_exceeded') return accountError(error)
+  if (code === 'invalid_contest') return invalidContest
   const status = (error as { statusCode?: number }).statusCode
   return status === 409 ? '別の画面で更新されたか、すでに公開されています。入力内容をコピーしてから再読み込みしてください。' : status === 404 && version.value ? noLongerSetter : status === 401 ? 'ログインし直してから保存してください。' : status === 400 ? '入力内容を確認してください。' : '保存を確認できませんでした。入力内容を残したまま、もう一度お試しください。'
 }
@@ -497,6 +500,7 @@ async function save() {
     }
     if (code === 'contest_team_mode_locked') { section.value = 'participation'; message.value = '参加登録があるため、個人戦とチーム戦は切り替えられません。'; return }
     if (code === 'contest_team_size_locked') { section.value = 'participation'; message.value = '人数の上限は、今いちばん人数の多いチームより少なくできません。'; return }
+    if (code === 'invalid_contest') { message.value = invalidContest; return }
     message.value = status === 404 ? noLongerSetter : status === 409 ? '保存できませんでした。問題の公開状態・他コンテストへの登録・テストケースを確認してください。参加登録した人が作者・テスターの問題と、作成者の誰も作者・テスターではない問題は出題できません。開催開始や別画面での更新があった場合は再読み込みが必要です。' : status === 400 ? '入力内容を確認してください。' : '保存を確認できませんでした。作成したコンテスト一覧を確認してから再度お試しください。'
   } finally { busy.value = false }
 }

@@ -1,12 +1,10 @@
 package httpapi
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"judge/api/internal/posts"
@@ -25,8 +23,7 @@ func (p postHandler) publicPosts(w http.ResponseWriter, r *http.Request) {
 		authError(w, 404, "not_found")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
+	ctx := r.Context()
 
 	if p.Posts == nil {
 		authError(w, 503, "database_unavailable")
@@ -96,8 +93,7 @@ func (p postHandler) editorials(w http.ResponseWriter, r *http.Request) {
 		authError(w, 503, "database_unavailable")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
+	ctx := r.Context()
 	var list []posts.Editorial
 	var err error
 	if strings.HasPrefix(r.URL.Path, "/contests/") {

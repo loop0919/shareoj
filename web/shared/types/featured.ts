@@ -56,3 +56,5 @@ export const featuredStandingsSchema = z.object({
   items: z.array(z.object({ rank: z.number().int().positive(), handle: z.string(), timeMs: z.number().int().nonnegative().nullable(), easy: featuredResultSchema, hard: featuredResultSchema })),
   hasMore: z.boolean(),
 })
+// A Hard slot holding a Lv.9+ problem is shown as Ultimate (ADR 0011).
+export const featuredSlotLabel = (slot: 'easy' | 'hard', difficulty?: number | null) => slot === 'easy' ? 'Easy' : (difficulty ?? 0) >= 9 ? 'Ultimate' : 'Hard'

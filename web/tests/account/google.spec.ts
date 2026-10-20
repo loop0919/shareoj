@@ -44,7 +44,8 @@ test('unrequested, mismatched and cancelled callbacks cannot establish a session
 
 test('Google login preserves a tester invitation and rejects external return paths', async ({ context }) => {
   const invitation = `/my/tester-invitations/${'A'.repeat(32)}`
-  for (const [next, expected] of [[invitation, invitation], ['https://attacker.example/', '/my'], ['//attacker.example/', '/my']]) {
+  for (const [next, expected] of [[invitation, invitation], ['/problems/post', '/problems/post'], [`/my/contests/${'A'.repeat(22)}`, `/my/contests/${'A'.repeat(22)}`],
+    ['https://attacker.example/', '/my'], ['//attacker.example/', '/my'], ['/\\attacker.example/', '/my']]) {
     const response = await context.request.get(`/auth/google?${new URLSearchParams({ next: next! })}`, { maxRedirects: 0 })
     expect(response.status()).toBe(302)
     const flow = (await context.cookies()).find(cookie => cookie.name === 'openoj_google_flow')!

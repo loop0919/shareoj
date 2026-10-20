@@ -509,3 +509,30 @@ func TestContestFreezePostgres(t *testing.T) {
 	}
 	request("POST", "/my/contests/"+handed+"/reveal", "cos2", nil, 200)
 }
+
+// An operator's participation answers whether they may reveal the results, like the contest itself.
+func TestOperatorParticipationCanRevealPostgres(t *testing.T) {
+	f := newTeamTest(t, "alice", "ops", "bob")
+	pool := f.store.Pool()
+	f.handler = newHandler(AuthConfig{}, handlerDependencies{Store: f.store, Contests: &contests.Store{Pool: pool}, Images: &images.Store{Pool: pool}, Notifications: &notifications.Store{Pool: pool}, Profiles: profiles.New(pool), Submissions: &submissions.Store{Pool: pool}, JudgeImage: "sha256:" + strings.Repeat("a", 64), JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: "cpp17", Operators: map[string]bool{"ops": true}, Verifier: newCognitoVerifier(f.sign.server.URL, "client")})
+	const (
+		p1  = "11111111-1111-4111-8111-111111111111"
+		cid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+	)
+	f.problem(p1)
+	f.create(cid, p1, map[string]any{"freezeMinutes": 30})
+	if c := f.join(cid, "ops", nil); c.CanRevealResults {
+		t.Fatal("an operator may reveal before the end")
+	}
+	f.join(cid, "bob", nil)
+	f.schedule(cid, "ended")
+	if c := f.join(cid, "ops", nil); !c.CanRevealResults {
+		t.Fatalf("operator's participation after the end: %+v", c)
+	}
+	if c := f.contest(cid, "ops"); !c.CanRevealResults {
+		t.Fatalf("operator's contest after the end: %+v", c)
+	}
+	if c := f.join(cid, "bob", nil); c.CanRevealResults {
+		t.Fatal("a participant who is not an operator may reveal")
+	}
+}

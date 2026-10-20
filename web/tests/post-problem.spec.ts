@@ -141,10 +141,19 @@ test('posting has an empty state', async ({ page }) => {
 })
 
 test('old posting links open the posting page, and guests can log in and return to it', async ({ page }) => {
-  await page.route('**/api/auth/me', route => route.fulfill({ json: { user: null } }))
+  let user: { id: string } | null = null
+  await page.route('**/api/auth/me', route => route.fulfill({ json: { user } }))
   await page.goto('/problems?post=1')
   await expect(page).toHaveURL('/problems/post')
   await expect(page.locator('.problem-post').getByRole('link', { name: 'ログイン' })).toHaveAttribute('href', '/login?next=/problems/post')
+  await page.route('**/api/auth/login', route => route.fulfill({ json: { user: { id: 'ui-test-user' } } }))
+  await page.locator('.problem-post').getByRole('link', { name: 'ログイン' }).click()
+  await expect(page).toHaveURL('/login?next=/problems/post')
+  user = { id: 'ui-test-user' }
+  await page.getByLabel('メールアドレス', { exact: true }).fill('ui_test@example.test')
+  await page.getByLabel('パスワード', { exact: true }).fill('test-password')
+  await page.getByRole('button', { name: 'ログイン', exact: true }).click()
+  await expect(page).toHaveURL('/problems/post')
 })
 
 test('schedule in Japan time, show the reservation, update it and cancel it', async ({ page }, testInfo) => {

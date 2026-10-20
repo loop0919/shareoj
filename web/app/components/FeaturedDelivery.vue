@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FeaturedPage } from '~~/shared/types/featured'
+import { featuredSlotLabel, type FeaturedPage } from '~~/shared/types/featured'
 import { contestDate } from '~~/shared/types/contest'
 import { shortId } from '~~/shared/utils/short-id'
 
@@ -26,7 +26,7 @@ const volume = computed(() => props.page.current?.number || props.page.nextNumbe
     <div class="delivery-problems">
       <article v-for="slot in slots" :key="slot.slot" class="delivery-problem">
         <header class="delivery-level">
-          <span class="delivery-slot-label">{{ slot.slot === 'easy' ? 'Easy' : (slot.difficulty ?? 0) >= 9 ? 'Ultimate' : 'Hard' }}</span>
+          <span class="delivery-slot-label">{{ featuredSlotLabel(slot.slot, slot.difficulty) }}</span>
           <h3 class="delivery-problem-title">
             <NuxtLink v-if="page.current && slot.problemId" :to="`/problems/${shortId(slot.problemId)}`">{{ slot.title }}</NuxtLink>
             <template v-else-if="slot.kind === 'missing'">{{ page.current ? '出題なし' : '募集中' }}</template>

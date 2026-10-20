@@ -35,6 +35,21 @@ for (const path of paths) {
   })
 }
 
+for (const [path, image] of [['/problems?tag=DP', '/og/problems.png'], ['/blog?tag=DP', '/og/blog.png']] as const) {
+  test(`a tag-filtered list shares the unfiltered list's image: ${path}`, async ({ browser, request }) => {
+    const context = await browser.newContext({ javaScriptEnabled: false })
+    const page = await context.newPage()
+    await page.goto(`http://127.0.0.1:13000${path}`)
+    for (const selector of ['meta[property="og:image"]', 'meta[name="twitter:image"]']) {
+      await expect(page.locator(selector)).toHaveAttribute('content', `https://judge.example${image}`)
+    }
+    // The shared page itself keeps its tag.
+    await expect(page.locator('meta[property="og:url"]')).toHaveAttribute('content', `https://judge.example${path}`)
+    expect((await request.get(image)).status()).toBe(200)
+    await context.close()
+  })
+}
+
 test('private and pre-start images stay unavailable even with a session', async ({ context, page }) => {
   await context.addCookies([{ name: 'openoj_access', value: 'valid-access', url: 'http://127.0.0.1:13000' }])
   await page.goto('/problems/55555555-5555-4555-8555-555555555555')

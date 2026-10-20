@@ -26,8 +26,9 @@ async function change() {
     const code = failure.data?.data?.code
     error.value = code === 'incorrect_password' ? '現在のパスワードが正しくありません。'
       : code === 'invalid_password' ? 'パスワードは12文字以上で、英大文字・英小文字・数字・記号を含めてください。空白は使えません。'
-        : failure.statusCode === 429 ? '試行回数が多すぎます。しばらく待ってから、もう一度お試しください。'
-          : '変更できませんでした。もう一度お試しください。'
+        : code === 'password_unavailable' ? '外部アカウントでログインしているため、パスワードは変更できません。'
+          : failure.statusCode === 429 ? '試行回数が多すぎます。しばらく待ってから、もう一度お試しください。'
+            : '変更できませんでした。もう一度お試しください。'
   } finally { busy.value = false }
 }
 </script>

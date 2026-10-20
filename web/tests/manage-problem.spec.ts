@@ -78,6 +78,19 @@ test('published problems explain where else they cannot go', async ({ page }) =>
   await expect(status.getByRole('list', { name: '提出先の制限' }).getByRole('listitem')).toHaveText(['コンテスト：公開中の問題はコンテストに登録できません', '定期便：一度公開した問題は定期便に応募できません'])
 })
 
+test('scheduled problems explain where else they cannot go', async ({ page }) => {
+  const id = '89898989-8989-4989-8989-898989898989'
+  const draft = { title: '予約済み', markdown: '本文', editorial: '解説', difficulty: 3, timeLimitMs: '2000', memoryLimitMb: '512', testCases: [{ input: '1', output: '1' }] }
+  const readiness = { publish: [], contest: ['scheduled'], featured: ['scheduled'] }
+  await page.route(`**/api/my/problems/${id}`, route => route.fulfill({ json: { id, version: 2, publishedVersion: 0, scheduledAt: '2099-01-02T14:00:00Z', updatedAt: '2026-09-10T00:00:00Z', draft, readiness } }))
+  await page.goto(`/problems/new?problem=${id}`)
+  await page.getByRole('button', { name: '問題管理', exact: true }).click()
+  const status = page.getByRole('region', { name: '状態' })
+  await expect(status.locator('[data-kind="scheduled"]')).toContainText('公開予約中')
+  await expect(status.getByRole('list', { name: '足りない項目' })).toHaveCount(0)
+  await expect(status.getByRole('list', { name: '提出先の制限' }).getByRole('listitem')).toHaveText(['コンテスト：予約投稿を取り消してから登録してください', '定期便：予約投稿を取り消してから登録してください'])
+})
+
 test('tester links copy from an icon button', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.route('**/api/my/problems/*/tester-invitation', route => route.fulfill({ json: { token: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567' } }))

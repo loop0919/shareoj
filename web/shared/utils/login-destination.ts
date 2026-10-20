@@ -1,4 +1,5 @@
-// Accept only known local pages when resuming after authentication.
+// Resume only at a path of this site. Browsers read // and \ as another host, and control characters
+// vanish when a URL is parsed or break the Location header, so values holding them go to my page.
 export function loginDestination(value: unknown) {
-  return typeof value === 'string' && /^\/(my(?:\/(?:problems|settings|posts|(?:tester|contest)-invitations\/[A-Z2-7]{32}))?|(?:problems|blog)\/new|problems|contests\/[0-9A-Za-z]{22}(?:\/(?:[A-Z]{1,3}|team))?)(\?.*)?$/.test(value) ? value : '/my'
+  return typeof value === 'string' && value.startsWith('/') && !value.includes('//') && !value.includes('\\') && !/[\u0000-\u001f\u007f-\u009f]/.test(value) ? value : '/my'
 }

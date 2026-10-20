@@ -2,16 +2,12 @@ package httpapi
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"image/png"
-	"io"
 	"net/http"
 	"regexp"
 	"strings"
-	"time"
 
 	"judge/api/internal/profiles"
 )
@@ -70,32 +66,13 @@ func (p profileHandler) profile(w http.ResponseWriter, r *http.Request, owner st
 		writeAuthJSON(w, 200, map[string]any{"profile": profile})
 		return
 	}
-	if strings.Split(r.Header.Get("Content-Type"), ";")[0] != "application/json" {
-		authError(w, 415, "json_required")
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, 200<<10)
 	var input struct {
 		Accounts profiles.Accounts `json:"accounts"`
 		Handle   string            `json:"handle"`
 		Avatar   string            `json:"avatar"`
 		Version  int64             `json:"version"`
 	}
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	err := decoder.Decode(&input)
-	if err == nil {
-		if decoder.Decode(new(any)) != io.EOF {
-			err = errors.New("trailing JSON")
-		}
-	}
-	if err != nil {
-		var large *http.MaxBytesError
-		if errors.As(err, &large) {
-			authError(w, 413, "request_too_large")
-		} else {
-			authError(w, 400, "invalid_request")
-		}
+	if !readJSONBody(w, r, &input, 200<<10) {
 		return
 	}
 	input.Handle = strings.ToLower(strings.TrimSpace(input.Handle))
@@ -136,9 +113,7 @@ func (p profileHandler) publicProfile(w http.ResponseWriter, r *http.Request) {
 		authError(w, 503, "database_unavailable")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-	profile, err := p.Profiles.GetByHandle(ctx, handle)
+	profile, err := p.Profiles.GetByHandle(r.Context(), handle)
 	if errors.Is(err, profiles.ErrNotFound) {
 		authError(w, 404, "not_found")
 		return
