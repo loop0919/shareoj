@@ -23,13 +23,16 @@ import (
 // A test file that a job names but test_files does not hold.
 var missingTestFile = &problems.TestFile{ID: "33333333-3333-4333-8333-333333333333", Size: 12, SHA256: strings.Repeat("b", 64)}
 
+// The runtime digest shared by the bridge and every queued job.
+var testDigest = "sha256:" + strings.Repeat("a", 64)
+
 // queuedJob returns a sendable job. A file makes its only case read the expected output from that test file.
 func queuedJob(file *problems.TestFile) []byte {
 	c := submissions.Case{Input: "1", Output: "1"}
 	if file != nil {
 		c = submissions.Case{Input: "1", OutputFile: file}
 	}
-	raw, _ := json.Marshal(submissions.Job{Image: "sha256:" + strings.Repeat("a", 64), TimeLimitMS: 1000, MemoryLimitMB: 256, Cases: []submissions.Case{c}})
+	raw, _ := json.Marshal(submissions.Job{Image: testDigest, TimeLimitMS: 1000, MemoryLimitMB: 256, Cases: []submissions.Case{c}})
 	return raw
 }
 
@@ -84,7 +87,7 @@ func newDispatchFixture(t *testing.T, failMethod string, jobs ...[]byte) *dispat
 	t.Cleanup(server.Close)
 	cfg := aws.Config{Region: "ap-northeast-1", Credentials: credentials.NewStaticCredentialsProvider("test", "test", "")}
 	f.b = bridge{
-		db: db, bucket: "bucket", queueURL: server.URL + "/queue", runtime: "sha256:" + strings.Repeat("a", 64),
+		db: db, bucket: "bucket", queueURL: server.URL + "/queue", runtime: testDigest,
 		objects: s3.NewFromConfig(cfg, func(o *s3.Options) {
 			o.BaseEndpoint = aws.String(server.URL)
 			o.UsePathStyle = true
