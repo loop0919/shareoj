@@ -75,7 +75,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | C10 | 自分の問題の詳細と一覧のスキーマを共通化 | `web/shared/types/account-problems.ts` | 低・中・S | 却下・却下 | 却下（変更漏れの根拠が履歴の読み違いで、共通化するとサーバー側の差が隠れる） |
 | C11 | problems.scanが読む列のリストを共有する | `api/internal/problems/store.go`ほか | 低・中・S | 修正・維持 | 完了（`18b879d`） |
 | C12 | 問題ページとコンテストの問題ページで、下書きから公開用の項目へ写す処理を共有する | `api/internal/problems/publication.go`、`api/internal/contests/store.go` | 低・中・S | 維持・維持 | 完了（`1bd2582`） |
-| C13 | サイトマップと共有画像の静的ページ一覧を1つにする | `web/server/routes/sitemap.xml.get.ts`、`web/shared/social-pages.ts` | 低・中・S | 修正・修正 | 計画済み（固定ページ7件の写しを`socialPages`のキーにまとめる） |
+| C13 | サイトマップと共有画像の静的ページ一覧を1つにする | `web/server/routes/sitemap.xml.get.ts`、`web/shared/social-pages.ts` | 低・中・S | 修正・修正 | 完了（`b5ad5e5`。固定ページ7件の写しを`socialPages`のキーにまとめる） |
 | C14 | 送り出しの順序と待ち時間の起点を1つのSQL断片で定義する | `api/internal/submissions/store.go`、`api/cmd/judge-bridge/` | 低・中・S | 却下・維持 | 却下（変更漏れの実例がなく、既に振る舞いのテストで固定済み） |
 | C15 | コンテストAPIの、パス末尾とメソッドの順序に依存する分岐をルートごとに分ける | `api/internal/httpapi/contests.go`、`routes.go` | 中・高・L | 修正・修正 | 保留（`contest()`を分けると、`%2F`を含むURLの応答（D01）が200から404に必ず変わる。外部動作の変更になるので人間の判断を待つ。挙動の変わらない部分だけでは効果が低い） |
 | C16 | `host.judge()`をコンパイル・実行・集計の段階に分ける | `judge/host.py`、`judge/interactive.py` | 中・高・L | 却下・修正 | 却下（部分点の読み取りは既に1か所にあり、残る違いは2経路で本当に違う処理。規模とジャッジ中心部の変更に見合う効果がない） |
@@ -229,6 +229,17 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 - 検証（最終tree）: webの`npm run typecheck`、`npm run package:lambda`、`npm run test:lambda`、`npm run build`、ブラウザーPlaywright（468件）、アカウント系Playwright（30件）、smokeがすべて成功。
 - 軽微（未対応）: nodeテストの`preferredRuntime([{ id: '' }, ...])`はAPIが返さない入力で`??`を固定している。`usableRuntimes`の`error`の型が`unknown`なので、呼び出し側が`.value`を付け忘れても型で防げない（今の4か所は正しい）。
 
+### C13 サイトマップの入口と共有画像の固定ページ（`b5ad5e5`）
+
+- 計画: [plans/C13-static-page-list.md](plans/C13-static-page-list.md)。計画レビューは承認（軽微な指摘4件。実装時に反映）。
+- 変更: `sitemap.xml.get.ts`の直書きの配列（固定ページ7件とガイド。`socialPages`のキーの写し）を`Object.keys(socialPages)`にした。`social-pages.ts`に順序の約束をコメントで書き、`web/README.md`の誤った記述（ガイドのタイトルの置き場所）を直した。
+- 守った点: 生成されるサイトマップのXMLはバイト単位で同じ（レビュー担当がsiteUrlを4通りに変えて比べた）。キーはすべて`/`で始まるので列挙は挿入順になり、既存のテストが順序込みの完全一致で固定している。
+- 特性テスト: `every sitemap entry point advertises a working share image`（全19入口のog:imageが200で1200×630のPNGを返す）。一覧から1件外す変異を検出することを確かめた。
+- simplify: サイトマップ側のコメントから順序の記述を外した（順序の約束は`social-pages.ts`にだけ置く）。既存テストに統合する案は見送り。
+- レビュー: 4観点とも必須の指摘なし。
+- 検証（最終tree）: webの`npm run typecheck`、`npm run package:lambda`、`npm run test:lambda`、`npm run build`、ブラウザーPlaywright（469件）、アカウント系Playwright（30件）、smokeがすべて成功。
+- 軽微（未対応、変更前からの穴）: 新しいテストは画像がそのページ自身のものかまでは確かめない（例: `/terms`が`/privacy`の画像を告げても通る）。足すなら各入口の`og:url`が入口と一致することを確かめる。
+
 ## 保留事項
 
 調査で見つけた別件の不具合と、仕様の判断が要る点。直さずに記録だけする。
@@ -264,7 +275,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 
 ## 現在の作業と次の手順
 
-- 計画済み（いずれも計画レビュー承認）: C13、C17（webの2件）。次はC13の実装。
+- 計画済み（計画レビュー承認）: C17。次はC17の実装。その後、累積差分の独立レビューと全体の再調査を行う。
 - C11はC02・C08と同じ`api/internal/problems/store.go`に触れるため、その後に計画する。
 - C15〜C20は2観点の反証を行い、C15を保留、C16・C18・C19を却下、C17・C20を範囲を絞って採用した。
 - 2026-10-20 03:40ごろ利用上限で一時停止し、08:30に再開した。停止時に失敗したエージェント（C04のsimplify、C07の計画レビュー、C20の反証）は、ワークフローの再開で実行し直した。完了済みの作業は重複して実行していない。
