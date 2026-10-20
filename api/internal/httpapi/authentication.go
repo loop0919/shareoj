@@ -50,7 +50,7 @@ func (v *cognitoVerifier) Verify(ctx context.Context, raw string) (string, error
 
 type authentication struct {
 	Verifier TokenVerifier
-	Profiles profiles.Repository
+	Profiles *profiles.Store
 }
 type actorHandler func(http.ResponseWriter, *http.Request, string)
 

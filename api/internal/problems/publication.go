@@ -35,11 +35,6 @@ type PublicProblem struct {
 	Author        string          `json:"author"`
 	PublishedAt   time.Time       `json:"publishedAt"`
 }
-type Publications interface {
-	Publish(context.Context, string, string, int64, bool) (Problem, error)
-	PublicGet(context.Context, string, string) (PublicProblem, error)
-	PublicList(context.Context, *Cursor, ListFilter) ([]PublicProblem, error)
-}
 
 // ListFilter narrows the public problem list. Empty fields match every problem.
 type ListFilter struct {

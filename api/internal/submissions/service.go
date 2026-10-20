@@ -21,7 +21,7 @@ var (
 type Service struct {
 	Config
 	Submissions   *Store
-	Problems      problems.Repository
+	Problems      *problems.Store
 	DispatchJudge func(context.Context) error
 }
 type CreateInput struct {

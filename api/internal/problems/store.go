@@ -192,13 +192,6 @@ type Cursor struct {
 	ID        string    `json:"id"`
 }
 
-type Repository interface {
-	Get(context.Context, string, string) (Problem, error)
-	List(context.Context, string, *Cursor) ([]Summary, error)
-	Save(context.Context, string, string, int64, Draft, ...ContentRules) (Problem, error)
-	Delete(context.Context, string, string, int64) error
-}
-
 // ContentRules are the runtimes that the content rules of a save judge against (ADR 0021).
 type ContentRules struct {
 	KnownRuntimes, EnabledRuntimes []string

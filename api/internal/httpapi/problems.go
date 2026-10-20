@@ -79,13 +79,12 @@ func (p problemHandler) publishedProblems(w http.ResponseWriter, r *http.Request
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	store, ok := p.Store.(problems.Publications)
-	if !ok {
+	if p.Store == nil {
 		authError(w, 503, "database_unavailable")
 		return
 	}
 	if id != "" {
-		value, err := store.PublicGet(ctx, id, viewer)
+		value, err := p.Store.PublicGet(ctx, id, viewer)
 		if err != nil {
 			problemError(w, err)
 			return
@@ -97,7 +96,7 @@ func (p problemHandler) publishedProblems(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	list, err := store.PublicList(ctx, cursor, problems.ListFilter{Author: author, Tag: tag})
+	list, err := p.Store.PublicList(ctx, cursor, problems.ListFilter{Author: author, Tag: tag})
 	if err != nil {
 		problemError(w, err)
 		return
@@ -135,8 +134,7 @@ func (p problemHandler) publishProblem(w http.ResponseWriter, r *http.Request, o
 		authError(w, 404, "problem_not_found")
 		return
 	}
-	store, ok := p.Store.(problems.Publications)
-	if !ok {
+	if p.Store == nil {
 		authError(w, 503, "database_unavailable")
 		return
 	}
@@ -160,16 +158,9 @@ func (p problemHandler) publishProblem(w http.ResponseWriter, r *http.Request, o
 
 	var result problems.Problem
 	if in.ScheduledAt != nil {
-		scheduler, ok := p.Store.(interface {
-			Schedule(context.Context, string, string, int64, time.Time) (problems.Problem, error)
-		})
-		if !ok {
-			authError(w, 503, "database_unavailable")
-			return
-		}
-		result, err = scheduler.Schedule(r.Context(), owner, id, in.Version, *in.ScheduledAt)
+		result, err = p.Store.Schedule(r.Context(), owner, id, in.Version, *in.ScheduledAt)
 	} else {
-		result, err = store.Publish(r.Context(), owner, id, in.Version, *in.Publish)
+		result, err = p.Store.Publish(r.Context(), owner, id, in.Version, *in.Publish)
 	}
 	if err == nil {
 		err = p.withReadiness(r.Context(), owner, &result)

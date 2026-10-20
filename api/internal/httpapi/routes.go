@@ -40,14 +40,14 @@ type handlerDependencies struct {
 	Posts                *posts.Store
 	Tags                 *tags.Store
 	Operators            map[string]bool
-	Store                problems.Repository
-	Profiles             profiles.Repository
+	Store                *problems.Store
+	Profiles             *profiles.Store
 	Verifier             TokenVerifier
 	Files                testFileStore
 }
 
 type problemHandler struct {
-	Store   problems.Repository
+	Store   *problems.Store
 	Files   testFileStore
 	Judging submissions.Config
 }
@@ -56,7 +56,7 @@ type postHandler struct {
 	Operators map[string]bool
 }
 type (
-	profileHandler    struct{ Profiles profiles.Repository }
+	profileHandler    struct{ Profiles *profiles.Store }
 	submissionHandler struct {
 		submissions.Service
 		Operators map[string]bool
@@ -76,7 +76,7 @@ type (
 )
 
 // releaseBefore keeps local and end-of-contest reads current without coupling unrelated APIs to release.
-func releaseBefore(store *contests.Store, featured *problems.Store, judging submissions.Config, next actorHandler) actorHandler {
+func releaseBefore(store *contests.Store, problemStore *problems.Store, judging submissions.Config, next actorHandler) actorHandler {
 	return func(w http.ResponseWriter, r *http.Request, actor string) {
 		if store != nil {
 			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
@@ -87,11 +87,11 @@ func releaseBefore(store *contests.Store, featured *problems.Store, judging subm
 				return
 			}
 		}
-		if featured != nil {
+		if problemStore != nil {
 			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-			err := featured.ReleaseScheduled(ctx)
+			err := problemStore.ReleaseScheduled(ctx)
 			if err == nil {
-				err = featured.ReleaseFeatured(ctx, submissions.RuntimeIDs(), judging.RuntimeIDs())
+				err = problemStore.ReleaseFeatured(ctx, submissions.RuntimeIDs(), judging.RuntimeIDs())
 			}
 			cancel()
 			if err != nil {
@@ -107,7 +107,6 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	docs := newPublicDocumentation()
 	documentPublicRoute(docs, "GET /health", publicOperation{Summary: "稼働状態", Response: healthResponse{}})
 	judging := submissions.Config{JudgeImage: d.JudgeImage, JudgeRuntime: d.JudgeRuntime, JudgeEnabledRuntimes: d.JudgeEnabledRuntimes}
-	featuredStore, _ := d.Store.(*problems.Store)
 	problems := problemHandler{Store: d.Store, Files: d.Files, Judging: judging}
 	posts := postHandler{Posts: d.Posts, Operators: d.Operators}
 	profiles := profileHandler{Profiles: d.Profiles}
@@ -123,7 +122,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 			mux.HandleFunc(pattern, handler)
 			return
 		}
-		released := releaseBefore(d.Contests, featuredStore, judging, func(w http.ResponseWriter, r *http.Request, _ string) { handler(w, r) })
+		released := releaseBefore(d.Contests, d.Store, judging, func(w http.ResponseWriter, r *http.Request, _ string) { handler(w, r) })
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-store")
 			released(w, r, "")
@@ -132,7 +131,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 
 	private := func(pattern string, handler actorHandler, release bool) {
 		if release {
-			handler = releaseBefore(d.Contests, featuredStore, judging, handler)
+			handler = releaseBefore(d.Contests, d.Store, judging, handler)
 		}
 		mux.HandleFunc(pattern, auth.require(handler, true, 10*time.Second))
 	}

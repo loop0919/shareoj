@@ -132,16 +132,13 @@ func (p profileHandler) publicProfile(w http.ResponseWriter, r *http.Request) {
 		authError(w, 404, "not_found")
 		return
 	}
-	store, ok := p.Profiles.(interface {
-		GetByHandle(context.Context, string) (profiles.Profile, error)
-	})
-	if !ok {
+	if p.Profiles == nil {
 		authError(w, 503, "database_unavailable")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	profile, err := store.GetByHandle(ctx, handle)
+	profile, err := p.Profiles.GetByHandle(ctx, handle)
 	if errors.Is(err, profiles.ErrNotFound) {
 		authError(w, 404, "not_found")
 		return
