@@ -39,7 +39,7 @@ async function accept() {
       <p>作成者 <UserLink :handle="invitation.author" /></p>
       <template v-if="invitation.joined"><p>この問題はすでに操作できます。</p><NuxtLink class="editor-button primary" :to="`/problems/new?problem=${invitation.id}`">問題を編集</NuxtLink></template>
       <template v-else>
-        <p>テスターとして参加すると、非公開の問題文・解説・テストケースの閲覧や提出に加え、編集・公開・削除を含む作者と同じ操作ができます。</p>
+        <p>テスターとして参加すると、非公開の問題文・解説・テストケースの閲覧や提出に加え、問題の編集・削除・リジャッジ・非公開に戻す操作、テスターリンクの発行、自分のコンテストへの登録ができます。公開と公開予約、定期便への応募は作者だけができます。</p>
         <p>参加した問題はマイページの「テスト中の問題」に表示されます。</p>
         <button class="editor-button primary" :disabled="busy" @click="accept">{{ busy ? '参加しています…' : '許可する' }}</button>
       </template>
