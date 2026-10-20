@@ -44,12 +44,29 @@ test('unrequested, mismatched and cancelled callbacks cannot establish a session
 
 test('Google login preserves a tester invitation and rejects external return paths', async ({ context }) => {
   const invitation = `/my/tester-invitations/${'A'.repeat(32)}`
-  for (const [next, expected] of [[invitation, invitation], ['https://attacker.example/', '/my'], ['//attacker.example/', '/my']]) {
+  for (const [next, expected] of [[invitation, invitation], ['/problems/post', '/problems/post'], [`/my/contests/${'A'.repeat(22)}`, `/my/contests/${'A'.repeat(22)}`],
+    ['https://attacker.example/', '/my'], ['//attacker.example/', '/my'], ['/\\attacker.example/', '/my']]) {
     const response = await context.request.get(`/auth/google?${new URLSearchParams({ next: next! })}`, { maxRedirects: 0 })
     expect(response.status()).toBe(302)
     const flow = (await context.cookies()).find(cookie => cookie.name === 'openoj_google_flow')!
     const encoded = decodeURIComponent(flow.value).split('.')[2]!
     expect(Buffer.from(encoded, 'base64url').toString()).toBe(expected)
+  }
+})
+
+test('Google login returns to a same-site path with non-ASCII characters, encoded', async ({ context }) => {
+  // The token endpoint stub (tests/fixtures/cognito-token.mjs) hands the code back as the access token,
+  // so a password login supplies a fixture token for alice, who has a profile.
+  const login = await context.request.post('/api/auth/login', { headers: { origin: 'http://127.0.0.1:13002' }, data: { username: 'alice@example.test', password: 'test-password' } })
+  expect(login.status()).toBe(200)
+  const token = (await context.cookies()).find(cookie => cookie.name === 'openoj_access')!.value
+  await context.clearCookies()
+  for (const [next, expected] of [['/problems/post', '/problems/post'], ['/グ', '/%E3%82%B0'], ['/%E3%82%B0?q=グ#見出し', '/%E3%82%B0?q=%E3%82%B0#%E8%A6%8B%E5%87%BA%E3%81%97']]) {
+    const start = await context.request.get(`/auth/google?${new URLSearchParams({ next: next! })}`, { maxRedirects: 0 })
+    const state = new URL(start.headers().location!).searchParams.get('state')!
+    const callback = await context.request.get(`/auth/google/callback?${new URLSearchParams({ state, code: token })}`, { maxRedirects: 0 })
+    expect(callback.status()).toBe(303)
+    expect(callback.headers().location).toBe(expected)
   }
 })
 

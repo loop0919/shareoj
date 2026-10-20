@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"mime"
 	"net/http"
 	"strconv"
 
@@ -50,11 +49,6 @@ func (p submissionHandler) submission(w http.ResponseWriter, r *http.Request, ow
 		return
 	}
 	var input submissions.CreateInput
-	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || media != "application/json" {
-		authError(w, 415, "json_required")
-		return
-	}
 	if !readJSONBody(w, r, &input, 800<<10) {
 		return
 	}

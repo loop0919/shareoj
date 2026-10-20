@@ -232,6 +232,16 @@ test('generation frequency limit displays the wait time', async ({ page }) => {
   await expect(alert).toHaveCSS('background-color', 'rgb(255, 243, 242)')
 })
 
+test('a refused generation names what to check', async ({ page }) => {
+  await page.route('**/api/my/submissions', route => route.fulfill({ status: 400, json: { data: { code: 'invalid_submission' } } }))
+  await page.goto('/problems/new')
+  await page.getByRole('button', { name: 'テストケース', exact: true }).click()
+  await page.getByRole('button', { name: '生成・検証・判定', exact: true }).click()
+  await page.getByLabel('入力生成のコード', { exact: true }).fill('int main(){}')
+  await page.getByRole('button', { name: '生成する', exact: true }).click()
+  await expect(page.locator('.generator [role=alert]')).toHaveText('実行内容を受け付けられませんでした。言語とコード、件数と、テストケースの合計サイズを確認してください。')
+})
+
 for (const mode of ['output', 'validation'] as const) {
   test(`${mode} requires existing cases without asking for a range`, async ({ page }) => {
     let submitted = false

@@ -119,11 +119,11 @@ onBeforeRouteLeave(() => leaving || (!busy.value && (!ready.value || snapshot() 
 function beforeUnload(event: BeforeUnloadEvent) { if (ready.value && snapshot() !== saved) { event.preventDefault(); event.returnValue = '' } }
 onMounted(() => window.addEventListener('beforeunload', beforeUnload))
 onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
+const { renderedSource } = usePreviewSource(() => markdown.value, ready)
 
 
-const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
 function saveWithShortcut(event: KeyboardEvent) {
-  if (event.isComposing || event.altKey || event.shiftKey || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
+  if (!isSaveShortcut(event)) return
   event.preventDefault()
   if (!event.repeat) void save()
 }
@@ -214,7 +214,7 @@ onBeforeUnmount(() => {
         <div class="pane-heading"><h2>プレビュー</h2></div>
         <div ref="preview" class="preview-document post-preview" @scroll="previewScrolled">
           <p class="preview-title">{{ title || '無題の記事' }}</p>
-          <ProblemMarkdown v-if="markdown.trim()" :source="markdown" live />
+          <ProblemMarkdown v-if="renderedSource.trim()" :source="renderedSource" live />
           <p v-else class="muted">本文を書くと、ここにプレビューが表示されます。</p>
         </div>
       </section>

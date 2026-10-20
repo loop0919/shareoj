@@ -52,18 +52,27 @@ func onsiteParticipants(contest string) string {
  WHERE p.contest_id=` + contest + ` AND contest_onsite(c,p.owner_id) AND contest_competitor(c,p.owner_id)`
 }
 
+// contestSubmissionVisible tells whether the viewer $3 sees a submission to the contest row c. contest is c's id as an
+// SQL expression: a caller fixed to one contest passes it as a parameter so that the role and team subqueries run once,
+// and a caller covering several contests passes c.id so that each submission is checked in its own contest.
+// The submissions table goes without an alias, and its columns take the table name because c also has owner_id and
+// created_at.
 // Staff, including the author and testers of any problem, review submissions throughout the contest.
 // After the end the submitter also sees their own frozen submissions, which others see only once the results are final.
 // Members of a team see their team's contest submissions throughout, frozen ones included (ADR 0024).
-// The viewer's role and team are subqueries so that they are checked once, not for every row.
+func contestSubmissionVisible(contest string) string {
+	return `(contest_submission_public(c,submissions.created_at) OR (SELECT contest_staff(` + contest + `,$3))
+   OR (submissions.owner_id=$3 AND submissions.created_at>=c.starts_at AND c.ends_at<=statement_timestamp())
+   OR (submissions.created_at>=c.starts_at AND submissions.owner_id IN (SELECT unnest(contest_teammates(` + contest + `,$3)))))`
+}
+
+// Staff also review submissions to the contest's problems made outside any contest.
 // $4 keeps only the contest submissions of participants who are onsite now.
 var contestPublic = `NOT COALESCE((job->>'easyTest')::boolean,false)
  AND NOT COALESCE((job->>'generate')::boolean,false)
  AND NOT COALESCE((job->>'validate')::boolean,false)
  AND EXISTS(SELECT 1 FROM contests c WHERE c.id=$1 AND (
-  (contest_id=c.id AND (contest_submission_public(c,submissions.created_at) OR (SELECT contest_staff($1::uuid,$3))
-   OR (submissions.owner_id=$3 AND submissions.created_at>=c.starts_at AND c.ends_at<=statement_timestamp())
-   OR (submissions.created_at>=c.starts_at AND submissions.owner_id IN (SELECT unnest(contest_teammates($1::uuid,$3))))))
+  (contest_id=c.id AND ` + contestSubmissionVisible("$1::uuid") + `)
   OR (contest_id IS NULL AND (SELECT contest_staff($1::uuid,$3)) AND EXISTS(
    SELECT 1 FROM contest_problems cp WHERE cp.contest_id=c.id AND cp.problem_id=submissions.problem_id))))
  AND (NOT $4 OR (contest_id=$1 AND submissions.owner_id IN (` + onsiteParticipants("$1::uuid") + `)))

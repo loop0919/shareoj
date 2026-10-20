@@ -3,6 +3,7 @@ import { accountProblemSchema } from '~~/shared/types/account-problems'
 import { contestDate } from '~~/shared/types/contest'
 import { shortId } from '~~/shared/utils/short-id'
 import { accountError } from '~/utils/account-problems'
+import { fromJapanInput, japanInput } from '~/utils/japan-time'
 import { choosableFirst, problemChoice } from '~/utils/problem-choices'
 
 useSeoMeta({ title: '問題を投稿 | ShareOJ', robots: 'noindex, nofollow' })
@@ -27,9 +28,8 @@ const timings = computed(() => [
   { value: 'schedule' as const, label: '日時を指定', disabled: applied.value, describedby: applied.value ? 'post-applied' : undefined },
 ])
 const label = computed(() => busy.value ? '送信中…' : timing.value === 'now' ? '投稿する' : reserved.value ? '予約を更新' : '予約する')
-const japanTime = (at: string) => new Date(new Date(at).getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 16)
 const when = (value: string) => {
-  const date = new Date(`${value}:00+09:00`)
+  const date = fromJapanInput(value)
   return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }).format(date) : ''
 }
 // The bar says what the button will do, so the choice reads back even when the list has scrolled away.
@@ -42,7 +42,7 @@ const summary = computed(() => {
 watch(selected, () => {
   const at = current.value?.scheduledAt
   timing.value = at ? 'schedule' : 'now'
-  scheduledAt.value = at ? japanTime(at) : ''
+  scheduledAt.value = at ? japanInput(at) : ''
   error.value = ''
 })
 // An error describes the last attempt; editing the choice clears it.
@@ -59,7 +59,7 @@ async function post(cancel = false) {
   error.value = ''
   let at: string | undefined
   if (!cancel && timing.value === 'schedule') {
-    const date = new Date(`${scheduledAt.value}:00+09:00`)
+    const date = fromJapanInput(scheduledAt.value)
     if (!scheduledAt.value || !Number.isFinite(date.getTime()) || date.getTime() <= Date.now()) { invalidDate.value = true; return }
     at = date.toISOString()
   }
@@ -94,9 +94,9 @@ async function post(cancel = false) {
           <SegmentedChoice v-model="timing" legend="公開のタイミング" name="post-timing" :options="timings" :disabled="busy || !selected" />
           <p v-if="applied" id="post-applied" class="post-hint">定期便に応募中のため予約できません。予約するには「自分の問題」で応募を取り下げてください。</p>
           <div v-if="timing === 'schedule'" class="post-when">
-            <label for="post-scheduled-at">公開日時（日本時間）</label>
+            <label for="post-scheduled-at">公開日時 (JST)</label>
             <input id="post-scheduled-at" v-model="scheduledAt" type="datetime-local" required :disabled="busy" :aria-invalid="invalidDate || undefined" :aria-describedby="invalidDate ? 'post-date-error post-when-hint' : 'post-when-hint'">
-            <p v-if="invalidDate" id="post-date-error" class="field-error" role="alert">未来の公開日時を日本時間で指定してください。</p>
+            <p v-if="invalidDate" id="post-date-error" class="field-error" role="alert">未来の公開日時をJSTで指定してください。</p>
             <p id="post-when-hint" class="post-hint">予約した時点の保存済みの内容を公開します。そのあとの編集は、予約を更新すると反映されます。</p>
           </div>
           <p v-else-if="selected" class="post-hint">保存済みの内容を公開し、誰でも閲覧・提出できるようにします。</p>

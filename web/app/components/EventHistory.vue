@@ -27,7 +27,7 @@ onMounted(load)
       <li v-for="item in items" :key="item.id">
         <NuxtLink :to="notificationLink(item)">{{ notificationTitle(item) }}</NuxtLink>
         <p>{{ item.actor }}{{ notificationMessages[item.kind] }}</p>
-        <time :datetime="item.createdAt">{{ new Date(item.createdAt).toLocaleString('ja-JP') }}</time>
+        <time :datetime="item.createdAt">{{ new Date(item.createdAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) }}</time>
       </li>
     </ul>
   </section>

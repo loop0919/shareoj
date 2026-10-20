@@ -1,5 +1,6 @@
 import { docPages, docPath } from './docs'
 
+// Public pages with a fixed share image. The sitemap lists these paths, in this order, as its entry points.
 export const socialPages: Record<string, { title: string, kind: string }> = {
   '/': { title: 'Share Online Judge', kind: 'ShareOJ' },
   '/problems': { title: '問題', kind: 'PROBLEMS' },

@@ -129,6 +129,14 @@ func TestPrivateTestFileRoutes(t *testing.T) {
 		handler.ServeHTTP(w, r)
 		return w
 	}
+	untyped := httptest.NewRequest("POST", "/my/problems/"+problem+"/test-files", strings.NewReader(`{"size":3,"sha256":"`+strings.Repeat("a", 64)+`"}`))
+	untyped.Header.Set("Authorization", "Bearer "+f.token(t, "alice", nil))
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, untyped)
+	expect(t, w, 415, "json_required")
+	if files.file != "" {
+		t.Fatalf("began without a JSON content type: %+v", files)
+	}
 	created := request("POST", "/my/problems/"+problem+"/test-files", `{"size":3,"sha256":"`+strings.Repeat("a", 64)+`"}`)
 	if created.Code != 200 || files.owner != "alice" || files.problem != problem || files.file == "" {
 		t.Fatalf("begin: %d %s %+v", created.Code, created.Body.String(), files)
@@ -139,6 +147,9 @@ func TestPrivateTestFileRoutes(t *testing.T) {
 	}
 	if downloaded := request("GET", "/my/problems/"+problem+"/test-files/"+file, ""); downloaded.Code != 200 || !strings.Contains(downloaded.Body.String(), "download.example") {
 		t.Fatalf("download: %d %s", downloaded.Code, downloaded.Body.String())
+	}
+	if head := request("HEAD", "/my/problems/"+problem+"/test-files/"+file, ""); head.Code != 200 || head.Body.Len() != 0 || files.file != file {
+		t.Fatalf("head: %d %q %+v", head.Code, head.Body.String(), files)
 	}
 	if oversized := request("POST", "/my/problems/"+problem+"/test-files", `{"size":16777217,"sha256":"`+strings.Repeat("a", 64)+`"}`); oversized.Code != 400 {
 		t.Fatalf("oversized: %d", oversized.Code)

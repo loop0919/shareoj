@@ -15,6 +15,9 @@ func TestJSONRequestLimits(t *testing.T) {
 	}{
 		{"auth", 16 << 10, readAuthJSON},
 		{"content", 700 << 10, contentJSON},
+		{"shared", 2 << 10, func(w http.ResponseWriter, r *http.Request, target any) bool {
+			return readJSONBody(w, r, target, 2<<10)
+		}},
 	} {
 		t.Run(reader.name, func(t *testing.T) {
 			for _, tc := range []struct {
@@ -27,6 +30,11 @@ func TestJSONRequestLimits(t *testing.T) {
 				{"multiple values", `{"Value":"ok"} {}`, "application/json", 400},
 				{"malformed tail", `{"Value":"ok"} !`, "application/json", 400},
 				{"wrong media type", `{}`, "text/plain", 415},
+				{"mixed case", `{"Value":"ok"}`, "Application/JSON", 200},
+				{"space before parameter", `{"Value":"ok"}`, "application/json ; charset=utf-8", 200},
+				{"missing media type", `{}`, "", 415},
+				{"malformed parameter", `{}`, "application/json;garbage", 415},
+				{"other subtype", `{}`, "application/jsonx", 415},
 				{"at limit", `{"Value":"ok"}` + strings.Repeat(" ", reader.limit-len(`{"Value":"ok"}`)), "application/json", 200},
 				{"oversized value", `{"Value":"` + strings.Repeat("x", reader.limit) + `"}`, "application/json", 413},
 				{"oversized tail", `{"Value":"ok"}` + strings.Repeat(" ", reader.limit), "application/json", 413},

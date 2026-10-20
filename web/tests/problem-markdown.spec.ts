@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { renderProblemMarkdown } from '../app/utils/problem-markdown'
-import { draftErrors, exportProblemMarkdown } from '../app/utils/problem-draft'
+import { draftErrors } from '../app/utils/problem-draft'
 
 test('copy controls are available for code fences but not input or math', () => {
   for (const language of ['text', 'py', 'cpp', 'javascript', '']) {
@@ -206,14 +206,7 @@ test('unclosed fences and invalid math keep the preview usable; macros are isola
   expect(next).toContain('openojmacro')
 })
 
-test('export keeps the exact body and safely quotes title metadata', () => {
-  const draft = { title: '問題: "和"\n改行', markdown: '## 本文\n\n```input\n$A$\n```', timeLimitMs: '2000', memoryLimitMb: '256' }
-  const file = exportProblemMarkdown(draft)
-  expect(file).toContain(`title: ${JSON.stringify(draft.title)}`)
-  expect(file).toContain('time_limit_ms: 2000\nmemory_limit_mb: 256')
-  expect(file).toContain(draft.markdown)
-  expect(draftErrors({ ...draft, timeLimitMs: '', title: '  ' }).title).not.toBe('')
-  expect(draftErrors({ ...draft, memoryLimitMb: '512' }).memoryLimitMb).toBe('')
-  expect(draftErrors({ ...draft, memoryLimitMb: '513' }).memoryLimitMb).not.toBe('')
-  expect(() => exportProblemMarkdown({ ...draft, memoryLimitMb: '-1' })).toThrow()
+test('draft errors name only a blank title and a blank statement', () => {
+  expect(draftErrors({ title: '  ', markdown: '## 本文' })).toEqual({ title: '問題のタイトルを入力してください。', markdown: '' })
+  expect(draftErrors({ title: 'A + B', markdown: ' \n' })).toEqual({ title: '', markdown: '問題の本文を入力してください。' })
 })

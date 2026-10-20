@@ -37,7 +37,7 @@ onMounted(() => { void load() })
         <tbody><tr v-for="post in visible" :key="post.id">
           <th scope="row">{{ post.title.trim() || '無題の記事' }}</th>
           <td>{{ post.publishedVersion ? '公開中' : '下書き' }}</td>
-          <td><time :datetime="post.updatedAt">{{ new Date(post.updatedAt).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) }}</time></td>
+          <td><time :datetime="post.updatedAt">{{ new Date(post.updatedAt).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }) }}</time></td>
           <td><ContentActions :title="post.title.trim() || '無題の記事'" :edit-to="{ path: '/blog/new', query: { post: post.id } }" :view-to="`/blog/${shortId(post.id)}`" :published="!!post.publishedVersion" /></td>
         </tr></tbody>
       </table>

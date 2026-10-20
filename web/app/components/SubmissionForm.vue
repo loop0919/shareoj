@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import type { Submission } from '../../shared/types/submission'
 import { shortId } from '~~/shared/utils/short-id'
+import { usableRuntimes } from '~/utils/judge-catalog'
 
 // team is a team contest's member, whose own submissions are listed as the team's (ADR 0024).
 const props = defineProps<{ problemId: string, hasSamples: boolean, contestId?: string, team?: boolean, beforeSubmit?: () => Promise<boolean>, disabled?: boolean }>()
 const { user } = useAccount()
 const sampleHelpId = useId()
 const source = ref('')
+// The largest source the API accepts, in UTF-8 bytes.
+const sourceLimit = 131072
 const runtime = ref('cpp23-gcc')
 const { data: catalog, error: catalogError, refresh: refreshCatalog } = await useJudgeCatalog()
-const available = computed(() => catalogError.value || catalog.value?.maintenance ? [] : catalog.value?.items ?? [])
+const available = computed(() => usableRuntimes(catalog.value, catalogError.value))
 const runtimeStorageKey = 'openoj.submission-runtime'
 onMounted(() => {
   try {
@@ -33,8 +36,8 @@ onBeforeUnmount(() => { disposed = true })
 watch([source, runtime, () => props.problemId], () => { easyResult.value = null })
 async function submit(easyTest = false) {
   if ((easyTest && !props.hasSamples) || props.disabled || sending.value || !available.value.some(item => item.id === runtime.value)) return
-  if (!source.value.trim() || new TextEncoder().encode(source.value).length > 131072) {
-    message.value = 'ソースコードを1〜131,072バイトで入力してください。'
+  if (!source.value.trim() || new TextEncoder().encode(source.value).length > sourceLimit) {
+    message.value = `ソースコードを1〜${sourceLimit.toLocaleString('en-US')}バイトで入力してください。`
     return
   }
   runningEasyTest.value = easyTest
@@ -73,6 +76,7 @@ async function submit(easyTest = false) {
     else if (code === 'contest_participation_required') message.value = 'コンテストの「参加する」を押してから提出してください。'
     else if (code === 'tests_not_ready') message.value = easyTest ? '「サンプルケースにする」をチェックしたケースがあることと、検証コード・言語の設定を確認してください。' : 'テストケース、検証コード、利用できる言語の設定を確認してください。'
     else if (code === 'judging_unavailable') message.value = 'ジャッジが設定されていません。'
+    else if (code === 'invalid_submission') message.value = '提出内容を受け付けられませんでした。言語を選び直し、ソースコードにNUL文字などの使えない文字がないか確認してください。'
     else message.value = easyTest ? 'サンプル検証の結果を確認できませんでした。再実行するか、結果の詳細を確認してください。' : '提出を確認できませんでした。再送する前に提出履歴を確認してください。'
   } finally { sending.value = false }
 }
@@ -95,7 +99,7 @@ async function submit(easyTest = false) {
       </select>
       <p><NuxtLink to="/docs/languages" target="_blank" rel="noopener noreferrer">使える言語と実行環境の仕様 ↗</NuxtLink></p>
       <p v-if="catalogError || !available.length" class="notice" role="status">現在、提出受付を停止しています。</p>
-      <SourceCodeEditor v-model="source" :runtime="runtime" :limit="131072" :disabled="sending" />
+      <SourceCodeEditor v-model="source" :runtime="runtime" :limit="sourceLimit" :disabled="sending" />
       <p v-if="message" class="notice notice-error" role="alert">{{ message }}</p>
       <div class="submission-actions">
         <div class="sample-action" :class="{ 'no-samples': !hasSamples }">

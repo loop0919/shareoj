@@ -37,10 +37,6 @@ type Profile struct {
 	Version   int64     `json:"version"`
 	CreatedAt time.Time `json:"createdAt"`
 }
-type Repository interface {
-	Get(context.Context, string) (Profile, error)
-	Save(context.Context, string, string, string, int64, Accounts) (Profile, error)
-}
 type Store struct{ pool *pgxpool.Pool }
 
 func New(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }

@@ -9,7 +9,9 @@ export function useSharePreview(options: {
   const enabled = () => options.enabled === undefined || toValue(options.enabled)
   const title = () => enabled() ? `${toValue(options.title)} | ShareOJ` : undefined
   const description = () => enabled() && options.description !== undefined ? toValue(options.description) : undefined
-  const image = () => enabled() ? new URL(`/og${toValue(options.path) === '/' ? '/index' : toValue(options.path)}.png`, config.public.siteUrl).href : undefined
+  // Images follow the page alone, so a filtered list shares the image of the list before filtering.
+  const page = () => toValue(options.path).split('?')[0]
+  const image = () => enabled() ? new URL(`/og${page() === '/' ? '/index' : page()}.png`, config.public.siteUrl).href : undefined
   useSeoMeta({
     ogType: () => enabled() ? options.type ?? 'article' : undefined,
     ogTitle: title, ogDescription: description,

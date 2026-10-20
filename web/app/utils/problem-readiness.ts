@@ -47,7 +47,7 @@ const sections: Record<string, EditorSection> = {
 export const issueSection = (code: string): EditorSection | undefined => sections[code]
 
 // Reasons about the problem itself; the rest describe where it already is.
-const stateIssues = new Set(['published', 'ever_published', 'in_contest', 'featured_limit', 'scheduled', 'featured_applied'])
+export const stateIssues = new Set(['published', 'ever_published', 'in_contest', 'featured_limit', 'scheduled', 'featured_applied'])
 
 // Every destination checks the same content (ADR 0021); the lists differ only in state reasons.
 export function contentIssues(readiness?: Readiness): string[] {
@@ -65,7 +65,7 @@ export interface ProblemStatus {
 // Publication plans take precedence over draft readiness.
 export function problemStatus(problem: ProblemStatusInput): ProblemStatus {
   if (problem.publishedVersion > 0) return { kind: 'published', label: '公開中', summary: '公開中です', issues: [] }
-  if (problem.scheduledAt) return { kind: 'scheduled', label: '公開予約中', summary: `公開予定：${new Date(problem.scheduledAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}（日本時間）`, issues: [] }
+  if (problem.scheduledAt) return { kind: 'scheduled', label: '公開予約中', summary: `公開予定：${new Date(problem.scheduledAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })} (JST)`, issues: [] }
   if (problem.contestScheduled) return { kind: 'contest', label: '応募中（コンテスト）', summary: 'コンテストに登録済みです', issues: [] }
   if (problem.featuredPreference) {
     // An application that stopped qualifying is skipped at selection; say so instead of waiting silently.

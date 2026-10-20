@@ -175,6 +175,9 @@ test('after the start a setter still manages co-setters while the settings stay 
   await expect(page.getByLabel('招待リンク', { exact: true })).toHaveValue(new RegExp(`${token}$`))
   await page.getByRole('button', { name: '期間・ペナルティ', exact: true }).click()
   await expect(page.getByLabel('誤答ペナルティ（分）')).toBeDisabled()
+  // The settings are locked, yet the description still shows in the preview.
+  await page.getByRole('button', { name: 'タイトル・説明', exact: true }).click()
+  await expect(page.locator('.contest-preview').getByText('説明', { exact: true })).toBeVisible()
 })
 
 test('after the end invitations close while the owner can still remove co-setters', async ({ page }) => {
@@ -330,6 +333,12 @@ test('the tester invitation page explains why a registered participant cannot jo
   expect(accepted).toBe(1)
 })
 
+test('the tester invitation page leaves publishing and 定期便 applications to the author', async ({ page }) => {
+  await page.route(`**/api/my/tester-invitations/${token}`, route => route.fulfill({ json: { id: own, title: 'コンテストの問題', author: 'alice', joined: false } }))
+  await page.goto(`/my/tester-invitations/${token}`)
+  await expect(page.getByText(/^テスターとして参加すると/)).toHaveText('テスターとして参加すると、非公開の問題文・解説・テストケースの閲覧や提出に加え、問題の編集・削除・リジャッジ・非公開に戻す操作、テスターリンクの発行、自分のコンテストへの登録ができます。公開と公開予約、定期便への応募は作者だけができます。')
+})
+
 test('a closed invitation says so instead of offering to join', async ({ page }) => {
   await page.route(`**/api/my/setter-invitations/${token}`, route => route.fulfill({ json: { id, title: '終わったコンテスト', author: 'alice', published: true, joined: false, closed: true } }))
   await page.goto(`/my/contest-invitations/${token}`)
@@ -402,9 +411,10 @@ test('my contests list every setter of a contest and the owner of each draft', a
   await page.route(url => url.pathname === '/api/my/contests', route => route.fulfill({ json: { items: [{ ...runningContest, status: 'scheduled', canEdit: true, setter: true, authors: ['alice', 'ui_test'] }], hasMore: false } }))
   await page.goto('/my?tab=contests')
   const drafts = page.getByRole('region', { name: 'コンテストの下書き' })
-  await expect(drafts.getByRole('columnheader')).toHaveText(['下書き', '開始予定（日本時間）', '更新（日本時間）', 'オーナー', '操作'])
+  await expect(drafts.getByRole('columnheader')).toHaveText(['下書き', '開始予定 (JST)', '更新 (JST)', 'オーナー', '操作'])
   await expect(drafts.locator('tbody tr')).toContainText('alice')
   const published = page.getByRole('region', { name: 'コンテスト一覧' })
+  await expect(published.getByRole('columnheader')).toHaveText(['コンテスト', '状態', '開始 (JST)', '終了 (JST)', '作成者', '操作'])
   await expect(published.locator('tbody td').nth(3)).toHaveText('alice、ui_test')
   await expect(published.getByRole('link', { name: '共同開催コンテストを編集' })).toBeVisible()
   for (const width of [320, 375, 768]) {

@@ -1,11 +1,6 @@
 package httpapi
 
-import (
-	"context"
-	"net/http"
-
-	"judge/api/internal/problems"
-)
+import "net/http"
 
 func (p problemHandler) difficultyVote(w http.ResponseWriter, r *http.Request, owner string) {
 	id := r.PathValue("id")
@@ -13,10 +8,7 @@ func (p problemHandler) difficultyVote(w http.ResponseWriter, r *http.Request, o
 		authError(w, 404, "problem_not_found")
 		return
 	}
-	store, ok := p.Store.(interface {
-		DifficultyVote(context.Context, string, string, *int) (problems.DifficultyVote, error)
-	})
-	if !ok {
+	if p.Store == nil {
 		authError(w, 503, "database_unavailable")
 		return
 	}
@@ -35,7 +27,7 @@ func (p problemHandler) difficultyVote(w http.ResponseWriter, r *http.Request, o
 	case http.MethodDelete:
 		in.Difficulty = new(int)
 	}
-	result, err := store.DifficultyVote(r.Context(), owner, id, in.Difficulty)
+	result, err := p.Store.DifficultyVote(r.Context(), owner, id, in.Difficulty)
 	if err != nil {
 		problemError(w, err)
 		return

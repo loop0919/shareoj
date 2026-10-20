@@ -1,11 +1,6 @@
 package httpapi
 
-import (
-	"context"
-	"net/http"
-
-	"judge/api/internal/problems"
-)
+import "net/http"
 
 func (p problemHandler) favorite(w http.ResponseWriter, r *http.Request, owner string) {
 	id := r.PathValue("id")
@@ -13,10 +8,7 @@ func (p problemHandler) favorite(w http.ResponseWriter, r *http.Request, owner s
 		authError(w, 404, "not_found")
 		return
 	}
-	store, ok := p.Store.(interface {
-		Favorite(context.Context, string, string, *bool) (problems.Favorite, error)
-	})
-	if !ok {
+	if p.Store == nil {
 		authError(w, 503, "database_unavailable")
 		return
 	}
@@ -32,7 +24,7 @@ func (p problemHandler) favorite(w http.ResponseWriter, r *http.Request, owner s
 			return
 		}
 	}
-	result, err := store.Favorite(r.Context(), owner, id, in.Favorited)
+	result, err := p.Store.Favorite(r.Context(), owner, id, in.Favorited)
 	if err != nil {
 		problemError(w, err)
 		return

@@ -15,6 +15,9 @@ test('featured editions show two slots, revivals, vacancies and the Ultimate lab
   await page.keyboard.press('Enter')
   await expect(notes.locator('li')).toHaveCount(5)
   await expect(notes).toContainText('次回予定を含む')
+  await expect(notes).toContainText('新作の解説と他者の提出は、出題翌日の22:00 (JST)に公開します。')
+  await expect(page.locator('.delivery-kicker')).toHaveText('毎週 月・木 23:00 (JST)')
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', '毎週月曜・木曜23:00 (JST)にEasyとHardを一問ずつ出題します。新作の解説は翌22時に公開。')
   await page.keyboard.press('Enter')
   await expect(notes.locator('ul')).toBeHidden()
   await expect(page.locator('.featured-page > p')).toHaveCount(0)
@@ -202,6 +205,7 @@ test('the schedule lists coming rounds by level without writers and fits narrow 
   await page.getByRole('link', { name: '予定', exact: true }).click()
   await expect(page).toHaveURL('/featured/schedule')
   await expect(page.getByRole('heading', { name: '定期便の予定', level: 1 })).toBeVisible()
+  await expect(page.locator('.schedule-note')).toContainText('毎週月曜・木曜の23:00 (JST)に出題します。')
   await expect(page.locator('.schedule-waiting')).toContainText('Easy 3問')
   const rows = page.locator('.featured-schedule tbody tr')
   await expect(rows).toHaveCount(8)
@@ -209,6 +213,10 @@ test('the schedule lists coming rounds by level without writers and fits narrow 
   await expect(rows.nth(1)).not.toContainText('確定')
   await expect(rows.first().locator('td').first()).toHaveText('Lv.4')
   await expect(rows.first().locator('td').nth(1)).toHaveText('Lv.7')
+  // The schedule's Hard column keeps its name even for a Lv.9+ problem: a column can hold both.
+  await expect(page.locator('.featured-schedule thead th').last()).toHaveText('Hard')
+  await expect(rows.nth(1).locator('td').nth(1)).toHaveText('Lv.10')
+  await expect(rows.nth(1).locator('td').nth(1)).toHaveAttribute('data-slot', 'Hard')
   // The schedule never names writers.
   await expect(page.locator('.featured-schedule a')).toHaveCount(0)
   await expect(rows.nth(3)).toContainText('募集中')
@@ -238,7 +246,7 @@ test('guests see the schedule on the application page and a login link back to i
 test('hidden editorial and other submissions show the unlock time while own results stay accessible', async ({ page }) => {
   await page.goto(`/problems/${hidden}?view=editorial`)
   await expect(page.getByText('解説は公開待ちです。')).toBeVisible()
-  await expect(page.locator('.notice')).toHaveText('定期便の新作です。解説と他者の提出は2099/09/29 22:00（日本時間）に公開します。')
+  await expect(page.locator('.notice')).toHaveText('定期便の新作です。解説と他者の提出は2099/09/29 22:00 (JST)に公開します。')
   await page.getByRole('link', { name: 'すべての提出', exact: true }).click()
   await expect(page.getByText(/他者の提出は解禁後に閲覧できます/)).toBeVisible()
   await expect(page.locator('.problem-submissions')).toHaveCount(0)
@@ -325,16 +333,13 @@ test('empty inventory and long credits fit a narrow screen', async ({ page }) =>
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320)
 })
 
-test('home announces 定期便 with a link that fits narrow screens', async ({ page }, testInfo) => {
-  await page.emulateMedia({ colorScheme: 'dark' })
-  await page.goto('/')
-  await page.screenshot({ path: testInfo.outputPath('home-news-1280.png') })
+test('home shows no 定期便 launch notice and fits narrow screens', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 800 })
-  const news = page.getByRole('complementary', { name: 'お知らせ' })
-  await expect(news).toContainText('新機能「定期便」が追加されました！')
-  await expect(news.getByRole('link', { name: '定期便を見る' })).toHaveAttribute('href', '/featured')
+  await page.goto('/')
+  await expect(page.getByRole('region', { name: 'ShareOJ定期便' })).toBeVisible()
+  await expect(page.getByRole('complementary', { name: 'お知らせ' })).toHaveCount(0)
+  await expect(page.getByText('新機能「定期便」が追加されました！')).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-  await news.screenshot({ path: testInfo.outputPath('home-news-320.png') })
 })
 
 test('home keeps its navigation and retries when the delivery API fails', async ({ page }) => {

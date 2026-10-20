@@ -11,33 +11,67 @@ import interactive
 
 
 class InteractiveTests(unittest.TestCase):
+    def execute_stubbed(self, request, **prepare_program):
+        commands = []
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for i in range(2):
+                (root / str(i) / 'box').mkdir(parents=True)
+            def invoke(args, *, box_id=0, **kwargs):
+                return subprocess.CompletedProcess(args, 0, stdout=str(root / str(box_id)).encode())
+            def popen(command, **kwargs):
+                commands.append(command)
+                meta = Path(next(arg.removeprefix('--meta=') for arg in command if arg.startswith('--meta=')))
+                meta.write_text('time:0.1\ntime-wall:0.2\ncg-mem:1024')
+                return Mock(returncode=0, poll=Mock(return_value=0))
+            with patch.object(interactive.sandbox, 'invoke', invoke), \
+                    patch.object(interactive.sandbox, 'META', root / 'meta'), \
+                    patch.object(interactive.sandbox, 'prepare_program', **prepare_program), \
+                    patch.object(interactive.subprocess, 'Popen', popen), \
+                    patch.object(interactive, 'relay', return_value='AC'):
+                result = interactive.execute(request, request['cases'][0], root / 'checker', lambda _: None)
+        return result, commands
+
     def test_submission_memory_limit_is_separate_from_interactor_limit(self):
         from test_checker import job
         for memory in (64, 315, 512):
-            with self.subTest(memory=memory), tempfile.TemporaryDirectory() as tmp:
-                root = Path(tmp)
-                for i in range(2):
-                    (root / str(i) / 'box').mkdir(parents=True)
+            with self.subTest(memory=memory):
                 request = job()
                 request['memoryLimitMb'] = memory
                 request['interactor'] = request.pop('checker')
-                commands = []
-                def invoke(args, *, box_id=0, **kwargs):
-                    return subprocess.CompletedProcess(args, 0, stdout=str(root / str(box_id)).encode())
-                def popen(command, **kwargs):
-                    commands.append(command)
-                    meta = Path(next(arg.removeprefix('--meta=') for arg in command if arg.startswith('--meta=')))
-                    meta.write_text('time:0.1\ntime-wall:0.2\ncg-mem:1024')
-                    return Mock(returncode=0, poll=Mock(return_value=0))
-                with patch.object(interactive.sandbox, 'invoke', invoke), \
-                        patch.object(interactive.sandbox, 'META', root / 'meta'), \
-                        patch.object(interactive.sandbox, 'prepare_program', return_value=['/box/main']), \
-                        patch.object(interactive.subprocess, 'Popen', popen), \
-                        patch.object(interactive, 'relay', return_value='AC'):
-                    result = interactive.execute(request, request['cases'][0], root / 'checker', lambda _: None)
+                result, commands = self.execute_stubbed(request, return_value=['/box/main'])
                 self.assertEqual(result['verdict'], 'AC')
                 self.assertIn(f'--cg-mem={memory * 1024}', commands[0])
                 self.assertIn('--cg-mem=262144', commands[1])
+
+    def test_interactor_heap_caps_stay_fixed_while_the_submission_scales(self):
+        from test_checker import job
+        v8 = '--max-old-space-size='
+        expected = {'java24-isolate': ('-Xmx', {64: '32m', 256: '128m', 512: '256m'}, '128m'),
+                    'csharp14-isolate': ('--env=DOTNET_GCHeapHardLimit=', {64: '0x1800000', 256: '0x6000000', 512: '0xc000000'}, '0x8000000'),
+                    'go127-isolate': ('--env=GOMEMLIMIT=', {64: '48MiB', 256: '192MiB', 512: '384MiB'}, '160MiB'),
+                    'ruby-truffle40-isolate': ('--env=RUBYOPT=', {64: '--vm.Xmx32m', 256: '--vm.Xmx128m', 512: '--vm.Xmx256m'}, '--vm.Xmx96m'),
+                    'javascript-node24-isolate': ('--env=NODE_OPTIONS=', {64: v8 + '40', 256: v8 + '160', 512: v8 + '320'}, v8 + '128'),
+                    'typescript-deno29-isolate': ('--env=DENO_V8_FLAGS=', {64: v8 + '40', 256: v8 + '160', 512: v8 + '320'}, v8 + '128')}
+        for name, (prefix, submission, interactor) in expected.items():
+            for memory, value in submission.items():
+                with self.subTest(runtime=name, memory=memory):
+                    request = job()
+                    del request['checker']
+                    request.update(runtime=name, memoryLimitMb=memory,
+                                   interactor=dict(runtime=name.removesuffix('-isolate'), source='x'))
+                    _, commands = self.execute_stubbed(
+                        request, side_effect=lambda box, runtime, *args, **kwargs: list(runtime['run']))
+                    self.assertEqual([[arg for arg in command if arg.startswith(prefix)] for command in commands],
+                                     [[prefix + value], [prefix + interactor]])
+
+    def test_java_interactor_heap_comes_from_the_flag_not_the_memory_value(self):
+        # Like run_args, java_heap tells the interactor apart by its flag, so its cap ignores the memory value.
+        command = list(interactive.RUNTIMES['java24-isolate']['run'])
+        for memory in (64, 256, 512):
+            with self.subTest(memory=memory):
+                self.assertEqual([arg for arg in interactive.sandbox.java_heap(command, memory, interactor=True)
+                                  if arg.startswith('-Xmx')], ['-Xmx128m'])
 
     def run_pair(self, source, interactor, wall=3, statuses=None, protocol='legacy', points=False):
         processes = [subprocess.Popen([sys.executable, '-c', code], stdin=subprocess.PIPE,
@@ -121,6 +155,49 @@ class InteractiveTests(unittest.TestCase):
             codes[i] = 'pass'
             result, _ = self.run_pair(*codes, statuses={i: {'overflow': True}})
             self.assertEqual(result, 'OLE' if i == 0 else 'JE')
+
+    def test_resource_flags_of_each_side_follow_relay_rules(self):
+        # The peer keeps running, so only the finished side's metrics decide the result.
+        for i, flags, expected in [
+                (0, {'oom': True}, 'MLE'), (0, {'status': 'TO'}, 'TLE'), (0, {'status': 'TO', 'oom': True}, 'MLE'),
+                (0, {'overflow': True, 'oom': True}, 'OLE'), (0, {'exitCode': 1}, 'RE'),
+                (1, {'oom': True}, 'JE'), (1, {'status': 'TO'}, 'JE'), (1, {'status': 'TO', 'wallTimeout': True}, 'TLE')]:
+            with self.subTest(side=i, flags=flags):
+                codes = ['import time; time.sleep(10)'] * 2
+                codes[i] = 'pass'
+                result, log = self.run_pair(*codes, statuses={i: flags})
+                self.assertEqual(result, expected)
+                if 'wallTimeout' in flags:
+                    self.assertIn('経過時間超過', log)
+
+    def test_total_output_limit_wins_over_finished_metrics(self):
+        # The writer's metrics arrive in the same poll that first sees its total over the limit.
+        for i, finished, expected in [
+                (0, dict(status='', exitCode=0, signal=0, overflow=False, oom=True), 'OLE'),
+                (0, dict(status='RE', exitCode=1, signal=0, overflow=False, oom=False), 'OLE'),
+                (1, dict(status='RE', exitCode=1, signal=0, overflow=False, oom=False), 'JE')]:
+            with self.subTest(side=i, finished=finished):
+                codes = ['import time; time.sleep(10)'] * 2
+                codes[i] = "import sys; sys.stdout.write('x'*20000); sys.stdout.flush(); import time; time.sleep(10)"
+                processes = [subprocess.Popen([sys.executable, '-c', code], stdin=subprocess.PIPE,
+                                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
+                             for code in codes]
+                log = []
+                def observe(j):
+                    # Only the writer sends 'x', so this counts the bytes relayed from it.
+                    relayed = sum(entry.count('x') for entry in log)
+                    return finished if j == i and relayed > 10000 else None
+                try:
+                    with patch.object(interactive.sandbox, 'OUTPUT_LIMIT', 10000):
+                        result = interactive.relay(processes, observe, 3, log.append)
+                finally:
+                    for p in processes:
+                        if p.poll() is None:
+                            p.kill()
+                        p.wait()
+                        p.stdin.close()
+                        p.stdout.close()
+                self.assertEqual(result, expected)
 
     def test_jobs_reject_conflicting_modes_and_bad_interactors(self):
         from test_checker import job

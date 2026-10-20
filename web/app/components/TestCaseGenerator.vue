@@ -2,6 +2,7 @@
 import type { Submission } from '../../shared/types/submission'
 import { testFileSchema, type Generators } from '~~/shared/types/problem-draft'
 import { testCaseError, persistedDraft, type TestCase } from '~/utils/problem-draft'
+import { usableRuntimes } from '~/utils/judge-catalog'
 
 const cases = defineModel<TestCase[]>({ required: true })
 const config = defineModel<Generators>('config', { required: true })
@@ -17,7 +18,7 @@ const failure = ref('')
 const validationResults = ref<{ name: string, verdict: string }[]>([])
 const modeLabel = computed(() => ({ input: '入力生成', output: '出力生成', validation: '入力検証' })[mode.value])
 const { data: catalog, error: catalogError, refresh: refreshCatalog } = useJudgeCatalog()
-const available = computed(() => catalogError.value || catalog.value?.maintenance ? [] : catalog.value?.items ?? [])
+const available = computed(() => usableRuntimes(catalog.value, catalogError.value))
 const program = computed(() => config.value[mode.value])
 const specOpen = useState('code-spec-open', () => false)
 watch([mode, start, count, () => JSON.stringify(program.value), () => JSON.stringify(persistedDraft({ testCases: cases.value }))], () => {
@@ -129,7 +130,8 @@ async function generate() {
       failure.value = detail.retryAfter
         ? `提出頻度制限に到達しました。${detail.retryAfter}秒後に再度試してください。`
         : '提出頻度制限に到達しました。しばらく待ってから再度試してください。'
-    } else failure.value = error instanceof Error && !('statusCode' in error) ? error.message : '実行できませんでした。ログイン状態と実行環境を確認してください。'
+    } else if (detail?.code === 'invalid_submission') failure.value = '実行内容を受け付けられませんでした。言語とコード、件数と、テストケースの合計サイズを確認してください。'
+    else failure.value = error instanceof Error && !('statusCode' in error) ? error.message : '実行できませんでした。ログイン状態と実行環境を確認してください。'
   } finally { busy.value = false }
 }
 </script>
@@ -150,7 +152,7 @@ async function generate() {
       <div v-show="judging"><slot name="checker" /></div>
       <div v-show="!judging">
         <div class="generator-options">
-          <label>言語<select v-model="program.runtime" :disabled="disabled || busy"><option v-for="item in available" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
+          <label>言語<select v-model="program.runtime" :disabled="disabled || busy"><option v-if="!available.some(item => item.id === program.runtime)" :value="program.runtime">{{ program.runtime }}（現在利用できません）</option><option v-for="item in available" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
           <label v-if="mode === 'input'">開始ケース番号<input v-model="start" type="number" step="1" :disabled="disabled || busy"></label>
           <label v-if="mode === 'input'">生成件数<input v-model="count" type="number" min="1" max="100" step="1" :disabled="disabled || busy"></label>
         </div>

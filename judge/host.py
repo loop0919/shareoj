@@ -74,7 +74,7 @@ def validate_job(job, runtime):
     if job.get('generate') and not re.fullmatch(r'test-files/[a-f0-9]{32}/[a-f0-9-]{36}/generated/', job.get('generationPrefix', '')):
         raise ValueError('generation prefix')
     source = job.get('source')
-    if not isinstance(source, str) or not 0 < len(source.encode()) <= 131072 or '\0' in source:
+    if not isinstance(source, str) or not 0 < len(source.encode()) <= sandbox.SOURCE_LIMIT or '\0' in source:
         raise ValueError('source')
     if type(job.get('memoryLimitMb')) is not int or not 64 <= job['memoryLimitMb'] <= 512:
         raise ValueError('memory limit')
@@ -275,18 +275,12 @@ def case_result(reply, index, case, generate=False, validate=False):
     output = base64.b64decode(reply['output'], validate=True)
     if len(output) > TEST_FILE_LIMIT:
         raise ValueError('output limit')
-    if reply['overflow']:
-        verdict = 'OLE'
-    elif reply['oom']:
-        verdict = 'MLE'
-    elif reply['status'] == 'TO':
-        verdict = 'TLE'
-    elif reply['status'] or reply['exitCode'] or reply['signal']:
-        verdict = 'RE'
-    elif not generate and not validate and re.findall(rb'[^ \t\n\r\v\f]+', output) != re.findall(rb'[^ \t\n\r\v\f]+', case['output'].encode()):
-        verdict = 'WA'
-    else:
-        verdict = 'AC'
+    verdict = sandbox.failure_verdict(reply)
+    if verdict is None:
+        if not generate and not validate and re.findall(rb'[^ \t\n\r\v\f]+', output) != re.findall(rb'[^ \t\n\r\v\f]+', case['output'].encode()):
+            verdict = 'WA'
+        else:
+            verdict = 'AC'
     item = dict(name=case.get('name') or f'ケース{index + 1}', verdict=verdict,
                 cpuTimeMs=cpu, wallTimeMs=wall, memoryBytes=memory)
     if generate and verdict == 'AC':
@@ -517,8 +511,7 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
                                          input=base64.b64encode(aggregator_input(job, result['cases']).encode()).decode(),
                                          timeLimitMs=5000, memoryLimitMb=512), artifact=aggregator_artifact, stderr_log=True)
             stderr = reply.get('checkerLog', '')
-            failure = ('OLE' if reply['overflow'] else 'MLE' if reply['oom'] else 'TLE' if reply['status'] == 'TO'
-                       else 'RE' if reply['status'] or reply['exitCode'] or reply['signal'] else None)
+            failure = sandbox.failure_verdict(reply)
             if failure:
                 diagnostic(f"集計コードの実行失敗: {failure}\n" + stderr + '\n', keep=True)
                 return checker_error('aggregator_execution_failed')

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
-	"strings"
 	"time"
 
 	"judge/api/internal/database"
@@ -193,13 +192,6 @@ type Cursor struct {
 	ID        string    `json:"id"`
 }
 
-type Repository interface {
-	Get(context.Context, string, string) (Problem, error)
-	List(context.Context, string, *Cursor) ([]Summary, error)
-	Save(context.Context, string, string, int64, Draft, ...ContentRules) (Problem, error)
-	Delete(context.Context, string, string, int64) error
-}
-
 // ContentRules are the runtimes that the content rules of a save judge against (ADR 0021).
 type ContentRules struct {
 	KnownRuntimes, EnabledRuntimes []string
@@ -221,6 +213,10 @@ func (s *Store) Pool() *pgxpool.Pool               { return s.pool }
 func (s *Store) Close()                            { s.pool.Close() }
 func (s *Store) Migrate(ctx context.Context) error { return database.Migrate(ctx, s.pool) }
 
+// problemColumns are what scan reads, in its order. Their subqueries refer to problem_drafts by name, so a query that
+// reads them leaves the table without an alias.
+const problemColumns = `id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at`
+
 func scan(row pgx.Row) (Problem, error) {
 	var p Problem
 	var data []byte
@@ -236,7 +232,7 @@ func scan(row pgx.Row) (Problem, error) {
 }
 
 func (s *Store) Get(ctx context.Context, owner, id string) (Problem, error) {
-	p, err := scan(s.pool.QueryRow(ctx, `SELECT id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at FROM problem_drafts WHERE can_manage_problem(id,$1) AND id=$2`, owner, id))
+	p, err := scan(s.pool.QueryRow(ctx, `SELECT `+problemColumns+` FROM problem_drafts WHERE can_manage_problem(id,$1) AND id=$2`, owner, id))
 	if err != nil {
 		return p, err
 	}
@@ -273,18 +269,25 @@ func (s *Store) ListTesting(ctx context.Context, owner string, cursor *Cursor) (
 	return s.list(ctx, owner, cursor, true)
 }
 
-func (s *Store) list(ctx context.Context, owner string, cursor *Cursor, testing bool) ([]Summary, error) {
-	query := `SELECT id, draft, updated_at, published_version,ever_published,COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at,COALESCE((SELECT preference FROM featured_applications WHERE problem_id=problem_drafts.id),''),EXISTS(SELECT 1 FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=problem_drafts.id AND NOT c.released),NULL::text,NULL::text,NULL::text FROM problem_drafts WHERE owner_id=$1`
-	if testing {
-		// Setters of a published contest test its problems until the results are final, without an invitation. The
-		// subquery only narrows the candidates; can_manage_problem decides, so the list never shows what opens as 404.
-		query = strings.Replace(query, "NULL::text,NULL::text,NULL::text FROM problem_drafts WHERE owner_id=$1", `via.via_id,via.via_title,via.via_author FROM problem_drafts
+// Both lists select these columns, then the three columns of ViaContest, which the owned list leaves NULL.
+const summaryColumns = `id, draft, updated_at, published_version,ever_published,COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at,COALESCE((SELECT preference FROM featured_applications WHERE problem_id=problem_drafts.id),''),EXISTS(SELECT 1 FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=problem_drafts.id AND NOT c.released)`
+
+const ownedSummaries = `SELECT ` + summaryColumns + `,NULL::text,NULL::text,NULL::text FROM problem_drafts WHERE owner_id=$1`
+
+// Setters of a published contest test its problems until the results are final, without an invitation. The
+// subquery only narrows the candidates; can_manage_problem decides, so the list never shows what opens as 404.
+const testedSummaries = `SELECT ` + summaryColumns + `,via.via_id,via.via_title,via.via_author FROM problem_drafts
  LEFT JOIN LATERAL (SELECT c.id::text AS via_id,c.title AS via_title,u.handle AS via_author FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id
   JOIN user_profiles u ON u.owner_id=problem_drafts.owner_id
   WHERE cp.problem_id=problem_drafts.id AND NOT EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=problem_drafts.id AND t.owner_id=$1)) via ON true
  WHERE owner_id<>$1 AND id IN (SELECT t.problem_id FROM problem_testers t WHERE t.owner_id=$1
   UNION ALL SELECT cp.problem_id FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE NOT contest_results_final(c) AND contest_setter(c.id,$1))
- AND can_manage_problem(id,$1)`, 1)
+ AND can_manage_problem(id,$1)`
+
+func (s *Store) list(ctx context.Context, owner string, cursor *Cursor, testing bool) ([]Summary, error) {
+	query := ownedSummaries
+	if testing {
+		query = testedSummaries
 	}
 	args := []any{owner}
 	if cursor != nil {
@@ -371,7 +374,7 @@ func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft
 		if err = database.ConsumeCreationQuota(ctx, tx, owner, "problem"); err != nil {
 			return p, err
 		}
-		p, err = scan(tx.QueryRow(ctx, `INSERT INTO problem_drafts (id, owner_id, draft) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING RETURNING id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at`, id, owner, data))
+		p, err = scan(tx.QueryRow(ctx, `INSERT INTO problem_drafts (id, owner_id, draft) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING RETURNING `+problemColumns, id, owner, data))
 	} else {
 		// Lock the contest that holds the problem before the problem, in the order of a contest save. Submissions
 		// being created hold the contest FOR SHARE, so none of them meets a scoring change that this save makes
@@ -380,7 +383,7 @@ func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft
  WHERE cp.problem_id=$1 AND can_manage_problem(cp.problem_id,$2) FOR NO KEY UPDATE OF c`, id, owner); err != nil {
 			return Problem{}, err
 		}
-		p, err = scan(tx.QueryRow(ctx, `UPDATE problem_drafts SET draft=$4, published_draft=CASE WHEN published_draft IS NOT NULL THEN $4::jsonb ELSE NULL END, published_version=CASE WHEN published_draft IS NOT NULL THEN version+1 ELSE 0 END, version=version+1, updated_at=clock_timestamp() WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at`, owner, id, version, data))
+		p, err = scan(tx.QueryRow(ctx, `UPDATE problem_drafts SET draft=$4, published_draft=CASE WHEN published_draft IS NOT NULL THEN $4::jsonb ELSE NULL END, published_version=CASE WHEN published_draft IS NOT NULL THEN version+1 ELSE 0 END, version=version+1, updated_at=clock_timestamp() WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING `+problemColumns, owner, id, version, data))
 	}
 	var started bool
 	if err == nil && version != 0 {

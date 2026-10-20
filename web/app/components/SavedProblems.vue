@@ -68,7 +68,7 @@ watch([filter, nextCursor, accountLoading], () => {
   if (filter.value && nextCursor.value && !accountLoading.value && !accountMessage.value) void loadAccount(true)
 })
 
-const updatedLabel = (date: string) => new Date(date).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+const updatedLabel = (date: string) => new Date(date).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })
 onMounted(() => { void loadAccount() })
 </script>
 
@@ -94,7 +94,7 @@ onMounted(() => { void loadAccount() })
             <td>
               <span class="problem-state">
                 <ProblemStatus :problem="entry" />
-                <time v-if="entry.scheduledAt" :datetime="entry.scheduledAt">{{ new Date(entry.scheduledAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) }}（日本時間）</time>
+                <time v-if="entry.scheduledAt" :datetime="entry.scheduledAt">{{ new Date(entry.scheduledAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) }} (JST)</time>
                 <span v-if="!entry.publishedVersion && !entry.contestScheduled && entry.featuredPreference" class="featured-preference" tabindex="0" role="img" :aria-label="preferenceLabel(entry.featuredPreference)" :aria-describedby="`${tooltipId}-${entry.id}`">
                   <FeaturedPreferenceIcon :preference="entry.featuredPreference === 'soon' ? 'soon' : 'later'" />
                   <span :id="`${tooltipId}-${entry.id}`" class="preference-tooltip" role="tooltip">{{ preferenceLabel(entry.featuredPreference) }}</span>

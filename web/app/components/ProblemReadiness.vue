@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { contentIssues, destinationNames, issueMessage, issueSection, problemStatus, type EditorSection, type ProblemStatusInput } from '~/utils/problem-readiness'
+import { contentIssues, destinationNames, issueMessage, issueSection, problemStatus, stateIssues, type EditorSection, type ProblemStatusInput } from '~/utils/problem-readiness'
 // details adds what the editor knows about a reason, such as the names of the cases in no group (ADR 0025).
 const props = defineProps<{ problem: ProblemStatusInput, saved: boolean, details?: Record<string, string> }>()
 const emit = defineEmits<{ jump: [section: EditorSection] }>()
@@ -7,13 +7,12 @@ const sectionNames: Record<EditorSection, string> = { statement: '問題文', te
 const status = computed(() => problemStatus(props.problem))
 // What the author can fix, whatever the problem's state: publishing an update needs it too.
 const issues = computed(() => status.value.kind === 'featured' ? status.value.issues : contentIssues(props.problem.readiness))
-const stateCodes = new Set(['published', 'ever_published', 'in_contest', 'featured_limit', 'featured_applied'])
 // Where the problem already is limits other destinations; say so once per message.
 const notes = computed(() => {
   const readiness = props.problem.readiness
   if (!readiness) return []
   return [...new Set((['publish', 'contest', 'featured'] as const).flatMap(destination =>
-    readiness[destination].filter(code => stateCodes.has(code)).map(code => `${destinationNames[destination]}：${issueMessage(code, destination)}`)))]
+    readiness[destination].filter(code => stateIssues.has(code)).map(code => `${destinationNames[destination]}：${issueMessage(code, destination)}`)))]
 })
 </script>
 

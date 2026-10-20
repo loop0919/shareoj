@@ -32,7 +32,7 @@ usePolling(load, 2000, () => !message.value && (items.value.some(item => item.st
         <thead><tr><th scope="col">提出日時</th><th scope="col">問題</th><th scope="col">言語</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th scope="col">結果</th><th scope="col">詳細</th></tr></thead>
         <tbody>
           <tr v-for="item in items" :key="item.id">
-            <td class="submission-date"><time :datetime="item.createdAt">{{ new Date(item.createdAt).toLocaleString('ja-JP') }}</time></td>
+            <td class="submission-date"><time :datetime="item.createdAt">{{ new Date(item.createdAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) }}</time></td>
             <td class="submission-problem"><NuxtLink :to="submissionProblemPath(item)">{{ item.problemTitle }}</NuxtLink></td>
             <td class="submission-language">{{ runtimeLabel(item.runtime) }}</td>
             <td class="submission-usage">{{ item.sourceBytes == null ? '—' : `${item.sourceBytes.toLocaleString('en-US')} bytes` }}</td>

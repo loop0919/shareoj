@@ -70,6 +70,14 @@ const submission = {
   createdAt: '2026-09-10T00:00:00Z',
   result: { verdict: 'AC', passed: 1, total: 1, cpuTimeMs: 2, memoryBytes: 1048576, cases: [{ name: 'sample_1', verdict: 'AC', cpuTimeMs: 2, wallTimeMs: 4, memoryBytes: 1048576 }] },
 }
+// Each of these contests refuses its reveal, so tests can check how the web server passes upstream errors on.
+const upstreamRefusals = [
+  { id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f001', status: 400, error: 'private-upstream-diagnostic' },
+  { id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f002', status: 400, error: 'creation_quota_exceeded' },
+  { id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f003', status: 429, error: 'team_full', retryAfter: '30' },
+  { id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f004', status: 429, error: 'private-upstream-diagnostic', retryAfter: '30' },
+  { id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f005', status: 500, error: 'team_full' },
+]
 createServer(async (req, res) => {
   res.setHeader('Content-Type', 'application/json')
   const path = new URL(req.url, 'http://localhost').pathname
@@ -96,6 +104,12 @@ createServer(async (req, res) => {
     // The fixture session is alice, the author of the featured problem whose editorial is still hidden.
     if (path === `/my/problems/${featuredProblem.id}/publication`) return res.end(JSON.stringify({ ...featuredProblem, editorial: '定期便の解説本文' }))
     if (path === `/my/problems/${featuredProblem.id}/submissions`) return res.end(JSON.stringify({ items: [{ ...submission, id: '33333333-3333-4333-8333-333333333333', problemId: featuredProblem.id, problemTitle: featuredProblem.title, author: 'carol' }], hasMore: false }))
+    // This problem, an ID the web server must refuse, and the paths a dot segment in an ID leads to echo what the web server forwarded.
+    if (['/my/problems/12121212-1212-4212-8212-121212121212/', '/my/problems/not-a-problem/', '/my/test-files'].some(prefix => path.startsWith(prefix))) {
+      let body = ''
+      for await (const chunk of req) body += chunk
+      return res.end(JSON.stringify({ path, url: req.url, method: req.method, type: req.headers['content-type'] ?? '', body }))
+    }
     if (path.startsWith('/my/problems/')) return res.writeHead(404).end('{}')
     // This contest echoes what the web server forwarded, so tests can check the query it built (ADR 0024).
     if (path.startsWith('/my/contests/66666666-6666-4666-8666-666666666666/')) {
@@ -109,6 +123,11 @@ createServer(async (req, res) => {
       return res.end(JSON.stringify([{ rank: 1, handle: live ? 'live' : 'frozen', points: 0, timeMs: 0, problems: {} }]))
     }
     if (req.method === 'POST' && path === '/my/contests/88888888-8888-4888-8888-888888888888/reveal') return res.writeHead(409).end(JSON.stringify({ error: 'contest_results_pending' }))
+    const refusal = upstreamRefusals.find(({ id }) => path === `/my/contests/${id}/reveal`)
+    if (req.method === 'POST' && refusal) {
+      if (refusal.retryAfter) res.setHeader('Retry-After', refusal.retryAfter)
+      return res.writeHead(refusal.status).end(JSON.stringify({ error: refusal.error }))
+    }
     if (req.method === 'POST') {
       let raw = ''
       for await (const chunk of req) raw += chunk

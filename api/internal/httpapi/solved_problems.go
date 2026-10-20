@@ -1,19 +1,13 @@
 package httpapi
 
-import (
-	"context"
-	"net/http"
-)
+import "net/http"
 
 func (p problemHandler) solvedProblems(w http.ResponseWriter, r *http.Request, owner string) {
-	store, ok := p.Store.(interface {
-		SolvedProblems(context.Context, string) ([]string, error)
-	})
-	if !ok {
+	if p.Store == nil {
 		authError(w, 503, "database_unavailable")
 		return
 	}
-	ids, err := store.SolvedProblems(r.Context(), owner)
+	ids, err := p.Store.SolvedProblems(r.Context(), owner)
 	if err != nil {
 		problemError(w, err)
 		return

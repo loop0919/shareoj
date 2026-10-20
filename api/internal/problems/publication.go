@@ -35,11 +35,6 @@ type PublicProblem struct {
 	Author        string          `json:"author"`
 	PublishedAt   time.Time       `json:"publishedAt"`
 }
-type Publications interface {
-	Publish(context.Context, string, string, int64, bool) (Problem, error)
-	PublicGet(context.Context, string, string) (PublicProblem, error)
-	PublicList(context.Context, *Cursor, ListFilter) ([]PublicProblem, error)
-}
 
 // ListFilter narrows the public problem list. Empty fields match every problem.
 type ListFilter struct {
@@ -71,9 +66,9 @@ func (s *Store) Publish(ctx context.Context, owner, id string, version int64, pu
 	if reserved {
 		return Problem{}, ErrContestLocked
 	}
-	query := `UPDATE problem_drafts SET scheduled_at=NULL,scheduled_draft=NULL,scheduled_version=NULL,published_draft=NULL,published_version=0,published_at=NULL,version=version+1 WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING id,version,updated_at,draft,published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at`
+	query := `UPDATE problem_drafts SET scheduled_at=NULL,scheduled_draft=NULL,scheduled_version=NULL,published_draft=NULL,published_version=0,published_at=NULL,version=version+1 WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING ` + problemColumns
 	if publish {
-		query = `UPDATE problem_drafts SET published_draft=draft,published_version=version+1,published_at=COALESCE(published_at,clock_timestamp()),version=version+1 WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING id,version,updated_at,draft,published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at`
+		query = `UPDATE problem_drafts SET published_draft=draft,published_version=version+1,published_at=COALESCE(published_at,clock_timestamp()),version=version+1 WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING ` + problemColumns
 	}
 	p, err := scan(tx.QueryRow(ctx, query, owner, id, version))
 	if errors.Is(err, ErrNotFound) {
@@ -119,19 +114,28 @@ func (s *Store) PublicGet(ctx context.Context, id, viewer string) (PublicProblem
 	if err = json.Unmarshal(data, &d); err != nil {
 		return p, err
 	}
+	p.SetStatement(d)
+	p.Editorial = d.Editorial
+	p.Tags = d.Tags
+	p.Testers, err = s.Testers(ctx, id)
+	return p, err
+}
+
+// SetStatement sets, from the draft, the fields that the problem page and a contest problem page both show to whoever
+// can open them. The editorial and the tags are left to the caller because the two pages hide them differently: the
+// problem page hides them by viewer and during a 定期便 round, while a contest problem page shows the editorial only
+// after the end or to the contest's setters and the problem's author and testers, hides it until the 定期便 reveal,
+// and never shows the tags (ADR 0018).
+func (p *PublicProblem) SetStatement(d Draft) {
 	p.Title = d.Title
 	p.Difficulty = d.Difficulty
 	p.Markdown = d.Markdown
-	p.Editorial = d.Editorial
-	p.Tags = d.Tags
 	p.TimeLimitMS = d.TimeLimitMS
 	p.MemoryLimitMB = d.MemoryLimitMB
 	p.SpecialJudge = d.Checker != nil
 	p.Interactive = d.Interactor != nil
 	p.HasSamples = d.HasSamples()
 	p.Scoring = d.PublicScoring()
-	p.Testers, err = s.Testers(ctx, id)
-	return p, err
 }
 
 // PublicList returns at most 51 problems, newest first. A tag matches only while the problem's tags are public.

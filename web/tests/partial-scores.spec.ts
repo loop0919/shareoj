@@ -168,7 +168,7 @@ test('standings show partial scores in the ordinary colour, full scores in the a
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '提出一覧', exact: true }).click()
   const submissions = page.getByRole('region', { name: '提出一覧のスクロール領域' }).getByRole('table')
-  await expect(submissions.locator('thead th')).toHaveText(['問題', 'ユーザー', 'コード長', '実行時間・メモリ', '得点', '結果', '提出日時（日本時間）'])
+  await expect(submissions.locator('thead th')).toHaveText(['問題', 'ユーザー', 'コード長', '実行時間・メモリ', '得点', '結果', '提出日時 (JST)'])
   await expect(submissions.locator('td.submission-score')).toHaveText(['37.50', '—'])
 })
 

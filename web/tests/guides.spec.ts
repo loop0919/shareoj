@@ -125,3 +125,13 @@ test('links between guides point at existing pages and headings', async ({ page 
     if (hash) await expect(page.locator(`#${hash}`), target).toHaveCount(1)
   }
 })
+
+test('the contest guide says start times are typed in JST', async ({ page }) => {
+  await page.goto('/docs/hosting-contests')
+  await expect(page.locator('article .markdown-body')).toContainText('開始日時はJSTで入力し、公開されるページでもJSTで表示します。')
+})
+
+test('the featured guide gives the delivery time in JST', async ({ page }) => {
+  await page.goto('/docs/featured')
+  await expect(page.locator('article .markdown-body')).toContainText('定期便は、毎週月曜と木曜の23:00 (JST)に、Easy（Lv.1〜4）とHard（Lv.5〜10）を1問ずつ出題します。')
+})

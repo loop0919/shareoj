@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { loginDestination } from '../shared/utils/login-destination'
 
 const origin = 'https://judge.example'
 const base = 'http://127.0.0.1:13000'
@@ -65,4 +66,15 @@ test('refresh credentials do not bypass the origin check on submissions', async 
   const response = await context.request.post('/api/my/submissions', { headers: { Origin: 'https://other.example' }, data: {} })
   expect(response.status()).toBe(403)
   expect((await context.cookies()).find(c => c.name === 'openoj_access')).toBeUndefined()
+})
+
+test('login returns to any path of this site and sends anything else to my page', () => {
+  for (const path of ['/', '/my', '/problems/post', '/featured/apply', `/problems/${'A'.repeat(22)}`, '/my/contests', '/my/contests/new',
+    `/my/contests/${'A'.repeat(22)}`, '/my/submissions', '/my?tab=testing', `/my/tester-invitations/${'A'.repeat(32)}`, '/problems?tag=%E3%82%B0']) {
+    expect(loginDestination(path), path).toBe(path)
+  }
+  for (const value of [undefined, null, 42, ['/problems/post'], '', 'problems', 'https://attacker.example/', '//attacker.example/', '/\\attacker.example/',
+    '/problems//post', '/problems?next=https://attacker.example/', '/\t/attacker.example', '/my\n', '/my\r\nLocation: https://attacker.example/', '/my\u0000', '/my\u007f', '/my\u0085']) {
+    expect(loginDestination(value), JSON.stringify(value)).toBe('/my')
+  }
 })

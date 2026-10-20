@@ -126,7 +126,7 @@ async function rename(row: Entrant) {
           <p v-if="!entrants.length" class="muted">まだ誰も参加していません。</p>
           <div v-else class="content-table-scroll" role="region" aria-label="参加者の一覧" tabindex="0">
             <table class="content-table setter-table">
-              <thead><tr><th scope="col">{{ teamMode ? 'チーム・個人' : '参加者' }}</th><th v-if="division" scope="col">区分</th><th v-if="division" scope="col">オンサイトになった時刻（日本時間）</th><th scope="col">登録日時（日本時間）</th></tr></thead>
+              <thead><tr><th scope="col">{{ teamMode ? 'チーム・個人' : '参加者' }}</th><th v-if="division" scope="col">区分</th><th v-if="division" scope="col">オンサイトになった時刻 (JST)</th><th scope="col">登録日時 (JST)</th></tr></thead>
               <tbody>
                 <tr v-for="row in entrants" :key="key(row)">
                   <th scope="row">

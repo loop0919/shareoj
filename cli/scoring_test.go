@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -283,5 +284,63 @@ func TestScoringPushAndPull(t *testing.T) {
 		if _, err := os.Stat(target); !os.IsNotExist(err) {
 			t.Fatal("invalid draft left output")
 		}
+	}
+}
+
+func TestScoringPushMerge(t *testing.T) {
+	t.Setenv("SHAREOJ_CONFIG_DIR", t.TempDir())
+	t.Setenv("SHAREOJ_ACCESS_TOKEN", "author")
+	ctx := context.Background()
+	var remote problem
+	puts, uploads := 0, 0
+	dir := scoringExample(t)
+	write(t, filepath.Join(dir, "tests/03.in"), strings.Repeat("3\n", 40<<10))
+	server := fakeDrafts(t, &remote, &puts)
+	client, err := newClient(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := server.Client().Transport
+	client.http = &http.Client{Transport: updateTransport(func(r *http.Request) (*http.Response, error) {
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/test-files") {
+			uploads++
+		}
+		return next.RoundTrip(r)
+	})}
+	if _, err := push(ctx, dir, client, -1); err != nil || uploads != 1 {
+		t.Fatalf("create: %v uploads=%d", err, uploads)
+	}
+	// Ungrouping the remote cases stops push before it uploads or saves anything.
+	write(t, filepath.Join(dir, "problem.toml"), template)
+	beforePuts, beforeUploads := puts, uploads
+	if _, err := push(ctx, dir, client, -1); err == nil || err.Error() != "the remote draft uses partial scoring: add [scoring] and [[tests.groups]] to problem.toml (shareoj pull writes them) or omit [tests]; switching back to all-or-nothing is done on the website" || puts != beforePuts || uploads != beforeUploads {
+		t.Fatalf("ungrouping push: %v puts=%d uploads=%d", err, puts-beforePuts, uploads-beforeUploads)
+	}
+	// A version conflict is reported before the merge errors.
+	remote.Version++
+	_, err = push(ctx, dir, client, -1)
+	remote.Version--
+	if err == nil || err.Error() != "version conflict: local 1, remote 2; review the web draft before using --expect-version 2" {
+		t.Fatalf("conflict: %v", err)
+	}
+	// An omitted aggregator needs a valid remote scoring, so an invalid one stops push before any upload or save.
+	remote.Draft["scoring"] = json.RawMessage(`"x"`)
+	write(t, filepath.Join(dir, "problem.toml"), template+noAggregator)
+	if _, err := push(ctx, dir, client, -1); err == nil || err.Error() != "invalid scoring in the remote draft" || puts != beforePuts || uploads != beforeUploads {
+		t.Fatalf("invalid remote scoring: %v puts=%d uploads=%d", err, puts-beforePuts, uploads-beforeUploads)
+	}
+	// A null remote scoring is all-or-nothing, so [tests] without [scoring] is saved.
+	remote.Draft["scoring"] = json.RawMessage("null")
+	write(t, filepath.Join(dir, "problem.toml"), template)
+	if _, err := push(ctx, dir, client, -1); err != nil || string(remote.Draft["scoring"]) != "null" || puts != beforePuts+1 {
+		t.Fatalf("null scoring: %s %v", remote.Draft["scoring"], err)
+	}
+	// An invalid remote generators value stops push before any upload or save.
+	remote.Draft["generators"] = json.RawMessage(`"x"`)
+	write(t, filepath.Join(dir, "problem.toml"), template+scoringTOML)
+	beforePuts, beforeUploads = puts, uploads
+	var typeErr *json.UnmarshalTypeError
+	if _, err := push(ctx, dir, client, -1); !errors.As(err, &typeErr) || puts != beforePuts || uploads != beforeUploads {
+		t.Fatalf("invalid remote generators: %v puts=%d uploads=%d", err, puts-beforePuts, uploads-beforeUploads)
 	}
 }

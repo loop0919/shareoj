@@ -1,7 +1,7 @@
 import { accountProblemSchema, type AccountProblem, type Readiness } from '~~/shared/types/account-problems'
 import { accountError } from '~/utils/account-problems'
-import { problemDraftSchema, emptyGenerators, inlineTestDataLimit, inlineTestSetLimit, type ProblemDraft } from '~~/shared/types/problem-draft'
-import { draftErrors, initialEditorialMarkdown, initialProblemMarkdown, persistedDraft, scoringError, testCaseError, type TestCase } from '~/utils/problem-draft'
+import { problemDraftSchema, inlineTestDataLimit, inlineTestSetLimit } from '~~/shared/types/problem-draft'
+import { draftErrors, initialProblemDraft, persistedDraft, scoringError, testCaseError } from '~/utils/problem-draft'
 import { uploadTestFile } from '~/utils/test-files'
 import { readProblemCache, writeProblemCache, removeProblemCache } from '~/utils/problem-cache'
 
@@ -15,6 +15,7 @@ const saveMessages = {
   'load-failed': '問題を読み込めませんでした',
   'new': 'サンプルから書き始められます',
 }
+const autosaveDelayMs = 600
 
 export function useProblemDraft() {
   const { showToast, dismissToast } = useToast()
@@ -53,7 +54,7 @@ export function useProblemDraft() {
   let inFlight: Promise<boolean> | undefined
   const saveLocation = computed(() => publishedVersion.value ? '公開中' : '非公開')
   function refreshOnFocus() { void refreshAccount().catch(() => {}) }
-  const draft = reactive({ checker: null as ProblemDraft['checker'], interactor: null as ProblemDraft['interactor'], scoring: null as ProblemDraft['scoring'], difficulty: null as number | null, title: '', markdown: initialProblemMarkdown, editorial: initialEditorialMarkdown, tags: [] as string[], generators: emptyGenerators(), timeLimitMs: '2000', memoryLimitMb: '512', testCases: [] as TestCase[] })
+  const draft = reactive(initialProblemDraft())
   const ready = ref(false)
   const saveState = ref<keyof typeof saveMessages>('loading')
   const status = computed(() => saveMessages[saveState.value])
@@ -174,7 +175,7 @@ export function useProblemDraft() {
   }
 
   function saveWithShortcut(event: KeyboardEvent) {
-    if (event.isComposing || event.altKey || event.shiftKey || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
+    if (!isSaveShortcut(event)) return
     event.preventDefault()
     if (event.repeat || resolveLeave || confirmingDelete.value) return
     saveDraft(true)
@@ -215,7 +216,7 @@ export function useProblemDraft() {
         saveState.value = 'saved'
       } catch (error) {
         removeProblemCache(cloudOwner, cloudId.value)
-        Object.assign(draft, { checker: null, interactor: null, scoring: null, difficulty: null as number | null, title: '', markdown: initialProblemMarkdown, editorial: initialEditorialMarkdown, tags: [] as string[], generators: emptyGenerators(), timeLimitMs: '2000', memoryLimitMb: '512', testCases: [] })
+        Object.assign(draft, initialProblemDraft())
         saveState.value = 'load-failed'
         storageError.value = accountError(error)
         return
@@ -230,11 +231,17 @@ export function useProblemDraft() {
     window.addEventListener('keydown', saveWithShortcut)
   })
 
+  // Restarts the autosave timer, cancelling a pending one first, so at most one is ever pending, even when the draft
+  // changed behind a dialog.
+  // Problems that save only on an explicit action get no timer, since saveDraft would only show its save reminder.
+  function scheduleAutosave() {
+    clearTimeout(saveTimer)
+    if (!manualSaveOnly.value) saveTimer = setTimeout(() => saveDraft(), autosaveDelayMs)
+  }
   watch(draft, () => {
     if (!ready.value) return
     saveState.value = 'dirty'
-    clearTimeout(saveTimer)
-    if (!manualSaveOnly.value) saveTimer = setTimeout(() => saveDraft(), 600)
+    scheduleAutosave()
   })
 
   onBeforeRouteLeave(() => {
@@ -257,7 +264,7 @@ export function useProblemDraft() {
     const resolve = resolveLeave
     resolveLeave = undefined
     resolve?.(choice !== 'stay')
-    if (choice === 'stay' && fingerprint() !== saved && !manualSaveOnly.value) saveTimer = setTimeout(() => saveDraft(), 600)
+    if (choice === 'stay' && fingerprint() !== saved) scheduleAutosave()
   }
   onBeforeUnmount(() => {
     disposed = true
@@ -279,7 +286,7 @@ export function useProblemDraft() {
   function closeDeleteConfirmation() {
     manageDialog.value?.close()
     confirmingDelete.value = false
-    if (!deleted && fingerprint() !== saved && !manualSaveOnly.value) saveTimer = setTimeout(() => saveDraft(), 600)
+    if (!deleted && fingerprint() !== saved) scheduleAutosave()
   }
   async function removeProblem() {
     clearTimeout(saveTimer)

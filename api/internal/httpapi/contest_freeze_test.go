@@ -209,6 +209,9 @@ func TestContestFreezePostgres(t *testing.T) {
 	// The contest runs for two hours and ends in ten minutes; the last 30 minutes are frozen.
 	end := time.Now().Add(10 * time.Minute).Truncate(time.Millisecond)
 	exec(`UPDATE contests SET starts_at=$2,ends_at=$3 WHERE id=$1`, cid, end.Add(-2*time.Hour), end)
+	// Real contests are created before they start. Keeping that order catches a condition that reads the contest's
+	// created_at in place of the submission's.
+	exec(`UPDATE contests SET created_at=$2 WHERE id=$1`, cid, end.Add(-3*time.Hour))
 	exec(`UPDATE problem_testers SET created_at=$1`, end.Add(-3*time.Hour))
 	const (
 		bobWrong   = "a0000000-0000-4000-8000-000000000001"
@@ -326,6 +329,17 @@ func TestContestFreezePostgres(t *testing.T) {
 	}
 	if got := ids("/my/contests/"+cid+"/submissions", "tess"); !slices.Equal(got, all) {
 		t.Fatalf("staff list: %v", got)
+	}
+	// Problem pages follow the same rules, in the contest and out of it.
+	staffProblem := sorted(bobWrong, bobAC, bobLate, carolAC, carolQueue, samEnd)
+	if got := ids("/my/contests/"+cid+"/problems/"+p1+"/submissions", "tess"); !slices.Equal(got, staffProblem) {
+		t.Fatalf("staff contest problem list: %v", got)
+	}
+	if got := ids("/my/contests/"+cid+"/problems/"+p1+"/submissions", "carol"); !slices.Equal(got, sorted(bobWrong, bobAC, samEnd, carolAC, carolQueue)) {
+		t.Fatalf("submitter contest problem list: %v", got)
+	}
+	if got := ids("/my/problems/"+p1+"/submissions", "tess"); !slices.Equal(got, staffProblem) {
+		t.Fatalf("staff problem list: %v", got)
 	}
 	for _, path := range []string{"/contests/" + cid + "/submissions/" + carolAC, "/submissions/" + carolAC, "/problems/" + p1 + "/submissions/" + carolAC} {
 		request("GET", path, "", nil, 404)
@@ -494,4 +508,31 @@ func TestContestFreezePostgres(t *testing.T) {
 		t.Fatalf("inherited contest: %+v", inherited)
 	}
 	request("POST", "/my/contests/"+handed+"/reveal", "cos2", nil, 200)
+}
+
+// An operator's participation answers whether they may reveal the results, like the contest itself.
+func TestOperatorParticipationCanRevealPostgres(t *testing.T) {
+	f := newTeamTest(t, "alice", "ops", "bob")
+	pool := f.store.Pool()
+	f.handler = newHandler(AuthConfig{}, handlerDependencies{Store: f.store, Contests: &contests.Store{Pool: pool}, Images: &images.Store{Pool: pool}, Notifications: &notifications.Store{Pool: pool}, Profiles: profiles.New(pool), Submissions: &submissions.Store{Pool: pool}, JudgeImage: "sha256:" + strings.Repeat("a", 64), JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: "cpp17", Operators: map[string]bool{"ops": true}, Verifier: newCognitoVerifier(f.sign.server.URL, "client")})
+	const (
+		p1  = "11111111-1111-4111-8111-111111111111"
+		cid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+	)
+	f.problem(p1)
+	f.create(cid, p1, map[string]any{"freezeMinutes": 30})
+	if c := f.join(cid, "ops", nil); c.CanRevealResults {
+		t.Fatal("an operator may reveal before the end")
+	}
+	f.join(cid, "bob", nil)
+	f.schedule(cid, "ended")
+	if c := f.join(cid, "ops", nil); !c.CanRevealResults {
+		t.Fatalf("operator's participation after the end: %+v", c)
+	}
+	if c := f.contest(cid, "ops"); !c.CanRevealResults {
+		t.Fatalf("operator's contest after the end: %+v", c)
+	}
+	if c := f.join(cid, "bob", nil); c.CanRevealResults {
+		t.Fatal("a participant who is not an operator may reveal")
+	}
 }

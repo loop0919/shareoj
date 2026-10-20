@@ -1,7 +1,8 @@
 import { venuePassphraseMessage } from './venue-passphrase'
 
-// Messages for the team and onsite errors of ADR 0024. Callers pass their own fallback for anything else.
+// Messages for the participation, team and onsite errors of ADR 0024. Callers pass their own fallback for anything else.
 const messages: Record<string, string> = {
+  contest_participation_unavailable: 'このコンテストには参加登録できません。スタッフ（作成者・作問者・テスター）と、スタッフを務めた人は参加できません。終了後は新しく参加登録できません。',
   incorrect_team_code: '参加コードが違います。チームのメンバーに確かめてください。',
   incorrect_venue_passphrase: '会場の合言葉が違います。会場で配られた合言葉を確かめてください。',
   team_full: 'このチームは人数の上限に達しているため入れません。',

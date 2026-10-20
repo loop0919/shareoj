@@ -53,6 +53,9 @@ func TestContestTeamVisibilityPostgres(t *testing.T) {
 	// Both contests run for two hours and end in 20 minutes; the team contest froze 10 minutes ago.
 	end := time.Now().Add(20 * time.Minute).Truncate(time.Millisecond)
 	f.exec(`UPDATE contests SET starts_at=$1,ends_at=$2 WHERE id IN ($3,$4,$5)`, end.Add(-2*time.Hour), end, tc, ic, nc)
+	// Real contests are created before they start. Keeping that order catches a condition that reads the contest's
+	// created_at in place of the submission's.
+	f.exec(`UPDATE contests SET created_at=$1 WHERE id IN ($2,$3,$4)`, end.Add(-3*time.Hour), tc, ic, nc)
 	at := func(minutes int) time.Time { return end.Add(time.Duration(minutes-120) * time.Minute) }
 	insert := func(id, owner, problem, contest, verdict, job string, created time.Time) {
 		t.Helper()
@@ -288,6 +291,8 @@ func TestContestTeamVisibilityPostgres(t *testing.T) {
 	detail("/my/problems/"+pb+"/submissions/"+carolCE, "sam", false)
 	detail("/my/problems/"+pb+"/submissions/"+carolFrozen, "bob", false)
 	missing("/my/problems/"+pb+"/submissions/"+carolFrozen, "sam")
+	expect(problem(tc, pb, ""), "bob", carolCE, danAC, carolFrozen)
+	expect(problem(tc, pb, ""), "sam", carolCE, danAC)
 
 	// The onsite filter keeps the contest submissions, practice included, of participants onsite now.
 	onsiteRows := []string{carolWA, bobAC, carolCE, bobPractice}

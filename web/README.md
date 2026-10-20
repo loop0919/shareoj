@@ -127,7 +127,8 @@ PC では編集・分割・プレビューを切り替え、本文の各ペイ�
 管理画面の「テスターリンク」で招待リンクを発行し、コピーできる。
 招待先の `/my/tester-invitations/<token>` では、ログイン済みユーザーが権限の説明を読んで「許可する」を押すとテスターになる。
 未ログインの場合はログイン後に招待画面へ戻り、プロフィール未登録の場合も登録後に招待を続けられる。
-テスターは編集、公開、削除、テストケース操作、非公開問題への提出を作者と同じ権限で行える。
+テスターは非公開の問題文・解説・テストケースの閲覧と提出、問題の編集・削除・リジャッジ・非公開に戻す操作、テスターリンクの発行、自分のコンテストへの登録ができる。
+公開と公開予約、定期便への応募は作者だけができる。
 コンテスト編集画面の「コンテスト管理」では、共同作成者の招待リンクを発行・作り直しでき、オーナーは共同作成者を外し、共同作成者は自分で抜けられる。
 招待先の `/my/contest-invitations/<token>` も、ログインとプロフィール登録のあとに招待画面へ戻る。
 コンテスト編集画面の「参加形式」では、個人戦とチーム戦、チームの人数の上限、オンサイト区分と会場の合言葉を設定する。
@@ -305,8 +306,9 @@ the font license is in `server/assets/fonts/LICENSE.txt`. Nuxt stages the WASM u
 Dynamic images fetch only the public API, never session cookies or private fallbacks.
 Private and pre-start contest problems have no image preview. Responses use `no-store`
 to recheck publication on each fetch; X and Discord may independently cache previews.
-Guide titles live in `shared/social-pages.ts`. After deployment, verify a public URL
-with the [Discord Embed Debugger](https://discord.com/developers/embeds).
+The fixed pages' image titles live in `shared/social-pages.ts`, whose paths are also the
+sitemap's entry points; guide titles come from `shared/docs.ts`. After deployment, verify
+a public URL with the [Discord Embed Debugger](https://discord.com/developers/embeds).
 
 ## 作問とデータ取得の責務
 

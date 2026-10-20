@@ -78,6 +78,19 @@ test('published problems explain where else they cannot go', async ({ page }) =>
   await expect(status.getByRole('list', { name: '提出先の制限' }).getByRole('listitem')).toHaveText(['コンテスト：公開中の問題はコンテストに登録できません', '定期便：一度公開した問題は定期便に応募できません'])
 })
 
+test('scheduled problems explain where else they cannot go', async ({ page }) => {
+  const id = '89898989-8989-4989-8989-898989898989'
+  const draft = { title: '予約済み', markdown: '本文', editorial: '解説', difficulty: 3, timeLimitMs: '2000', memoryLimitMb: '512', testCases: [{ input: '1', output: '1' }] }
+  const readiness = { publish: [], contest: ['scheduled'], featured: ['scheduled'] }
+  await page.route(`**/api/my/problems/${id}`, route => route.fulfill({ json: { id, version: 2, publishedVersion: 0, scheduledAt: '2099-01-02T14:00:00Z', updatedAt: '2026-09-10T00:00:00Z', draft, readiness } }))
+  await page.goto(`/problems/new?problem=${id}`)
+  await page.getByRole('button', { name: '問題管理', exact: true }).click()
+  const status = page.getByRole('region', { name: '状態' })
+  await expect(status.locator('[data-kind="scheduled"]')).toContainText('公開予約中')
+  await expect(status.getByRole('list', { name: '足りない項目' })).toHaveCount(0)
+  await expect(status.getByRole('list', { name: '提出先の制限' }).getByRole('listitem')).toHaveText(['コンテスト：予約投稿を取り消してから登録してください', '定期便：予約投稿を取り消してから登録してください'])
+})
+
 test('tester links copy from an icon button', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.route('**/api/my/problems/*/tester-invitation', route => route.fulfill({ json: { token: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567' } }))
@@ -93,4 +106,14 @@ test('tester links copy from an icon button', async ({ page, context }) => {
   await expect(page.getByRole('button', { name: 'コピーしました', exact: true })).toBeVisible()
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(await link.inputValue())
   await expect(page.getByRole('button', { name: 'リンクをコピー', exact: true })).toBeVisible({ timeout: 5000 })
+})
+
+test('a scheduled problem says when it goes public, in JST', async ({ page }) => {
+  const id = '44444444-4444-4444-8444-444444444444'
+  const draft = { title: '予約済み', markdown: '本文', editorial: '解説', difficulty: 3, timeLimitMs: '2000', memoryLimitMb: '512', testCases: [{ input: '1', output: '1' }] }
+  const readiness = { publish: [], contest: ['scheduled'], featured: ['scheduled'] }
+  await page.route(`**/api/my/problems/${id}`, route => route.fulfill({ json: { id, version: 1, publishedVersion: 0, scheduledAt: '2099-10-01T14:00:00Z', updatedAt: '2026-09-10T00:00:00Z', draft, readiness } }))
+  await page.goto(`/problems/new?problem=${id}`)
+  await page.getByRole('button', { name: '問題管理', exact: true }).click()
+  await expect(page.locator('p', { hasText: '公開予約中です。' })).toHaveText('2099/10/1 23:00:00 (JST)に公開予約中です。編集を公開内容に反映するには、保存後に予約を更新してください。予約を変更・取り消す')
 })

@@ -25,6 +25,7 @@ test('authors select finished submissions in the list and rejudge them together'
   const list = page.getByRole('region', { name: 'すべての提出' })
   const all = list.getByRole('checkbox', { name: 'このページの提出をすべて選択' })
   await expect(all).toBeVisible()
+  await expect(list.locator('thead th').nth(1)).toHaveText('提出日時 (JST)')
   const rows = list.getByRole('checkbox', { name: /の提出を選択$/ })
   await expect(rows).toHaveCount(3)
   await expect(rows.nth(2)).toBeDisabled()

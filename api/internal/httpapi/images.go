@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"errors"
 	"image"
@@ -10,7 +9,6 @@ import (
 	"image/png"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -46,9 +44,7 @@ func cleanContentImage(data []byte) ([]byte, string, error) {
 }
 
 func (p imageHandler) publicImage(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-	p.contentImage(w, r.WithContext(ctx), "")
+	p.contentImage(w, r, "")
 }
 
 func (p imageHandler) contentImage(w http.ResponseWriter, r *http.Request, owner string) {

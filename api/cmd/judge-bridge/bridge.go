@@ -46,14 +46,15 @@ func (b bridge) deploymentStatus(ctx context.Context) (any, error) {
 		PreviousRuntimeDigest string `json:"previousRuntimeDigest"`
 		DispatchPaused        bool   `json:"dispatchPaused"`
 		// A rolling update must not change the environment within a contest (ADR 0014).
-		// The window matches the burst hold: 30 minutes before the start to 15 minutes after the end.
+		// The window runs from 30 minutes before the start to 15 minutes after the end of each contest.
+		// Unlike the burst hold, it has no 3-hour cap and needs only one participant.
 		NextContestWindowAt *time.Time `json:"nextContestWindowAt"`
 	}{Kind: "judge-deployment-status", RuntimeDigest: b.runtime, PreviousRuntimeDigest: b.previous, DispatchPaused: b.paused}
 	err := b.db.QueryRow(ctx, `SELECT COUNT(*), COUNT(*) FILTER (WHERE dispatched_at IS NULL),
       (SELECT MIN(c.starts_at-interval '30 minutes') FROM contests c
         WHERE c.ends_at+interval '15 minutes' > statement_timestamp()
           AND EXISTS (SELECT 1 FROM contest_participants p WHERE p.contest_id=c.id))
-      FROM submissions WHERE runtime LIKE '%-isolate' AND status <> 'DONE'`).Scan(&status.Pending, &status.Undispatched, &status.NextContestWindowAt)
+      FROM submissions WHERE runtime=ANY($1::text[]) AND status <> 'DONE'`, submissions.IsolateRuntimeIDs()).Scan(&status.Pending, &status.Undispatched, &status.NextContestWindowAt)
 	if err != nil {
 		return nil, errors.New("deployment status unavailable")
 	}

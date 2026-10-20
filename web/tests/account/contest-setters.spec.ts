@@ -22,9 +22,9 @@ async function seed(page: Page, title: string) {
   expect(response.status()).toBe(200)
   return id
 }
-function localDate(value: number) {
-  const date = new Date(value)
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+// The date input reads Japan time.
+function japanDate(value: number) {
+  return new Date(value + 9 * 60 * 60 * 1000).toISOString().slice(0, 16)
 }
 const noScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)
 
@@ -74,7 +74,7 @@ test('co-setters join through a link, publish together, and leave or are removed
   await bob.getByRole('searchbox', { name: '問題を検索' }).fill(mine)
   await bob.getByRole('button', { name: 'ボブの共同問題を追加', exact: true }).click()
   await bob.getByRole('button', { name: '期間・ペナルティ', exact: true }).click()
-  await bob.getByLabel('開始日時').fill(localDate(Date.now() + 86400000))
+  await bob.getByLabel('開始日時').fill(japanDate(Date.now() + 86400000))
   await bob.getByRole('button', { name: 'コンテスト管理', exact: true }).click()
   await expect(bob.getByRole('list', { name: '作成者', exact: true }).getByRole('listitem')).toHaveText([/alice\s*オーナー/, /bob\s*共同作成者/])
   await expect(bob.getByRole('button', { name: '下書きを削除' })).toHaveCount(0)

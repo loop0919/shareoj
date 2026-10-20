@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"encoding/json"
-	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"slices"
@@ -15,7 +14,7 @@ import (
 
 func TestPublicDocumentation(t *testing.T) {
 	// Documentation must work without database access, including contest release.
-	mux := newHandler(AuthConfig{}, handlerDependencies{Contests: &contests.Store{}}).(*http.ServeMux)
+	mux := newMux(AuthConfig{}, handlerDependencies{Contests: &contests.Store{}})
 	for _, path := range []string{"/docs", "/docs/", "/openapi.json"} {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
@@ -32,6 +31,7 @@ func TestPublicDocumentation(t *testing.T) {
 			OpenAPI string `json:"openapi"`
 			Paths   map[string]map[string]struct {
 				OperationID string `json:"operationId"`
+				Description string `json:"description"`
 				Parameters  []struct {
 					Name, In string
 					Required bool
@@ -59,6 +59,10 @@ func TestPublicDocumentation(t *testing.T) {
 				t.Fatal("invalid operation", path)
 			}
 			seen[op.OperationID] = true
+			// Times in the descriptions read like 21:00 (JST).
+			if strings.Contains(op.Description, "日本時間") {
+				t.Fatal("time zone written out", path)
+			}
 			concrete := path
 			for _, param := range op.Parameters {
 				if param.In == "path" {
@@ -72,6 +76,9 @@ func TestPublicDocumentation(t *testing.T) {
 			if pattern != "GET "+path {
 				t.Fatalf("undocumented/mismatched route: %s = %s", path, pattern)
 			}
+		}
+		if d := doc.Paths["/featured"]["get"].Description; !strings.HasPrefix(d, "毎週月・木23:00 (JST)のEasy/Hard各一問。") {
+			t.Fatal("featured description", d)
 		}
 		for _, name := range []string{"PublicSample", "PublicProblem", "Download", "Submission", "Editorial", "ProblemRef", "Tag"} {
 			if len(doc.Components.Schemas[name].Properties) == 0 {

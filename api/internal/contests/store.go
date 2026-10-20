@@ -473,15 +473,7 @@ func (s *Store) Problem(ctx context.Context, id, pid, viewer string) (ContestPro
 	if err = json.Unmarshal(raw, &d); err != nil {
 		return p, err
 	}
-	p.Title = d.Title
-	p.Markdown = d.Markdown
-	p.Difficulty = d.Difficulty
-	p.TimeLimitMS = d.TimeLimitMS
-	p.MemoryLimitMB = d.MemoryLimitMB
-	p.SpecialJudge = d.Checker != nil
-	p.Interactive = d.Interactor != nil
-	p.HasSamples = d.HasSamples()
-	p.Scoring = d.PublicScoring()
+	p.SetStatement(d)
 	if editorial && !p.EditorialHidden {
 		p.Editorial = d.Editorial
 	}

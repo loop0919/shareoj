@@ -15,8 +15,7 @@ type featuredPageResponse = problems.FeaturedPage
 
 func (p problemHandler) featured(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	store, ok := p.Store.(*problems.Store)
-	if !ok {
+	if p.Store == nil {
 		authError(w, 503, "database_unavailable")
 		return
 	}
@@ -29,7 +28,7 @@ func (p problemHandler) featured(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	page, err := store.FeaturedList(r.Context(), offset, submissions.RuntimeIDs(), p.Judging.RuntimeIDs())
+	page, err := p.Store.FeaturedList(r.Context(), offset, submissions.RuntimeIDs(), p.Judging.RuntimeIDs())
 	if err != nil {
 		problemError(w, err)
 		return
@@ -38,13 +37,12 @@ func (p problemHandler) featured(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p problemHandler) featuredApplication(w http.ResponseWriter, r *http.Request, owner string) {
-	store, ok := p.Store.(*problems.Store)
-	if !ok {
+	if p.Store == nil {
 		authError(w, 503, "database_unavailable")
 		return
 	}
 	if r.Method == http.MethodGet {
-		items, err := store.FeaturedApplications(r.Context(), owner)
+		items, err := p.Store.FeaturedApplications(r.Context(), owner)
 		if err != nil {
 			problemError(w, err)
 			return
@@ -68,7 +66,7 @@ func (p problemHandler) featuredApplication(w http.ResponseWriter, r *http.Reque
 		authError(w, 400, "invalid_request")
 		return
 	}
-	if err := store.ApplyFeatured(r.Context(), owner, id, input.Version, *input.Preference, submissions.RuntimeIDs(), p.Judging.RuntimeIDs()); err != nil {
+	if err := p.Store.ApplyFeatured(r.Context(), owner, id, input.Version, *input.Preference, submissions.RuntimeIDs(), p.Judging.RuntimeIDs()); err != nil {
 		problemError(w, err)
 		return
 	}
@@ -101,12 +99,11 @@ func (p problemHandler) myFeaturedSchedule(w http.ResponseWriter, r *http.Reques
 }
 
 func (p problemHandler) writeFeaturedPlan(w http.ResponseWriter, r *http.Request, owner, id, preference string) {
-	store, ok := p.Store.(*problems.Store)
-	if !ok {
+	if p.Store == nil {
 		authError(w, 503, "database_unavailable")
 		return
 	}
-	plan, err := store.FeaturedPlan(r.Context(), owner, id, preference, submissions.RuntimeIDs(), p.Judging.RuntimeIDs())
+	plan, err := p.Store.FeaturedPlan(r.Context(), owner, id, preference, submissions.RuntimeIDs(), p.Judging.RuntimeIDs())
 	if err != nil {
 		problemError(w, err)
 		return
@@ -135,12 +132,11 @@ func (p problemHandler) featuredStandings(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
-	store, ok := p.Store.(*problems.Store)
-	if !ok {
+	if p.Store == nil {
 		authError(w, 503, "database_unavailable")
 		return
 	}
-	page, err := store.FeaturedStandings(r.Context(), at, offset)
+	page, err := p.Store.FeaturedStandings(r.Context(), at, offset)
 	if err != nil {
 		problemError(w, err)
 		return

@@ -1,4 +1,7 @@
-import { maxFullScore, maxScoringGroups, testFileLimit, testSetLimit, type TestFile, type ProblemDraft, type Scoring } from '~~/shared/types/problem-draft'
+import { emptyGenerators, maxFullScore, maxScoringGroups, testFileLimit, testSetLimit, type TestFile, type ProblemDraft, type Scoring } from '~~/shared/types/problem-draft'
+// The statement and editorial a new problem starts with, shared with `shareoj init`. The import attribute lets the
+// Playwright tests, which load this module in Node, read the JSON too.
+import markdownTemplate from '../../../cli/problem-template.json' with { type: 'json' }
 
 export type TestCase = {
   isSample?: boolean
@@ -95,41 +98,14 @@ export function scoringError(draft: Pick<ProblemDraft, 'scoring'> & { testCases:
   return ''
 }
 
-export function draftErrors(draft: Pick<ProblemDraft, 'timeLimitMs' | 'memoryLimitMb' | 'checker' | 'interactor' | 'title' | 'markdown'>) {
-  const time = Number(draft.timeLimitMs)
-  const memory = Number(draft.memoryLimitMb)
-  const code = draft.interactor ?? draft.checker
+export function draftErrors(draft: Pick<ProblemDraft, 'title' | 'markdown'>) {
   return {
-    checker: draft.checker && draft.interactor ? '判定方法は1つだけ選んでください。' : code && (!code.source.trim() || new TextEncoder().encode(code.source).length > 65536 || code.source.includes('\0')) ? '検証コードを1〜65,536バイトで入力してください。' : '',
     title: draft.title.trim() ? '' : '問題のタイトルを入力してください。',
     markdown: draft.markdown.trim() ? '' : '問題の本文を入力してください。',
-    timeLimitMs: Number.isInteger(time) && time >= 100 && time <= 5000 && time % 100 === 0 ? '' : '100〜5,000 ms の範囲で100 ms刻みの値を選んでください。',
-    memoryLimitMb: Number.isInteger(memory) && memory >= 64 && memory <= 512 ? '' : '64〜512 MiB の整数を選んでください。',
   }
 }
 
-export function exportProblemMarkdown(draft: ProblemDraft): string {
-  if (Object.values(draftErrors(draft)).some(Boolean)) throw new Error('Invalid problem draft')
-  return [
-    '---',
-    `title: ${JSON.stringify(draft.title.trim())}`,
-    `time_limit_ms: ${Number(draft.timeLimitMs)}`,
-    `memory_limit_mb: ${Number(draft.memoryLimitMb)}`,
-    '---', '', draft.markdown, '',
-  ].join('\n')
+// A new problem's draft. Each call builds new arrays and generators, so the editor's draft and its reset share nothing.
+export function initialProblemDraft() {
+  return { checker: null as ProblemDraft['checker'], interactor: null as ProblemDraft['interactor'], scoring: null as ProblemDraft['scoring'], difficulty: null as number | null, title: '', markdown: markdownTemplate.statement, editorial: markdownTemplate.editorial, tags: [] as string[], generators: emptyGenerators(), timeLimitMs: '2000', memoryLimitMb: '512', testCases: [] as TestCase[] }
 }
-
-export const initialProblemMarkdown = [
-  '## 問題文', '',
-  '<!-- ここに問題文を記載 -->', '',
-  '$T$ 個のテストケースが与えられるので、それぞれについて答えてください。', '',
-  '## 制約', '', '- 入力される値はすべて整数', '',
-  '## 入力', '', '入力は以下の形式で標準入力から与えられる。',
-  '```input', '$T$', '$\\mathrm{case}_1$', '$\\mathrm{case}_2$', '$\\vdots$', '$\\mathrm{case}_T$', '```', '',
-  '各テストケース $\\mathrm{case}_t ~ (1 \\leq t \\leq T)$ は以下の形式で与えられる。',
-  '```input', '```', '',
-  '## 出力', '', '$T$ 行出力せよ。 $t$ 行目には $t$ 番目のテストケースについての答えを出力せよ。', '',
-  '<!-- テストケース画面の「サンプルを問題文に追加」ボタンから、サンプルを追加できます。 -->', '',
-].join('\n')
-
-export const initialEditorialMarkdown = '## 解説\n\n<!-- ここに解説を記載 -->\n'

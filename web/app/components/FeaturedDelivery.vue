@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FeaturedPage } from '~~/shared/types/featured'
+import { featuredSlotLabel, type FeaturedPage } from '~~/shared/types/featured'
 import { contestDate } from '~~/shared/types/contest'
 import { shortId } from '~~/shared/utils/short-id'
 
@@ -14,7 +14,7 @@ const volume = computed(() => props.page.current?.number || props.page.nextNumbe
   <section class="featured-delivery" aria-label="ShareOJ定期便">
     <header class="delivery-heading">
       <div>
-        <p class="delivery-kicker">毎週 月・木 23:00 <span>日本時間</span></p>
+        <p class="delivery-kicker">毎週 月・木 23:00 <span>(JST)</span></p>
         <h2>定期便 vol.{{ volume }}</h2>
       </div>
       <div class="delivery-date">
@@ -26,7 +26,7 @@ const volume = computed(() => props.page.current?.number || props.page.nextNumbe
     <div class="delivery-problems">
       <article v-for="slot in slots" :key="slot.slot" class="delivery-problem">
         <header class="delivery-level">
-          <span class="delivery-slot-label">{{ slot.slot === 'easy' ? 'Easy' : (slot.difficulty ?? 0) >= 9 ? 'Ultimate' : 'Hard' }}</span>
+          <span class="delivery-slot-label">{{ featuredSlotLabel(slot.slot, slot.difficulty) }}</span>
           <h3 class="delivery-problem-title">
             <NuxtLink v-if="page.current && slot.problemId" :to="`/problems/${shortId(slot.problemId)}`">{{ slot.title }}</NuxtLink>
             <template v-else-if="slot.kind === 'missing'">{{ page.current ? '出題なし' : '募集中' }}</template>
@@ -60,7 +60,7 @@ const volume = computed(() => props.page.current?.number || props.page.nextNumbe
       <summary>定期便について</summary>
       <ul>
         <li>Easy（Lv.1〜4）とHard（Lv.5〜10）を一問ずつ出題します。</li>
-        <li>新作の解説と他者の提出は、出題翌日の22時（日本時間）に公開します。</li>
+        <li>新作の解説と他者の提出は、出題翌日の22:00 (JST)に公開します。</li>
         <li>新作がない枠は公開済みの問題を復刻します。復刻の解説と提出は閲覧できます。</li>
         <li>出題待ちは、次回予定を含む、出題可能な新作の応募数です。復刻は含みません。</li>
         <li>応募の取り下げや内容の変更により、予告は変更されることがあります。</li>

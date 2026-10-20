@@ -13,20 +13,6 @@ from runtimes import RUNTIMES
 BUFFER_LIMIT = 65536
 
 
-def failure(metrics):
-    if metrics is None:
-        return None
-    if metrics['overflow']:
-        return 'OLE'
-    if metrics['oom']:
-        return 'MLE'
-    if metrics['status'] == 'TO':
-        return 'TLE'
-    if metrics['status'] or metrics['exitCode'] or metrics['signal']:
-        return 'RE'
-    return None
-
-
 def relay(processes, observe, wall, diagnostic, protocol='legacy', points=False):
     """observe returns completed metrics or an early output-limit observation."""
     buffers = [bytearray(), bytearray()]
@@ -38,7 +24,7 @@ def relay(processes, observe, wall, diagnostic, protocol='legacy', points=False)
     deadline = time.monotonic() + wall
     while True:
         metrics = [observe(i) for i in range(2)]
-        errors = ['OLE' if totals[i] > sandbox.OUTPUT_LIMIT else failure(m) for i, m in enumerate(metrics)]
+        errors = ['OLE' if totals[i] > sandbox.OUTPUT_LIMIT else sandbox.failure_verdict(m) for i, m in enumerate(metrics)]
         # In aggregate mode quitp ends like _ok: the submission must still exit normally (ADR 0025).
         if points and errors[1] == 'RE' and sandbox.judge_verdict(metrics[1], protocol, points=True) == 'AC':
             errors[1] = None
@@ -117,10 +103,11 @@ def execute(job, case, artifact, diagnostic, score_file=False):
             command = sandbox.prepare_program(box, RUNTIMES[name], binary, files,
                                               protocol=job['interactor'].get('protocol', 'legacy') if i else 'legacy', interactive=True,
                                               result_file=score_file and i == 1)
-            if i == 1 and RUNTIMES[name]['artifact'] == 'java':
-                command = ['-Xmx128m' if arg == '-Xmx256m' else arg for arg in command]
+            memory = job['memoryLimitMb'] if i == 0 else 256
+            if RUNTIMES[name]['artifact'] == 'java':
+                command = sandbox.java_heap(command, memory, interactor=i == 1)
             args = sandbox.run_args(name, job['timeLimitMs'] / 1000 if i == 0 else 5,
-                                    wall, job['memoryLimitMb'] if i == 0 else 256, meta=meta, interactive=True)
+                                    wall, memory, meta=meta, interactive=True, interactor=i == 1)
             commands.append([sandbox.ISOLATE, '--cg', f'--box-id={i}', *args, '--', *command])
         for command in commands:
             processes.append(subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,

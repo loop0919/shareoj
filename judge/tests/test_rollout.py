@@ -172,13 +172,13 @@ class RolloutTests(unittest.TestCase):
             self.assertEqual(state['status'], 'failed')
             self.assertTrue(state['admissionPaused'])
 
-    def run_finish(self, **extra):
+    def run_finish(self, count=3, **extra):
         with tempfile.TemporaryDirectory() as name:
             directory = Path(name)
             digest = 'sha256:' + 'a' * 64
             host = dict(runtimeDigest=digest, passedRuntimes=['python314-isolate'], failedRuntimes=[], ready=True, runId='b' * 32)
             report_path = directory / 'report.json'
-            nodes = ['i-0123456789abcdef0', 'i-0123456789abcdef1', 'i-0123456789abcdef2']
+            nodes = ['i-0123456789abcdef' + str(i) for i in range(count)]
             report_path.write_text(json.dumps({**host, 'hosts': dict.fromkeys(nodes, host)}))
             config = dict(region='test', api='api', bridge='bridge', nodes=nodes, runtimes=['python314'],
                           smoke_runtime='python314', api_url='https://test.invalid', **extra)
@@ -224,6 +224,16 @@ class RolloutTests(unittest.TestCase):
         self.assertLess(names.index('create-tags'), names.index('delivery'))
         self.assertTrue(tags[1][-1].startswith('Key=JudgeMaintenanceHoldUntil,Value=20'))
         self.assertTrue(state['maintenanceHoldReleased'])
+
+    def test_finish_passes_instances_only_with_several_hosts(self):
+        for count in (1, 2):
+            with self.subTest(count=count):
+                state, calls, _, nodes, _ = self.run_finish(count=count)
+                smoke = next(args for args in calls if 'judge/smoke-api.py' in args)
+                self.assertEqual([smoke[i + 1] for i, arg in enumerate(smoke) if arg == '--instance'],
+                                 nodes if count > 1 else [])
+                self.assertEqual(state['apiReport'], smoke[smoke.index('--report') + 1])
+                self.assertEqual((state['status'], state['step']), ('passed', 'complete'))
 
     def test_release_cleanup_keeps_only_published_worker_version(self):
         release = 'a' * 64
