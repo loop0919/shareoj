@@ -408,16 +408,7 @@ def finish(config, directory, state, report_path):
     checkpoint(directory, state, 'publish')
     update_env(config['region'], config['api'], dict(JUDGE_CPP_IMAGE=digest, JUDGE_RUNTIME='cpp17-isolate', JUDGE_ENABLED_RUNTIMES=published))
     checkpoint(directory, state, 'api-smoke')
-    with urllib.request.urlopen(config['api_url'].rstrip('/') + '/runtimes', timeout=30) as response:
-        catalog = json.load(response)
-    if catalog['maintenance'] or sorted(item['id'] for item in catalog['items']) != sorted(config['runtimes']):
-        raise ValueError('public runtime catalog differs from approved runtimes')
-    api_report = directory / ('api-' + str(time.time_ns()) + '.json')
-    run(sys.executable, 'judge/smoke-api.py', '--function', config['api'], '--api-url', config['api_url'],
-        '--region', config['region'], '--runtime', config['smoke_runtime'], '--report', str(api_report),
-        *[option for node in config['nodes'] for option in ('--instance', node)])
-    if json.loads(api_report.read_text())['status'] != 'passed':
-        raise ValueError('API smoke did not pass')
+    api_report = api_smoke(config, directory, config['nodes'])
     checkpoint(directory, state, 'refresh-state')
     for root in ('infra/api', 'infra/judge'):
         plan = directory / (root.replace('/', '-') + '.tfplan')

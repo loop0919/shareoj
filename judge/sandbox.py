@@ -18,6 +18,8 @@ ISOLATE = '/usr/local/bin/isolate'
 META = Path('/run/judge/meta')
 ARTIFACT = Path('/run/judge/main')
 OUTPUT_LIMIT = 16 * 1024 * 1024
+# Source validation (host.validate_job, compile phase) and reading an interpreted source back share this limit.
+SOURCE_LIMIT = 128 * 1024
 SCORE_FILE_LIMIT = 4096
 # testlib caps a message at 32,000 bytes before XML escaping, which can grow it sixfold.
 RESULT_FILE_LIMIT = 256 * 1024
@@ -77,7 +79,7 @@ def execute(request, compile_phase=False, *, artifact=None, checker_files=None, 
     runtime = RUNTIMES[request.get('runtime', 'cpp17-isolate')]
     if compile_phase:
         source = request.get('source')
-        if not isinstance(source, str) or not 0 < len(source.encode()) <= 131072 or '\0' in source:
+        if not isinstance(source, str) or not 0 < len(source.encode()) <= SOURCE_LIMIT or '\0' in source:
             raise ValueError('invalid source')
         memory, cpu, wall = 1024, 30, 40
     else:
@@ -110,6 +112,8 @@ def execute(request, compile_phase=False, *, artifact=None, checker_files=None, 
                 checker_files = dict(checker_files, **{'submission-output': data})
                 data = b''
             command = prepare_program(box, runtime, artifact, checker_files, protocol=protocol, result_file=score_file)
+            if runtime['artifact'] == 'java':
+                command = java_heap(command, memory)
             (box / 'input').write_bytes(data)
         args = run_args(request.get('runtime', 'cpp17-isolate'), cpu, wall, memory,
                         compile_phase=compile_phase)
@@ -148,19 +152,24 @@ def execute(request, compile_phase=False, *, artifact=None, checker_files=None, 
             raise telemetry.FatalPlatformError('isolate_cleanup_failed') from None
 
 
-def run_args(runtime, cpu, wall, memory, *, compile_phase=False, meta=None, interactive=False):
+def run_args(runtime, cpu, wall, memory, *, compile_phase=False, meta=None, interactive=False, interactor=False):
     # Metadata and saved artifacts remain outside the sandbox.
     environment = list(ENVIRONMENT) + RUNTIMES[runtime].get('env', [])
+
+    def heap(compiling, interacting, at_512):
+        # Compilation and the interactor keep fixed caps; a submission's cap scales with its memory limit.
+        return compiling if compile_phase else interacting if interactor else scaled_heap(at_512, memory)
+
     if runtime == 'csharp14-isolate':
-        environment.append('DOTNET_GCHeapHardLimit=' + hex((512 if compile_phase else 128 if memory == 256 else 192) * 1024 * 1024))
+        environment.append('DOTNET_GCHeapHardLimit=' + hex(heap(512, 128, 192) * 1024 * 1024))
     if runtime == 'go127-isolate':
-        environment.append('GOMEMLIMIT=' + ('160MiB' if memory == 256 else '384MiB'))
+        environment.append('GOMEMLIMIT=' + str(heap(384, 160, 384)) + 'MiB')
     if runtime == 'ruby-truffle40-isolate':
-        environment.append('RUBYOPT=--vm.Xmx' + str(640 if compile_phase else 96 if memory == 256 else 256) + 'm')
+        environment.append('RUBYOPT=--vm.Xmx' + str(heap(640, 96, 256)) + 'm')
     if runtime.startswith(('javascript-node', 'typescript-node')) or (compile_phase and runtime.startswith('typescript-bun')):
-        environment.append('NODE_OPTIONS=--max-old-space-size=' + str(640 if compile_phase else 128 if memory == 256 else 320))
+        environment.append('NODE_OPTIONS=--max-old-space-size=' + str(heap(640, 128, 320)))
     if runtime.startswith(('javascript-deno', 'typescript-deno')):
-        environment.append('DENO_V8_FLAGS=--max-old-space-size=' + str(640 if compile_phase else 128 if memory == 256 else 320))
+        environment.append('DENO_V8_FLAGS=--max-old-space-size=' + str(heap(640, 128, 320)))
     return [f'--meta={META if meta is None else meta}', f'--time={cpu}', f'--wall-time={wall}',
             f'--cg-mem={memory * 1024}', '--processes=32' if interactive else '--processes=64',
             # Pinned isolate 2.7: allow file locks only for the fixed Go build command.
@@ -179,6 +188,16 @@ def run_args(runtime, cpu, wall, memory, *, compile_phase=False, meta=None, inte
             *(['--dir=/box/node_modules=' + ROOT + '/' + RUNTIMES[runtime]['node_modules']]
               if 'node_modules' in RUNTIMES[runtime] else []),
             *['--env=' + value for value in environment], '--run']
+
+
+def scaled_heap(at_512, memory):
+    """A submission heap cap in MiB, scaled from its value at a 512 MiB memory limit."""
+    return at_512 * memory // 512
+
+
+def java_heap(command, memory):
+    """The Java command with its -Xmx256m (the value at 512 MiB) scaled to this run's memory limit."""
+    return [f'-Xmx{scaled_heap(256, memory)}m' if arg == '-Xmx256m' else arg for arg in command]
 
 
 def prepare_dependencies(box, runtime):
@@ -254,7 +273,7 @@ def judge_verdict(metrics, protocol='legacy', points=False):
 
 def collect_artifact(box, runtime):
     if runtime['artifact'] == 'source':
-        return regular_read(box / runtime['source'], 131072)
+        return regular_read(box / runtime['source'], SOURCE_LIMIT)
     if runtime['artifact'] == 'generated-source':
         if not stat.S_ISDIR((box / runtime['compile_output']).parent.lstat().st_mode):
             raise ValueError('invalid compiler output directory')
