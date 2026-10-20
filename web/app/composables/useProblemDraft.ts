@@ -175,7 +175,7 @@ export function useProblemDraft() {
   }
 
   function saveWithShortcut(event: KeyboardEvent) {
-    if (event.isComposing || event.altKey || event.shiftKey || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
+    if (!isSaveShortcut(event)) return
     event.preventDefault()
     if (event.repeat || resolveLeave || confirmingDelete.value) return
     saveDraft(true)

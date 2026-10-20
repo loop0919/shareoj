@@ -57,13 +57,7 @@ for (const [path, selector] of [
     await editor.press('Enter')
     await expect.poll(() => editor.locator('.cm-line').allTextContents()).toEqual(['```text', '- literal', ''])
   })
-}
 
-for (const [path, selector] of [
-  ['/problems/new', '#problem-source'],
-  ['/blog/new', '#post-body'],
-  ['/my/contests/new', '#contest-description'],
-]) {
   test(`the preview in ${path} follows 150 ms after the last edit`, async ({ page }) => {
     await page.goto(path!)
     const editor = page.locator(selector!)

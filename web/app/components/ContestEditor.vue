@@ -144,17 +144,9 @@ const {
   mode, workspace, splitPercent, resizing, setSplit, startResize, moveResize, stopResize, resizeWithKeyboard,
   editor, syncSource, insertSnippet, preview, editorScrolled, previewScrolled,
 } = useMarkdownEditor()
-const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
-const renderedSource = ref(fields.description)
-let previewTimer: ReturnType<typeof setTimeout> | undefined
-watch(() => fields.description, () => {
-  clearTimeout(previewTimer)
-  previewTimer = setTimeout(() => { renderedSource.value = fields.description }, 150)
-})
-watch(ready, () => { renderedSource.value = fields.description })
-onBeforeUnmount(() => clearTimeout(previewTimer))
+const { renderedSource } = usePreviewSource(() => fields.description, ready)
 function saveWithShortcut(event: KeyboardEvent) {
-  if (event.isComposing || event.altKey || event.shiftKey || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
+  if (!isSaveShortcut(event)) return
   event.preventDefault()
   if (!event.repeat && ready.value && !locked.value && !busy.value) form.value?.requestSubmit()
 }

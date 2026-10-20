@@ -147,3 +147,28 @@ export function useMarkdownEditor() {
     preview, editorScrolled: () => scrolled('editor'), previewScrolled: () => scrolled('preview'),
   }
 }
+
+// The problem, post and contest editors share these, so that they insert the same block and save on the same keys.
+export const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
+// Ctrl+S or Cmd+S without Shift or Alt, outside IME composition.
+export function isSaveShortcut(event: KeyboardEvent) {
+  return !event.isComposing && !event.altKey && !event.shiftKey && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's'
+}
+
+// The source the preview renders. It follows the editor 150 ms after the last edit, and at once when the editor
+// becomes ready or on renderNow.
+export function usePreviewSource(source: () => string, ready: Ref<boolean>) {
+  const renderedSource = ref(source())
+  let timer: ReturnType<typeof setTimeout> | undefined
+  function renderNow() {
+    clearTimeout(timer)
+    renderedSource.value = source()
+  }
+  watch(source, () => {
+    clearTimeout(timer)
+    timer = setTimeout(() => { renderedSource.value = source() }, 150)
+  })
+  watch(ready, renderNow)
+  onBeforeUnmount(() => clearTimeout(timer))
+  return { renderedSource, renderNow }
+}

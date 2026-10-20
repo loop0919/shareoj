@@ -119,19 +119,11 @@ onBeforeRouteLeave(() => leaving || (!busy.value && (!ready.value || snapshot() 
 function beforeUnload(event: BeforeUnloadEvent) { if (ready.value && snapshot() !== saved) { event.preventDefault(); event.returnValue = '' } }
 onMounted(() => window.addEventListener('beforeunload', beforeUnload))
 onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
-const renderedSource = ref(markdown.value)
-let previewTimer: ReturnType<typeof setTimeout> | undefined
-watch(markdown, () => {
-  clearTimeout(previewTimer)
-  previewTimer = setTimeout(() => { renderedSource.value = markdown.value }, 150)
-})
-watch(ready, () => { renderedSource.value = markdown.value })
-onBeforeUnmount(() => clearTimeout(previewTimer))
+const { renderedSource } = usePreviewSource(() => markdown.value, ready)
 
 
-const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
 function saveWithShortcut(event: KeyboardEvent) {
-  if (event.isComposing || event.altKey || event.shiftKey || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
+  if (!isSaveShortcut(event)) return
   event.preventDefault()
   if (!event.repeat) void save()
 }
