@@ -368,10 +368,11 @@ func checkOutboxAndResultIdempotency(t *testing.T, runtime string, memory int) {
 		}
 	}
 	checkDeployment(1, 1)
+	// A runtime removed from the list is neither dispatched nor expired, so it must not hold a rollout either.
 	if _, err := db.Exec(ctx, `UPDATE submissions SET runtime='retired-language-isolate' WHERE id=$1`, id); err != nil {
 		t.Fatal(err)
 	}
-	checkDeployment(1, 1)
+	checkDeployment(0, 0)
 	if _, err := db.Exec(ctx, `UPDATE submissions SET runtime=$2 WHERE id=$1`, id, runtime); err != nil {
 		t.Fatal(err)
 	}
@@ -609,5 +610,11 @@ func TestRollingUpdateHoldsAndRebindsUndispatchedSubmissions(t *testing.T) {
 		if state+"/"+image != want {
 			t.Fatalf("%s: got %s/%s, want %s", name, state, image, want)
 		}
+	}
+	// Unlike the burst hold, the window has no 3-hour cap and lasts until 15 minutes after the end.
+	contest("44444444-4444-4444-8444-444444444444", -4*time.Hour, -10*time.Minute, true)
+	window, err = time.Parse(time.RFC3339Nano, status()["nextContestWindowAt"].(string))
+	if err != nil || time.Since(window) < 4*time.Hour || time.Since(window) > 5*time.Hour {
+		t.Fatalf("contest window without a cap: %v %v", window, err)
 	}
 }

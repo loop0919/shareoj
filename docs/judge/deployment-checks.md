@@ -56,7 +56,7 @@ nohup python3 judge/rollout.py run --config judge/.build/rollout.json \
 bridgeを先に更新し、IAM認証付きのLambda呼び出し`{"operation":"deployment-status"}`でDBを確認する。
 この呼び出しは公開HTTP APIには追加していない。
 `pending`には処理中と未dispatchの両方を含み、`undispatched`は未dispatchだけを数える。
-廃止した言語IDの古い提出も、`-isolate`の提出として数える。
+送り出しと期限切れと同じく、ランタイムの一覧（`submissions.Runtimes`）にある言語の提出だけを数える。
 古いbridgeが返す`null`は空件数として扱わない。
 
 APIの受付停止後は、変更前の設定で開始していたAPI呼び出しが終了するまで待つ。
