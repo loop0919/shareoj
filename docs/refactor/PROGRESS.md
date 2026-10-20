@@ -67,7 +67,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | C02 | SQLの文字列置換をやめ、テスター用一覧と提出詳細の非公開列を明示的に組み立てる | `api/internal/problems/store.go`、`api/internal/submissions/store.go` | 低・高・S | 修正・維持 | 完了（`f3f44a4`。範囲を`problems/store.go`の`list()`に限定し、submissions側は除外） |
 | C03 | BFFのエラー変換を切り出し、画面へ渡すエラーコードを名前付きの一覧にする | `web/server/utils/private-api.ts` | 低・高・S | 修正・維持 | 完了（`e5661c0`） |
 | C04 | useProblemDraftの既定値と自動保存の再予約をまとめる | `web/app/composables/useProblemDraft.ts` | 低・高・S | 維持・修正 | 完了（`dbc7784`） |
-| C05 | ジャッジの失敗判定と上限検証をそれぞれ1か所にまとめる | `judge/sandbox.py`、`judge/host.py`、`judge/interactive.py` | 低・中・S | 修正・維持 | 計画済み（失敗判定だけをまとめる。上限検証の共通化は採らない） |
+| C05 | ジャッジの失敗判定と上限検証をそれぞれ1か所にまとめる | `judge/sandbox.py`、`judge/host.py`、`judge/interactive.py` | 低・中・S | 修正・維持 | 完了（`47afc9a`。失敗判定だけをまとめ、上限検証の共通化は採らない） |
 | C06 | コンテスト提出の閲覧条件をSQL断片1つにまとめ、2つの一覧で共有する | `api/internal/submissions/contest.go`、`problem.go` | 中・高・S | 維持・維持 | 完了（`da26be1`） |
 | C07 | 提出とリジャッジで重複する「採点できる下書きか」の条件を1か所で生成する | `api/internal/submissions/store.go`、`rejudge.go` | 中・高・M | 修正・修正 | 計画済み |
 | C08 | 問題とプロフィールのストアを具体型で持ち、実行時の型アサーションをやめる | `api/internal/httpapi/routes.go`ほか | 中・高・M | 修正・修正 | 完了（`57b902c`） |
@@ -176,6 +176,16 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 - 検証: 最初の実行でブラウザーテスト`tags.spec.ts:114`が1件失敗した。修正担当と再レビュー担当が、変更前のコードでも再現する既存の競合（D26）で今回の変更の経路を通らないことを確かめ、コードは変えずに再実行した。最終tree（変更前と同じtree）で、`npm run typecheck`、`npm run package:lambda`、`npm run test:lambda`、`npm run build`、ブラウザーPlaywright（460件）、アカウント系Playwright（30件）、smokeがすべて成功。
 - 軽微（未対応）: `retryAfterCodes`のうち`contest_attempts_limited`だけはBFFを通るテストがない（変更前からの穴）。D25を記録した。
 
+### C05 ジャッジの失敗判定（`47afc9a`）
+
+- 計画: [plans/C05-judge-verdicts.md](plans/C05-judge-verdicts.md)。計画レビューは承認（軽微な指摘3件）。上限検証の共通化（briefの(b)）は価値の反証で外した。
+- 変更: 提出の失敗判定（OLE→MLE→TLE→RE）が`interactive.failure`、`host.case_result`、集計コードの3か所に写されていたので、`sandbox.failure_verdict(metrics)`にまとめた。本体は`interactive.failure`と同じ。relayの式は参照先が変わっただけで、合計バイト数のOLEを先に判定する順序はそのまま。
+- 特性テスト: `case_result`の13通り、集計コードの4行、relayの8行で優先順位を固定した。変更前のコードへの変異12個をすべて検出し、そのうち9個は既存のテストでは検出できなかった。
+- simplify: docstringを実際の役割（実行の資源・終了の失敗の分類。判定用コードにとっての意味は呼び出し側が決める）に直した。
+- レビュー: 必須1件。relayで合計バイト数のOLEを`failure_verdict`より先に判定する順序がテストで固定されていなかった（計画と実装は「決定的には固定できない」としていたが誤り）。状態を持つ`observe`で順序を固定するテストを足し、順序を入れ替える変異で3件とも失敗することを確かめた。
+- 検証（最終tree）: `python3 -B -m unittest discover -s judge/tests`（145件）、`make package-judge`が成功。isolateの実機での確認（`judge/smoke.py`など）は本番環境が要るため実行していない。
+- 軽微（未対応）: REの条件のうち、statusだけが真の行（exitCode・signalが0）がテストの表にない。isolateのメタデータではREとSGに必ずexitcodeかexitsigが付くので、実害はほぼない。
+
 ## 保留事項
 
 調査で見つけた別件の不具合と、仕様の判断が要る点。直さずに記録だけする。
@@ -211,7 +221,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 
 ## 現在の作業と次の手順
 
-- 計画済み（いずれも計画レビュー承認）: C05、C07、C09、C11、C13、C17、C20。次はC05の実装。
+- 計画済み（いずれも計画レビュー承認）: C07、C09、C11、C13、C17、C20。次はC07の実装。
 - C11はC02・C08と同じ`api/internal/problems/store.go`に触れるため、その後に計画する。
 - C15〜C20は2観点の反証を行い、C15を保留、C16・C18・C19を却下、C17・C20を範囲を絞って採用した。
 - 2026-10-20 03:40ごろ利用上限で一時停止し、08:30に再開した。停止時に失敗したエージェント（C04のsimplify、C07の計画レビュー、C20の反証）は、ワークフローの再開で実行し直した。完了済みの作業は重複して実行していない。
