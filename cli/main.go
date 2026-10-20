@@ -234,17 +234,18 @@ output_suffix = ".out"
 samples = ["sample1"]
 `
 
-// The statement and editorial a new problem starts with. The website's problem editor imports the same file
-// (web/app/utils/problem-draft.ts), so both start from the same text.
+// The statement and editorial a new problem starts with; web/app/utils/problem-draft.ts imports the same file.
 //
 //go:embed problem-template.json
 var markdownTemplate []byte
 
+type markdownText struct {
+	Statement string `json:"statement"`
+	Editorial string `json:"editorial"`
+}
+
 func initProblem(directory string) error {
-	var text struct {
-		Statement string `json:"statement"`
-		Editorial string `json:"editorial"`
-	}
+	var text markdownText
 	if err := decodeJSON(markdownTemplate, &text); err != nil {
 		return err
 	}

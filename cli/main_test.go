@@ -451,16 +451,8 @@ func TestPositionalArguments(t *testing.T) {
 }
 
 func TestInitUsesProblemTemplate(t *testing.T) {
-	// The website's problem editor starts from the same file (web/app/utils/problem-draft.ts).
-	data, err := os.ReadFile("problem-template.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var want struct {
-		Statement string `json:"statement"`
-		Editorial string `json:"editorial"`
-	}
-	if err := decodeJSON(data, &want); err != nil || want.Statement == "" || want.Editorial == "" {
+	var want markdownText
+	if err := readJSON("problem-template.json", &want); err != nil || want.Statement == "" || want.Editorial == "" {
 		t.Fatalf("template: %+v %v", want, err)
 	}
 	dir := example(t)

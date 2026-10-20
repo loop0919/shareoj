@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures/account'
-import { readFileSync } from 'node:fs'
+import template from '../../cli/problem-template.json' with { type: 'json' }
 
 test('creation page has noindex and is linked from navigation', async ({ page, request }) => {
   const response = await request.get('/problems/new')
@@ -16,7 +16,6 @@ test('creation page has noindex and is linked from navigation', async ({ page, r
 })
 
 test('a new problem starts from the statement and editorial shared with shareoj init', async ({ page }) => {
-  const template = JSON.parse(readFileSync(new URL('../../cli/problem-template.json', import.meta.url), 'utf8'))
   await page.goto('/problems/new?fresh=1')
   await page.getByLabel('問題のタイトル', { exact: true }).fill('ひな形')
   const saved = page.waitForRequest(request => request.method() === 'PUT' && /^\/api\/my\/problems\/[^/]+$/.test(new URL(request.url()).pathname))
