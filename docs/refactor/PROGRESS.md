@@ -110,7 +110,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 - simplify: docコメントの理由の修正、`strings.Replace`が一致しないときの検出、テストの繰り返し整理を適用。共通ヘルパー化などは範囲外として見送り。
 - レビュー: 4観点で挙動の変化はなし。必須の指摘3件（generatorsを全部省いたpushのテストがない、remoteのgeneratorsのデコード失敗を通るテストがない、docコメントに規則の要約がない）を1回の修正で解消。
 - 検証（最終tree）: `cli`で`go test -count=1 ./...`、`go vet ./...`、`CGO_ENABLED=0 go build -trimpath`、`gofmt -l .`がすべて成功。
-- 軽微（未対応）: 追加テストは`errors.As`で判定するため、デコードエラーを包み直す変更は検出しない。
+- 軽微（未対応）: 追加テストは`errors.As`で判定するため、デコードエラーを包み直す変更は検出しない。既存の`cli/scoring_test.go:236`のコメント「push stops before any request」は不正確（実際にはGETが先に行われる。変更前からの記述）。
 
 ### C06 コンテスト提出の閲覧条件（`da26be1`）
 
@@ -158,7 +158,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 ### C08 問題とプロフィールのストアを具体型で持つ（`57b902c`）
 
 - 計画: [plans/C08-concrete-store-types.md](plans/C08-concrete-store-types.md)。計画レビューは承認（軽微な指摘3件）。
-- 変更: `handlerDependencies.Store`、`problemHandler.Store`、`submissions.Service.Problems`を`*problems.Store`に、プロフィールの3フィールドを`*profiles.Store`にした。16か所の実行時の型アサーション（それぞれに503の分岐）を、同じ位置の`nil`判定か、呼び出し側で判定済みの箇所では直接の呼び出しにした。使われなくなった`problems.Repository`、`problems.Publications`、`problemReadiness`、`profiles.Repository`を削除した。`git log -S "p.Store.("`ではこの形を写したコミットが14件あり、写し漏れはコンパイルを通る（常に503を返すか、readinessが応答から消える）。
+- 変更: `handlerDependencies.Store`、`problemHandler.Store`、`submissions.Service.Problems`を`*problems.Store`に、プロフィールの3フィールドを`*profiles.Store`にした。16のハンドラーと`registerRoutes`の計17か所の実行時の型アサーション（ハンドラーの14か所は503の分岐、`private_problems.go`の2か所は黙ってreadinessを省く形）を、同じ位置の`nil`判定か、呼び出し側で判定済みの箇所では直接の呼び出しにした。使われなくなった`problems.Repository`、`problems.Publications`、`problemReadiness`、`profiles.Repository`を削除した。`git log -S "p.Store.("`ではこの形を写したコミットが14件あり、写し漏れはコンパイルを通る（常に503を返すか、readinessが応答から消える）。
 - 守った点: ルートごとの入力検証と503の順序、エラーコード、release-on-readの省略、readinessの計算。テスト用の偽物が実在する`Files`のアサーションは残した。
 - 特性テスト: `TestProblemRoutesWithoutDatabase`（ストアなしの35ルートのステータスとエラーコード）、`TestGenerationWithoutProblemStore`。変更前のコードで成功し、ストアをインターフェースに戻す変異（typed nil）を検出することを確かめた。
 - simplify: テストのエラー確認を既存の`expect`にし、`releaseBefore`の引数名を`featured`から`problemStore`にした（単独公開の予約も解放するため）。
@@ -170,7 +170,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 
 - 計画: [plans/C03-bff-error-codes.md](plans/C03-bff-error-codes.md)。計画レビューは承認（軽微な指摘4件。実装時に反映）。
 - 変更: `privateAPI`の中の1行の配列（50コード。`git log -L`で21件のコミットが行全体を置き換えていた）と429用の3コードを、モジュールレベルの`forwardedCodes`と`retryAfterCodes`（1行1コードの`Set`）にした。判定は`.has()`にした。50件と3件はHEADから機械的に写し、順序込みの差分がないことを確かめた。
-- 特性テスト: 上流の拒否5通り（一覧にないコード、一覧のコード、429で3コードのうちの1つ、429で一覧にないコード、通さないステータス）をBFFに通し、ステータス、Retry-After、`data`、診断文字列が漏れないことを確かめる（`web/tests/upstream-errors.spec.ts`と`fixtures/public-api.mjs`）。
+- 特性テスト: 上流の拒否5通り（400で一覧にないコード、400で来た429用の3コードの1つ＝捨てられる、429で3コードの1つ、429で一覧にないコード、通さないステータス500で一覧のコード）をBFFに通し、ステータス、Retry-Afterが付かないこと、`data`、診断文字列が漏れないことを確かめる（`web/tests/upstream-errors.spec.ts`と`fixtures/public-api.mjs`）。Retry-Afterを渡す経路は既存の`creation-quota.spec.ts`と`submission.spec.ts`が固定している。
 - simplify: `forwardedCodes`のコメントに、`retryAfterCodes`という例外を名指しで書いた（そのままだと429のコードを誤って一覧に足しうる）。
 - レビュー: 4観点とも必須の指摘なし。
 - 検証: 最初の実行でブラウザーテスト`tags.spec.ts:114`が1件失敗した。修正担当と再レビュー担当が、変更前のコードでも再現する既存の競合（D26）で今回の変更の経路を通らないことを確かめ、コードは変えずに再実行した。最終tree（変更前と同じtree）で、`npm run typecheck`、`npm run package:lambda`、`npm run test:lambda`、`npm run build`、ブラウザーPlaywright（460件）、アカウント系Playwright（30件）、smokeがすべて成功。
@@ -249,7 +249,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 - simplify: `participationForm`を設定のオブジェクトと合言葉の2引数にし、新規の既定値の二重定義をなくし、読み込み順の理由をコンポーネント側に書いた。
 - レビュー: 4観点とも必須の指摘なし。
 - 検証（最終tree）: webの`npm run typecheck`、`npm run package:lambda`、`npm run test:lambda`、`npm run build`、ブラウザーPlaywright（480件）、アカウント系Playwright（30件）、smokeがすべて成功。
-- 軽微（未対応）: `formFromContest`のコメント「会場のルートから参加形式を読む」は不正確（会場から取るのは合言葉だけ。simplifyで入れた文面）。最後の修正でまとめて直す。`setOnsite`の「オンにしたとき既存の合言葉を残す」分岐はテストがない（変更前から）。
+- 軽微: `formFromContest`のコメント「会場のルートから参加形式を読む」は不正確だった（会場から取るのは合言葉だけ。simplifyで入れた文面）。最終レビューの修正（`f10cc24`）で直した。未対応: `setOnsite`の「オンにしたとき既存の合言葉を残す」分岐はテストがない（変更前から）。
 
 ## 全体の再調査（1回目）
 
@@ -260,6 +260,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 ## 保留事項
 
 調査で見つけた別件の不具合と、仕様の判断が要る点。直さずに記録だけする。
+根拠の行番号は記録した時点のもの（D01〜D23は開始コミット`f8b4507`、D24以降と見直したD13〜D15・D29は最終tree）。
 
 | ID | 内容 | 根拠 | 影響 |
 | --- | --- | --- | --- |
@@ -275,9 +276,9 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | D10 | 新規作成時の問題文と解説のひな形をCLIとWebが別々に持つ | `cli/main.go`の`initProblem`、`web/app/utils/problem-draft.ts:124,135` | 片方だけ変えるとずれる（494674fで手作業で同期した前例あり） |
 | D11 | rolloutの`finish()`が1台構成でも`--instance`を全台分渡し、api-smokeで失敗する | `judge/rollout.py:416-418` | 1台構成の通常配布を支援するかの判断が要る |
 | D12 | 処理系別のヒープ上限が「memory==256なら対話ジャッジ側」という前提のまま | `judge/sandbox.py:154-163` | 256 MiBの提出が小さいヒープで動き、MLEがREになりうる |
-| D13 | 保存ショートカットの判定がコンテスト編集画面だけ違う（IME変換中やShift付きでも保存） | `web/app/components/ContestEditor.vue:160-165` | 画面ごとに動きが違う |
-| D14 | 入出力生成・入力検証の言語選択に「現在利用できません」の選択肢がない | `web/app/components/TestCaseGenerator.vue:153` | 保存済みの言語がカタログにないと選択欄が空に見える |
-| D15 | Markdownエディターの画面ごとの差（プレビューの遅延、数式スニペット）とコンテスト編集画面だけテーマ切替がない点が意図的か不明 | `web/app/pages/problems/new.vue:86-97`、`ContestEditor.vue:531-545` | 画面によって入力の重さと挿入される記法が違う |
+| D13 | 保存ショートカットの判定がコンテスト編集画面だけ違う（IME変換中やShift付きでも保存） | `web/app/components/ContestEditor.vue`の`saveWithShortcut`（149行） | 画面ごとに動きが違う |
+| D14 | 入出力生成・入力検証の言語選択に「現在利用できません」の選択肢がない | `web/app/components/TestCaseGenerator.vue:154` | 保存済みの言語がカタログにないと選択欄が空に見える |
+| D15 | Markdownエディターの画面ごとの差（プレビューの遅延、数式スニペット）とコンテスト編集画面だけテーマ切替がない点が意図的か不明 | `web/app/pages/problems/new.vue:86-97`、`ContestEditor.vue`の`editor-topbar`（507行） | 画面によって入力の重さと挿入される記法が違う |
 | D16 | `exportProblemMarkdown`と`draftErrors`の一部は本番コードから使われていない | `web/app/utils/problem-draft.ts:111-120` | 消すとテストも消すため、人間の判断が要る |
 | D17 | テスター招待ページが、テスターも公開できると説明している | `web/app/pages/my/tester-invitations/[token].vue:42` | 実際にはない権限を伝えている |
 | D18 | 定期便の順位表と予定表で、Hard枠にUltimateの表示名を使っていない | `web/app/pages/featured/index.vue:23` | ADR 0011と表示が食い違う |
@@ -288,19 +289,48 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | D23 | タグで絞り込んだ一覧ページの`og:image`が404のURLを指す | `web/app/pages/problems/index.vue:34,44` | 共有時にプレビュー画像が出ない |
 | D25 | 上流が通さないステータス（500など）を返すとBFFは502にするが、一覧にあるコードは`data`に残して画面へ渡す | `web/server/utils/private-api.ts`（`upstream-errors.spec.ts`のf005が現状を固定） | 是非は未判断。変えると画面に出る文言が変わる |
 | D26 | ブラウザーテスト`tags.spec.ts:114`が不安定（全体実行で時々失敗） | `web/tests/tags.spec.ts:124`の`getByRole('search')` | ページの作り直し中に古いフォームをつかんで撮影する競合。変更前のコードでも応答を25〜50ms遅らせると毎回再現した。テストで新しいページの見出しを待てば直る |
+| D24 | 問題の編集画面で、ダイアログを閉じるときに保留中の自動保存タイマーを消さずに張り直す | `web/app/composables/useProblemDraft.ts`（離脱確認と削除確認を閉じる処理） | ダイアログの裏で草稿が非同期に変わると（保存して移動の途中のファイル準備、生成の完了）、タイマーが2本になりPUTが1回多く起きうる |
 | D27 | 公開ルートのうち、コンテスト・公開提出・定期便のハンドラーだけ10秒の期限を付けていない | `api/internal/httpapi/contests.go`の公開側（`routes.go`の7ルート、順位表を含む）など。期限ありは`problems.go:79`、`posts.go:28`ほか | DBが遅いとき、これらだけLambdaの30秒まで実行が続く（API Gatewayは20秒で打ち切る）。揃えると応答が変わるため判断が要る |
 | D28 | deployment-statusの「未完了の提出」だけがランタイムを接尾辞（`LIKE '%-isolate'`）で数え、送り出し・期限切れ（`runtime=ANY(...)`）と対象がずれる | `api/cmd/judge-bridge/bridge.go:56`、`dispatch.go:47-48,103-107` | ランタイムを一覧から外したとき、残った提出がpendingに残り続け、rolloutの完了待ちが終わらない可能性（推定） |
-| D29 | 編集画面の「提出先の制限」で、公開予約中の問題だけ制限の注記が出ない | `web/app/components/ProblemReadiness.vue:9`の`stateCodes`に`scheduled`がない（`utils/problem-readiness.ts:44`にはある。190fe16で片方だけ追加） | 予約中の問題は、コンテストと定期便に出せないことが注記に出ない |
+| D29 | 編集画面の「提出先の制限」で、公開予約中の問題だけ制限の注記が出ない | `web/app/components/ProblemReadiness.vue:10`の`stateCodes`に`scheduled`がない（`utils/problem-readiness.ts:50`の`stateIssues`にはある。190fe16で片方だけ追加） | 予約中の問題は、コンテストと定期便に出せないことが注記に出ない |
 | D30 | チーム戦のサンプル検証の「結果の詳細」リンクだけ`?from=team`が付かない | `web/app/components/SubmissionForm.vue:120`（同じファイルの:64と`ProblemSubmissionList.vue:31`は付ける。a33d0acは:64だけ直した） | パンくずリストが「この問題の自分の提出」になる。意図的な可能性もある |
 | D31 | ログイン後の戻り先の許可リストが、画面が付ける`next`の多くを受け付けず`/my`へ戻す | `web/shared/utils/login-destination.ts:3`（`/problems/post`、`/featured/apply`、`/problems/{短縮ID}`、`/my/contests`以下、`/my/submissions`を通さない）。呼ぶ側は`web/app/pages/problems/post.vue:88`ほか | 問題の投稿、定期便の応募、お気に入りなどからログインすると元のページに戻らない。許す範囲はオープンリダイレクト対策の判断が要る |
 | D32 | BFFが画面へ通すエラーコードのうち5つ（`invalid_avatar`、`invalid_submission`、`contest_participation_unavailable`、`invalid_contest`、`password_unavailable`）を、どの画面も読んでいない | `web/server/utils/private-api.ts`の`forwardedCodes` | 実害はない。専用の文言を足すか一覧から外すかは仕様の判断 |
-| D24 | 問題の編集画面で、ダイアログを閉じるときに保留中の自動保存タイマーを消さずに張り直す | `web/app/composables/useProblemDraft.ts`（離脱確認と削除確認を閉じる処理） | ダイアログの裏で草稿が非同期に変わると（保存して移動の途中のファイル準備、生成の完了）、タイマーが2本になりPUTが1回多く起きうる |
+| D33 | 提出コードの長さの上限131072バイトが、検証（`judge/host.py:77`、`judge/sandbox.py:80`）と成果物の読み出し（`judge/sandbox.py:257`の`regular_read(..., 131072)`）に別々に書かれている | 左記の3か所（C05の計画で範囲外の報告事項とした） | 検証の上限だけを上げると、ソースが黙って切り詰められて誤ったRE・WAになりうる |
+| D34 | 提出の`timeLimitMs`の不正値を拒否する挙動のテストがない | `judge/host.py`の上限検証（C05の計画で報告事項とした） | 検証の退行に気づけない |
 
-## 現在の作業と次の手順
+## 最終レビュー（開始コミットからの累積差分）
 
-- 候補の処理は収束した（全体の再調査で新しい候補なし）。次は、開始コミットからの累積差分の独立レビュー（メインセッションからの`code-review`を含む）、指摘の修正（1回）、最終の全検証。
-- C11はC02・C08と同じ`api/internal/problems/store.go`に触れるため、その後に計画する。
-- C15〜C20は2観点の反証を行い、C15を保留、C16・C18・C19を却下、C17・C20を範囲を絞って採用した。
-- 2026-10-20 03:40ごろ利用上限で一時停止し、08:30に再開した。停止時に失敗したエージェント（C04のsimplify、C07の計画レビュー、C20の反証）は、ワークフローの再開で実行し直した。完了済みの作業は重複して実行していない。
-- 前の候補のレビュー中に、次の候補の計画を読み取りだけで進める（計画は`.local/`に書くので、固定したtreeに影響しない）。
-- Ruling（C04）: 計画は「閉じるときに保留中のタイマーを消す」微差を受け入れていたが、ダイアログの裏で草稿が非同期に変わったときのPUTの回数が変わるため採らない。`scheduleAutosave()`は`clearTimeout`を含めず、呼び出し側の`clearTimeout`は今の位置のまま残す。誤っていた場合の損失: 二重のタイマー（計画のD2）が別件として残る。
+- 範囲: `f8b4507..a536ad5`（29コミット、77ファイル）。Superpowersの`code-reviewer`の型で、独立したレビュー担当4人（API、CLIとjudge、web、サイクル間の相互作用と記録）が読み取り専用で確かめ、判定担当が指摘を実コードで確認した。あわせてメインセッションから`code-review`（high）を実行した。
+- 結果: 維持条件を破る変更はなし（3人が「そのままマージ可」、1人が「文書の修正後に可」）。`code-review`も確かな正しさの退行はなし。
+- 必須の指摘3件はすべてコメントと文書: `formFromContest`のコメントとテスト名の誤り（G1）、型の先頭へ移った「空ならnull」のコメントの誤り（G2）、裁定で覆した設計をそのまま書いたC04の計画（G3）。
+- 修正（1回、`f10cc24`）: G1〜G3に加え、軽微のうち特性テストの穴（C11の応答のidとupdated_at、C05のstatusだけの行）、新しいテストで増えたlintの1件、`judgeReady`のdocコメントのケース数の条件、C02・C05の計画の誤りを直した。範囲を絞った再レビューで9件とも解消を確認し、新たな問題はなし。記録の誤り（C08の箇所数、C03のテストの説明、保留事項の行番号と並び、古くなった次の手順、計画にだけあった別件のD33・D34への移し替え）は、この記録で直した。
+- `code-review`の指摘の扱い: 保留中のタイマー（D24。C04の裁定で外部動作を保つため意図して残した）は却下。ケース数の条件の写しはdocコメントで明記した。`contestSubmissionVisible`の閲覧者のパラメーター化、nil判定のラッパー、`list`の防御的な判定、サイトマップと共有画像の結び付き（C13で受け入れた設計）、Scheduleの副問い合わせ（C11で受け入れた差）、CLIの別名の変数は、新しい抽象化・まだない呼び出し側への備え・受け入れ済みのトレードオフ・好みの範囲として採らない。
+- 残した軽微: `judgeReady`のdocコメントで、足した文の直後の「They」が指す先がやや曖昧。C02の計画の表の1セルで、判定と誤りの注記が並ぶ。どちらもコメントと文書だけで、2回目の修正はしない（Superpowersの手順）。
+
+## 最終の検証（tree `24e4b6a`、コミット`f10cc24`）
+
+すべて成功した。
+
+| 対象 | 結果 |
+| --- | --- |
+| API `go test -count=1 ./...`（DB連携、ポート25432） | 10パッケージok、FAIL 0 |
+| API `go vet ./...`、`gofmt -l .`、`make package package-judge` | 成功 |
+| CLI `go test -count=1 ./...`、`go vet ./...`、`gofmt -l .`、`CGO_ENABLED=0 go build -trimpath` | 成功 |
+| judge `python3 -B -m unittest discover -s judge/tests` | 145件 OK（開始時142件） |
+| `terraform fmt -check -recursive infra` | 成功 |
+| web `npm run typecheck`、`npm run package:lambda`、`npm run test:lambda`、`npm run build` | 成功 |
+| web ブラウザーPlaywright | 480件成功（開始時450件。`tags.spec.ts:114`のD26は今回失敗しなかった） |
+| web アカウント系Playwright（実際のGo APIとDB） | 30件成功 |
+| web `node --test scripts/smoke-frontend.test.mjs` | 3件成功 |
+
+実行していない検証: Terraformの`validate`と`test`（インフラを変えておらず、プロバイダーの取得が要る）、isolateの実機での確認（`judge/smoke.py`、`judge/interactive_smoke.py`。本番環境が要る）、本番への配布と`judge/smoke-api.py`（委任の範囲外）。参考のgolangci-lintは、api・cliとも開始時と同じ件数（新しく足したテストで増えた1件は直した）。
+
+## 状態と次の手順
+
+- 候補の処理は収束した。完了14件（C01〜C09、C11〜C13、C17、C20）、保留1件（C15）、却下6件（C10、C14、C16、C18、C19、再調査のN01）。全体の再調査（1回目）で新しい候補はなかった。
+- 作業ブランチ`refactor/maintainability`にローカルでコミットした（push、PR、マージ、デプロイはしていない）。未完了の変更は残っていない。
+- 人間の判断が要るもの: C15（`%2F`を含むURLの応答を変えてよいか）と、保留事項D01〜D34。
+- 経緯: 2026-10-20 03:40ごろ利用上限で一時停止し、08:30に再開した。停止時に失敗したエージェント（C04のsimplify、C07の計画レビュー、C20の反証）は、ワークフローの再開で実行し直した。完了済みの作業は重複して実行していない。
+- 進め方の補足: 前の候補のレビュー中に、次の候補の計画を読み取りだけで進めた（計画は`.local/`に書くので、固定したtreeに影響しない）。
+- Ruling（C04）: 計画は「閉じるときに保留中のタイマーを消す」微差を受け入れていたが、ダイアログの裏で草稿が非同期に変わったときのPUTの回数が変わるため採らない。`scheduleAutosave()`は`clearTimeout`を含めず、呼び出し側の`clearTimeout`は今の位置のまま残す。誤っていた場合の損失: 二重のタイマー（D24）が別件として残る。
