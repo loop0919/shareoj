@@ -287,9 +287,9 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | D21 | BFFがAPIの`invalid_accounts`を画面へ渡さず、専用の文言が出ない | `web/server/utils/private-api.ts`の`forwardedCodes` | 汎用の「保存できませんでした」が出る |
 | D22 | テストファイルのBFFルートが、ルートパラメーターを検証せずに上流のパスへ埋め込む | `web/server/api/my/problems/[id]/test-files/[file].get.ts:8`ほか | `%2e%2e`がURL解析で正規化される可能性（未検証。多層防御の穴） |
 | D23 | タグで絞り込んだ一覧ページの`og:image`が404のURLを指す | `web/app/pages/problems/index.vue:34,44` | 共有時にプレビュー画像が出ない |
+| D24 | 問題の編集画面で、ダイアログを閉じるときに保留中の自動保存タイマーを消さずに張り直す | `web/app/composables/useProblemDraft.ts`（離脱確認と削除確認を閉じる処理） | ダイアログの裏で草稿が非同期に変わると（保存して移動の途中のファイル準備、生成の完了）、タイマーが2本になりPUTが1回多く起きうる |
 | D25 | 上流が通さないステータス（500など）を返すとBFFは502にするが、一覧にあるコードは`data`に残して画面へ渡す | `web/server/utils/private-api.ts`（`upstream-errors.spec.ts`のf005が現状を固定） | 是非は未判断。変えると画面に出る文言が変わる |
 | D26 | ブラウザーテスト`tags.spec.ts:114`が不安定（全体実行で時々失敗） | `web/tests/tags.spec.ts:124`の`getByRole('search')` | ページの作り直し中に古いフォームをつかんで撮影する競合。変更前のコードでも応答を25〜50ms遅らせると毎回再現した。テストで新しいページの見出しを待てば直る |
-| D24 | 問題の編集画面で、ダイアログを閉じるときに保留中の自動保存タイマーを消さずに張り直す | `web/app/composables/useProblemDraft.ts`（離脱確認と削除確認を閉じる処理） | ダイアログの裏で草稿が非同期に変わると（保存して移動の途中のファイル準備、生成の完了）、タイマーが2本になりPUTが1回多く起きうる |
 | D27 | 公開ルートのうち、コンテスト・公開提出・定期便のハンドラーだけ10秒の期限を付けていない | `api/internal/httpapi/contests.go`の公開側（`routes.go`の7ルート、順位表を含む）など。期限ありは`problems.go:79`、`posts.go:28`ほか | DBが遅いとき、これらだけLambdaの30秒まで実行が続く（API Gatewayは20秒で打ち切る）。揃えると応答が変わるため判断が要る |
 | D28 | deployment-statusの「未完了の提出」だけがランタイムを接尾辞（`LIKE '%-isolate'`）で数え、送り出し・期限切れ（`runtime=ANY(...)`）と対象がずれる | `api/cmd/judge-bridge/bridge.go:56`、`dispatch.go:47-48,103-107` | ランタイムを一覧から外したとき、残った提出がpendingに残り続け、rolloutの完了待ちが終わらない可能性（推定） |
 | D29 | 編集画面の「提出先の制限」で、公開予約中の問題だけ制限の注記が出ない | `web/app/components/ProblemReadiness.vue:10`の`stateCodes`に`scheduled`がない（`utils/problem-readiness.ts:50`の`stateIssues`にはある。190fe16で片方だけ追加） | 予約中の問題は、コンテストと定期便に出せないことが注記に出ない |
