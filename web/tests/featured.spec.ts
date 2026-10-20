@@ -209,6 +209,10 @@ test('the schedule lists coming rounds by level without writers and fits narrow 
   await expect(rows.nth(1)).not.toContainText('確定')
   await expect(rows.first().locator('td').first()).toHaveText('Lv.4')
   await expect(rows.first().locator('td').nth(1)).toHaveText('Lv.7')
+  // The schedule's Hard column keeps its name even for a Lv.9+ problem: a column can hold both.
+  await expect(page.locator('.featured-schedule thead th').last()).toHaveText('Hard')
+  await expect(rows.nth(1).locator('td').nth(1)).toHaveText('Lv.10')
+  await expect(rows.nth(1).locator('td').nth(1)).toHaveAttribute('data-slot', 'Hard')
   // The schedule never names writers.
   await expect(page.locator('.featured-schedule a')).toHaveCount(0)
   await expect(rows.nth(3)).toContainText('募集中')

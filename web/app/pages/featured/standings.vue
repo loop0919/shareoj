@@ -10,7 +10,11 @@ const at = typeof route.query.at === 'string' ? route.query.at : ''
 const offset = ref(0)
 const { data, error, status, refresh } = await useFetch('/api/featured/standings', { query: { at, offset } })
 const slots = ['easy', 'hard'] as const
-const columns = computed(() => slots.map(slot => ({ slot, problem: data.value?.round.slots.find(problem => problem.slot === slot) })))
+// A Hard slot holding a Lv.9+ problem is shown as Ultimate, as on the round list (ADR 0011).
+const columns = computed(() => slots.map(slot => {
+  const problem = data.value?.round.slots.find(problem => problem.slot === slot)
+  return { slot, problem, label: slot === 'easy' ? 'Easy' : (problem?.difficulty ?? 0) >= 9 ? 'Ultimate' : 'Hard' }
+}))
 usePolling(() => refresh(), 15000)
 function elapsed(ms: number | null) {
   if (ms === null) return '—'
@@ -36,21 +40,21 @@ function elapsed(ms: number | null) {
           <thead><tr>
             <th scope="col">順位</th><th scope="col">ユーザー</th><th scope="col">時間</th>
             <th v-for="column in columns" :key="column.slot" scope="col">
-              <NuxtLink v-if="column.problem?.problemId" :to="`/problems/${shortId(column.problem.problemId)}`" :title="column.problem.title">{{ column.slot === 'easy' ? 'Easy' : 'Hard' }}</NuxtLink>
-              <span v-else>{{ column.slot === 'easy' ? 'Easy' : 'Hard' }}</span>
+              <NuxtLink v-if="column.problem?.problemId" :to="`/problems/${shortId(column.problem.problemId)}`" :title="column.problem.title">{{ column.label }}</NuxtLink>
+              <span v-else>{{ column.label }}</span>
               <small v-if="column.problem?.kind === 'missing'">欠番</small>
             </th>
           </tr></thead>
           <tbody>
             <tr v-for="row in data.items" :key="row.handle">
               <td>{{ row.rank }}</td><th scope="row"><UserLink :handle="row.handle" /></th><td>{{ elapsed(row.timeMs) }}</td>
-              <td v-for="slot in slots" :key="slot">
+              <td v-for="column in columns" :key="column.slot">
                 <span class="standing-result">
-                  <svg v-if="row[slot].accepted" class="accepted-check" viewBox="0 0 24 24" role="img" :aria-label="`${slot === 'easy' ? 'Easy' : 'Hard'} 正解`"><path d="m5 12 4 4L19 6" /></svg>
+                  <svg v-if="row[column.slot].accepted" class="accepted-check" viewBox="0 0 24 24" role="img" :aria-label="`${column.label} 正解`"><path d="m5 12 4 4L19 6" /></svg>
                   <span v-else class="muted" aria-label="未正解">—</span>
-                  <span v-if="row[slot].wrong" class="standing-wrong" :aria-label="`不正解 ${row[slot].wrong} 回`">({{ row[slot].wrong }})</span>
+                  <span v-if="row[column.slot].wrong" class="standing-wrong" :aria-label="`不正解 ${row[column.slot].wrong} 回`">({{ row[column.slot].wrong }})</span>
                 </span>
-                <small v-if="row[slot].accepted">{{ elapsed(row[slot].timeMs) }}</small>
+                <small v-if="row[column.slot].accepted">{{ elapsed(row[column.slot].timeMs) }}</small>
               </td>
             </tr>
           </tbody>
