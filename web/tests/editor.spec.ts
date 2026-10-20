@@ -1,4 +1,5 @@
 import { expect, test } from './fixtures/account'
+import { readFileSync } from 'node:fs'
 
 test('creation page has noindex and is linked from navigation', async ({ page, request }) => {
   const response = await request.get('/problems/new')
@@ -12,6 +13,17 @@ test('creation page has noindex and is linked from navigation', async ({ page, r
   await expect(page.getByLabel('問題のタイトル', { exact: true })).toBeEnabled()
   await expect(page.locator('#memory-limit')).toHaveValue('512')
   await expect(page.locator('#memory-limit')).toHaveAttribute('aria-valuemax', '512')
+})
+
+test('a new problem starts from the statement and editorial shared with shareoj init', async ({ page }) => {
+  const template = JSON.parse(readFileSync(new URL('../../cli/problem-template.json', import.meta.url), 'utf8'))
+  await page.goto('/problems/new?fresh=1')
+  await page.getByLabel('問題のタイトル', { exact: true }).fill('ひな形')
+  const saved = page.waitForRequest(request => request.method() === 'PUT' && /^\/api\/my\/problems\/[^/]+$/.test(new URL(request.url()).pathname))
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  const { draft } = (await saved).postDataJSON()
+  expect(draft.markdown).toBe(template.statement)
+  expect(draft.editorial).toBe(template.editorial)
 })
 
 test('editing, math preview, automatic save, and reload work together', async ({ page }) => {
