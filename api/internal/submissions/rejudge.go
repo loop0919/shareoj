@@ -80,20 +80,7 @@ func (s *Store) Rejudge(ctx context.Context, in RejudgeInput) (int64, error) {
   ) t
   WHERE s.id=t.id AND s.status='DONE' AND t.draft IS NOT NULL
   AND jsonb_array_length(COALESCE(t.draft->'testCases','[]'::jsonb)) BETWEEN 1 AND 100
-  AND (t.draft->>'memoryLimitMb')::int BETWEEN 64 AND 512
-  AND (COALESCE(t.draft->'checker','null'::jsonb) = 'null'::jsonb OR
-    (t.draft->'checker'->>'runtime'=ANY($5::text[]) AND
-     length(btrim(t.draft->'checker'->>'source', E' \t\r\n'))>0 AND
-     (s.runtime <> 'cpp17-local' OR t.draft->'checker'->>'runtime'='cpp17')))
-  AND (COALESCE(t.draft->'interactor','null'::jsonb) = 'null'::jsonb OR
-    (s.runtime <> 'cpp17-local' AND COALESCE(t.draft->'checker','null'::jsonb) = 'null'::jsonb AND
-     t.draft->'interactor'->>'runtime'=ANY($5::text[]) AND
-     length(btrim(t.draft->'interactor'->>'source', E' \t\r\n'))>0))
-  AND (COALESCE(t.draft->'scoring','null'::jsonb) = 'null'::jsonb OR
-    (s.runtime <> 'cpp17-local' AND CASE WHEN jsonb_typeof(t.draft->'scoring'->'groups')='array' THEN jsonb_array_length(t.draft->'scoring'->'groups') ELSE 0 END > 0 AND
-     (t.draft->'scoring'->>'mode' <> 'aggregate' OR
-     (t.draft->'scoring'->'aggregator'->>'runtime'=ANY($5::text[]) AND
-      length(btrim(t.draft->'scoring'->'aggregator'->>'source', E' \t\r\n'))>0))))`,
+  AND `+judgeReady("t.draft", "s.runtime", "$5::text[]", "false"),
 		in.ProblemID, in.Runtimes, in.SubmissionIDs, in.Image, in.CheckerRuntimes)
 	if err != nil {
 		return 0, err

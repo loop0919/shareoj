@@ -176,9 +176,33 @@ type RunInput struct {
 	CheckerRuntimes                              []string
 }
 
+// judgeReady holds the conditions under which the judge can run a draft. CreateRun and Rejudge share them, so a
+// rejudge never queues a draft that a new submission refuses. They are ANDed for a WHERE clause, placed after an AND.
+// draft, runtime and checkerRuntimes are SQL expressions for the draft, the submission runtime and the text[] of judge
+// code runtimes. The runtime applies the limits of the local Docker judge (Judge): cpp17-local takes only a cpp17
+// checker, no interactor and no scoring. sampleCheck is a boolean SQL expression that waives the scoring conditions,
+// as a sample never scores.
+// Scoring without groups, or an aggregate one without its aggregator, waits like missing judge code, since the judge
+// would turn every run into JE. Publication follows problems.ContentIssues, a separate rule.
+func judgeReady(draft, runtime, checkerRuntimes, sampleCheck string) string {
+	return `(` + draft + `->>'memoryLimitMb')::int BETWEEN 64 AND 512
+  AND (COALESCE(` + draft + `->'checker','null'::jsonb) = 'null'::jsonb OR
+    (` + draft + `->'checker'->>'runtime'=ANY(` + checkerRuntimes + `) AND
+     length(btrim(` + draft + `->'checker'->>'source', E' \t\r\n'))>0 AND
+     (` + runtime + ` <> 'cpp17-local' OR ` + draft + `->'checker'->>'runtime'='cpp17')))
+  AND (COALESCE(` + draft + `->'interactor','null'::jsonb) = 'null'::jsonb OR
+    (` + runtime + ` <> 'cpp17-local' AND COALESCE(` + draft + `->'checker','null'::jsonb) = 'null'::jsonb AND
+     ` + draft + `->'interactor'->>'runtime'=ANY(` + checkerRuntimes + `) AND
+     length(btrim(` + draft + `->'interactor'->>'source', E' \t\r\n'))>0))
+  AND (` + sampleCheck + ` OR COALESCE(` + draft + `->'scoring','null'::jsonb) = 'null'::jsonb OR
+    (` + runtime + ` <> 'cpp17-local' AND CASE WHEN jsonb_typeof(` + draft + `->'scoring'->'groups')='array' THEN jsonb_array_length(` + draft + `->'scoring'->'groups') ELSE 0 END > 0 AND
+     (` + draft + `->'scoring'->>'mode' <> 'aggregate' OR
+     (` + draft + `->'scoring'->'aggregator'->>'runtime'=ANY(` + checkerRuntimes + `) AND
+      length(btrim(` + draft + `->'scoring'->'aggregator'->>'source', E' \t\r\n'))>0))))`
+}
+
 // CreateRun pins the selected problem version and cases in the insertion statement. A sample check never scores, so
-// its job has no scoring (ADR 0025), and the local Docker judge does not score at all. Scoring without groups, or an
-// aggregate one without its aggregator, waits like missing judge code, since the judge would turn every run into JE.
+// its job has no scoring (ADR 0025).
 func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) {
 	owner, id, problemID, source, image, runtime := in.Owner, in.ID, in.ProblemID, in.Source, in.Image, in.Runtime
 	easyTest, contestID, checkerRuntimes := in.EasyTest, in.ContestID, in.CheckerRuntimes
@@ -248,20 +272,7 @@ func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) 
   ) tests
   WHERE jsonb_array_length(selected_cases) > 0 AND jsonb_array_length(COALESCE(selected_draft->'testCases','[]'::jsonb)) > 0
   AND jsonb_array_length(COALESCE(selected_draft->'testCases','[]'::jsonb)) <= 100
-  AND (selected_draft->>'memoryLimitMb')::int BETWEEN 64 AND 512
-  AND (COALESCE(selected_draft->'checker','null'::jsonb) = 'null'::jsonb OR
-    (selected_draft->'checker'->>'runtime'=ANY($7::text[]) AND
-     length(btrim(selected_draft->'checker'->>'source', E' \t\r\n'))>0 AND
-     ($6 <> 'cpp17-local' OR selected_draft->'checker'->>'runtime'='cpp17')))
-  AND (COALESCE(selected_draft->'interactor','null'::jsonb) = 'null'::jsonb OR
-    ($6 <> 'cpp17-local' AND COALESCE(selected_draft->'checker','null'::jsonb) = 'null'::jsonb AND
-     selected_draft->'interactor'->>'runtime'=ANY($7::text[]) AND
-     length(btrim(selected_draft->'interactor'->>'source', E' \t\r\n'))>0))
-  AND ($8::boolean OR COALESCE(selected_draft->'scoring','null'::jsonb) = 'null'::jsonb OR
-    ($6 <> 'cpp17-local' AND CASE WHEN jsonb_typeof(selected_draft->'scoring'->'groups')='array' THEN jsonb_array_length(selected_draft->'scoring'->'groups') ELSE 0 END > 0 AND
-     (selected_draft->'scoring'->>'mode' <> 'aggregate' OR
-     (selected_draft->'scoring'->'aggregator'->>'runtime'=ANY($7::text[]) AND
-      length(btrim(selected_draft->'scoring'->'aggregator'->>'source', E' \t\r\n'))>0))))
+  AND `+judgeReady("selected_draft", "$6", "$7::text[]", "$8::boolean")+`
   RETURNING `+columns, id, owner, problemID, source, image, runtime, checkerRuntimes, easyTest, contestID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = ErrNotReady
