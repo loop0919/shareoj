@@ -363,11 +363,10 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		}
 		return err
 	}
-	needsDirectory := command == "init" || command == "check" || command == "push"
 	if command == "pull" && flags.NArg() != 2 {
 		return errors.New("expected pull <problem-id> <directory>; place options before the problem ID")
 	}
-	if needsDirectory && flags.NArg() != 1 {
+	if (command == "init" || command == "check" || command == "push") && flags.NArg() != 1 {
 		return errors.New("expected one directory for init/check/push; place options before the directory")
 	}
 	if (command == "login" || command == "logout") && flags.NArg() != 0 {
