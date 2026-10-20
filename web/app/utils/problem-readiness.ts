@@ -47,7 +47,7 @@ const sections: Record<string, EditorSection> = {
 export const issueSection = (code: string): EditorSection | undefined => sections[code]
 
 // Reasons about the problem itself; the rest describe where it already is.
-const stateIssues = new Set(['published', 'ever_published', 'in_contest', 'featured_limit', 'scheduled', 'featured_applied'])
+export const stateIssues = new Set(['published', 'ever_published', 'in_contest', 'featured_limit', 'scheduled', 'featured_applied'])
 
 // Every destination checks the same content (ADR 0021); the lists differ only in state reasons.
 export function contentIssues(readiness?: Readiness): string[] {
