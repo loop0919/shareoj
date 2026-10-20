@@ -46,8 +46,8 @@ func (b bridge) deploymentStatus(ctx context.Context) (any, error) {
 		PreviousRuntimeDigest string `json:"previousRuntimeDigest"`
 		DispatchPaused        bool   `json:"dispatchPaused"`
 		// A rolling update must not change the environment within a contest (ADR 0014).
-		// The window runs from 30 minutes before the start to 15 minutes after the end of each contest
-		// with a participant. Unlike the burst hold, it has no 3-hour cap and needs only one participant.
+		// The window runs from 30 minutes before the start to 15 minutes after the end of each contest.
+		// Unlike the burst hold, it has no 3-hour cap and needs only one participant.
 		NextContestWindowAt *time.Time `json:"nextContestWindowAt"`
 	}{Kind: "judge-deployment-status", RuntimeDigest: b.runtime, PreviousRuntimeDigest: b.previous, DispatchPaused: b.paused}
 	err := b.db.QueryRow(ctx, `SELECT COUNT(*), COUNT(*) FILTER (WHERE dispatched_at IS NULL),
