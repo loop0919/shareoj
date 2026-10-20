@@ -37,7 +37,7 @@ watch([source, runtime, () => props.problemId], () => { easyResult.value = null 
 async function submit(easyTest = false) {
   if ((easyTest && !props.hasSamples) || props.disabled || sending.value || !available.value.some(item => item.id === runtime.value)) return
   if (!source.value.trim() || new TextEncoder().encode(source.value).length > sourceLimit) {
-    message.value = 'ソースコードを1〜131,072バイトで入力してください。'
+    message.value = `ソースコードを1〜${sourceLimit.toLocaleString('en-US')}バイトで入力してください。`
     return
   }
   runningEasyTest.value = easyTest

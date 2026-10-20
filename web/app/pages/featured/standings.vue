@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { contestDate } from '~~/shared/types/contest'
+import { featuredSlotLabel } from '~~/shared/types/featured'
 import { shortId } from '~~/shared/utils/short-id'
 
 definePageMeta({ key: route => String(route.query.at) })
@@ -10,10 +11,9 @@ const at = typeof route.query.at === 'string' ? route.query.at : ''
 const offset = ref(0)
 const { data, error, status, refresh } = await useFetch('/api/featured/standings', { query: { at, offset } })
 const slots = ['easy', 'hard'] as const
-// A Hard slot holding a Lv.9+ problem is shown as Ultimate, as on the round list (ADR 0011).
 const columns = computed(() => slots.map(slot => {
   const problem = data.value?.round.slots.find(problem => problem.slot === slot)
-  return { slot, problem, label: slot === 'easy' ? 'Easy' : (problem?.difficulty ?? 0) >= 9 ? 'Ultimate' : 'Hard' }
+  return { slot, problem, label: featuredSlotLabel(slot, problem?.difficulty) }
 }))
 usePolling(() => refresh(), 15000)
 function elapsed(ms: number | null) {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { contestDate } from '~~/shared/types/contest'
+import { featuredSlotLabel } from '~~/shared/types/featured'
 import { shortId } from '~~/shared/utils/short-id'
 useResponseHeader('Cache-Control').value = 'no-store'
 useSeoMeta({ title: '定期便 | ShareOJ', description: '毎週月曜・木曜23時（日本時間）にEasyとHardを一問ずつ出題します。新作の解説は翌22時に公開。' })
@@ -20,7 +21,7 @@ usePolling(() => refresh(), 60000)
         <header class="round-heading"><h3><span v-if="round.number" class="round-volume">vol.{{ round.number }}</span><time :datetime="round.scheduledAt">{{ contestDate(round.scheduledAt) }}</time></h3><NuxtLink :to="{ path: '/featured/standings', query: { at: round.scheduledAt } }">順位表</NuxtLink></header>
         <div class="slots">
           <section v-for="slot in round.slots" :key="slot.slot" class="slot">
-            <div class="slot-heading"><h4>{{ slot.slot === 'easy' ? 'Easy' : (slot.difficulty ?? 0) >= 9 ? 'Ultimate' : 'Hard' }}</h4><span>{{ slot.kind === 'new' ? '新作' : slot.kind === 'revival' ? '復刻' : '欠番' }}</span></div>
+            <div class="slot-heading"><h4>{{ featuredSlotLabel(slot.slot, slot.difficulty) }}</h4><span>{{ slot.kind === 'new' ? '新作' : slot.kind === 'revival' ? '復刻' : '欠番' }}</span></div>
             <p v-if="slot.kind === 'missing'" class="muted">この枠の出題はありません。</p>
             <template v-else>
               <p v-if="slot.problemId"><NuxtLink :to="`/problems/${shortId(slot.problemId)}`">{{ slot.title }}</NuxtLink> <DifficultyBadge :level="slot.difficulty" /></p>
