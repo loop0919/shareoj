@@ -206,6 +206,14 @@ test('unready judging settings explain why submission was rejected', async ({ pa
   await expect(page.getByLabel('ソースコード', { exact: true })).toBeEditable()
 })
 
+test('a refused submission names what to check', async ({ page }) => {
+  await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'alice' } } }))
+  await page.route('**/api/my/submissions', route => route.fulfill({ status: 400, json: { data: { code: 'invalid_submission' } } }))
+  await page.goto(`/problems/${problemId}`)
+  await page.getByLabel('ソースコード', { exact: true }).fill('int main(){}')
+  await page.getByRole('button', { name: '提出する', exact: true }).click()
+  await expect(page.getByRole('region', { name: '提出', exact: true }).getByRole('alert')).toHaveText('提出内容を受け付けられませんでした。言語を選び直し、ソースコードにNUL文字などの使えない文字がないか確認してください。')
+})
 
 test('Sample validation polls inline and retains the source for a full submission', async ({ page }) => {
   await page.route('**/api/my/profile', route => route.fulfill({ json: { profile: { handle: 'alice', avatar: '', version: 1, createdAt: '2026-09-01T00:00:00Z' } } }))

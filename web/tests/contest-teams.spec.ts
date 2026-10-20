@@ -196,6 +196,14 @@ test('joining without a passphrase sends no body, and an open participant turns 
   await expect(later).toHaveCount(0)
 })
 
+test('a refused participation says who cannot join', async ({ page }) => {
+  const state = await routeContest(page, { ...base, status: 'running' as const })
+  await routeJoin(page, state, [{ status: 409, code: 'contest_participation_unavailable' }])
+  await open(page)
+  await page.getByRole('button', { name: '参加する', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('このコンテストには参加登録できません。スタッフ（作成者・作問者・テスター）と、スタッフを務めた人は参加できません。終了後は新しく参加登録できません。')
+})
+
 test('team contests offer 個人参加 and チーム参加, and joining alone works as in an individual contest', async ({ page }) => {
   const contest = { ...base, teamMode: true, maxTeamSize: 3, onsiteDivision: true }
   const state = await routeContest(page, contest)

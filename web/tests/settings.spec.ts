@@ -106,3 +106,18 @@ test('deleted authors read as a former user without a profile link', async ({ pa
   await expect(row).toContainText('退会したユーザー')
   await expect(row.locator('a[href^="/users/"]')).toHaveCount(0)
 })
+
+test('profile and password refusals name their reason', async ({ page }) => {
+  await page.route('**/api/my/profile', route => route.request().method() === 'PUT' ? route.fulfill(failure(400, 'invalid_avatar')) : route.fulfill({ json: { profile } }))
+  await page.goto('/my/settings')
+  await page.getByRole('button', { name: '変更を保存', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('アイコンの画像を保存できませんでした。別の画像を選ぶか、アイコンを削除してから保存してください。')
+  await page.route('**/api/my/account', route => route.fulfill({ json: { email: 'ui@example.test', provider: 'password' } }))
+  await page.route('**/api/my/password', route => route.fulfill(failure(409, 'password_unavailable')))
+  await page.goto('/my/settings?tab=security')
+  await page.getByLabel('現在のパスワード').fill('Current-password-1')
+  await page.getByLabel('新しいパスワード', { exact: true }).fill('New-password-123!')
+  await page.getByLabel('新しいパスワード（確認）').fill('New-password-123!')
+  await page.getByRole('button', { name: 'パスワードを変更', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText('外部アカウントでログインしているため、パスワードは変更できません。')
+})

@@ -74,6 +74,7 @@ async function submit(easyTest = false) {
     else if (code === 'contest_participation_required') message.value = 'コンテストの「参加する」を押してから提出してください。'
     else if (code === 'tests_not_ready') message.value = easyTest ? '「サンプルケースにする」をチェックしたケースがあることと、検証コード・言語の設定を確認してください。' : 'テストケース、検証コード、利用できる言語の設定を確認してください。'
     else if (code === 'judging_unavailable') message.value = 'ジャッジが設定されていません。'
+    else if (code === 'invalid_submission') message.value = '提出内容を受け付けられませんでした。言語を選び直し、ソースコードにNUL文字などの使えない文字がないか確認してください。'
     else message.value = easyTest ? 'サンプル検証の結果を確認できませんでした。再実行するか、結果の詳細を確認してください。' : '提出を確認できませんでした。再送する前に提出履歴を確認してください。'
   } finally { sending.value = false }
 }

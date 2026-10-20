@@ -130,7 +130,8 @@ async function generate() {
       failure.value = detail.retryAfter
         ? `提出頻度制限に到達しました。${detail.retryAfter}秒後に再度試してください。`
         : '提出頻度制限に到達しました。しばらく待ってから再度試してください。'
-    } else failure.value = error instanceof Error && !('statusCode' in error) ? error.message : '実行できませんでした。ログイン状態と実行環境を確認してください。'
+    } else if (detail?.code === 'invalid_submission') failure.value = '実行内容を受け付けられませんでした。言語とコード、件数と、テストケースの合計サイズを確認してください。'
+    else failure.value = error instanceof Error && !('statusCode' in error) ? error.message : '実行できませんでした。ログイン状態と実行環境を確認してください。'
   } finally { busy.value = false }
 }
 </script>

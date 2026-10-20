@@ -173,6 +173,46 @@ test('a published contest whose passphrase cannot be read keeps its title and sc
   await expect(page.getByLabel('凍結する時間（終了前の分）', { exact: true })).toHaveValue('30')
 })
 
+test('an invalid contest is named on the draft save, the publication and the published save', async ({ page }) => {
+  const invalid = { status: 400, json: { statusCode: 400, data: { code: 'invalid_contest' } } }
+  const named = '保存できない値があります。「タイトル・説明」「問題・配点」「期間・ペナルティ」「参加形式」の内容を確認してください。'
+  await routeDraft(page)
+  let refuseDraft = true
+  await page.route('**/api/my/contests/*/draft', (route) => {
+    const request = route.request()
+    if (request.method() !== 'PUT') return route.fallback()
+    if (refuseDraft) return route.fulfill(invalid)
+    const body = request.postDataJSON()
+    return route.fulfill({ json: { ...draftResult(new URL(request.url()).pathname.split('/')[4]!, body.version + 1, body.draft), issues: [] } })
+  })
+  let publications = 0
+  await page.route('**/api/my/contests/*/publication', (route) => { publications++; return route.fulfill(invalid) })
+  await page.goto('/my/contests/new')
+  await page.getByLabel('コンテストタイトル', { exact: true }).fill('保存できない値')
+  await openSection(page, '期間・ペナルティ')
+  await page.getByLabel('開始日時', { exact: true }).fill('2099-10-01T09:00')
+  await page.getByLabel('コンテスト時間（分）', { exact: true }).fill('90')
+  await page.getByRole('button', { name: '下書きを保存', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveText(named)
+  // The publication checks the saved draft again, such as a problem without points.
+  refuseDraft = false
+  page.once('dialog', dialog => dialog.accept())
+  await page.getByRole('button', { name: 'コンテストを公開', exact: true }).click()
+  await expect.poll(() => publications).toBe(1)
+  await expect(page.getByRole('alert')).toHaveText(named)
+  // A published contest names the same refusal, and a 400 without a code keeps the general message.
+  await routeContest(page, { json: { onsiteDivision: true, passphrase: 'Venue_2026' } })
+  let reply: { status: number, json: unknown } = invalid
+  await page.route(`**/api/my/contests/${contestId}`, route => route.request().method() === 'PUT' ? route.fulfill(reply) : route.fallback())
+  await page.goto(`/my/contests/${shortId(contestId)}`)
+  const save = page.getByRole('button', { name: '変更を保存', exact: true })
+  await save.click()
+  await expect(page.getByRole('alert')).toHaveText(named)
+  reply = { status: 400, json: {} }
+  await save.click()
+  await expect(page.getByRole('alert')).toHaveText('入力内容を確認してください。')
+})
+
 test('Ctrl+S saves the contest draft', async ({ page }) => {
   const bodies = await routeDraft(page)
   await page.goto('/my/contests/new')
