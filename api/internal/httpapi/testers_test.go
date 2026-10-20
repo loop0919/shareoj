@@ -200,6 +200,28 @@ func TestTesterInvitationsPostgres(t *testing.T) {
 	if tested := request("GET", "/my/problems?role=tester", "bob", nil, 200); !strings.Contains(tested, `"contest":[]`) {
 		t.Fatal("tested list lacks contest readiness: " + tested)
 	}
+	// The tested list pages newest first with the same cursor as the owned list.
+	testedPage := func(cursor string) []problems.Summary {
+		t.Helper()
+		var page cursorResponse[problems.Summary]
+		if err := json.Unmarshal([]byte(request("GET", "/my/problems?role=tester"+cursor, "bob", nil, 200)), &page); err != nil {
+			t.Fatal(err)
+		}
+		if page.NextCursor != "" {
+			t.Fatalf("short tested list has a next cursor: %+v", page)
+		}
+		return page.Items
+	}
+	newest := testedPage("")
+	if len(newest) != 2 || newest[0].ID != c || newest[1].ID != a {
+		t.Fatalf("tested page: %+v", newest)
+	}
+	if rest := testedPage("&cursor=" + nextContentCursor(c, newest[0].UpdatedAt)); len(rest) != 1 || rest[0].ID != a {
+		t.Fatalf("tested page after c: %+v", rest)
+	}
+	if rest := testedPage("&cursor=" + nextContentCursor(a, newest[1].UpdatedAt)); len(rest) != 0 {
+		t.Fatalf("tested page after a: %+v", rest)
+	}
 	penalty := 5
 	entry := contests.Input{Title: "Tester contest", StartsAt: time.Now().Add(time.Hour), EndsAt: time.Now().Add(2 * time.Hour), PenaltyMinutes: &penalty, Problems: []contests.Problem{{ID: c, Points: 100}}}
 	request("PUT", "/my/contests/eeeeeeee-eeee-4eee-8eee-000000000001", "carol", entry, 409)
