@@ -79,7 +79,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | C14 | 送り出しの順序と待ち時間の起点を1つのSQL断片で定義する | `api/internal/submissions/store.go`、`api/cmd/judge-bridge/` | 低・中・S | 却下・維持 | 却下（変更漏れの実例がなく、既に振る舞いのテストで固定済み） |
 | C15 | コンテストAPIの、パス末尾とメソッドの順序に依存する分岐をルートごとに分ける | `api/internal/httpapi/contests.go`、`routes.go` | 中・高・L | 修正・修正 | 保留（`contest()`を分けると、`%2F`を含むURLの応答（D01）が200から404に必ず変わる。外部動作の変更になるので人間の判断を待つ。挙動の変わらない部分だけでは効果が低い） |
 | C16 | `host.judge()`をコンパイル・実行・集計の段階に分ける | `judge/host.py`、`judge/interactive.py` | 中・高・L | 却下・修正 | 却下（部分点の読み取りは既に1か所にあり、残る違いは2経路で本当に違う処理。規模とジャッジ中心部の変更に見合う効果がない） |
-| C17 | ContestEditorのフォームとAPIの変換を純粋関数にする | `web/app/components/ContestEditor.vue` | 中・高・M | 修正・修正 | 計画済み（12個のrefを1つのフォームにし、読み込みを純粋関数へ。本文の組み立てはコンポーネントに残す） |
+| C17 | ContestEditorのフォームとAPIの変換を純粋関数にする | `web/app/components/ContestEditor.vue` | 中・高・M | 修正・修正 | 完了（`7669f38`。12個のrefを1つのフォームにし、読み込みを純粋関数へ。本文の組み立てはコンポーネントに残す） |
 | C18 | 3つのMarkdown編集画面の表示切替・ツールバー・分割ハンドルを部品にする | `web/app/pages/problems/new.vue`ほか | 中・高・L | 却下・修正 | 却下（引用されたコミットの大半は部品化の対象に触れていない） |
 | C19 | ScoringEditorの採点方式の切り替え（退避と復元）を純粋関数に分ける | `web/app/components/ScoringEditor.vue` | 中・中・M | 却下・修正 | 却下（変更履歴は機能を作った当日の作業で、保守の痛みの根拠にならない。提案の関数は純粋にならない） |
 | C20 | マイグレーションの一覧を埋め込みFSとファイル名から組み立てる | `api/internal/database/database.go` | 中・中・M | 修正・修正 | 完了（`46b6720`。範囲を一覧の関数化と、ファイル番号との整合テストに限定。embed.FSへの移行はしない） |
@@ -240,6 +240,23 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 - 検証（最終tree）: webの`npm run typecheck`、`npm run package:lambda`、`npm run test:lambda`、`npm run build`、ブラウザーPlaywright（469件）、アカウント系Playwright（30件）、smokeがすべて成功。
 - 軽微（未対応、変更前からの穴）: 新しいテストは画像がそのページ自身のものかまでは確かめない（例: `/terms`が`/privacy`の画像を告げても通る）。足すなら各入口の`og:url`が入口と一致することを確かめる。
 
+### C17 コンテスト編集画面のフォーム（`7669f38`）
+
+- 計画: [plans/C17-contest-form-conversion.md](plans/C17-contest-form-conversion.md)。計画レビューは承認（軽微な指摘4件。実装時に反映）。
+- 変更: `ContestEditor.vue`の12個のフォームのrefを`reactive(initialContestForm())`の1つにまとめ、未保存の判定を`JSON.stringify([fields, selected])`から自動で作るようにした。下書きと公開済みの読み込みの変換を`web/app/utils/contest-form.ts`の純粋関数（`formFromDraft`、`formFromContest`、`participationForm`）にした。直近の4コミットはどれも6〜7か所を同時に直しており、1db91bfは未保存の判定に`freezeOn`を入れ忘れた（bd03e84で修正）。
+- 守った点: 送る本文の式とキー、公開済みの読み込み順（参加形式以外 → 会場の取得 → 参加形式）、watchの既定のflush、`<form>`のref、Ctrl+S（D13）、テーマ選択なし（D15）。テンプレートは`fields.`を除くと元とバイト単位で同じ。レビュー担当が実際のVueで旧実装と新実装を8641通りの読み込みで比べ、差がないことを確かめた。
+- 特性テスト: `web/tests/contest-editor-form.spec.ts`（本文の全キー、スイッチだけの変更が未保存になること、読み込み直後に未保存にならないこと、合言葉の取得失敗時もタイトルと日程が残ること、Ctrl+S）と`web/tests/contest-form.spec.ts`（純粋関数）。bd03e84の退行の再現と、読み込み順の変異を検出することを確かめた。
+- simplify: `participationForm`を設定のオブジェクトと合言葉の2引数にし、新規の既定値の二重定義をなくし、読み込み順の理由をコンポーネント側に書いた。
+- レビュー: 4観点とも必須の指摘なし。
+- 検証（最終tree）: webの`npm run typecheck`、`npm run package:lambda`、`npm run test:lambda`、`npm run build`、ブラウザーPlaywright（480件）、アカウント系Playwright（30件）、smokeがすべて成功。
+- 軽微（未対応）: `formFromContest`のコメント「会場のルートから参加形式を読む」は不正確（会場から取るのは合言葉だけ。simplifyで入れた文面）。最後の修正でまとめて直す。`setOnsite`の「オンにしたとき既存の合言葉を残す」分岐はテストがない（変更前から）。
+
+## 全体の再調査（1回目）
+
+- 5領域を、これまでの候補・却下・保留・枠外の一覧と保留事項を除いて、独立した担当が読み取り専用で調べ直した（C17の実装と並行）。
+- 4領域（httpapi、APIのドメインとcmd、CLIとjudge、webのserver・shared・scripts）は「1サイクルに見合う候補なし」。web/appの1件（N01: 問題とコンテストの提出一覧の4列を部品にまとめる）は、価値の観点で反証が成り立ち却下した（変更漏れの実例がない、同じ写しの3か所のうち2か所しか覆えない、ずれても見た目だけで既存テストが固定している）。
+- 新しく見つかった別件を保留事項D27〜D32に記録した。
+
 ## 保留事項
 
 調査で見つけた別件の不具合と、仕様の判断が要る点。直さずに記録だけする。
@@ -271,11 +288,17 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | D23 | タグで絞り込んだ一覧ページの`og:image`が404のURLを指す | `web/app/pages/problems/index.vue:34,44` | 共有時にプレビュー画像が出ない |
 | D25 | 上流が通さないステータス（500など）を返すとBFFは502にするが、一覧にあるコードは`data`に残して画面へ渡す | `web/server/utils/private-api.ts`（`upstream-errors.spec.ts`のf005が現状を固定） | 是非は未判断。変えると画面に出る文言が変わる |
 | D26 | ブラウザーテスト`tags.spec.ts:114`が不安定（全体実行で時々失敗） | `web/tests/tags.spec.ts:124`の`getByRole('search')` | ページの作り直し中に古いフォームをつかんで撮影する競合。変更前のコードでも応答を25〜50ms遅らせると毎回再現した。テストで新しいページの見出しを待てば直る |
+| D27 | 公開ルートのうち、コンテスト・公開提出・定期便のハンドラーだけ10秒の期限を付けていない | `api/internal/httpapi/contests.go`の公開側（`routes.go`の7ルート、順位表を含む）など。期限ありは`problems.go:79`、`posts.go:28`ほか | DBが遅いとき、これらだけLambdaの30秒まで実行が続く（API Gatewayは20秒で打ち切る）。揃えると応答が変わるため判断が要る |
+| D28 | deployment-statusの「未完了の提出」だけがランタイムを接尾辞（`LIKE '%-isolate'`）で数え、送り出し・期限切れ（`runtime=ANY(...)`）と対象がずれる | `api/cmd/judge-bridge/bridge.go:56`、`dispatch.go:47-48,103-107` | ランタイムを一覧から外したとき、残った提出がpendingに残り続け、rolloutの完了待ちが終わらない可能性（推定） |
+| D29 | 編集画面の「提出先の制限」で、公開予約中の問題だけ制限の注記が出ない | `web/app/components/ProblemReadiness.vue:9`の`stateCodes`に`scheduled`がない（`utils/problem-readiness.ts:44`にはある。190fe16で片方だけ追加） | 予約中の問題は、コンテストと定期便に出せないことが注記に出ない |
+| D30 | チーム戦のサンプル検証の「結果の詳細」リンクだけ`?from=team`が付かない | `web/app/components/SubmissionForm.vue:120`（同じファイルの:64と`ProblemSubmissionList.vue:31`は付ける。a33d0acは:64だけ直した） | パンくずリストが「この問題の自分の提出」になる。意図的な可能性もある |
+| D31 | ログイン後の戻り先の許可リストが、画面が付ける`next`の多くを受け付けず`/my`へ戻す | `web/shared/utils/login-destination.ts:3`（`/problems/post`、`/featured/apply`、`/problems/{短縮ID}`、`/my/contests`以下、`/my/submissions`を通さない）。呼ぶ側は`web/app/pages/problems/post.vue:88`ほか | 問題の投稿、定期便の応募、お気に入りなどからログインすると元のページに戻らない。許す範囲はオープンリダイレクト対策の判断が要る |
+| D32 | BFFが画面へ通すエラーコードのうち5つ（`invalid_avatar`、`invalid_submission`、`contest_participation_unavailable`、`invalid_contest`、`password_unavailable`）を、どの画面も読んでいない | `web/server/utils/private-api.ts`の`forwardedCodes` | 実害はない。専用の文言を足すか一覧から外すかは仕様の判断 |
 | D24 | 問題の編集画面で、ダイアログを閉じるときに保留中の自動保存タイマーを消さずに張り直す | `web/app/composables/useProblemDraft.ts`（離脱確認と削除確認を閉じる処理） | ダイアログの裏で草稿が非同期に変わると（保存して移動の途中のファイル準備、生成の完了）、タイマーが2本になりPUTが1回多く起きうる |
 
 ## 現在の作業と次の手順
 
-- 計画済み（計画レビュー承認）: C17。次はC17の実装。その後、累積差分の独立レビューと全体の再調査を行う。
+- 候補の処理は収束した（全体の再調査で新しい候補なし）。次は、開始コミットからの累積差分の独立レビュー（メインセッションからの`code-review`を含む）、指摘の修正（1回）、最終の全検証。
 - C11はC02・C08と同じ`api/internal/problems/store.go`に触れるため、その後に計画する。
 - C15〜C20は2観点の反証を行い、C15を保留、C16・C18・C19を却下、C17・C20を範囲を絞って採用した。
 - 2026-10-20 03:40ごろ利用上限で一時停止し、08:30に再開した。停止時に失敗したエージェント（C04のsimplify、C07の計画レビュー、C20の反証）は、ワークフローの再開で実行し直した。完了済みの作業は重複して実行していない。
