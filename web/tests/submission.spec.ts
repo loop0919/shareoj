@@ -215,6 +215,26 @@ test('a refused submission names what to check', async ({ page }) => {
   await expect(page.getByRole('region', { name: '提出', exact: true }).getByRole('alert')).toHaveText('提出内容を受け付けられませんでした。言語を選び直し、ソースコードにNUL文字などの使えない文字がないか確認してください。')
 })
 
+test('source over 131,072 bytes is refused before sending, and the limit itself is sent', async ({ page }) => {
+  await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'alice' } } }))
+  let posts = 0
+  await page.route('**/api/my/submissions', route => { posts++; return route.fulfill({ status: 503, json: { data: { code: 'judging_unavailable' } } }) })
+  await page.goto(`/problems/${problemId}`)
+  const editor = page.getByLabel('ソースコード', { exact: true })
+  const alert = page.getByRole('region', { name: '提出', exact: true }).getByRole('alert')
+  // Bytes count, not characters: 43,691 × 3 bytes.
+  await editor.fill('あ'.repeat(43691))
+  await expect(page.getByText('131,073 / 131,072 bytes', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '提出する', exact: true }).click()
+  await expect(alert).toHaveText('ソースコードを1〜131,072バイトで入力してください。')
+  expect(posts).toBe(0)
+  await editor.fill('a'.repeat(131072))
+  await expect(page.getByText('131,072 / 131,072 bytes', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '提出する', exact: true }).click()
+  await expect(alert).toHaveText('ジャッジが設定されていません。')
+  expect(posts).toBe(1)
+})
+
 test('Sample validation polls inline and retains the source for a full submission', async ({ page }) => {
   await page.route('**/api/my/profile', route => route.fulfill({ json: { profile: { handle: 'alice', avatar: '', version: 1, createdAt: '2026-09-01T00:00:00Z' } } }))
   await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'alice' } } }))

@@ -8,6 +8,8 @@ const props = defineProps<{ problemId: string, hasSamples: boolean, contestId?: 
 const { user } = useAccount()
 const sampleHelpId = useId()
 const source = ref('')
+// The largest source the API accepts, in UTF-8 bytes.
+const sourceLimit = 131072
 const runtime = ref('cpp23-gcc')
 const { data: catalog, error: catalogError, refresh: refreshCatalog } = await useJudgeCatalog()
 const available = computed(() => usableRuntimes(catalog.value, catalogError.value))
@@ -34,7 +36,7 @@ onBeforeUnmount(() => { disposed = true })
 watch([source, runtime, () => props.problemId], () => { easyResult.value = null })
 async function submit(easyTest = false) {
   if ((easyTest && !props.hasSamples) || props.disabled || sending.value || !available.value.some(item => item.id === runtime.value)) return
-  if (!source.value.trim() || new TextEncoder().encode(source.value).length > 131072) {
+  if (!source.value.trim() || new TextEncoder().encode(source.value).length > sourceLimit) {
     message.value = 'ソースコードを1〜131,072バイトで入力してください。'
     return
   }
@@ -97,7 +99,7 @@ async function submit(easyTest = false) {
       </select>
       <p><NuxtLink to="/docs/languages" target="_blank" rel="noopener noreferrer">使える言語と実行環境の仕様 ↗</NuxtLink></p>
       <p v-if="catalogError || !available.length" class="notice" role="status">現在、提出受付を停止しています。</p>
-      <SourceCodeEditor v-model="source" :runtime="runtime" :limit="131072" :disabled="sending" />
+      <SourceCodeEditor v-model="source" :runtime="runtime" :limit="sourceLimit" :disabled="sending" />
       <p v-if="message" class="notice notice-error" role="alert">{{ message }}</p>
       <div class="submission-actions">
         <div class="sample-action" :class="{ 'no-samples': !hasSamples }">
