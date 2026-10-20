@@ -28,7 +28,7 @@
 | 特性テストを置く場所 | 3経路 | 移動する関数ではなく、前後で変わらない入口 | 入口に置く。`host.case_result`、`Judge`ハーネス経由の`host.judge`、`interactive.relay`（`run_pair`）である。`sandbox.failure_verdict`を直接呼ぶテストは書かない |
 | 集計コードの特性テストの形 | 新しいテスト | 既存の表に行を足す | `test_failures_are_je_with_a_kept_diagnostic`の表に行を足す。理由とメッセージの検査がすでにそろっているため。既存の行は変えない |
 | 残った参照の確認に使うgrep | `def failure` | — | `def failure(metrics`にする。`def failure`だと`telemetry.failure`に当たる |
-| `host.py:61`の使われない代入 | 外す | 1行だけなら可 | 外す。C05の目的と関係がない |
+| `host.py:61`の使われない代入 | 外す | 1行だけなら可 | 外さない。C05の目的と関係がないので範囲外とする（「範囲外（報告事項を含む）」の節を参照） |
 | `graphify update .` | — | — | 実行する。worktreeに`graphify-out/graph.json`があり、`.gitignore`の対象なのでtreeには入らない（C06と同じ扱い） |
 | タスクの分割 | — | — | 1つにする。特性テストだけを採っても価値は小さい |
 

@@ -5,7 +5,7 @@ export type ParticipationForm = {
   // Setters only: drafts return it as typed, and a published contest reads it from the setters' venue route.
   passphrase: string,
 }
-// Number inputs hold '' while empty; drafts save that as null.
+// Number inputs hold '' while empty; draftBody decides what an empty value saves as (null, or 0 while its switch is on).
 export type ContestForm = {
   title: string, description: string, startsAt: string, durationMinutes: number | string, penaltyMinutes: number | string,
   // The length of the standings freeze (ADR 0023), used only while the switch is on.
@@ -37,7 +37,7 @@ export function formFromDraft(d: ContestDraft): ContestForm {
   }
 }
 
-// Everything but the participation, which a published contest reads from the venue route.
+// Everything but the participation: the editor assigns it after the venue read so that the passphrase comes with it; the other participation settings are the contest's own.
 export function formFromContest(c: Contest): Omit<ContestForm, keyof ParticipationForm> {
   return {
     title: c.title, description: c.description, startsAt: localDate(c.startsAt),

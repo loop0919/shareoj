@@ -207,6 +207,7 @@ class RunnerTests(unittest.TestCase):
                 (False, False, 'TO', 1, 9, 'TLE'), (False, False, 'TO', 0, 0, 'TLE'),
                 (False, False, 'SG', 0, 9, 'RE'), (False, False, 'RE', 1, 0, 'RE'),
                 (False, False, '', 1, 0, 'RE'), (False, False, '', 0, 9, 'RE'),
+                (False, False, 'RE', 0, 0, 'RE'), (False, False, 'SG', 0, 0, 'RE'),
                 (False, False, '', 0, 0, 'WA')]:
             with self.subTest(overflow=overflow, oom=oom, status=status, exitCode=exit_code, signal=signal):
                 result = host.case_result(reply(overflow=overflow, oom=oom, status=status, exitCode=exit_code, signal=signal),

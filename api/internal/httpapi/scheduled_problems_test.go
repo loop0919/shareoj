@@ -109,25 +109,32 @@ func TestScheduledProblemValidationAndCancellationPostgres(t *testing.T) {
 }
 
 // Every write answers with the problem as the next read shows it. The read and the answers select the same columns,
-// so the fixed values (author, versions, reservation) are what catch a column that reads the wrong thing. The contest
-// stays empty through these writes; TestProblemReadAnswersContestPostgres checks a non-empty one.
+// so the fixed values (id, author, versions, reservation) are what catch a column that reads the wrong thing, and so is
+// updated_at moving past the create's once the draft is saved (publication writes leave it alone). The contest stays
+// empty through these writes; TestProblemReadAnswersContestPostgres checks a non-empty one.
 func TestProblemWriteResponsesMatchReadPostgres(t *testing.T) {
 	f := newFeaturedTest(t)
 	level := 3
 	d := problems.Draft{Title: "Featured problem", Markdown: "Statement", Editorial: "SECRET EDITORIAL", TimeLimitMS: "1000", MemoryLimitMB: "256", Difficulty: &level, TestCases: []problems.TestCase{{Input: "1", Output: "2"}}}
-	path := "/my/problems/" + newSubmissionID()
+	id := newSubmissionID()
+	path := "/my/problems/" + id
+	var created time.Time
 	read := func(step, answer string) problems.Problem {
 		t.Helper()
 		got := scheduledProblem(t, answer)
 		want := scheduledProblem(t, f.request("GET", path, "alice", nil, 200))
-		if got.ID != want.ID || got.Version != want.Version || !got.UpdatedAt.Equal(want.UpdatedAt) || !reflect.DeepEqual(got.Draft, want.Draft) ||
+		if got.ID != id || got.ID != want.ID || got.Version != want.Version || !got.UpdatedAt.Equal(want.UpdatedAt) || !reflect.DeepEqual(got.Draft, want.Draft) ||
 			got.PublishedVersion != want.PublishedVersion || got.Author != "alice" || want.Author != "alice" || got.ContestID != "" || want.ContestID != "" ||
 			(got.ScheduledAt == nil) != (want.ScheduledAt == nil) || (got.ScheduledAt != nil && !got.ScheduledAt.Equal(*want.ScheduledAt)) {
 			t.Fatalf("%s answered %+v, read %+v", step, got, want)
 		}
+		if !created.IsZero() && !got.UpdatedAt.After(created) {
+			t.Fatalf("%s answered updated_at %v, not after the create's %v", step, got.UpdatedAt, created)
+		}
 		return got
 	}
 	p := read("create", f.request("PUT", path, "alice", map[string]any{"version": 0, "draft": d}, 200))
+	created = p.UpdatedAt
 	if p.Version != 1 || p.PublishedVersion != 0 || p.ScheduledAt != nil {
 		t.Fatal(p)
 	}

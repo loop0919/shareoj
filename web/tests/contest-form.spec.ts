@@ -28,7 +28,7 @@ test('participation settings read apart from the team mode and the onsite divisi
   expect(participationForm({})).toEqual(noParticipation)
 })
 
-test('a published contest reads its length in whole minutes and leaves the participation to the venue read', () => {
+test('a published contest reads its length in whole minutes and leaves the participation to participationForm', () => {
   const contest = { title: '公開済み', description: '概要', startsAt: '2099-10-01T00:00:00Z', endsAt: '2099-10-01T01:30:29Z', penaltyMinutes: 0, freezeMinutes: null } as Contest
   const form = formFromContest(contest)
   expect(form).toEqual({ title: '公開済み', description: '概要', startsAt: expect.any(String), durationMinutes: 90, penaltyMinutes: 0, freezeOn: false, freezeMinutes: '' })

@@ -60,7 +60,8 @@ func TestSubmitAndRejudgeAgreeOnReadiness(t *testing.T) {
 	rejudged := func(runtime string) bool {
 		t.Helper()
 		queued, err := queue.Rejudge(ctx, submissions.RejudgeInput{Actor: "alice", ProblemID: problem, SubmissionIDs: []string{finished[runtime]}, Image: digest, Runtimes: []string{runtime}, CheckerRuntimes: checkers})
-		if !(queued == 1 && err == nil) && !(queued == 0 && errors.Is(err, submissions.ErrNotReady)) {
+		ok := (queued == 1 && err == nil) || (queued == 0 && errors.Is(err, submissions.ErrNotReady))
+		if !ok {
 			t.Fatal(runtime, queued, err)
 		}
 		exec(`UPDATE submissions SET status='DONE' WHERE owner_id='carol'`)

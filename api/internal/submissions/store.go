@@ -177,7 +177,8 @@ type RunInput struct {
 }
 
 // judgeReady holds the conditions under which the judge can run a draft. CreateRun and Rejudge share them, so a
-// rejudge never queues a draft that a new submission refuses. They are ANDed for a WHERE clause, placed after an AND.
+// rejudge never queues a draft that a new submission refuses. The case-count bounds (1 to 100) stay with each caller,
+// written two ways there, and the callers must keep them equivalent. They are ANDed for a WHERE clause, placed after an AND.
 // draft, runtime and checkerRuntimes are SQL expressions for the draft, the submission runtime and the text[] of judge
 // code runtimes. The runtime applies the limits of the local Docker judge (Judge): cpp17-local takes only a cpp17
 // checker, no interactor and no scoring. sampleCheck is a boolean SQL expression that waives the scoring conditions,

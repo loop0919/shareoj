@@ -2,6 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **裁定による変更：** [C04-rulings.md](C04-rulings.md)の裁定により、`scheduleAutosave()`は`clearTimeout`を呼ばない。呼び出し側の`clearTimeout(saveTimer)`は元の位置（`watch(draft)`の中）に残し、ダイアログを閉じる2か所には今までどおり入れない。そのため、この計画の次の記述は採用していない。
+>
+> - `scheduleAutosave()`が先に`clearTimeout(saveTimer)`すること（Global Constraints）と、Task 2のStep 4で`:236-237`を`scheduleAutosave()`の1行にすること
+> - 「意図した微差」（判定の記録の表、Review Focusの5、Task 2のコミットメッセージの案）
+> - 「D2はTask 2で結果として解消する」（範囲外）
+>
+> この計画のD1〜D4は、この計画の中だけの番号である。計画のD2は未解決のまま、保留事項D24として`docs/refactor/PROGRESS.md`に記録している。
+
 **Goal:** `useProblemDraft.ts`で2回書かれている新しい草稿の既定値を、`utils/problem-draft.ts`の`initialProblemDraft()`の1か所にまとめる（Task 1）。3か所にある600msの自動保存の再予約を、`scheduleAutosave()`の1か所にまとめる（Task 2）。
 
 **Architecture:** どちらも、先にPlaywrightで外から見える挙動を固定する。Task 1では、読み込みに失敗したときに、キャッシュの値を既定値で上書きすることを固定する。Task 2では、ダイアログを閉じたあとの自動保存の回数と時刻を、`page.clock`で固定する。変更は`web/app/composables/useProblemDraft.ts`と`web/app/utils/problem-draft.ts`の中だけで閉じる。

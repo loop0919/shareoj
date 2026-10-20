@@ -28,7 +28,7 @@
 | `role=tester&cursor=bad`の400 | — | 追加する | 入れない。`contentCursor`はroleの分岐より前で判定するので（`private_problems.go:198-201`）、今回の変更は触れない |
 | 一時比較の方法 | 最終SQLを取り出して保存する | パッケージ内に一時の`_test.go`を置き、消してからコミットする | `go test -overlay`でスクラッチの比較テストを足す。リポジトリにファイルを作らないので、消し忘れが起きない |
 | 比較の対象 | カーソルの有無×2モードの4通り | 作者、テスター、`columns`、`Get` | `ownedSummaries`と`testedSummaries`の2つにする。カーソル、ORDER BY、LIMITを付け足すコード（`:289-294`）は変えないので、2つが一致すれば4通りとも一致する |
-| `make package package-judge` | — | 実行する | 実行しない。`Makefile`にこのターゲットはない |
+| `make package package-judge` | — | 実行する | 実行しない。`Makefile`にこのターゲットはない（**誤り**：2つのターゲットは`api/Makefile`にあり、検証では実行した） |
 | golangci-lint | — | 件数が増えないこと | 参考として実行する。CIでは実行されない。計画時点での件数は、`./internal/problems/ ./internal/httpapi/`で2件（どちらも`contest_teams_test.go`のstaticcheck） |
 
 ## Global Constraints
@@ -206,5 +206,5 @@ Run: `cd /home/loop/judge/.claude/worktrees/refactor-maintainability && graphify
 ## レポートで触れる別件（直さない）
 
 - 不具合は見つからなかった。
-- safetyの反証の`test_plan`にある`make package package-judge`は、`Makefile`にない。
+- safetyの反証の`test_plan`にある`make package package-judge`は、`Makefile`にない（**誤り**：2つのターゲットは`api/Makefile`にあり、検証では実行した）。
 - `submissions/store.go:277`の置換は今は正しく動く（`"result,"`は`columns`に1回だけ現れ、それはresult列である）。ただし、目印との結合は残っている。将来`columns`のresultより前に`result,`を含む式を足すときは、ここも直す必要がある。今回は保留とする。
