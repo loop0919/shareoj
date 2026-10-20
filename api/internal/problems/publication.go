@@ -66,9 +66,9 @@ func (s *Store) Publish(ctx context.Context, owner, id string, version int64, pu
 	if reserved {
 		return Problem{}, ErrContestLocked
 	}
-	query := `UPDATE problem_drafts SET scheduled_at=NULL,scheduled_draft=NULL,scheduled_version=NULL,published_draft=NULL,published_version=0,published_at=NULL,version=version+1 WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING id,version,updated_at,draft,published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at`
+	query := `UPDATE problem_drafts SET scheduled_at=NULL,scheduled_draft=NULL,scheduled_version=NULL,published_draft=NULL,published_version=0,published_at=NULL,version=version+1 WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING ` + problemColumns
 	if publish {
-		query = `UPDATE problem_drafts SET published_draft=draft,published_version=version+1,published_at=COALESCE(published_at,clock_timestamp()),version=version+1 WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING id,version,updated_at,draft,published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at`
+		query = `UPDATE problem_drafts SET published_draft=draft,published_version=version+1,published_at=COALESCE(published_at,clock_timestamp()),version=version+1 WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING ` + problemColumns
 	}
 	p, err := scan(tx.QueryRow(ctx, query, owner, id, version))
 	if errors.Is(err, ErrNotFound) {

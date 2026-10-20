@@ -213,6 +213,10 @@ func (s *Store) Pool() *pgxpool.Pool               { return s.pool }
 func (s *Store) Close()                            { s.pool.Close() }
 func (s *Store) Migrate(ctx context.Context) error { return database.Migrate(ctx, s.pool) }
 
+// problemColumns are what scan reads, in its order. Their subqueries refer to problem_drafts by name, so a query that
+// reads them leaves the table without an alias.
+const problemColumns = `id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at`
+
 func scan(row pgx.Row) (Problem, error) {
 	var p Problem
 	var data []byte
@@ -228,7 +232,7 @@ func scan(row pgx.Row) (Problem, error) {
 }
 
 func (s *Store) Get(ctx context.Context, owner, id string) (Problem, error) {
-	p, err := scan(s.pool.QueryRow(ctx, `SELECT id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at FROM problem_drafts WHERE can_manage_problem(id,$1) AND id=$2`, owner, id))
+	p, err := scan(s.pool.QueryRow(ctx, `SELECT `+problemColumns+` FROM problem_drafts WHERE can_manage_problem(id,$1) AND id=$2`, owner, id))
 	if err != nil {
 		return p, err
 	}
@@ -370,7 +374,7 @@ func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft
 		if err = database.ConsumeCreationQuota(ctx, tx, owner, "problem"); err != nil {
 			return p, err
 		}
-		p, err = scan(tx.QueryRow(ctx, `INSERT INTO problem_drafts (id, owner_id, draft) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING RETURNING id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at`, id, owner, data))
+		p, err = scan(tx.QueryRow(ctx, `INSERT INTO problem_drafts (id, owner_id, draft) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING RETURNING `+problemColumns, id, owner, data))
 	} else {
 		// Lock the contest that holds the problem before the problem, in the order of a contest save. Submissions
 		// being created hold the contest FOR SHARE, so none of them meets a scoring change that this save makes
@@ -379,7 +383,7 @@ func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft
  WHERE cp.problem_id=$1 AND can_manage_problem(cp.problem_id,$2) FOR NO KEY UPDATE OF c`, id, owner); err != nil {
 			return Problem{}, err
 		}
-		p, err = scan(tx.QueryRow(ctx, `UPDATE problem_drafts SET draft=$4, published_draft=CASE WHEN published_draft IS NOT NULL THEN $4::jsonb ELSE NULL END, published_version=CASE WHEN published_draft IS NOT NULL THEN version+1 ELSE 0 END, version=version+1, updated_at=clock_timestamp() WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING id, version, updated_at, draft, published_version,COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at`, owner, id, version, data))
+		p, err = scan(tx.QueryRow(ctx, `UPDATE problem_drafts SET draft=$4, published_draft=CASE WHEN published_draft IS NOT NULL THEN $4::jsonb ELSE NULL END, published_version=CASE WHEN published_draft IS NOT NULL THEN version+1 ELSE 0 END, version=version+1, updated_at=clock_timestamp() WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING `+problemColumns, owner, id, version, data))
 	}
 	var started bool
 	if err == nil && version != 0 {

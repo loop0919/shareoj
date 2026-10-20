@@ -38,8 +38,7 @@ func (s *Store) Schedule(ctx context.Context, owner, id string, version int64, a
 		return Problem{}, ErrSchedule
 	}
 	p, err := scan(tx.QueryRow(ctx, `UPDATE problem_drafts SET scheduled_at=$2,scheduled_draft=draft,scheduled_version=version+1,version=version+1
- WHERE id=$1 RETURNING id,version,updated_at,draft,published_version,
- COALESCE((SELECT handle FROM user_profiles WHERE owner_id=problem_drafts.owner_id),''),'',scheduled_at`, id, at))
+ WHERE id=$1 RETURNING `+problemColumns, id, at))
 	if err == nil {
 		err = tx.Commit(ctx)
 	}

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -105,6 +106,61 @@ func TestScheduledProblemValidationAndCancellationPostgres(t *testing.T) {
 		t.Fatal(p)
 	}
 	f.request("PUT", path, "alice", map[string]any{"version": p.Version, "publish": true, "scheduledAt": at}, 400)
+}
+
+// Every write answers with the problem as the next read shows it. The read and the answers select the same columns,
+// so the fixed values (author, versions, reservation) are what catch a column that reads the wrong thing. The contest
+// stays empty through these writes; TestProblemReadAnswersContestPostgres checks a non-empty one.
+func TestProblemWriteResponsesMatchReadPostgres(t *testing.T) {
+	f := newFeaturedTest(t)
+	level := 3
+	d := problems.Draft{Title: "Featured problem", Markdown: "Statement", Editorial: "SECRET EDITORIAL", TimeLimitMS: "1000", MemoryLimitMB: "256", Difficulty: &level, TestCases: []problems.TestCase{{Input: "1", Output: "2"}}}
+	path := "/my/problems/" + newSubmissionID()
+	read := func(step, answer string) problems.Problem {
+		t.Helper()
+		got := scheduledProblem(t, answer)
+		want := scheduledProblem(t, f.request("GET", path, "alice", nil, 200))
+		if got.ID != want.ID || got.Version != want.Version || !got.UpdatedAt.Equal(want.UpdatedAt) || !reflect.DeepEqual(got.Draft, want.Draft) ||
+			got.PublishedVersion != want.PublishedVersion || got.Author != "alice" || want.Author != "alice" || got.ContestID != "" || want.ContestID != "" ||
+			(got.ScheduledAt == nil) != (want.ScheduledAt == nil) || (got.ScheduledAt != nil && !got.ScheduledAt.Equal(*want.ScheduledAt)) {
+			t.Fatalf("%s answered %+v, read %+v", step, got, want)
+		}
+		return got
+	}
+	p := read("create", f.request("PUT", path, "alice", map[string]any{"version": 0, "draft": d}, 200))
+	if p.Version != 1 || p.PublishedVersion != 0 || p.ScheduledAt != nil {
+		t.Fatal(p)
+	}
+	d.Markdown = "Saved statement"
+	p = read("save", f.request("PUT", path, "alice", map[string]any{"version": p.Version, "draft": d}, 200))
+	if p.Version != 2 || p.Draft.Markdown != "Saved statement" {
+		t.Fatal(p)
+	}
+	at := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	p = read("schedule", f.request("PUT", path+"/publication", "alice", map[string]any{"version": p.Version, "publish": true, "scheduledAt": at}, 200))
+	if p.Version != 3 || p.PublishedVersion != 0 || p.ScheduledAt == nil || !p.ScheduledAt.Equal(at) {
+		t.Fatal(p)
+	}
+	p = read("publish", f.request("PUT", path+"/publication", "alice", map[string]any{"version": p.Version, "publish": true}, 200))
+	if p.Version != 4 || p.PublishedVersion != 4 || p.ScheduledAt != nil {
+		t.Fatal(p)
+	}
+	p = read("unpublish", f.request("PUT", path+"/publication", "alice", map[string]any{"version": p.Version, "publish": false}, 200))
+	if p.Version != 5 || p.PublishedVersion != 0 || p.ScheduledAt != nil {
+		t.Fatal(p)
+	}
+}
+
+// The problem read names the contest that holds the problem in its own contestId, apart from the contest editors.
+func TestProblemReadAnswersContestPostgres(t *testing.T) {
+	f := newFeaturedTest(t)
+	p := f.draft("alice", 3)
+	cid := newSubmissionID()
+	at := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	f.request("PUT", "/my/contests/"+cid, "alice", map[string]any{"version": 0, "title": "Contest", "description": "", "startsAt": at, "endsAt": at.Add(time.Hour), "penaltyMinutes": 5, "problems": []map[string]any{{"id": p.ID, "points": 100}}}, 200)
+	if got := scheduledProblem(t, f.request("GET", "/my/problems/"+p.ID, "alice", nil, 200)); got.ContestID != cid {
+		t.Fatalf("contestId %q, want %q", got.ContestID, cid)
+	}
 }
 
 func TestScheduledProblemImagesAndReleaseOnReadPostgres(t *testing.T) {
