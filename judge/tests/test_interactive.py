@@ -39,6 +39,43 @@ class InteractiveTests(unittest.TestCase):
                 self.assertIn(f'--cg-mem={memory * 1024}', commands[0])
                 self.assertIn('--cg-mem=262144', commands[1])
 
+    def test_interactor_heap_caps_stay_fixed_while_the_submission_scales(self):
+        from test_checker import job
+        v8 = '--max-old-space-size='
+        expected = {'java24-isolate': ('-Xmx', {64: '32m', 256: '128m', 512: '256m'}, '128m'),
+                    'csharp14-isolate': ('--env=DOTNET_GCHeapHardLimit=', {64: '0x1800000', 256: '0x6000000', 512: '0xc000000'}, '0x8000000'),
+                    'go127-isolate': ('--env=GOMEMLIMIT=', {64: '48MiB', 256: '192MiB', 512: '384MiB'}, '160MiB'),
+                    'ruby-truffle40-isolate': ('--env=RUBYOPT=', {64: '--vm.Xmx32m', 256: '--vm.Xmx128m', 512: '--vm.Xmx256m'}, '--vm.Xmx96m'),
+                    'javascript-node24-isolate': ('--env=NODE_OPTIONS=', {64: v8 + '40', 256: v8 + '160', 512: v8 + '320'}, v8 + '128'),
+                    'typescript-deno29-isolate': ('--env=DENO_V8_FLAGS=', {64: v8 + '40', 256: v8 + '160', 512: v8 + '320'}, v8 + '128')}
+        for name, (prefix, submission, interactor) in expected.items():
+            for memory, value in submission.items():
+                with self.subTest(runtime=name, memory=memory), tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    for i in range(2):
+                        (root / str(i) / 'box').mkdir(parents=True)
+                    request = job()
+                    del request['checker']
+                    request.update(runtime=name, memoryLimitMb=memory,
+                                   interactor=dict(runtime=name.removesuffix('-isolate'), source='x'))
+                    commands = []
+                    def invoke(args, *, box_id=0, **kwargs):
+                        return subprocess.CompletedProcess(args, 0, stdout=str(root / str(box_id)).encode())
+                    def popen(command, **kwargs):
+                        commands.append(command)
+                        meta = Path(next(arg.removeprefix('--meta=') for arg in command if arg.startswith('--meta=')))
+                        meta.write_text('time:0.1\ntime-wall:0.2\ncg-mem:1024')
+                        return Mock(returncode=0, poll=Mock(return_value=0))
+                    with patch.object(interactive.sandbox, 'invoke', invoke), \
+                            patch.object(interactive.sandbox, 'META', root / 'meta'), \
+                            patch.object(interactive.sandbox, 'prepare_program',
+                                         side_effect=lambda box, runtime, *args, **kwargs: list(runtime['run'])), \
+                            patch.object(interactive.subprocess, 'Popen', popen), \
+                            patch.object(interactive, 'relay', return_value='AC'):
+                        interactive.execute(request, request['cases'][0], root / 'checker', lambda _: None)
+                    self.assertEqual([[arg for arg in command if arg.startswith(prefix)] for command in commands],
+                                     [[prefix + value], [prefix + interactor]])
+
     def run_pair(self, source, interactor, wall=3, statuses=None, protocol='legacy', points=False):
         processes = [subprocess.Popen([sys.executable, '-c', code], stdin=subprocess.PIPE,
                                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)

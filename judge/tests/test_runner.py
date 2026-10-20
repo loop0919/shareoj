@@ -61,6 +61,59 @@ class RunnerTests(unittest.TestCase):
                 job['timeLimitMs'] = ms
                 host.validate_job(job, 'sha256:test')
 
+    def test_submission_heap_caps_scale_with_the_memory_limit(self):
+        import tempfile
+        from subprocess import CompletedProcess
+        def flags(args, prefix):
+            return [arg for arg in args if arg.startswith(prefix)]
+        expected = {64: ('0x1800000', '48MiB', '--vm.Xmx32m', 40, '-Xmx32m'),
+                    256: ('0x6000000', '192MiB', '--vm.Xmx128m', 160, '-Xmx128m'),
+                    315: ('0x7600000', '236MiB', '--vm.Xmx157m', 196, '-Xmx157m'),
+                    512: ('0xc000000', '384MiB', '--vm.Xmx256m', 320, '-Xmx256m')}
+        for memory, (csharp, go, truffle, v8, java) in expected.items():
+            environment = {'csharp14-isolate': ('--env=DOTNET_GCHeapHardLimit=', [csharp]),
+                           'go127-isolate': ('--env=GOMEMLIMIT=', [go]),
+                           'ruby-truffle40-isolate': ('--env=RUBYOPT=', [truffle]),
+                           'javascript-node24-isolate': ('--env=NODE_OPTIONS=', [f'--max-old-space-size={v8}']),
+                           'typescript-node24-isolate': ('--env=NODE_OPTIONS=', [f'--max-old-space-size={v8}']),
+                           'javascript-deno29-isolate': ('--env=DENO_V8_FLAGS=', [f'--max-old-space-size={v8}']),
+                           'typescript-deno29-isolate': ('--env=DENO_V8_FLAGS=', [f'--max-old-space-size={v8}']),
+                           # Bun gets NODE_OPTIONS only while compiling.
+                           'typescript-bun14-isolate': ('--env=NODE_OPTIONS=', [])}
+            for name, (prefix, values) in environment.items():
+                with self.subTest(memory=memory, runtime=name):
+                    self.assertEqual(flags(sandbox.run_args(name, 1, 4, memory), prefix), [prefix + value for value in values])
+            for name in ('java24-isolate', 'java25-isolate'):
+                with self.subTest(memory=memory, runtime=name), tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    (root / 'box').mkdir()
+                    artifact, meta = root / 'main', root / 'meta'
+                    artifact.write_bytes(b'program')
+                    commands = []
+                    def invoke(args, **kwargs):
+                        if '--run' in args:
+                            commands.append(args[args.index('--') + 1:])
+                            meta.write_text('time:0.1\ntime-wall:0.2\ncg-mem:1024')
+                            (root / 'box/stdout').write_bytes(b'')
+                            (root / 'box/stderr').write_bytes(b'')
+                        return CompletedProcess(args, 0, stdout=str(root).encode())
+                    with patch.object(sandbox, 'invoke', invoke), patch.object(sandbox, 'META', meta):
+                        sandbox.execute(dict(runtime=name, input='', timeLimitMs=1000, memoryLimitMb=memory), artifact=artifact)
+                    self.assertEqual([flags(command, '-Xm') for command in commands], [['-Xms16m', java]])
+
+    def test_compile_heap_caps_stay_fixed(self):
+        expected = {'csharp14-isolate': 'DOTNET_GCHeapHardLimit=0x20000000',
+                    'go127-isolate': 'GOMEMLIMIT=384MiB',
+                    'ruby-truffle40-isolate': 'RUBYOPT=--vm.Xmx640m',
+                    'javascript-node24-isolate': 'NODE_OPTIONS=--max-old-space-size=640',
+                    'typescript-node24-isolate': 'NODE_OPTIONS=--max-old-space-size=640',
+                    'typescript-bun14-isolate': 'NODE_OPTIONS=--max-old-space-size=640',
+                    'javascript-deno29-isolate': 'DENO_V8_FLAGS=--max-old-space-size=640',
+                    'typescript-deno29-isolate': 'DENO_V8_FLAGS=--max-old-space-size=640'}
+        for name, value in expected.items():
+            with self.subTest(runtime=name):
+                self.assertIn('--env=' + value, sandbox.run_args(name, 30, 40, 1024, compile_phase=True))
+
     def test_two_tles_skip_remaining_cases_only_for_normal_submissions(self):
         import tempfile
         for mode in (None, 'easyTest', 'validate', 'generate', 'interactive'):

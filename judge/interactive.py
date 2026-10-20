@@ -103,10 +103,11 @@ def execute(job, case, artifact, diagnostic, score_file=False):
             command = sandbox.prepare_program(box, RUNTIMES[name], binary, files,
                                               protocol=job['interactor'].get('protocol', 'legacy') if i else 'legacy', interactive=True,
                                               result_file=score_file and i == 1)
-            if i == 1 and RUNTIMES[name]['artifact'] == 'java':
-                command = ['-Xmx128m' if arg == '-Xmx256m' else arg for arg in command]
+            if RUNTIMES[name]['artifact'] == 'java':
+                command = sandbox.java_heap(command, job['memoryLimitMb'], interactor=i == 1)
             args = sandbox.run_args(name, job['timeLimitMs'] / 1000 if i == 0 else 5,
-                                    wall, job['memoryLimitMb'] if i == 0 else 256, meta=meta, interactive=True)
+                                    wall, job['memoryLimitMb'] if i == 0 else 256, meta=meta, interactive=True,
+                                    interactor=i == 1)
             commands.append([sandbox.ISOLATE, '--cg', f'--box-id={i}', *args, '--', *command])
         for command in commands:
             processes.append(subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
