@@ -3,6 +3,7 @@ import { accountListSchema, type AccountSummary } from '~~/shared/types/account-
 import { contestAuthors, problemLabel, type Contest, type ContestDraft, type ContestDraftResult, type DraftProblem, type Venue } from '~~/shared/types/contest'
 import { shortId } from '~~/shared/utils/short-id'
 import { accountError } from '~/utils/account-problems'
+import { formFromContest, formFromDraft, initialContestForm, participationForm } from '~/utils/contest-form'
 import { issueMessage } from '~/utils/problem-readiness'
 import { searchProblems } from '~/utils/problem-search'
 import { venuePassphraseRule, venuePassphraseValid } from '~/utils/venue-passphrase'
@@ -14,41 +15,28 @@ const { profile } = useAccount()
 const ready = ref(false)
 const busy = ref(false)
 const message = ref('')
-const title = ref('')
-const description = ref('<!-- ここにコンテストの概要を記載 -->\n')
-const startsAt = ref('')
-// Number inputs hold '' while empty; drafts save that as null.
-const durationMinutes = ref<number | string>(120)
-const penaltyMinutes = ref<number | string>(5)
-// The length of the standings freeze (ADR 0023), used only while the switch is on.
-const freezeMinutes = ref<number | string>('')
+// The inputs' values; form is the <form> element itself, which reportInvalid and Ctrl+S use.
+const fields = reactive(initialContestForm())
 // The switch is off by default; turning it on fills in a starting value so that on never means no freeze.
-const freezeOn = ref(false)
-watch(freezeOn, (on) => {
-  if (!on) freezeMinutes.value = ''
-  else if (freezeMinutes.value === '') freezeMinutes.value = Math.min(60, Number(durationMinutes.value) || 60)
+watch(() => fields.freezeOn, (on) => {
+  if (!on) fields.freezeMinutes = ''
+  else if (fields.freezeMinutes === '') fields.freezeMinutes = Math.min(60, Number(fields.durationMinutes) || 60)
 })
 // Team contests and the onsite division (ADR 0024). Each optional limit is a switch that shows its input only when on,
 // like the freeze.
-const teamMode = ref<'individual' | 'team'>('individual')
 const teamModes = [{ value: 'individual' as const, label: '個人戦' }, { value: 'team' as const, label: 'チーム戦' }]
-const teamSizeOn = ref(false)
-const maxTeamSize = ref<number | string>('')
-watch(teamSizeOn, (on) => {
-  if (!on) maxTeamSize.value = ''
-  else if (maxTeamSize.value === '') maxTeamSize.value = 3
+watch(() => fields.teamSizeOn, (on) => {
+  if (!on) fields.maxTeamSize = ''
+  else if (fields.maxTeamSize === '') fields.maxTeamSize = 3
 })
-const onsiteOn = ref(false)
-// Setters only: drafts return it as typed, and a published contest reads it from the setters' venue route.
-const passphrase = ref('')
 // Turning the switch on fills in a passphrase easy to read out and to type on a phone: lower case, without the
-// characters join codes leave out, so it always meets the rule. Loading a contest sets both refs directly, so nothing
+// characters join codes leave out, so it always meets the rule. Loading a contest sets both fields directly, so nothing
 // is filled in then.
 const passphraseAlphabet = 'abcdefghjkmnpqrstvwxyz23456789'
 function setOnsite(on: boolean) {
-  onsiteOn.value = on
-  if (!on) passphrase.value = ''
-  else if (!passphrase.value) passphrase.value = Array.from(crypto.getRandomValues(new Uint8Array(8)), byte => passphraseAlphabet[byte % passphraseAlphabet.length]).join('')
+  fields.onsiteOn = on
+  if (!on) fields.passphrase = ''
+  else if (!fields.passphrase) fields.passphrase = Array.from(crypto.getRandomValues(new Uint8Array(8)), byte => passphraseAlphabet[byte % passphraseAlphabet.length]).join('')
 }
 const maxTeamMembers = 50
 const version = ref(0)
@@ -108,7 +96,7 @@ const problemName = (title?: string) => title || '無題の問題'
 const partialNote = '部分点の問題は、問題の満点が配点になります。満点は作問画面の「採点」で変えられます。'
 const maxDurationMinutes = 100_000_000
 const endsAt = computed(() => {
-  const start = new Date(startsAt.value), minutes = Number(durationMinutes.value)
+  const start = new Date(fields.startsAt), minutes = Number(fields.durationMinutes)
   return Number.isFinite(start.getTime()) && Number.isInteger(minutes) && minutes >= 1 && minutes <= maxDurationMinutes ? new Date(start.getTime() + minutes * 60000) : undefined
 })
 function durationText(minutes: number) {
@@ -116,7 +104,7 @@ function durationText(minutes: number) {
   return hours && rest ? `${hours}時間${rest}分` : hours ? `${hours}時間` : `${rest}分`
 }
 const endLabel = computed(() => endsAt.value
-  ? `終了日時 ${new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short' }).format(endsAt.value)}（${durationText(Number(durationMinutes.value))}）`
+  ? `終了日時 ${new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short' }).format(endsAt.value)}（${durationText(Number(fields.durationMinutes))}）`
   : '開始日時とコンテスト時間を入力すると、終了日時を表示します。')
 const issueGuide: Record<string, [string, Section]> = {
   title_missing: ['コンテストタイトルを入力してください', 'description'],
@@ -135,7 +123,7 @@ const issueGuide: Record<string, [string, Section]> = {
 const issueText = (code: string) => issueGuide[code]?.[0] ?? `確認が必要な項目があります（${code}）`
 const sectionNames: Record<Section, string> = { description: 'タイトル・説明', problems: '問題・配点', schedule: '期間・ペナルティ', participation: '参加形式', manage: 'コンテスト管理' }
 const issueSection = (code: string): Section => issueGuide[code]?.[1] ?? 'manage'
-const snapshot = () => JSON.stringify([title.value, description.value, startsAt.value, durationMinutes.value, penaltyMinutes.value, freezeOn.value, freezeMinutes.value, teamMode.value, teamSizeOn.value, maxTeamSize.value, onsiteOn.value, passphrase.value, selected.value])
+const snapshot = () => JSON.stringify([fields, selected.value])
 const saved = ref('')
 let leaving = false
 const dirty = computed(() => ready.value && snapshot() !== saved.value)
@@ -165,10 +153,6 @@ function saveWithShortcut(event: KeyboardEvent) {
 }
 onMounted(() => window.addEventListener('keydown', saveWithShortcut))
 onBeforeUnmount(() => window.removeEventListener('keydown', saveWithShortcut))
-function localDate(value: string) {
-  const date = new Date(value)
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
-}
 async function load() {
   try {
     // A new contest keeps its id in the query after the first save, like new problems and posts.
@@ -201,9 +185,7 @@ async function open(contestId: string) {
     const result = await $fetch<ContestDraftResult>(`/api/my/contests/${contestId}/draft`)
     const d = result.draft
     version.value = result.version; draftIssues.value = result.issues; applySetters(result)
-    title.value = d.title; description.value = d.description; startsAt.value = d.startsAt ? localDate(d.startsAt) : ''
-    durationMinutes.value = d.durationMinutes ?? ''; penaltyMinutes.value = d.penaltyMinutes ?? ''; freezeMinutes.value = d.freezeMinutes ?? ''; freezeOn.value = d.freezeMinutes != null
-    applyParticipation(d.teamMode, d.maxTeamSize, d.onsiteDivision, d.onsitePassphrase)
+    Object.assign(fields, formFromDraft(d))
     selected.value = d.problems.map(p => ({ id: p.id, title: titles.get(p.id) ?? shared.get(p.id)?.title ?? '表示できない問題', points: p.points }))
     return
   } catch (error) {
@@ -213,21 +195,15 @@ async function open(contestId: string) {
   published.value = true
   if (!c.canEdit && !c.setter) { locked.value = true; message.value = '開始後、または作成者以外は編集できません。'; return }
   applySetters(c)
-  title.value = c.title; description.value = c.description; startsAt.value = localDate(c.startsAt)
-  durationMinutes.value = Math.round((Date.parse(c.endsAt) - Date.parse(c.startsAt)) / 60000)
-  penaltyMinutes.value = c.penaltyMinutes; freezeMinutes.value = c.freezeMinutes ?? ''; freezeOn.value = c.freezeMinutes != null; version.value = c.version
+  // Assigned before the venue read, so a failed read still shows the title and schedule.
+  Object.assign(fields, formFromContest(c)); version.value = c.version
   // Saving with the division on sends the passphrase back, so an editable contest reads it first.
   const venue = c.canEdit && c.onsiteDivision ? await $fetch<Venue>(`/api/my/contests/${contestId}/onsite`) : null
-  applyParticipation(c.teamMode, c.maxTeamSize, c.onsiteDivision, venue?.passphrase)
+  Object.assign(fields, participationForm(c, venue?.passphrase))
   contestPartial.clear()
   for (const p of c.problems) if (p.partial) contestPartial.set(p.id, p.points)
   selected.value = c.problems.map(p => ({ id: p.id, title: p.title, points: p.points }))
   if (!c.canEdit) { locked.value = true; settersOnly.value = true; resultsFinal.value = c.resultsFinal ?? c.status === 'ended'; section.value = 'manage' }
-}
-function applyParticipation(team?: boolean, size?: number | null, onsite?: boolean, venue?: string | null) {
-  teamMode.value = team ? 'team' : 'individual'
-  maxTeamSize.value = size ?? ''; teamSizeOn.value = size != null
-  passphrase.value = venue ?? ''; onsiteOn.value = !!onsite
 }
 // Who sets the contest, and which problems other setters bring; a draft and a contest describe them differently.
 function applySetters(result: ContestDraftResult | Contest) {
@@ -356,21 +332,21 @@ async function reportInvalid() {
   return false
 }
 const integer = (value: unknown) => typeof value === 'number' && Number.isInteger(value) && Math.abs(value) <= 1e9 ? value : null
-function draftBody(): ContestDraft {
-  const start = new Date(startsAt.value)
+function draftBody(): Required<ContestDraft> {
+  const start = new Date(fields.startsAt)
   return {
-    title: title.value, description: description.value, startsAt: Number.isFinite(start.getTime()) ? start.toISOString() : null,
+    title: fields.title, description: fields.description, startsAt: Number.isFinite(start.getTime()) ? start.toISOString() : null,
     // With the switch on, a length that is not a whole number goes as 0, so the draft keeps the freeze and lists the issue.
-    durationMinutes: integer(durationMinutes.value), penaltyMinutes: integer(penaltyMinutes.value), freezeMinutes: freezeOn.value ? integer(freezeMinutes.value) ?? 0 : null,
+    durationMinutes: integer(fields.durationMinutes), penaltyMinutes: integer(fields.penaltyMinutes), freezeMinutes: fields.freezeOn ? integer(fields.freezeMinutes) ?? 0 : null,
     // As with the freeze, a switch left on without a whole number keeps the setting and lists the issue.
-    ...participationBody(teamSizeOn.value ? integer(maxTeamSize.value) ?? 0 : null),
+    ...participationBody(fields.teamSizeOn ? integer(fields.maxTeamSize) ?? 0 : null),
     problems: selected.value.map(p => ({ id: p.id, points: fullScoreOf(p.id) ?? integer(p.points) })),
   }
 }
 // Every save sends all four, since the API keeps the stored value of a field left out.
 function participationBody(size: number | null) {
-  const team = teamMode.value === 'team'
-  return { teamMode: team, maxTeamSize: team ? size : null, onsiteDivision: onsiteOn.value, onsitePassphrase: onsiteOn.value ? passphrase.value : null }
+  const team = fields.teamMode === 'team'
+  return { teamMode: team, maxTeamSize: team ? size : null, onsiteDivision: fields.onsiteOn, onsitePassphrase: fields.onsiteOn ? fields.passphrase : null }
 }
 // A saved draft or a contest answers 404 once the viewer no longer sets it, so retrying cannot help.
 const noLongerSetter = 'このコンテストの作成者ではなくなったため保存できません。入力内容をコピーしてください。'
@@ -497,21 +473,21 @@ async function save() {
   if (busy.value || !ready.value || locked.value) return
   message.value = ''
   if (!await reportInvalid()) return
-  if (!title.value.trim()) { section.value = 'description'; message.value = 'コンテストタイトルを入力してください。'; return }
+  if (!fields.title.trim()) { section.value = 'description'; message.value = 'コンテストタイトルを入力してください。'; return }
   if (!selected.value.length || selected.value.length > 100) {
     section.value = 'problems'; message.value = '問題を1〜100問選んでください。'; return
   }
-  const start = new Date(startsAt.value), end = endsAt.value
+  const start = new Date(fields.startsAt), end = endsAt.value
   if (!Number.isFinite(start.getTime()) || start.getTime() <= Date.now() || !end) {
     section.value = 'schedule'; message.value = '未来の開始日時と、1分以上のコンテスト時間を指定してください。'; return
   }
   // The server checks the passphrase after NFKC and trimming; the field's own check covers what the browser can see.
-  if (onsiteOn.value && !venuePassphraseValid(passphrase.value)) {
+  if (fields.onsiteOn && !venuePassphraseValid(fields.passphrase)) {
     section.value = 'participation'; message.value = `${issueText('venue_passphrase_invalid')}。`; return
   }
   busy.value = true; message.value = ''
   try {
-    await $fetch(`/api/my/contests/${id.value}`, { method: 'PUT', body: { title: title.value, description: description.value, startsAt: start.toISOString(), endsAt: end.toISOString(), penaltyMinutes: penaltyMinutes.value, freezeMinutes: freezeOn.value ? freezeMinutes.value : null, ...participationBody(teamSizeOn.value ? Number(maxTeamSize.value) : null), version: version.value, problems: selected.value.map(({ id, points }) => ({ id, points: fullScoreOf(id) ?? points })) } })
+    await $fetch(`/api/my/contests/${id.value}`, { method: 'PUT', body: { title: fields.title, description: fields.description, startsAt: start.toISOString(), endsAt: end.toISOString(), penaltyMinutes: fields.penaltyMinutes, freezeMinutes: fields.freezeOn ? fields.freezeMinutes : null, ...participationBody(fields.teamSizeOn ? Number(fields.maxTeamSize) : null), version: version.value, problems: selected.value.map(({ id, points }) => ({ id, points: fullScoreOf(id) ?? points })) } })
     leaving = true
     await navigateTo(`/contests/${shortId(id.value)}`)
   } catch (error) {
@@ -559,10 +535,10 @@ async function save() {
       <form id="contest-form" ref="form" class="editor-main" novalidate @submit.prevent="save">
         <div class="editor-notices"><p v-if="message" class="editor-error" role="alert">{{ message }}</p><noscript><p class="editor-error">編集と保存には JavaScript を有効にしてください。</p></noscript></div>
         <div v-show="section === 'description'" class="author-edit-content" data-section="description">
-          <div class="author-fields"><div class="title-field"><div class="field-heading"><label for="contest-title">コンテストタイトル</label></div><input id="contest-title" v-model="title" required maxlength="120" placeholder="コンテストのタイトル" :disabled="!ready || locked || busy"></div></div>
+          <div class="author-fields"><div class="title-field"><div class="field-heading"><label for="contest-title">コンテストタイトル</label></div><input id="contest-title" v-model="fields.title" required maxlength="120" placeholder="コンテストのタイトル" :disabled="!ready || locked || busy"></div></div>
     <div ref="workspace" class="author-workspace" :class="{ 'is-resizing': resizing }" :data-mode="mode" :style="{ '--editor-left': `${splitPercent}fr`, '--editor-right': `${100 - splitPercent}fr` }">
       <section id="source-pane" class="source-pane" aria-label="Markdown 編集">
-        <div class="pane-heading"><div class="source-heading-label"><label id="contest-description-label" for="contest-description" @click="editor?.focus()">説明（Markdown）</label><NuxtLink class="source-guide-link" to="/docs/markdown" target="_blank" rel="noopener noreferrer" aria-label="Markdown・数式の書き方" title="Markdown・数式の書き方"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 2-2.5 3.5M12 16h.01" /></svg></NuxtLink></div><span>{{ description.length.toLocaleString('en-US') }} / 100,000</span></div>
+        <div class="pane-heading"><div class="source-heading-label"><label id="contest-description-label" for="contest-description" @click="editor?.focus()">説明（Markdown）</label><NuxtLink class="source-guide-link" to="/docs/markdown" target="_blank" rel="noopener noreferrer" aria-label="Markdown・数式の書き方" title="Markdown・数式の書き方"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 2-2.5 3.5M12 16h.01" /></svg></NuxtLink></div><span>{{ fields.description.length.toLocaleString('en-US') }} / 100,000</span></div>
         <div class="editor-toolbar" aria-label="記法を挿入">
           <button type="button" :disabled="!ready || busy" @click="insertSnippet('\n## 見出し\n')" aria-label="見出し" title="見出し"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5v14M19 5v14M5 12h14" /></svg></button>
           <button type="button" :disabled="!ready || busy" @click="insertSnippet('**強調**')" aria-label="太字" title="太字"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path stroke-width="2.4" d="M6 12h7a4 4 0 0 1 0 8H6V4h6a4 4 0 0 1 0 8" /></svg></button>
@@ -572,14 +548,14 @@ async function save() {
           <button type="button" :disabled="!ready || busy || editor?.uploading" :aria-expanded="editor?.showImages ?? false" @click="editor?.toggleImages()" aria-label="画像" title="画像"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8" cy="8" r="1.5" /><path d="m21 15-5-5L5 21M3 16l4-4 4 4" /></svg></button>
           <EditorSettings kind="markdown" />
         </div>
-        <MarkdownSourceEditor id="contest-description" ref="editor" v-model="description" label-id="contest-description-label" :disabled="!ready || busy" @scroll="editorScrolled" />
+        <MarkdownSourceEditor id="contest-description" ref="editor" v-model="fields.description" label-id="contest-description-label" :disabled="!ready || busy" @scroll="editorScrolled" />
       </section>
       <div class="split-handle" role="separator" tabindex="0" aria-label="編集欄とプレビューの幅を調整" aria-orientation="vertical" aria-controls="source-pane preview-pane" :aria-valuenow="Math.round(splitPercent)" :aria-valuetext="`編集欄 ${Math.round(splitPercent)}%、プレビュー ${100 - Math.round(splitPercent)}%`" :aria-valuemin="30" :aria-valuemax="70" title="ドラッグで幅を調整・ダブルクリックで均等に戻す" @pointerdown="startResize" @pointermove="moveResize" @pointerup="stopResize" @pointercancel="stopResize" @lostpointercapture="resizing = false" @keydown="resizeWithKeyboard" @dblclick="setSplit(50)" />
       <section id="preview-pane" class="preview-pane" aria-label="コンテストのプレビュー">
         <div class="pane-heading"><h2>プレビュー</h2></div>
         <div ref="preview" class="preview-document contest-preview" @scroll="previewScrolled">
-          <p class="preview-title">{{ title || 'コンテストタイトル' }}</p>
-          <ProblemMarkdown v-if="description.trim()" :source="description" live />
+          <p class="preview-title">{{ fields.title || 'コンテストタイトル' }}</p>
+          <ProblemMarkdown v-if="fields.description.trim()" :source="fields.description" live />
           <p v-else class="muted">説明を書くと、ここにプレビューが表示されます。</p>
         </div>
       </section>
@@ -630,11 +606,11 @@ async function save() {
             <header><h2 id="contest-schedule-title">期間・ペナルティ</h2><p class="muted">開催時間と誤答ペナルティを設定します。</p></header>
             <fieldset :disabled="!ready || locked || busy">
               <section class="settings-section"><h3>開催時間</h3><p class="muted">日時は {{ timezone || '端末のタイムゾーン' }} で入力します。公開ページでは日本時間で表示します。</p>
-                <div class="dates"><div><label for="contest-start">開始日時</label><input id="contest-start" v-model="startsAt" type="datetime-local" required></div><div><label for="contest-duration">コンテスト時間（分）</label><input id="contest-duration" v-model.number="durationMinutes" type="number" required min="1" :max="maxDurationMinutes" step="1"></div></div>
+                <div class="dates"><div><label for="contest-start">開始日時</label><input id="contest-start" v-model="fields.startsAt" type="datetime-local" required></div><div><label for="contest-duration">コンテスト時間（分）</label><input id="contest-duration" v-model.number="fields.durationMinutes" type="number" required min="1" :max="maxDurationMinutes" step="1"></div></div>
                 <p class="muted end-time">{{ endLabel }}</p>
               </section>
-              <section class="settings-section"><h3>誤答ペナルティ</h3><p class="muted">正解した問題の、初回正解前の誤答だけに加算します。コンパイルエラーは対象外です。</p><label for="contest-penalty">誤答ペナルティ（分）</label><input id="contest-penalty" v-model.number="penaltyMinutes" type="number" required min="0" max="1440" step="1"><p class="muted penalty-note">0分でペナルティなしにできます。</p></section>
-              <section class="settings-section"><h3>順位表の凍結</h3><InlineSwitch v-model="freezeOn" class="settings-switch freeze-switch" describedby="contest-freeze-note">順位表の凍結を行う</InlineSwitch><p id="contest-freeze-note" class="muted">終了前の指定した時間の提出は、終了後に「結果を公開」を押すまで順位表で結果を伏せます。</p><template v-if="freezeOn"><label for="contest-freeze">凍結する時間（終了前の分）</label><input id="contest-freeze" v-model.number="freezeMinutes" type="number" min="1" :max="Number(durationMinutes) || undefined" step="1" required></template></section>
+              <section class="settings-section"><h3>誤答ペナルティ</h3><p class="muted">正解した問題の、初回正解前の誤答だけに加算します。コンパイルエラーは対象外です。</p><label for="contest-penalty">誤答ペナルティ（分）</label><input id="contest-penalty" v-model.number="fields.penaltyMinutes" type="number" required min="0" max="1440" step="1"><p class="muted penalty-note">0分でペナルティなしにできます。</p></section>
+              <section class="settings-section"><h3>順位表の凍結</h3><InlineSwitch v-model="fields.freezeOn" class="settings-switch freeze-switch" describedby="contest-freeze-note">順位表の凍結を行う</InlineSwitch><p id="contest-freeze-note" class="muted">終了前の指定した時間の提出は、終了後に「結果を公開」を押すまで順位表で結果を伏せます。</p><template v-if="fields.freezeOn"><label for="contest-freeze">凍結する時間（終了前の分）</label><input id="contest-freeze" v-model.number="fields.freezeMinutes" type="number" min="1" :max="Number(fields.durationMinutes) || undefined" step="1" required></template></section>
             </fieldset>
             <p class="muted">開始後は問題セット・配点・開催期間・ペナルティ・凍結を変更できません。問題と解説は終了後に自動公開されます。</p>
           </div>
@@ -644,18 +620,18 @@ async function save() {
             <header><h2 id="contest-participation-title">参加形式</h2><p class="muted">個人戦かチーム戦かと、オンサイト参加の区分を設定します。</p></header>
             <fieldset :disabled="!ready || locked || busy">
               <section class="settings-section"><h3>個人戦・チーム戦</h3>
-                <div class="team-mode"><SegmentedChoice v-model="teamMode" legend="個人戦・チーム戦" name="contest-team-mode" :options="teamModes" hide-legend /></div>
+                <div class="team-mode"><SegmentedChoice v-model="fields.teamMode" legend="個人戦・チーム戦" name="contest-team-mode" :options="teamModes" hide-legend /></div>
                 <p class="muted">チーム戦では、参加者がチームを作るか参加コードでチームに入り、順位表にはチームごとに並びます。個人で参加した人も1人で並びます。参加登録があると切り替えられません。</p>
-                <template v-if="teamMode === 'team'">
-                  <InlineSwitch v-model="teamSizeOn" class="settings-switch" describedby="contest-team-size-note">人数の上限を設ける</InlineSwitch>
+                <template v-if="fields.teamMode === 'team'">
+                  <InlineSwitch v-model="fields.teamSizeOn" class="settings-switch" describedby="contest-team-size-note">人数の上限を設ける</InlineSwitch>
                   <p id="contest-team-size-note" class="muted">オフのときも、1チーム{{ maxTeamMembers }}人までです。</p>
-                  <template v-if="teamSizeOn"><label for="contest-team-size">1チームの人数の上限（人）</label><input id="contest-team-size" v-model.number="maxTeamSize" type="number" min="2" :max="maxTeamMembers" step="1" required></template>
+                  <template v-if="fields.teamSizeOn"><label for="contest-team-size">1チームの人数の上限（人）</label><input id="contest-team-size" v-model.number="fields.maxTeamSize" type="number" min="2" :max="maxTeamMembers" step="1" required></template>
                 </template>
               </section>
-              <section class="settings-section"><h3>オンサイト区分</h3><InlineSwitch :model-value="onsiteOn" class="settings-switch" describedby="contest-onsite-note" @update:model-value="setOnsite">オンサイト区分を設ける</InlineSwitch><p id="contest-onsite-note" class="muted">会場の合言葉を入れて参加した人をオンサイト参加とし、順位表と提出一覧で絞り込めるようにします。</p>
+              <section class="settings-section"><h3>オンサイト区分</h3><InlineSwitch :model-value="fields.onsiteOn" class="settings-switch" describedby="contest-onsite-note" @update:model-value="setOnsite">オンサイト区分を設ける</InlineSwitch><p id="contest-onsite-note" class="muted">会場の合言葉を入れて参加した人をオンサイト参加とし、順位表と提出一覧で絞り込めるようにします。</p>
                 <!-- After the start the editor does not read the passphrase; it lives in the contest page's tools. -->
-                <p v-if="onsiteOn && settersOnly" class="muted">会場の合言葉は、コンテストのページの「参加者の管理」で確認できます。</p>
-                <template v-else-if="onsiteOn"><label for="contest-passphrase">会場の合言葉</label><VenuePassphraseInput id="contest-passphrase" v-model="passphrase" required aria-describedby="contest-passphrase-note" /><p id="contest-passphrase-note" class="muted passphrase-note">{{ venuePassphraseRule }}で、大文字と小文字は区別します。作成者だけが見られます。会場の参加者に配ってください。</p></template>
+                <p v-if="fields.onsiteOn && settersOnly" class="muted">会場の合言葉は、コンテストのページの「参加者の管理」で確認できます。</p>
+                <template v-else-if="fields.onsiteOn"><label for="contest-passphrase">会場の合言葉</label><VenuePassphraseInput id="contest-passphrase" v-model="fields.passphrase" required aria-describedby="contest-passphrase-note" /><p id="contest-passphrase-note" class="muted passphrase-note">{{ venuePassphraseRule }}で、大文字と小文字は区別します。作成者だけが見られます。会場の参加者に配ってください。</p></template>
               </section>
             </fieldset>
             <p class="muted">開始後は参加形式とオンサイト区分を変更できません。会場の合言葉の差し替えと、オープン参加の人とチームをオンサイト参加にする操作は、コンテストのページの「参加者の管理」でできます。</p>
@@ -663,7 +639,7 @@ async function save() {
         </section>
         <section v-show="section === 'manage'" class="problem-management" data-section="manage" aria-labelledby="contest-manage-title">
           <div class="management-content">
-            <header><h2 id="contest-manage-title">コンテスト管理</h2><p class="manage-problem-title">{{ title.trim() || '無題のコンテスト' }}</p><p class="muted">{{ settersOnly ? '公開済み（開始後）' : published ? '公開済み（開催予定）' : '下書き（未公開）' }}</p></header>
+            <header><h2 id="contest-manage-title">コンテスト管理</h2><p class="manage-problem-title">{{ fields.title.trim() || '無題のコンテスト' }}</p><p class="muted">{{ settersOnly ? '公開済み（開始後）' : published ? '公開済み（開催予定）' : '下書き（未公開）' }}</p></header>
             <section class="management-row readiness-row" aria-labelledby="contest-readiness-title"><div>
               <h3 id="contest-readiness-title">状態</h3>
               <p v-if="settersOnly">{{ resultsFinal ? '結果が確定したため、共同作成者の招待はできません。解除と脱退はできます。' : '開始後は設定を変更できません。共同作成者の招待と解除はできます。' }}</p>
