@@ -92,6 +92,46 @@ test('cache failures do not prevent DB saving', async ({ page }) => {
   await expect(page.locator('#problem-title')).toBeEnabled()
 })
 
+test('a failed reload replaces the cached draft with the new-problem defaults', async ({ page }) => {
+  const id = '22222222-2222-4222-8222-222222222222'
+  await page.goto('/problems/new')
+  await page.evaluate(async (id) => {
+    await fetch(`/api/my/problems/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ version: 0, draft: { title: 'キャッシュの題名', markdown: '## キャッシュの本文', difficulty: 3, tags: ['キャッシュ'], timeLimitMs: '3000', memoryLimitMb: '256', testCases: [] } }),
+    })
+  }, id)
+  // A successful read caches the draft.
+  await page.goto(`/problems/new?problem=${id}`)
+  await expect(page.locator('#problem-title')).toHaveValue('キャッシュの題名')
+  const cached = () => page.evaluate(id => Object.keys(sessionStorage).some(key => key.endsWith(`.${id}`)), id)
+  expect(await cached()).toBe(true)
+  let release!: () => void
+  const hold = new Promise<void>(resolve => { release = resolve })
+  await page.route(`**/api/my/problems/${id}`, async route => {
+    if (route.request().method() !== 'GET') return route.fallback()
+    await hold
+    return route.fulfill({ status: 500, json: {} })
+  })
+  await page.reload()
+  // The cached draft shows while the read is pending.
+  await expect(page.locator('#problem-title')).toHaveValue('キャッシュの題名')
+  await expect(page.locator('#time-limit')).toHaveAttribute('aria-valuenow', '3000')
+  release()
+  await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'load-failed')
+  await expect(page.getByRole('alert')).toHaveText('サーバーに接続できないか、処理に失敗しました。入力内容を保持したまま、もう一度お試しください。')
+  await expect(page.locator('#problem-title')).toHaveValue('')
+  await expect(page.locator('#problem-title')).toBeDisabled()
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toBeDisabled()
+  await expect(page.locator('#problem-difficulty')).toHaveText(/未設定/)
+  await expect(page.locator('#time-limit')).toHaveAttribute('aria-valuenow', '2000')
+  await expect(page.locator('#memory-limit')).toHaveAttribute('aria-valuenow', '512')
+  await expect(page.getByRole('list', { name: 'タグ' })).toHaveCount(0)
+  await expect(page.locator('#problem-source')).toContainText('<!-- ここに問題文を記載 -->')
+  await expect(page.locator('#problem-source')).not.toContainText('キャッシュの本文')
+  expect(await cached()).toBe(false)
+})
+
 for (const width of [320, 375, 414, 768, 1280]) {
   test(`editor is usable at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 })

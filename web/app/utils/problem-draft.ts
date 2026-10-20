@@ -1,4 +1,4 @@
-import { maxFullScore, maxScoringGroups, testFileLimit, testSetLimit, type TestFile, type ProblemDraft, type Scoring } from '~~/shared/types/problem-draft'
+import { emptyGenerators, maxFullScore, maxScoringGroups, testFileLimit, testSetLimit, type TestFile, type ProblemDraft, type Scoring } from '~~/shared/types/problem-draft'
 
 export type TestCase = {
   isSample?: boolean
@@ -119,7 +119,7 @@ export function exportProblemMarkdown(draft: ProblemDraft): string {
   ].join('\n')
 }
 
-export const initialProblemMarkdown = [
+const initialProblemMarkdown = [
   '## 問題文', '',
   '<!-- ここに問題文を記載 -->', '',
   '$T$ 個のテストケースが与えられるので、それぞれについて答えてください。', '',
@@ -132,4 +132,9 @@ export const initialProblemMarkdown = [
   '<!-- テストケース画面の「サンプルを問題文に追加」ボタンから、サンプルを追加できます。 -->', '',
 ].join('\n')
 
-export const initialEditorialMarkdown = '## 解説\n\n<!-- ここに解説を記載 -->\n'
+const initialEditorialMarkdown = '## 解説\n\n<!-- ここに解説を記載 -->\n'
+
+// A new problem's draft. Each call builds new arrays and generators, so the editor's draft and its reset share nothing.
+export function initialProblemDraft() {
+  return { checker: null as ProblemDraft['checker'], interactor: null as ProblemDraft['interactor'], scoring: null as ProblemDraft['scoring'], difficulty: null as number | null, title: '', markdown: initialProblemMarkdown, editorial: initialEditorialMarkdown, tags: [] as string[], generators: emptyGenerators(), timeLimitMs: '2000', memoryLimitMb: '512', testCases: [] as TestCase[] }
+}
