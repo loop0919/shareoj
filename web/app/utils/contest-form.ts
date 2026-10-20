@@ -1,4 +1,5 @@
 import type { Contest, ContestDraft } from '~~/shared/types/contest'
+import { japanInput } from './japan-time'
 
 export type ParticipationForm = {
   teamMode: 'individual' | 'team', teamSizeOn: boolean, maxTeamSize: number | string, onsiteOn: boolean,
@@ -18,15 +19,6 @@ export function initialContestForm(): ContestForm {
     title: '', description: '<!-- ここにコンテストの概要を記載 -->\n', startsAt: '', durationMinutes: 120, penaltyMinutes: 5, freezeOn: false, freezeMinutes: '',
     ...participationForm({}),
   }
-}
-
-// The date input holds Japan time whatever the viewer's zone; Japan has no daylight saving, so the offset is fixed.
-function japanInput(at: string): string {
-  return new Date(new Date(at).getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 16)
-}
-// Reads the date input as Japan time. An empty input gives an Invalid Date.
-export function fromJapanInput(value: string): Date {
-  return new Date(`${value}:00+09:00`)
 }
 
 export function participationForm(s: Pick<ContestDraft, 'teamMode' | 'maxTeamSize' | 'onsiteDivision'>, venue?: string | null): ParticipationForm {

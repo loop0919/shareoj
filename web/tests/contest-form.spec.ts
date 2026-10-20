@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import type { Contest, ContestDraft } from '../shared/types/contest'
-import { formFromContest, formFromDraft, fromJapanInput, initialContestForm, participationForm } from '../app/utils/contest-form'
+import { formFromContest, formFromDraft, initialContestForm, participationForm } from '../app/utils/contest-form'
+import { fromJapanInput } from '../app/utils/japan-time'
 
 const draft = (fields: Partial<ContestDraft>): ContestDraft => ({ title: '下書き', description: '', startsAt: null, durationMinutes: null, penaltyMinutes: null, problems: [], ...fields })
 const noParticipation = { teamMode: 'individual', teamSizeOn: false, maxTeamSize: '', onsiteOn: false, passphrase: '' }

@@ -3,6 +3,7 @@ import { accountProblemSchema } from '~~/shared/types/account-problems'
 import { contestDate } from '~~/shared/types/contest'
 import { shortId } from '~~/shared/utils/short-id'
 import { accountError } from '~/utils/account-problems'
+import { fromJapanInput, japanInput } from '~/utils/japan-time'
 import { choosableFirst, problemChoice } from '~/utils/problem-choices'
 
 useSeoMeta({ title: '問題を投稿 | ShareOJ', robots: 'noindex, nofollow' })
@@ -27,9 +28,8 @@ const timings = computed(() => [
   { value: 'schedule' as const, label: '日時を指定', disabled: applied.value, describedby: applied.value ? 'post-applied' : undefined },
 ])
 const label = computed(() => busy.value ? '送信中…' : timing.value === 'now' ? '投稿する' : reserved.value ? '予約を更新' : '予約する')
-const japanTime = (at: string) => new Date(new Date(at).getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 16)
 const when = (value: string) => {
-  const date = new Date(`${value}:00+09:00`)
+  const date = fromJapanInput(value)
   return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }).format(date) : ''
 }
 // The bar says what the button will do, so the choice reads back even when the list has scrolled away.
@@ -42,7 +42,7 @@ const summary = computed(() => {
 watch(selected, () => {
   const at = current.value?.scheduledAt
   timing.value = at ? 'schedule' : 'now'
-  scheduledAt.value = at ? japanTime(at) : ''
+  scheduledAt.value = at ? japanInput(at) : ''
   error.value = ''
 })
 // An error describes the last attempt; editing the choice clears it.
@@ -59,7 +59,7 @@ async function post(cancel = false) {
   error.value = ''
   let at: string | undefined
   if (!cancel && timing.value === 'schedule') {
-    const date = new Date(`${scheduledAt.value}:00+09:00`)
+    const date = fromJapanInput(scheduledAt.value)
     if (!scheduledAt.value || !Number.isFinite(date.getTime()) || date.getTime() <= Date.now()) { invalidDate.value = true; return }
     at = date.toISOString()
   }

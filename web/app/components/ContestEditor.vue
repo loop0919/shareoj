@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { accountListSchema, type AccountSummary } from '~~/shared/types/account-problems'
-import { contestAuthors, problemLabel, type Contest, type ContestDraft, type ContestDraftResult, type DraftProblem, type Venue } from '~~/shared/types/contest'
+import { contestAuthors, contestDate, problemLabel, type Contest, type ContestDraft, type ContestDraftResult, type DraftProblem, type Venue } from '~~/shared/types/contest'
 import { shortId } from '~~/shared/utils/short-id'
 import { accountError } from '~/utils/account-problems'
-import { formFromContest, formFromDraft, fromJapanInput, initialContestForm, participationForm } from '~/utils/contest-form'
+import { formFromContest, formFromDraft, initialContestForm, participationForm } from '~/utils/contest-form'
+import { fromJapanInput } from '~/utils/japan-time'
 import { issueMessage } from '~/utils/problem-readiness'
 import { searchProblems } from '~/utils/problem-search'
 import { venuePassphraseRule, venuePassphraseValid } from '~/utils/venue-passphrase'
@@ -103,7 +104,7 @@ function durationText(minutes: number) {
   return hours && rest ? `${hours}時間${rest}分` : hours ? `${hours}時間` : `${rest}分`
 }
 const endLabel = computed(() => endsAt.value
-  ? `終了日時 ${new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Tokyo' }).format(endsAt.value)}（${durationText(Number(fields.durationMinutes))}）`
+  ? `終了日時 ${contestDate(endsAt.value.toISOString())}（${durationText(Number(fields.durationMinutes))}）`
   : '開始日時とコンテスト時間を入力すると、終了日時を表示します。')
 const issueGuide: Record<string, [string, Section]> = {
   title_missing: ['コンテストタイトルを入力してください', 'description'],
