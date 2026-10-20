@@ -65,7 +65,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | --- | --- | --- | --- | --- | --- |
 | C01 | CLI pushの下書き合成を関数に切り出し、規則を特性テストで固定 | `cli/main.go` | 低・高・S | 修正・修正 | 完了（`0c17328`） |
 | C02 | SQLの文字列置換をやめ、テスター用一覧と提出詳細の非公開列を明示的に組み立てる | `api/internal/problems/store.go`、`api/internal/submissions/store.go` | 低・高・S | 修正・維持 | 完了（`f3f44a4`。範囲を`problems/store.go`の`list()`に限定し、submissions側は除外） |
-| C03 | BFFのエラー変換を切り出し、画面へ渡すエラーコードを名前付きの一覧にする | `web/server/utils/private-api.ts` | 低・高・S | 修正・維持 | 計画済み（エラーコードの一覧を1行1コードの名前付き集合にし、変換を特性テストで固定） |
+| C03 | BFFのエラー変換を切り出し、画面へ渡すエラーコードを名前付きの一覧にする | `web/server/utils/private-api.ts` | 低・高・S | 修正・維持 | 完了（`e5661c0`） |
 | C04 | useProblemDraftの既定値と自動保存の再予約をまとめる | `web/app/composables/useProblemDraft.ts` | 低・高・S | 維持・修正 | 完了（`dbc7784`） |
 | C05 | ジャッジの失敗判定と上限検証をそれぞれ1か所にまとめる | `judge/sandbox.py`、`judge/host.py`、`judge/interactive.py` | 低・中・S | 修正・維持 | 計画済み（失敗判定だけをまとめる。上限検証の共通化は採らない） |
 | C06 | コンテスト提出の閲覧条件をSQL断片1つにまとめ、2つの一覧で共有する | `api/internal/submissions/contest.go`、`problem.go` | 中・高・S | 維持・維持 | 完了（`da26be1`） |
@@ -166,6 +166,16 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 - 検証（最終tree）: API `go test -count=1 ./...`（DB連携）、`go vet`、`gofmt -l`、`make package package-judge`、webの`npm run build`、アカウント系Playwright（30件）がすべて成功。
 - 軽微（未対応、変更前からの穴）: 認証付きの`release=true`ルート（`/my/problems/{id}/publication`など）で、期日を過ぎた予約と定期便が解放されることを確かめるテストがない。公開ルート側は既存のテストで検出できる。
 
+### C03 画面へ渡すエラーコードの一覧（`e5661c0`）
+
+- 計画: [plans/C03-bff-error-codes.md](plans/C03-bff-error-codes.md)。計画レビューは承認（軽微な指摘4件。実装時に反映）。
+- 変更: `privateAPI`の中の1行の配列（50コード。`git log -L`で21件のコミットが行全体を置き換えていた）と429用の3コードを、モジュールレベルの`forwardedCodes`と`retryAfterCodes`（1行1コードの`Set`）にした。判定は`.has()`にした。50件と3件はHEADから機械的に写し、順序込みの差分がないことを確かめた。
+- 特性テスト: 上流の拒否5通り（一覧にないコード、一覧のコード、429で3コードのうちの1つ、429で一覧にないコード、通さないステータス）をBFFに通し、ステータス、Retry-After、`data`、診断文字列が漏れないことを確かめる（`web/tests/upstream-errors.spec.ts`と`fixtures/public-api.mjs`）。
+- simplify: `forwardedCodes`のコメントに、`retryAfterCodes`という例外を名指しで書いた（そのままだと429のコードを誤って一覧に足しうる）。
+- レビュー: 4観点とも必須の指摘なし。
+- 検証: 最初の実行でブラウザーテスト`tags.spec.ts:114`が1件失敗した。修正担当と再レビュー担当が、変更前のコードでも再現する既存の競合（D26）で今回の変更の経路を通らないことを確かめ、コードは変えずに再実行した。最終tree（変更前と同じtree）で、`npm run typecheck`、`npm run package:lambda`、`npm run test:lambda`、`npm run build`、ブラウザーPlaywright（460件）、アカウント系Playwright（30件）、smokeがすべて成功。
+- 軽微（未対応）: `retryAfterCodes`のうち`contest_attempts_limited`だけはBFFを通るテストがない（変更前からの穴）。D25を記録した。
+
 ## 保留事項
 
 調査で見つけた別件の不具合と、仕様の判断が要る点。直さずに記録だけする。
@@ -192,14 +202,16 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | D18 | 定期便の順位表と予定表で、Hard枠にUltimateの表示名を使っていない | `web/app/pages/featured/index.vue:23` | ADR 0011と表示が食い違う |
 | D19 | マイページと公開ページで、登録月のタイムゾーンが違う | `web/app/pages/my/index.vue:16` | 月末・月初の登録で表示がずれる |
 | D20 | ホームの定期便のお知らせは2026-10-31を過ぎると表示されなくなる | `web/app/pages/index.vue:24-26` | 期限後にコードの整理が要る |
-| D21 | BFFがAPIの`invalid_accounts`を画面へ渡さず、専用の文言が出ない | `web/server/utils/private-api.ts:32` | 汎用の「保存できませんでした」が出る |
+| D21 | BFFがAPIの`invalid_accounts`を画面へ渡さず、専用の文言が出ない | `web/server/utils/private-api.ts`の`forwardedCodes` | 汎用の「保存できませんでした」が出る |
 | D22 | テストファイルのBFFルートが、ルートパラメーターを検証せずに上流のパスへ埋め込む | `web/server/api/my/problems/[id]/test-files/[file].get.ts:8`ほか | `%2e%2e`がURL解析で正規化される可能性（未検証。多層防御の穴） |
 | D23 | タグで絞り込んだ一覧ページの`og:image`が404のURLを指す | `web/app/pages/problems/index.vue:34,44` | 共有時にプレビュー画像が出ない |
+| D25 | 上流が通さないステータス（500など）を返すとBFFは502にするが、一覧にあるコードは`data`に残して画面へ渡す | `web/server/utils/private-api.ts`（`upstream-errors.spec.ts`のf005が現状を固定） | 是非は未判断。変えると画面に出る文言が変わる |
+| D26 | ブラウザーテスト`tags.spec.ts:114`が不安定（全体実行で時々失敗） | `web/tests/tags.spec.ts:124`の`getByRole('search')` | ページの作り直し中に古いフォームをつかんで撮影する競合。変更前のコードでも応答を25〜50ms遅らせると毎回再現した。テストで新しいページの見出しを待てば直る |
 | D24 | 問題の編集画面で、ダイアログを閉じるときに保留中の自動保存タイマーを消さずに張り直す | `web/app/composables/useProblemDraft.ts`（離脱確認と削除確認を閉じる処理） | ダイアログの裏で草稿が非同期に変わると（保存して移動の途中のファイル準備、生成の完了）、タイマーが2本になりPUTが1回多く起きうる |
 
 ## 現在の作業と次の手順
 
-- 計画済み（いずれも計画レビュー承認）: C03、C05、C07、C09、C13、C17、C20。次はC03の実装と、C11の計画（C08のコミット後）。
+- 計画済み（いずれも計画レビュー承認）: C05、C07、C09、C11、C13、C17、C20。次はC05の実装。
 - C11はC02・C08と同じ`api/internal/problems/store.go`に触れるため、その後に計画する。
 - C15〜C20は2観点の反証を行い、C15を保留、C16・C18・C19を却下、C17・C20を範囲を絞って採用した。
 - 2026-10-20 03:40ごろ利用上限で一時停止し、08:30に再開した。停止時に失敗したエージェント（C04のsimplify、C07の計画レビュー、C20の反証）は、ワークフローの再開で実行し直した。完了済みの作業は重複して実行していない。
