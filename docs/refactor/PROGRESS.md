@@ -73,7 +73,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | C08 | 問題とプロフィールのストアを具体型で持ち、実行時の型アサーションをやめる | `api/internal/httpapi/routes.go`ほか | 中・高・M | 修正・修正 | 完了（`57b902c`） |
 | C09 | 「利用できる言語」の判定と既定の言語を1か所にまとめる | `web/app/composables/useJudgeCatalog.ts`ほか | 低・中・S | 修正・維持 | 計画済み |
 | C10 | 自分の問題の詳細と一覧のスキーマを共通化 | `web/shared/types/account-problems.ts` | 低・中・S | 却下・却下 | 却下（変更漏れの根拠が履歴の読み違いで、共通化するとサーバー側の差が隠れる） |
-| C11 | problems.scanが読む列のリストを共有する | `api/internal/problems/store.go`ほか | 低・中・S | 修正・維持 | 未着手 |
+| C11 | problems.scanが読む列のリストを共有する | `api/internal/problems/store.go`ほか | 低・中・S | 修正・維持 | 完了（`18b879d`） |
 | C12 | 問題ページとコンテストの問題ページで、下書きから公開用の項目へ写す処理を共有する | `api/internal/problems/publication.go`、`api/internal/contests/store.go` | 低・中・S | 維持・維持 | 完了（`1bd2582`） |
 | C13 | サイトマップと共有画像の静的ページ一覧を1つにする | `web/server/routes/sitemap.xml.get.ts`、`web/shared/social-pages.ts` | 低・中・S | 修正・修正 | 計画済み（固定ページ7件の写しを`socialPages`のキーにまとめる） |
 | C14 | 送り出しの順序と待ち時間の起点を1つのSQL断片で定義する | `api/internal/submissions/store.go`、`api/cmd/judge-bridge/` | 低・中・S | 却下・維持 | 却下（変更漏れの実例がなく、既に振る舞いのテストで固定済み） |
@@ -208,6 +208,16 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 - 検証（最終tree）: API `go test -count=1 ./...`（DB連携。各テストが`Migrate`でスキーマを作る）、`go vet`、`gofmt -l`、`make package package-judge`（migrate Lambdaを含む）がすべて成功。
 - 軽微（既知の限界）: ファイルと一覧を一緒に付け替える誤り（例: 019を消して後ろを詰める）は検出できない。本番の`schema_migrations`は番号で記録しているので適用されなくなる。規則はコメントに書いた。直すならリリース済みの版を固定する別の仕組みが要る。
 
+### C11 問題の読み書きが返す列（`18b879d`）
+
+- 計画: [plans/C11-problem-scan-columns.md](plans/C11-problem-scan-columns.md)。計画レビューは承認（軽微な指摘3件。実装時に反映）。
+- 変更: `scan`が読む8列が6つのクエリ（Get、SaveのINSERTとUPDATE、Publishの2つ、Schedule）に手で写されていたので、定数`problemColumns`にまとめた。0acd889、c118c35、190fe16は全部を同時に直していた。計画担当の確認では、公開のクエリの作者の式だけを壊しても既存のテストはすべて通っていた。
+- 守った点: Get・Save・Publishの列は変更前とバイト単位で同じ（Publishは空白だけの違い）。WHERE、SET、プレースホルダ、引数、エラーの変換は変えていない。Scheduleのcontest列は定数`''`からサブクエリになるが、予約中の問題は行ロックと事前の確認で同じトランザクション中にコンテストへ入れず、コンテストの保存も`scheduled_at IS NULL`で行ロックを取るので、結果は常に`''`（論証による確認。競合の並びの実行での再現はしていない）。
+- 特性テスト: `TestProblemWriteResponsesMatchReadPostgres`（作成・更新・予約・公開・取り下げの応答と直後のGET、作者・版・公開版・予約の具体値）、`TestProblemReadAnswersContestPostgres`（コンテストに入った問題のGETのトップレベルの`contestId`）。
+- simplify: 任意の指摘2件（既存の補助関数を使う、Publishの2クエリを1つにする）は、テストを弱めるか範囲を超えるため見送り。
+- レビュー: 必須1件。共有した定数のcontest列が壊れても、どのテストも失敗しなかった（既存のテストは部分文字列の比較で、`contestEditors`の欄に一致していた）。トップレベルの`contestId`を直接確かめるテストを足し、変異で検出できることを確かめた。
+- 検証（最終tree）: API `go test -count=1 ./...`（DB連携）、`go vet`、`gofmt -l`、`make package package-judge`、webの`npm run build`、アカウント系Playwright（30件）がすべて成功。
+
 ## 保留事項
 
 調査で見つけた別件の不具合と、仕様の判断が要る点。直さずに記録だけする。
@@ -243,7 +253,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 
 ## 現在の作業と次の手順
 
-- 計画済み（いずれも計画レビュー承認）: C09、C11、C13、C17。次はC11の実装。
+- 計画済み（いずれも計画レビュー承認）: C09、C13、C17（webの3件）。次はC09の実装。
 - C11はC02・C08と同じ`api/internal/problems/store.go`に触れるため、その後に計画する。
 - C15〜C20は2観点の反証を行い、C15を保留、C16・C18・C19を却下、C17・C20を範囲を絞って採用した。
 - 2026-10-20 03:40ごろ利用上限で一時停止し、08:30に再開した。停止時に失敗したエージェント（C04のsimplify、C07の計画レビュー、C20の反証）は、ワークフローの再開で実行し直した。完了済みの作業は重複して実行していない。
