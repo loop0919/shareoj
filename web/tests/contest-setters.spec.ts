@@ -411,9 +411,10 @@ test('my contests list every setter of a contest and the owner of each draft', a
   await page.route(url => url.pathname === '/api/my/contests', route => route.fulfill({ json: { items: [{ ...runningContest, status: 'scheduled', canEdit: true, setter: true, authors: ['alice', 'ui_test'] }], hasMore: false } }))
   await page.goto('/my?tab=contests')
   const drafts = page.getByRole('region', { name: 'コンテストの下書き' })
-  await expect(drafts.getByRole('columnheader')).toHaveText(['下書き', '開始予定（日本時間）', '更新（日本時間）', 'オーナー', '操作'])
+  await expect(drafts.getByRole('columnheader')).toHaveText(['下書き', '開始予定 (JST)', '更新 (JST)', 'オーナー', '操作'])
   await expect(drafts.locator('tbody tr')).toContainText('alice')
   const published = page.getByRole('region', { name: 'コンテスト一覧' })
+  await expect(published.getByRole('columnheader')).toHaveText(['コンテスト', '状態', '開始 (JST)', '終了 (JST)', '作成者', '操作'])
   await expect(published.locator('tbody td').nth(3)).toHaveText('alice、ui_test')
   await expect(published.getByRole('link', { name: '共同開催コンテストを編集' })).toBeVisible()
   for (const width of [320, 375, 768]) {

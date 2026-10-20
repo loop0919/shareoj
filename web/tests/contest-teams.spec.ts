@@ -720,7 +720,7 @@ test('setters open the participant tools, replace the venue passphrase, move ope
   // Teams and those who joined alone share one table.
   await expect(tools.getByRole('heading', { name: 'チーム・個人 チーム 2・個人 1' })).toBeVisible()
   const table = tools.getByRole('region', { name: '参加者の一覧' })
-  await expect(table.locator('thead th')).toHaveText(['チーム・個人', '区分', 'オンサイトになった時刻（日本時間）', '登録日時（日本時間）'])
+  await expect(table.locator('thead th')).toHaveText(['チーム・個人', '区分', 'オンサイトになった時刻 (JST)', '登録日時 (JST)'])
   await expect(table.locator('tbody th')).toHaveText([/^Alpha名前を変更bob、carol$/, 'erin個人参加', /^Beta名前を変更dave$/])
   await expect(table.locator('tbody tr').first().locator('td').nth(1)).toHaveText('2099/10/01 11:30（合言葉）')
   // Replacing the passphrase checks the rule first and explains a refusal, keeping the input. Focus follows the form

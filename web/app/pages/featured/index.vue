@@ -3,7 +3,7 @@ import { contestDate } from '~~/shared/types/contest'
 import { featuredSlotLabel } from '~~/shared/types/featured'
 import { shortId } from '~~/shared/utils/short-id'
 useResponseHeader('Cache-Control').value = 'no-store'
-useSeoMeta({ title: '定期便 | ShareOJ', description: '毎週月曜・木曜23時（日本時間）にEasyとHardを一問ずつ出題します。新作の解説は翌22時に公開。' })
+useSeoMeta({ title: '定期便 | ShareOJ', description: '毎週月曜・木曜23:00 (JST)にEasyとHardを一問ずつ出題します。新作の解説は翌22時に公開。' })
 const offset = ref(0)
 const { data, error, status, refresh } = await useFetch('/api/featured', { query: { offset } })
 usePolling(() => refresh(), 60000)

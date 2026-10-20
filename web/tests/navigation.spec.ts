@@ -64,6 +64,7 @@ test('contest pages replace the site menu with the contest menu', async ({ page 
   await contestMenu.getByRole('link', { name: '概要', exact: true }).click()
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('共有コンテスト')
   await expect(page.getByText('開始日時', { exact: true })).toBeVisible()
+  await expect(page.getByText('日時はJSTで表示しています。', { exact: true })).toBeVisible()
   await expect(breadcrumb).toHaveText('コンテスト/共有コンテスト')
   await contestMenu.getByRole('link', { name: '問題', exact: true }).click()
   await page.getByRole('region', { name: 'コンテストの問題' }).getByRole('link').first().click()

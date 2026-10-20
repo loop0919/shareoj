@@ -7,6 +7,7 @@ test('edition standings show tied ranks, checks, elapsed times and non-penalizin
   await page.goto('/featured')
   await page.locator('.round').first().getByRole('link', { name: '順位表', exact: true }).click()
   await expect(page.getByRole('heading', { name: '定期便の順位表', exact: true })).toBeVisible()
+  await expect(page.locator('p', { hasText: '集計締め切り：' })).toHaveText('集計締め切り：2099/09/29 22:00 (JST)')
   const table = page.getByRole('table')
   await expect(table.locator('thead th')).toHaveText(['順位', 'ユーザー', '時間', 'Easy', 'Ultimate'])
   const rows = table.locator('tbody tr')

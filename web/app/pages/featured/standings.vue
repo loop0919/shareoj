@@ -34,7 +34,7 @@ function elapsed(ms: number | null) {
     <LoadingSpinner v-else-if="!data" label="順位表を読み込み中" />
     <template v-if="data && !error">
       <p class="standings-period"><template v-if="data.round.number">定期便 vol.{{ data.round.number }} </template><time :datetime="data.round.scheduledAt">{{ contestDate(data.round.scheduledAt) }}</time><template v-if="!data.round.number"> の定期便</template><span>{{ data.closed ? '集計期間終了' : '集計中' }}</span></p>
-      <p class="muted">集計締め切り：<time :datetime="data.closesAt">{{ contestDate(data.closesAt) }}</time>（日本時間）</p>
+      <p class="muted">集計締め切り：<time :datetime="data.closesAt">{{ contestDate(data.closesAt) }}</time> (JST)</p>
       <div class="content-table-scroll" role="region" aria-label="定期便の順位表" tabindex="0" :aria-busy="status === 'pending'">
         <table class="content-table featured-standings-table">
           <thead><tr>

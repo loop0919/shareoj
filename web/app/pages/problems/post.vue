@@ -94,9 +94,9 @@ async function post(cancel = false) {
           <SegmentedChoice v-model="timing" legend="公開のタイミング" name="post-timing" :options="timings" :disabled="busy || !selected" />
           <p v-if="applied" id="post-applied" class="post-hint">定期便に応募中のため予約できません。予約するには「自分の問題」で応募を取り下げてください。</p>
           <div v-if="timing === 'schedule'" class="post-when">
-            <label for="post-scheduled-at">公開日時（日本時間）</label>
+            <label for="post-scheduled-at">公開日時 (JST)</label>
             <input id="post-scheduled-at" v-model="scheduledAt" type="datetime-local" required :disabled="busy" :aria-invalid="invalidDate || undefined" :aria-describedby="invalidDate ? 'post-date-error post-when-hint' : 'post-when-hint'">
-            <p v-if="invalidDate" id="post-date-error" class="field-error" role="alert">未来の公開日時を日本時間で指定してください。</p>
+            <p v-if="invalidDate" id="post-date-error" class="field-error" role="alert">未来の公開日時をJSTで指定してください。</p>
             <p id="post-when-hint" class="post-hint">予約した時点の保存済みの内容を公開します。そのあとの編集は、予約を更新すると反映されます。</p>
           </div>
           <p v-else-if="selected" class="post-hint">保存済みの内容を公開し、誰でも閲覧・提出できるようにします。</p>

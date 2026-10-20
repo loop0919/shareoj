@@ -55,7 +55,7 @@ useSharePreview({ title: () => problem.value!.title, path: () => `/problems/${sh
       <NuxtLink :to="{ path: `/problems/${shortId(problem.id)}`, query: { view: 'submissions' } }" :aria-current="route.query.view === 'submissions' ? 'page' : undefined">すべての提出</NuxtLink>
       <NuxtLink v-if="canEdit" :to="{ path: '/problems/new', query: { problem: problem.id } }">作問画面へ</NuxtLink>
     </nav>
-    <p v-if="problem.editorialHidden" class="notice">定期便の新作です。解説と他者の提出は{{ problem.editorialRevealAt ? contestDate(problem.editorialRevealAt) : '翌22時' }}（日本時間）に公開します。<template v-if="canEdit">作成者とテスターは公開前から閲覧できます。</template></p>
+    <p v-if="problem.editorialHidden" class="notice">定期便の新作です。解説と他者の提出は{{ problem.editorialRevealAt ? contestDate(problem.editorialRevealAt) : '翌22:00' }} (JST)に公開します。<template v-if="canEdit">作成者とテスターは公開前から閲覧できます。</template></p>
     <p v-if="problem.editorialHidden && !canEdit && route.query.view === 'submissions'" class="muted">他者の提出は解禁後に閲覧できます。自分の提出と採点結果は「自分の提出」から確認できます。</p>
     <ProblemSubmissionList v-else-if="submissionView" :key="String(route.query.view)" :problem-id="problem.id" :mine="route.query.view === 'my-submissions'" :scored="!!problem.scoring" />
     <article v-else class="problem-body" aria-label="問題詳細">
