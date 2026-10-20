@@ -20,9 +20,13 @@ export function initialContestForm(): ContestForm {
   }
 }
 
-function localDate(value: string) {
-  const date = new Date(value)
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+// The date input holds Japan time whatever the viewer's zone; Japan has no daylight saving, so the offset is fixed.
+function japanInput(at: string): string {
+  return new Date(new Date(at).getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 16)
+}
+// Reads the date input as Japan time. An empty input gives an Invalid Date.
+export function fromJapanInput(value: string): Date {
+  return new Date(`${value}:00+09:00`)
 }
 
 export function participationForm(s: Pick<ContestDraft, 'teamMode' | 'maxTeamSize' | 'onsiteDivision'>, venue?: string | null): ParticipationForm {
@@ -31,7 +35,7 @@ export function participationForm(s: Pick<ContestDraft, 'teamMode' | 'maxTeamSiz
 
 export function formFromDraft(d: ContestDraft): ContestForm {
   return {
-    title: d.title, description: d.description, startsAt: d.startsAt ? localDate(d.startsAt) : '',
+    title: d.title, description: d.description, startsAt: d.startsAt ? japanInput(d.startsAt) : '',
     durationMinutes: d.durationMinutes ?? '', penaltyMinutes: d.penaltyMinutes ?? '', freezeOn: d.freezeMinutes != null, freezeMinutes: d.freezeMinutes ?? '',
     ...participationForm(d, d.onsitePassphrase),
   }
@@ -40,7 +44,7 @@ export function formFromDraft(d: ContestDraft): ContestForm {
 // Everything but the participation: the editor assigns it after the venue read so that the passphrase comes with it; the other participation settings are the contest's own.
 export function formFromContest(c: Contest): Omit<ContestForm, keyof ParticipationForm> {
   return {
-    title: c.title, description: c.description, startsAt: localDate(c.startsAt),
+    title: c.title, description: c.description, startsAt: japanInput(c.startsAt),
     durationMinutes: Math.round((Date.parse(c.endsAt) - Date.parse(c.startsAt)) / 60000),
     penaltyMinutes: c.penaltyMinutes, freezeOn: c.freezeMinutes != null, freezeMinutes: c.freezeMinutes ?? '',
   }

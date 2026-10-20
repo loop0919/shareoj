@@ -16,9 +16,9 @@ async function seed(page: Page, title: string) {
   expect(response.status()).toBe(200)
   return id
 }
-function localDate(value: number) {
-  const date = new Date(value)
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+// The date input reads Japan time.
+function japanDate(value: number) {
+  return new Date(value + 9 * 60 * 60 * 1000).toISOString().slice(0, 16)
 }
 
 test('create, reorder and edit an unpublished contest; guests cannot inspect its problems', async ({ page, browser }, testInfo) => {
@@ -43,7 +43,7 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   await expect(page.getByLabel('開始日時')).toBeFocused()
   await expect(page.locator('.toast')).toHaveCount(0)
   await expect(page.getByLabel('誤答ペナルティ（分）')).toHaveValue('5')
-  await page.getByLabel('開始日時').fill(localDate(Date.now() + 86400000))
+  await page.getByLabel('開始日時').fill(japanDate(Date.now() + 86400000))
   await page.getByLabel('コンテスト時間（分）').fill('60')
   await page.getByRole('button', { name: '問題・配点', exact: true }).click()
   const search = page.getByRole('searchbox', { name: '問題を検索' })
@@ -220,7 +220,7 @@ test('an incomplete contest saves as a private draft and publishes once the serv
   expect(await (await guest.request.get('/api/contests')).text()).not.toContain(id)
   // Publication lists what the server still needs in コンテスト管理, each with a way to its section.
   await page.getByRole('button', { name: '期間・ペナルティ', exact: true }).click()
-  await page.getByLabel('開始日時').fill(localDate(Date.now() + 86400000))
+  await page.getByLabel('開始日時').fill(japanDate(Date.now() + 86400000))
   await page.getByLabel('コンテスト時間（分）').fill('90')
   await expect(page.getByText(/^終了日時 .+（1時間30分）$/)).toBeVisible()
   await page.getByRole('button', { name: 'コンテストを公開', exact: true }).click()

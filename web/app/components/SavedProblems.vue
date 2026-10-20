@@ -68,7 +68,7 @@ watch([filter, nextCursor, accountLoading], () => {
   if (filter.value && nextCursor.value && !accountLoading.value && !accountMessage.value) void loadAccount(true)
 })
 
-const updatedLabel = (date: string) => new Date(date).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+const updatedLabel = (date: string) => new Date(date).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })
 onMounted(() => { void loadAccount() })
 </script>
 

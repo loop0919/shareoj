@@ -13,7 +13,7 @@ const statusFilter = computed({
   set: status => { void router.replace({ query: { ...route.query, status: status || undefined } }) },
 })
 const tabStatus = (tab: string) => activeContent.value === tab ? statusFilter.value : ''
-const joined = computed(() => profile.value ? new Date(profile.value.createdAt).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long' }) : '')
+const joined = computed(() => profile.value ? new Date(profile.value.createdAt).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', timeZone: 'Asia/Tokyo' }) : '')
 </script>
 <template>
   <section v-if="profile" class="my-page">

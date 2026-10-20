@@ -3,7 +3,7 @@ import { accountListSchema, type AccountSummary } from '~~/shared/types/account-
 import { contestAuthors, problemLabel, type Contest, type ContestDraft, type ContestDraftResult, type DraftProblem, type Venue } from '~~/shared/types/contest'
 import { shortId } from '~~/shared/utils/short-id'
 import { accountError } from '~/utils/account-problems'
-import { formFromContest, formFromDraft, initialContestForm, participationForm } from '~/utils/contest-form'
+import { formFromContest, formFromDraft, fromJapanInput, initialContestForm, participationForm } from '~/utils/contest-form'
 import { issueMessage } from '~/utils/problem-readiness'
 import { searchProblems } from '~/utils/problem-search'
 import { venuePassphraseRule, venuePassphraseValid } from '~/utils/venue-passphrase'
@@ -69,7 +69,6 @@ const locked = ref(false)
 const published = ref(false)
 const draftIssues = ref<string[]>([])
 const showIssues = ref(false)
-const timezone = ref('')
 type Section = 'description' | 'problems' | 'schedule' | 'participation' | 'manage'
 // The co-setter notification links straight to the management section.
 const section = ref<Section>(route.query.section === 'manage' ? 'manage' : 'description')
@@ -96,7 +95,7 @@ const problemName = (title?: string) => title || '無題の問題'
 const partialNote = '部分点の問題は、問題の満点が配点になります。満点は作問画面の「採点」で変えられます。'
 const maxDurationMinutes = 100_000_000
 const endsAt = computed(() => {
-  const start = new Date(fields.startsAt), minutes = Number(fields.durationMinutes)
+  const start = fromJapanInput(fields.startsAt), minutes = Number(fields.durationMinutes)
   return Number.isFinite(start.getTime()) && Number.isInteger(minutes) && minutes >= 1 && minutes <= maxDurationMinutes ? new Date(start.getTime() + minutes * 60000) : undefined
 })
 function durationText(minutes: number) {
@@ -104,7 +103,7 @@ function durationText(minutes: number) {
   return hours && rest ? `${hours}時間${rest}分` : hours ? `${hours}時間` : `${rest}分`
 }
 const endLabel = computed(() => endsAt.value
-  ? `終了日時 ${new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short' }).format(endsAt.value)}（${durationText(Number(fields.durationMinutes))}）`
+  ? `終了日時 ${new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Tokyo' }).format(endsAt.value)}（${durationText(Number(fields.durationMinutes))}）`
   : '開始日時とコンテスト時間を入力すると、終了日時を表示します。')
 const issueGuide: Record<string, [string, Section]> = {
   title_missing: ['コンテストタイトルを入力してください', 'description'],
@@ -217,7 +216,7 @@ function applySetters(result: ContestDraftResult | Contest) {
   }
   isOwner.value = result.owner !== false
 }
-onMounted(() => { timezone.value = Intl.DateTimeFormat().resolvedOptions().timeZone; void load() })
+onMounted(() => { void load() })
 // Why the server would reject this problem; candidates already exclude other contests, so in_contest means this one.
 function issues(problemId: string) {
   return (summaries.value.get(problemId)?.readiness?.contest ?? []).filter(code => code !== 'in_contest')
@@ -332,7 +331,7 @@ async function reportInvalid() {
 }
 const integer = (value: unknown) => typeof value === 'number' && Number.isInteger(value) && Math.abs(value) <= 1e9 ? value : null
 function draftBody(): Required<ContestDraft> {
-  const start = new Date(fields.startsAt)
+  const start = fromJapanInput(fields.startsAt)
   return {
     title: fields.title, description: fields.description, startsAt: Number.isFinite(start.getTime()) ? start.toISOString() : null,
     // With the switch on, a length that is not a whole number goes as 0, so the draft keeps the freeze and lists the issue.
@@ -479,7 +478,7 @@ async function save() {
   if (!selected.value.length || selected.value.length > 100) {
     section.value = 'problems'; message.value = '問題を1〜100問選んでください。'; return
   }
-  const start = new Date(fields.startsAt), end = endsAt.value
+  const start = fromJapanInput(fields.startsAt), end = endsAt.value
   if (!Number.isFinite(start.getTime()) || start.getTime() <= Date.now() || !end) {
     section.value = 'schedule'; message.value = '未来の開始日時と、1分以上のコンテスト時間を指定してください。'; return
   }
@@ -609,7 +608,7 @@ async function save() {
           <div class="management-content">
             <header><h2 id="contest-schedule-title">期間・ペナルティ</h2><p class="muted">開催時間と誤答ペナルティを設定します。</p></header>
             <fieldset :disabled="!ready || locked || busy">
-              <section class="settings-section"><h3>開催時間</h3><p class="muted">日時は {{ timezone || '端末のタイムゾーン' }} で入力します。公開ページでは日本時間で表示します。</p>
+              <section class="settings-section"><h3>開催時間</h3><p class="muted">日時はJSTで入力します。公開ページでもJSTで表示します。</p>
                 <div class="dates"><div><label for="contest-start">開始日時</label><input id="contest-start" v-model="fields.startsAt" type="datetime-local" required></div><div><label for="contest-duration">コンテスト時間（分）</label><input id="contest-duration" v-model.number="fields.durationMinutes" type="number" required min="1" :max="maxDurationMinutes" step="1"></div></div>
                 <p class="muted end-time">{{ endLabel }}</p>
               </section>

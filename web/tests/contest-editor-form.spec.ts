@@ -3,8 +3,8 @@ import { expect, test } from './fixtures/account'
 import type { Contest, ContestDraft } from '../shared/types/contest'
 import { shortId } from '../shared/utils/short-id'
 
-// The date input reads local time, so a fixed zone keeps the instants in the bodies literal.
-test.use({ timezoneId: 'Asia/Tokyo' })
+// The date input reads Japan time whatever the browser's zone; a browser in UTC proves it, and the instants in the bodies stay literal.
+test.use({ timezoneId: 'UTC' })
 
 const updatedAt = '2026-10-01T00:00:00Z'
 const draftId = 'eeeeeeee-0000-4000-8000-000000000001'
@@ -121,6 +121,8 @@ test('a draft with every setting on, at 0 where it takes a number, opens unchang
   await expect(page.locator('.draft-status')).not.toContainText('未保存の変更があります')
   await openSection(page, '期間・ペナルティ')
   await expect(page.getByLabel('開始日時', { exact: true })).toHaveValue('2099-10-01T09:00')
+  await expect(page.getByText('日時はJSTで入力します。公開ページでもJSTで表示します。', { exact: true })).toBeVisible()
+  await expect(page.locator('.end-time')).toHaveText('終了日時 2099/10/01 10:30（1時間30分）')
   await expect(page.getByLabel('コンテスト時間（分）', { exact: true })).toHaveValue('90')
   await expect(page.getByLabel('誤答ペナルティ（分）', { exact: true })).toHaveValue('0')
   await expect(page.getByRole('switch', { name: '順位表の凍結を行う', exact: true })).toBeChecked()

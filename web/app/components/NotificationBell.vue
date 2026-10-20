@@ -71,7 +71,7 @@ usePolling(refresh, 30_000, () => !!user.value)
           <NuxtLink :to="notificationLink(item)" @click="close">
             <span class="notification-title">{{ notificationTitle(item) }}</span>
             <span>{{ item.actor }}{{ notificationMessages[item.kind] }}</span>
-            <time :datetime="item.createdAt">{{ new Date(item.createdAt).toLocaleString('ja-JP') }}</time>
+            <time :datetime="item.createdAt">{{ new Date(item.createdAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) }}</time>
           </NuxtLink>
         </li>
       </ul>

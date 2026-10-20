@@ -125,3 +125,8 @@ test('links between guides point at existing pages and headings', async ({ page 
     if (hash) await expect(page.locator(`#${hash}`), target).toHaveCount(1)
   }
 })
+
+test('the contest guide says start times are typed in JST', async ({ page }) => {
+  await page.goto('/docs/hosting-contests')
+  await expect(page.locator('article .markdown-body')).toContainText('開始日時はJSTで入力し、公開されるページでもJSTで表示します。')
+})
