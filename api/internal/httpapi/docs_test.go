@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"encoding/json"
-	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"slices"
@@ -15,7 +14,7 @@ import (
 
 func TestPublicDocumentation(t *testing.T) {
 	// Documentation must work without database access, including contest release.
-	mux := newHandler(AuthConfig{}, handlerDependencies{Contests: &contests.Store{}}).(*http.ServeMux)
+	mux := newMux(AuthConfig{}, handlerDependencies{Contests: &contests.Store{}})
 	for _, path := range []string{"/docs", "/docs/", "/openapi.json"} {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, httptest.NewRequest("GET", path, nil))

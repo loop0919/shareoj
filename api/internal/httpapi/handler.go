@@ -18,6 +18,29 @@ func NewHandler(auth ...AuthConfig) http.Handler {
 }
 
 func newHandler(config AuthConfig, private handlerDependencies) http.Handler {
+	return headAsGet(newMux(config, private))
+}
+
+// headAsGet serves HEAD as the GET read, so handlers that branch on the method never treat it as a write.
+// It drops the body here because the Lambda adapter returns whatever the handler writes.
+func headAsGet(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodHead {
+			next.ServeHTTP(w, r)
+			return
+		}
+		get := r.Clone(r.Context())
+		get.Method = http.MethodGet
+		next.ServeHTTP(headResponse{w}, get)
+	})
+}
+
+// headResponse keeps the status and headers of the response and discards its body.
+type headResponse struct{ http.ResponseWriter }
+
+func (headResponse) Write(p []byte) (int, error) { return len(p), nil }
+
+func newMux(config AuthConfig, private handlerDependencies) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health)
 	mux.HandleFunc("POST /auth/login", config.login)
