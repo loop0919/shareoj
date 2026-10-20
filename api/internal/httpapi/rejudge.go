@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"mime"
 	"net/http"
 
 	"judge/api/internal/problems"
@@ -27,11 +26,6 @@ func (p submissionHandler) rejudge(w http.ResponseWriter, r *http.Request, actor
 			return
 		}
 		writeAuthJSON(w, 200, map[string]int64{"pending": pending})
-		return
-	}
-	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || media != "application/json" {
-		authError(w, 415, "json_required")
 		return
 	}
 	var input struct {

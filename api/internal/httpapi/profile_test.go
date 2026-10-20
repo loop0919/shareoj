@@ -60,6 +60,7 @@ func TestProfileRequestBody(t *testing.T) {
 		{"application/json", `{"handle":"ab","version":0}`, 400, "invalid_profile"},
 		{"text/plain", `{}`, 415, "json_required"},
 		{"", `{}`, 415, "json_required"},
+		{"Application/JSON; charset=UTF-8", `{"handle":"ab","version":0}`, 400, "invalid_profile"},
 	} {
 		r := httptest.NewRequest("PUT", "/my/profile", strings.NewReader(tc.body))
 		if tc.contentType != "" {
@@ -170,6 +171,11 @@ func TestProfilesPostgres(t *testing.T) {
 	if w := request("PUT", "/my/profile", "bob", `{"handle":"bob","avatar":"","version":0}`); w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
+	untyped := httptest.NewRequest("POST", "/my/images", strings.NewReader(`{"data":""}`))
+	untyped.Header.Set("Authorization", "Bearer "+f.token(t, "alice", nil))
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, untyped)
+	expect(t, w, 415, "json_required")
 	testContentImages(t, request, store)
 	testPublicSamples(t, store)
 	for _, kind := range []string{"problems", "posts"} {

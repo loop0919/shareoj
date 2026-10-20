@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 )
 
@@ -61,12 +62,17 @@ func health(w http.ResponseWriter, _ *http.Request) {
 	_ = json.NewEncoder(w).Encode(healthResponse{Status: "ok"})
 }
 
-// readJSONBody accepts exactly one JSON value, rejects unknown fields, and bounds reads.
+// readJSONBody accepts exactly one JSON value sent as application/json, rejects unknown fields, and bounds reads.
 func readJSONBody(w http.ResponseWriter, r *http.Request, target any, limit int64) bool {
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		authError(w, http.StatusUnsupportedMediaType, "json_required")
+		return false
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
-	err := decoder.Decode(target)
+	err = decoder.Decode(target)
 	if err == nil {
 		err = decoder.Decode(new(any))
 		if err == io.EOF {

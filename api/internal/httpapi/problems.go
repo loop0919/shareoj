@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"time"
 
 	"judge/api/internal/problems"
@@ -14,10 +13,6 @@ import (
 )
 
 func contentJSON(w http.ResponseWriter, r *http.Request, target any) bool {
-	if strings.Split(r.Header.Get("Content-Type"), ";")[0] != "application/json" {
-		authError(w, 415, "json_required")
-		return false
-	}
 	return readJSONBody(w, r, target, 700<<10)
 }
 

@@ -119,6 +119,16 @@ func TestGenerationWithoutProblemStore(t *testing.T) {
 	expect(t, w, 503, "database_unavailable")
 }
 
+// A judge that is not ready refuses a submission before its content type is checked.
+func TestSubmissionReadinessBeforeContentType(t *testing.T) {
+	h := newHandler(AuthConfig{}, handlerDependencies{Verifier: staticVerifier{}, Submissions: &submissions.Store{}})
+	r := httptest.NewRequest("POST", "/my/submissions", strings.NewReader(`{}`))
+	r.Header.Set("Authorization", "Bearer token")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	expect(t, w, 503, "judging_unavailable")
+}
+
 func TestAuthenticationPreservesHandlerDeadline(t *testing.T) {
 	for _, timeout := range []time.Duration{10 * time.Second, 25 * time.Second} {
 		called := false

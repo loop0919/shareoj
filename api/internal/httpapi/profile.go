@@ -68,10 +68,6 @@ func (p profileHandler) profile(w http.ResponseWriter, r *http.Request, owner st
 		writeAuthJSON(w, 200, map[string]any{"profile": profile})
 		return
 	}
-	if strings.Split(r.Header.Get("Content-Type"), ";")[0] != "application/json" {
-		authError(w, 415, "json_required")
-		return
-	}
 	var input struct {
 		Accounts profiles.Accounts `json:"accounts"`
 		Handle   string            `json:"handle"`

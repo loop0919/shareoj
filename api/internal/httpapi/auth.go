@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"mime"
 	"net/http"
 	"strings"
 	"time"
@@ -166,11 +165,6 @@ func (a AuthConfig) addSecretHash(params map[string]string, username string) {
 }
 
 func readAuthJSON(w http.ResponseWriter, r *http.Request, target any) bool {
-	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || mediaType != "application/json" {
-		authError(w, http.StatusUnsupportedMediaType, "json_required")
-		return false
-	}
 	return readJSONBody(w, r, target, 16<<10)
 }
 
