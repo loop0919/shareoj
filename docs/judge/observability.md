@@ -12,7 +12,7 @@
 | category | 発生箇所 | 通知 |
 | --- | --- | --- |
 | `judge_code` | チェッカー、インタラクタ、集計コードのコンパイル失敗と実行制限超過、testlibの失敗終了、ケースの点と集計コードの出力の書式違い | 作問コードの確認が必要 |
-| `platform` | isolateの起動と清掃、ランタイム照合、S3/SQS/DBの処理、bridgeが部分点のジョブの得点のない結果をJEにした場合（`unscored_result`） | ジャッジ基盤の異常 |
+| `platform` | isolateの起動と清掃、ランタイム照合、S3/SQS/DBの処理、bridgeが送り出せない提出をJEにした場合（壊れたジョブの`job_invalid`、テストファイルの不一致の`test_files_invalid`）、bridgeが部分点のジョブの得点のない結果をJEにした場合（`unscored_result`） | ジャッジ基盤の異常 |
 | `unknown` | 原因未分類の例外やJE | ジャッジ基盤の異常（ログで未分類と確認） |
 
 `judge_code`は作問者の過失を断定する分類ではない。

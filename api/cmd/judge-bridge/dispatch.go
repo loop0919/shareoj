@@ -109,11 +109,16 @@ func (b bridge) dispatchOne(ctx context.Context, tx pgx.Tx) (err error) {
 		return err
 	}
 	var job submissions.Job
-	if err = json.Unmarshal(raw, &job); err != nil {
-		return err
+	if json.Unmarshal(raw, &job) != nil {
+		return finishAsJE(ctx, tx, "job_invalid", id, attempt)
 	}
 	stage = "test_files_resolve"
-	if err = (&submissions.Store{Pool: b.db}).ResolveTestFiles(ctx, &job); err != nil {
+	// Only a mismatch with test_files is permanent; a failed read is retried by the next run.
+	err = (&submissions.Store{Pool: b.db}).ResolveTestFiles(ctx, &job)
+	if errors.Is(err, problems.ErrTestFile) {
+		return finishAsJE(ctx, tx, "test_files_invalid", id, attempt)
+	}
+	if err != nil {
 		return err
 	}
 	if job.Image != b.runtime && b.previous != "" && job.Image == b.previous &&
@@ -127,9 +132,7 @@ func (b bridge) dispatchOne(ctx context.Context, tx pgx.Tx) (err error) {
 		observe("runtime_rebound", "", "", id, attempt)
 	}
 	if job.Image != b.runtime || job.MemoryLimitMB < 64 || job.MemoryLimitMB > 512 {
-		observe("failure", "platform", "runtime_mismatch", id, attempt)
-		_, err = tx.Exec(ctx, `UPDATE submissions SET status='DONE',finished_at=clock_timestamp(),result='{"verdict":"JE","passed":0,"total":0}' WHERE id=$1`, id)
-		return err
+		return finishAsJE(ctx, tx, "runtime_mismatch", id, attempt)
 	}
 	request := map[string]any{"submissionId": id, "attemptId": attempt, "runtime": runtime, "runtimeDigest": job.Image, "source": source, "checker": job.Checker, "interactor": job.Interactor, "easyTest": job.EasyTest, "generate": job.Generate, "validate": job.Validate, "generationBaseBytes": job.GenerationBaseBytes, "generationPrefix": job.GenerationPrefix, "cases": job.Cases, "timeLimitMs": job.TimeLimitMS, "memoryLimitMb": job.MemoryLimitMB}
 	// Only a partial-scoring job carries the key, so other jobs reach the worker exactly as before ADR 0025.
@@ -163,5 +166,12 @@ func (b bridge) dispatchOne(ctx context.Context, tx pgx.Tx) (err error) {
 	stage = "outbox_update"
 	// If commit fails after SendMessage, the same stable attempt is sent again.
 	_, err = tx.Exec(ctx, `UPDATE submissions SET dispatched_at=clock_timestamp() WHERE id=$1`, id)
+	return err
+}
+
+// finishAsJE finalizes a submission that no retry can send, so it does not hold the ones behind it.
+func finishAsJE(ctx context.Context, tx pgx.Tx, reason, id, attempt string) error {
+	observe("failure", "platform", reason, id, attempt)
+	_, err := tx.Exec(ctx, `UPDATE submissions SET status='DONE',finished_at=clock_timestamp(),result='{"verdict":"JE","passed":0,"total":0}' WHERE id=$1`, id)
 	return err
 }
