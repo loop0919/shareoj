@@ -118,11 +118,17 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	auth := authentication{Verifier: d.Verifier, Profiles: d.Profiles}
 	public := func(pattern string, handler http.HandlerFunc, release bool, doc publicOperation) {
 		documentPublicRoute(docs, pattern, doc)
+		// Public handlers get the deadline of the routes that require an account; the release keeps its own.
+		limited := func(w http.ResponseWriter, r *http.Request) {
+			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+			defer cancel()
+			handler(w, r.WithContext(ctx))
+		}
 		if !release {
-			mux.HandleFunc(pattern, handler)
+			mux.HandleFunc(pattern, limited)
 			return
 		}
-		released := releaseBefore(d.Contests, d.Store, judging, func(w http.ResponseWriter, r *http.Request, _ string) { handler(w, r) })
+		released := releaseBefore(d.Contests, d.Store, judging, func(w http.ResponseWriter, r *http.Request, _ string) { limited(w, r) })
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-store")
 			released(w, r, "")

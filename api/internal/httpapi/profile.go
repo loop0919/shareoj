@@ -2,14 +2,12 @@ package httpapi
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"errors"
 	"image/png"
 	"net/http"
 	"regexp"
 	"strings"
-	"time"
 
 	"judge/api/internal/profiles"
 )
@@ -115,9 +113,7 @@ func (p profileHandler) publicProfile(w http.ResponseWriter, r *http.Request) {
 		authError(w, 503, "database_unavailable")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-	profile, err := p.Profiles.GetByHandle(ctx, handle)
+	profile, err := p.Profiles.GetByHandle(r.Context(), handle)
 	if errors.Is(err, profiles.ErrNotFound) {
 		authError(w, 404, "not_found")
 		return

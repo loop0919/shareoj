@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"net/http"
-	"time"
 
 	"judge/api/internal/problems"
 	"judge/api/internal/testfiles"
@@ -29,8 +28,7 @@ func (p problemHandler) publicSamples(w http.ResponseWriter, r *http.Request) {
 		authError(w, 503, "database_unavailable")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
+	ctx := r.Context()
 	cases, err := p.Store.PublicSamples(ctx, id)
 	if err != nil {
 		problemError(w, err)

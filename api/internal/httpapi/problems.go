@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -71,8 +70,7 @@ func (p problemHandler) publishedProblems(w http.ResponseWriter, r *http.Request
 		authError(w, 404, "not_found")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
+	ctx := r.Context()
 
 	if p.Store == nil {
 		authError(w, 503, "database_unavailable")

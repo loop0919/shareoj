@@ -1,9 +1,7 @@
 package httpapi
 
 import (
-	"context"
 	"net/http"
-	"time"
 
 	"judge/api/internal/tags"
 )
@@ -16,9 +14,7 @@ func (p tagHandler) list(w http.ResponseWriter, r *http.Request) {
 		authError(w, 503, "database_unavailable")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-	list, err := p.Store.List(ctx)
+	list, err := p.Store.List(r.Context())
 	if err != nil {
 		problemError(w, err)
 		return
