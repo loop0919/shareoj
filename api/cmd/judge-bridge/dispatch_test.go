@@ -159,46 +159,11 @@ func TestUnsendableSubmissionBecomesJEAndDispatchContinues(t *testing.T) {
 	}
 }
 
-func TestFailedJEUpdateLogsOnlyItsOwnStage(t *testing.T) {
-	mismatched, _ := json.Marshal(submissions.Job{Image: "sha256:" + strings.Repeat("c", 64), TimeLimitMS: 1000, MemoryLimitMB: 256, Cases: []submissions.Case{{Input: "1", Output: "1"}}})
-	for _, tc := range []struct {
-		name string
-		job  []byte
-	}{
-		{"broken job", []byte(`{"cases":"broken"}`)},
-		{"missing test file", queuedJob(missingTestFile)},
-		{"runtime mismatch", mismatched},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			f := newDispatchFixture(t, "", tc.job)
-			id := f.ids[0]
-			// A submission cannot become DONE, so the update that makes it JE fails.
-			for _, sql := range []string{
-				`CREATE FUNCTION refuse_done() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'refused'; END$$`,
-				`CREATE TRIGGER refuse_done BEFORE UPDATE ON submissions FOR EACH ROW WHEN (NEW.status = 'DONE') EXECUTE FUNCTION refuse_done()`,
-			} {
-				if _, err := f.b.db.Exec(context.Background(), sql); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if err := f.b.dispatch(context.Background()); err == nil {
-				t.Fatal("a failed JE update must fail the run")
-			}
-			if got := f.state(id); got != "QUEUED//false/false" {
-				t.Fatalf("a failed JE update must leave the submission for retry: %s", got)
-			}
-			if len(f.sent) != 0 {
-				t.Fatalf("sent: %v", f.sent)
-			}
-			// The reason is logged only once the submission is JE, so only the failed update shows.
-			if got := f.failures(); fmt.Sprint(got) != fmt.Sprint([]string{"platform/finish_je_failed/" + id, "platform/dispatch_failed/"}) {
-				t.Fatalf("failure logs: %v", got)
-			}
-		})
-	}
-}
-
 func TestDispatchLeavesInfrastructureFailuresForRetry(t *testing.T) {
+	// A submission cannot become DONE, so the update that makes it JE fails.
+	const refuseDone = `CREATE FUNCTION refuse_done() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'refused'; END$$;
+CREATE TRIGGER refuse_done BEFORE UPDATE ON submissions FOR EACH ROW WHEN (NEW.status = 'DONE') EXECUTE FUNCTION refuse_done()`
+	mismatched, _ := json.Marshal(submissions.Job{Image: "sha256:" + strings.Repeat("c", 64), TimeLimitMS: 1000, MemoryLimitMB: 256, Cases: []submissions.Case{{Input: "1", Output: "1"}}})
 	for _, tc := range []struct {
 		name, failMethod, setup string
 		job                     []byte
@@ -208,6 +173,10 @@ func TestDispatchLeavesInfrastructureFailuresForRetry(t *testing.T) {
 		{"request send", "POST", "", queuedJob(nil), "request_send_failed"},
 		// A failed read of test_files is not a mismatch, even for a file that is missing.
 		{"test file lookup", "", `ALTER TABLE test_files RENAME TO test_files_unavailable`, queuedJob(missingTestFile), "test_files_resolve_failed"},
+		// The reason is logged only once the submission is JE, so only the failed update shows.
+		{"JE update for broken job", "", refuseDone, []byte(`{"cases":"broken"}`), "finish_je_failed"},
+		{"JE update for missing test file", "", refuseDone, queuedJob(missingTestFile), "finish_je_failed"},
+		{"JE update for runtime mismatch", "", refuseDone, mismatched, "finish_je_failed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newDispatchFixture(t, tc.failMethod, tc.job)

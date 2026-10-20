@@ -61,7 +61,7 @@ test('Google login returns to a same-site path with non-ASCII characters, encode
   expect(login.status()).toBe(200)
   const token = (await context.cookies()).find(cookie => cookie.name === 'openoj_access')!.value
   await context.clearCookies()
-  for (const [next, expected] of [['/problems/post', '/problems/post'], ['/グ', '/%E3%82%B0'],['/%E3%82%B0?q=グ#見出し', '/%E3%82%B0?q=%E3%82%B0#%E8%A6%8B%E5%87%BA%E3%81%97']]) {
+  for (const [next, expected] of [['/problems/post', '/problems/post'], ['/グ', '/%E3%82%B0'], ['/%E3%82%B0?q=グ#見出し', '/%E3%82%B0?q=%E3%82%B0#%E8%A6%8B%E5%87%BA%E3%81%97']]) {
     const start = await context.request.get(`/auth/google?${new URLSearchParams({ next: next! })}`, { maxRedirects: 0 })
     const state = new URL(start.headers().location!).searchParams.get('state')!
     const callback = await context.request.get(`/auth/google/callback?${new URLSearchParams({ state, code: token })}`, { maxRedirects: 0 })
