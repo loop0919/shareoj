@@ -5,5 +5,8 @@ import { privateHeaders } from '../../../../../utils/private-request'
 export default defineEventHandler(async event => {
   privateHeaders(event)
   if (!hasSession(event)) throw createError({ statusCode: 401 })
-  return privateAPI(event, `/my/problems/${getRouterParam(event, 'id')}/test-files/${getRouterParam(event, 'file')}`)
+  const id = getRouterParam(event, 'id') ?? ''
+  const file = getRouterParam(event, 'file') ?? ''
+  if (!/^[a-f0-9-]{36}$/.test(id) || !/^[a-f0-9-]{36}$/.test(file)) throw createError({ statusCode: 404 })
+  return privateAPI(event, `/my/problems/${id}/test-files/${file}`)
 })
