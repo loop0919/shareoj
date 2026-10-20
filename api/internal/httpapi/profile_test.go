@@ -46,6 +46,31 @@ func TestAvatarValidation(t *testing.T) {
 	}
 }
 
+// Saving a profile reads its JSON body like the other endpoints; the store is never reached.
+func TestProfileRequestBody(t *testing.T) {
+	handler := profileHandler{Profiles: profiles.New(nil)}
+	for _, tc := range []struct {
+		contentType, body string
+		status            int
+		code              string
+	}{
+		{"application/json", `{"handle":"ab","version":0}` + strings.Repeat(" ", 200<<10), 413, "request_too_large"},
+		{"application/json", `{"handle":"ab","version":0} {}`, 400, "invalid_request"},
+		{"application/json", `{"handle":"ab","version":0,"owner":"x"}`, 400, "invalid_request"},
+		{"application/json", `{"handle":"ab","version":0}`, 400, "invalid_profile"},
+		{"text/plain", `{}`, 415, "json_required"},
+		{"", `{}`, 415, "json_required"},
+	} {
+		r := httptest.NewRequest("PUT", "/my/profile", strings.NewReader(tc.body))
+		if tc.contentType != "" {
+			r.Header.Set("Content-Type", tc.contentType)
+		}
+		w := httptest.NewRecorder()
+		handler.profile(w, r, "alice")
+		expect(t, w, tc.status, tc.code)
+	}
+}
+
 func TestProfilesPostgres(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
