@@ -66,23 +66,23 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | C01 | CLI pushの下書き合成を関数に切り出し、規則を特性テストで固定 | `cli/main.go` | 低・高・S | 修正・修正 | 完了（`0c17328`） |
 | C02 | SQLの文字列置換をやめ、テスター用一覧と提出詳細の非公開列を明示的に組み立てる | `api/internal/problems/store.go`、`api/internal/submissions/store.go` | 低・高・S | 修正・維持 | 計画済み（範囲を`problems/store.go`の`list()`に限定。submissions側は除外） |
 | C03 | BFFのエラー変換を切り出し、画面へ渡すエラーコードを名前付きの一覧にする | `web/server/utils/private-api.ts` | 低・高・S | 修正・維持 | 計画済み（エラーコードの一覧を1行1コードの名前付き集合にし、変換を特性テストで固定） |
-| C04 | useProblemDraftの既定値と自動保存の再予約をまとめる | `web/app/composables/useProblemDraft.ts` | 低・高・S | 維持・修正 | 計画済み |
+| C04 | useProblemDraftの既定値と自動保存の再予約をまとめる | `web/app/composables/useProblemDraft.ts` | 低・高・S | 維持・修正 | 完了（`dbc7784`） |
 | C05 | ジャッジの失敗判定と上限検証をそれぞれ1か所にまとめる | `judge/sandbox.py`、`judge/host.py`、`judge/interactive.py` | 低・中・S | 修正・維持 | 計画済み（失敗判定だけをまとめる。上限検証の共通化は採らない） |
 | C06 | コンテスト提出の閲覧条件をSQL断片1つにまとめ、2つの一覧で共有する | `api/internal/submissions/contest.go`、`problem.go` | 中・高・S | 維持・維持 | 完了（`da26be1`） |
-| C07 | 提出とリジャッジで重複する「採点できる下書きか」の条件を1か所で生成する | `api/internal/submissions/store.go`、`rejudge.go` | 中・高・M | 修正・修正 | 未着手 |
+| C07 | 提出とリジャッジで重複する「採点できる下書きか」の条件を1か所で生成する | `api/internal/submissions/store.go`、`rejudge.go` | 中・高・M | 修正・修正 | 計画済み |
 | C08 | 問題とプロフィールのストアを具体型で持ち、実行時の型アサーションをやめる | `api/internal/httpapi/routes.go`ほか | 中・高・M | 修正・修正 | 未着手 |
-| C09 | 「利用できる言語」の判定と既定の言語を1か所にまとめる | `web/app/composables/useJudgeCatalog.ts`ほか | 低・中・S | 修正・維持 | 未着手 |
+| C09 | 「利用できる言語」の判定と既定の言語を1か所にまとめる | `web/app/composables/useJudgeCatalog.ts`ほか | 低・中・S | 修正・維持 | 計画済み |
 | C10 | 自分の問題の詳細と一覧のスキーマを共通化 | `web/shared/types/account-problems.ts` | 低・中・S | 却下・却下 | 却下（変更漏れの根拠が履歴の読み違いで、共通化するとサーバー側の差が隠れる） |
 | C11 | problems.scanが読む列のリストを共有する | `api/internal/problems/store.go`ほか | 低・中・S | 修正・維持 | 未着手 |
 | C12 | 問題ページとコンテストの問題ページで、下書きから公開用の項目へ写す処理を共有する | `api/internal/problems/publication.go`、`api/internal/contests/store.go` | 低・中・S | 維持・維持 | 完了（`1bd2582`） |
-| C13 | サイトマップと共有画像の静的ページ一覧を1つにする | `web/server/routes/sitemap.xml.get.ts`、`web/shared/social-pages.ts` | 低・中・S | 修正・修正 | 未着手 |
+| C13 | サイトマップと共有画像の静的ページ一覧を1つにする | `web/server/routes/sitemap.xml.get.ts`、`web/shared/social-pages.ts` | 低・中・S | 修正・修正 | 計画済み（固定ページ7件の写しを`socialPages`のキーにまとめる） |
 | C14 | 送り出しの順序と待ち時間の起点を1つのSQL断片で定義する | `api/internal/submissions/store.go`、`api/cmd/judge-bridge/` | 低・中・S | 却下・維持 | 却下（変更漏れの実例がなく、既に振る舞いのテストで固定済み） |
-| C15 | コンテストAPIの、パス末尾とメソッドの順序に依存する分岐をルートごとに分ける | `api/internal/httpapi/contests.go`、`routes.go` | 中・高・L | 未検証 | 未着手 |
-| C16 | `host.judge()`をコンパイル・実行・集計の段階に分ける | `judge/host.py`、`judge/interactive.py` | 中・高・L | 未検証 | 未着手 |
-| C17 | ContestEditorのフォームとAPIの変換を純粋関数にする | `web/app/components/ContestEditor.vue` | 中・高・M | 未検証 | 未着手 |
-| C18 | 3つのMarkdown編集画面の表示切替・ツールバー・分割ハンドルを部品にする | `web/app/pages/problems/new.vue`ほか | 中・高・L | 未検証 | 未着手 |
-| C19 | ScoringEditorの採点方式の切り替え（退避と復元）を純粋関数に分ける | `web/app/components/ScoringEditor.vue` | 中・中・M | 未検証 | 未着手 |
-| C20 | マイグレーションの一覧を埋め込みFSとファイル名から組み立てる | `api/internal/database/database.go` | 中・中・M | 未検証 | 未着手 |
+| C15 | コンテストAPIの、パス末尾とメソッドの順序に依存する分岐をルートごとに分ける | `api/internal/httpapi/contests.go`、`routes.go` | 中・高・L | 修正・修正 | 保留（`contest()`を分けると、`%2F`を含むURLの応答（D01）が200から404に必ず変わる。外部動作の変更になるので人間の判断を待つ。挙動の変わらない部分だけでは効果が低い） |
+| C16 | `host.judge()`をコンパイル・実行・集計の段階に分ける | `judge/host.py`、`judge/interactive.py` | 中・高・L | 却下・修正 | 却下（部分点の読み取りは既に1か所にあり、残る違いは2経路で本当に違う処理。規模とジャッジ中心部の変更に見合う効果がない） |
+| C17 | ContestEditorのフォームとAPIの変換を純粋関数にする | `web/app/components/ContestEditor.vue` | 中・高・M | 修正・修正 | 計画済み（12個のrefを1つのフォームにし、読み込みを純粋関数へ。本文の組み立てはコンポーネントに残す） |
+| C18 | 3つのMarkdown編集画面の表示切替・ツールバー・分割ハンドルを部品にする | `web/app/pages/problems/new.vue`ほか | 中・高・L | 却下・修正 | 却下（引用されたコミットの大半は部品化の対象に触れていない） |
+| C19 | ScoringEditorの採点方式の切り替え（退避と復元）を純粋関数に分ける | `web/app/components/ScoringEditor.vue` | 中・中・M | 却下・修正 | 却下（変更履歴は機能を作った当日の作業で、保守の痛みの根拠にならない。提案の関数は純粋にならない） |
+| C20 | マイグレーションの一覧を埋め込みFSとファイル名から組み立てる | `api/internal/database/database.go` | 中・中・M | 修正・修正 | 計画済み（範囲を一覧の関数化と、ファイル番号との整合テストに限定。embed.FSへの移行はしない） |
 
 上位20件の枠外とした候補（offsetの検証、CLIのコマンド表など）と除外理由は`.local/refactor/dropped.json`にある。
 `judge/rollout.py`の整理は、本番AWSなしでは重要な挙動を確かめられないため除外した。
@@ -133,6 +133,17 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 - 検証（最終tree）: API `go test -count=1 ./...`（DB連携）、`go vet`、`gofmt -l`、`make package package-judge`、webの`npm run build`、アカウント系Playwright（30件）がすべて成功。
 - 別件（記録のみ）: 項目を足すときは、Goの型と`SetStatement`に加えて、`web/shared/types/problem.ts`と`web/server/api/problems/[id].get.ts`（非公開の問題の表示で下書きから同じ項目を写す）も変える必要がある。
 
+### C04 新しい問題の草稿の既定値と自動保存の予約（`dbc7784`）
+
+- 計画: [plans/C04-problem-draft-defaults.md](plans/C04-problem-draft-defaults.md)、裁定: [plans/C04-rulings.md](plans/C04-rulings.md)。計画レビューは承認（軽微な指摘2件）。
+- 変更: `useProblemDraft`が初期化と読み込み失敗時のリセットに写しで持っていた既定値を`initialProblemDraft()`に、3か所の600msの予約を`scheduleAutosave()`と`autosaveDelayMs`にまとめた。両方を同時に直したコミットは10件以上あった。
+- Ruling: 計画が受け入れていた「閉じるときに保留中のタイマーを消す」微差は採らず、`clearTimeout`の位置は呼び出し側のまま残した（D24に記録）。自動保存の時刻とPUTの回数はどの場合も変わらない。
+- 特性テスト: 読み込み失敗で既定値に戻ること（T1）、離脱ダイアログと削除確認を閉じた後に600msで1回だけ保存すること（T2、T3。`page.clock`で599/600msの境界を固定）、手動保存だけの問題で編集やダイアログの後もタイマーを張らないこと（T4）。2つの変異（既定値の`tags`を抜く、`manualSaveOnly`の判定を外す）を検出することを確かめた。後者は既存のテストでは検出できなかった。
+- simplify: `scheduleAutosave`のコメントを守るべき制約が分かる内容にし、T2・T3の同じ確認と`manual-problem-save.spec.ts`の写した準備をまとめ、使われなくなった2つの定数の`export`を外した。
+- レビュー: 必須1件。通常の編集（watch）経路で手動保存の問題にタイマーを張らないことを確かめるテストがなかったので、T4に足した（変異で検出を確認）。
+- 検証（最終tree）: webの`npm run typecheck`、`npm run package:lambda`、`npm run test:lambda`、`npm run build`、ブラウザーPlaywright（455件）、アカウント系Playwright（30件）、`node --test scripts/smoke-frontend.test.mjs`がすべて成功。
+- 軽微（未対応）: T2・T3は`runFor(2000)`の直後に同期で記録を読むため、遅れて届くPUTを見逃しうる。編集とダイアログの開閉が同じ時刻なので、境界の起点（閉じた時点か編集した時点か）は区別できない。どちらも今回変えていない箇所の退行に限られる。
+
 ## 保留事項
 
 調査で見つけた別件の不具合と、仕様の判断が要る点。直さずに記録だけする。
@@ -166,8 +177,9 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 
 ## 現在の作業と次の手順
 
-- 実行順の目安は、C01、C06、C12、C04、C02、C03、C05、C11、C09、C07、C08、C13。C15〜C20は着手前に反証を行う。
-- C04、C02、C03、C05は計画済み（いずれも計画レビュー承認）。C09は計画中。次はC04の実装。
-- C11はC02と同じ`api/internal/problems/store.go`に触れるため、C02のコミット後に計画する。
+- 計画済み（いずれも計画レビュー承認）: C02、C03、C05、C07、C09、C13、C17、C20。次はC02の実装。
+- C11はC02と同じ`api/internal/problems/store.go`に触れるため、C02のコミット後に計画する。C08は未計画。
+- C15〜C20は2観点の反証を行い、C15を保留、C16・C18・C19を却下、C17・C20を範囲を絞って採用した。
+- 2026-10-20 03:40ごろ利用上限で一時停止し、08:30に再開した。停止時に失敗したエージェント（C04のsimplify、C07の計画レビュー、C20の反証）は、ワークフローの再開で実行し直した。完了済みの作業は重複して実行していない。
 - 前の候補のレビュー中に、次の候補の計画を読み取りだけで進める（計画は`.local/`に書くので、固定したtreeに影響しない）。
 - Ruling（C04）: 計画は「閉じるときに保留中のタイマーを消す」微差を受け入れていたが、ダイアログの裏で草稿が非同期に変わったときのPUTの回数が変わるため採らない。`scheduleAutosave()`は`clearTimeout`を含めず、呼び出し側の`clearTimeout`は今の位置のまま残す。誤っていた場合の損失: 二重のタイマー（計画のD2）が別件として残る。
