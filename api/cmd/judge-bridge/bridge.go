@@ -53,7 +53,7 @@ func (b bridge) deploymentStatus(ctx context.Context) (any, error) {
       (SELECT MIN(c.starts_at-interval '30 minutes') FROM contests c
         WHERE c.ends_at+interval '15 minutes' > statement_timestamp()
           AND EXISTS (SELECT 1 FROM contest_participants p WHERE p.contest_id=c.id))
-      FROM submissions WHERE runtime LIKE '%-isolate' AND status <> 'DONE'`).Scan(&status.Pending, &status.Undispatched, &status.NextContestWindowAt)
+      FROM submissions WHERE runtime=ANY($1::text[]) AND status <> 'DONE'`, submissions.IsolateRuntimeIDs()).Scan(&status.Pending, &status.Undispatched, &status.NextContestWindowAt)
 	if err != nil {
 		return nil, errors.New("deployment status unavailable")
 	}

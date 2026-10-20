@@ -368,10 +368,11 @@ func checkOutboxAndResultIdempotency(t *testing.T, runtime string, memory int) {
 		}
 	}
 	checkDeployment(1, 1)
+	// A runtime removed from the list is neither dispatched nor expired, so it must not hold a rollout either.
 	if _, err := db.Exec(ctx, `UPDATE submissions SET runtime='retired-language-isolate' WHERE id=$1`, id); err != nil {
 		t.Fatal(err)
 	}
-	checkDeployment(1, 1)
+	checkDeployment(0, 0)
 	if _, err := db.Exec(ctx, `UPDATE submissions SET runtime=$2 WHERE id=$1`, id, runtime); err != nil {
 		t.Fatal(err)
 	}
