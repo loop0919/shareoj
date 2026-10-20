@@ -48,6 +48,19 @@ class RunnerTests(unittest.TestCase):
                     sandbox.execute(job)
                 self.assertEqual(limits, ['--cg-mem=1048576', f'--cg-mem={memory * 1024}'])
 
+    def test_invalid_time_limits_are_rejected(self):
+        job = dict(runtime='cpp17-isolate', runtimeDigest='sha256:test', source='int main(){}',
+                   memoryLimitMb=512, cases=[dict(input='', output='')])
+        for ms in (None, True, '1000', 1000.0, 0, 99, 5001, 5100, 150, 1050):
+            with self.subTest(invalid=ms):
+                job['timeLimitMs'] = ms
+                with self.assertRaisesRegex(ValueError, 'time limit'):
+                    host.validate_job(job, 'sha256:test')
+        for ms in (100, 1000, 5000):
+            with self.subTest(valid=ms):
+                job['timeLimitMs'] = ms
+                host.validate_job(job, 'sha256:test')
+
     def test_two_tles_skip_remaining_cases_only_for_normal_submissions(self):
         import tempfile
         for mode in (None, 'easyTest', 'validate', 'generate', 'interactive'):
