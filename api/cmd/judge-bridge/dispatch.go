@@ -110,12 +110,14 @@ func (b bridge) dispatchOne(ctx context.Context, tx pgx.Tx) (err error) {
 	}
 	var job submissions.Job
 	if json.Unmarshal(raw, &job) != nil {
+		stage = "finish_je"
 		return finishAsJE(ctx, tx, "job_invalid", id, attempt)
 	}
 	stage = "test_files_resolve"
 	// Only a mismatch with test_files is permanent; a failed read is retried by the next run.
 	err = (&submissions.Store{Pool: b.db}).ResolveTestFiles(ctx, &job)
 	if errors.Is(err, problems.ErrTestFile) {
+		stage = "finish_je"
 		return finishAsJE(ctx, tx, "test_files_invalid", id, attempt)
 	}
 	if err != nil {
@@ -132,6 +134,7 @@ func (b bridge) dispatchOne(ctx context.Context, tx pgx.Tx) (err error) {
 		observe("runtime_rebound", "", "", id, attempt)
 	}
 	if job.Image != b.runtime || job.MemoryLimitMB < 64 || job.MemoryLimitMB > 512 {
+		stage = "finish_je"
 		return finishAsJE(ctx, tx, "runtime_mismatch", id, attempt)
 	}
 	request := map[string]any{"submissionId": id, "attemptId": attempt, "runtime": runtime, "runtimeDigest": job.Image, "source": source, "checker": job.Checker, "interactor": job.Interactor, "easyTest": job.EasyTest, "generate": job.Generate, "validate": job.Validate, "generationBaseBytes": job.GenerationBaseBytes, "generationPrefix": job.GenerationPrefix, "cases": job.Cases, "timeLimitMs": job.TimeLimitMS, "memoryLimitMb": job.MemoryLimitMB}
@@ -170,8 +173,11 @@ func (b bridge) dispatchOne(ctx context.Context, tx pgx.Tx) (err error) {
 }
 
 // finishAsJE finalizes a submission that no retry can send, so it does not hold the ones behind it.
+// It logs the reason only after the update succeeds; the caller's finish_je stage logs a failed update.
 func finishAsJE(ctx context.Context, tx pgx.Tx, reason, id, attempt string) error {
+	if _, err := tx.Exec(ctx, `UPDATE submissions SET status='DONE',finished_at=clock_timestamp(),result='{"verdict":"JE","passed":0,"total":0}' WHERE id=$1`, id); err != nil {
+		return err
+	}
 	observe("failure", "platform", reason, id, attempt)
-	_, err := tx.Exec(ctx, `UPDATE submissions SET status='DONE',finished_at=clock_timestamp(),result='{"verdict":"JE","passed":0,"total":0}' WHERE id=$1`, id)
-	return err
+	return nil
 }

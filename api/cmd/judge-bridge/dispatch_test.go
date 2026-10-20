@@ -159,6 +159,45 @@ func TestUnsendableSubmissionBecomesJEAndDispatchContinues(t *testing.T) {
 	}
 }
 
+func TestFailedJEUpdateLogsOnlyItsOwnStage(t *testing.T) {
+	mismatched, _ := json.Marshal(submissions.Job{Image: "sha256:" + strings.Repeat("c", 64), TimeLimitMS: 1000, MemoryLimitMB: 256, Cases: []submissions.Case{{Input: "1", Output: "1"}}})
+	for _, tc := range []struct {
+		name string
+		job  []byte
+	}{
+		{"broken job", []byte(`{"cases":"broken"}`)},
+		{"missing test file", queuedJob(missingTestFile)},
+		{"runtime mismatch", mismatched},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newDispatchFixture(t, "", tc.job)
+			id := f.ids[0]
+			// A submission cannot become DONE, so the update that makes it JE fails.
+			for _, sql := range []string{
+				`CREATE FUNCTION refuse_done() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'refused'; END$$`,
+				`CREATE TRIGGER refuse_done BEFORE UPDATE ON submissions FOR EACH ROW WHEN (NEW.status = 'DONE') EXECUTE FUNCTION refuse_done()`,
+			} {
+				if _, err := f.b.db.Exec(context.Background(), sql); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := f.b.dispatch(context.Background()); err == nil {
+				t.Fatal("a failed JE update must fail the run")
+			}
+			if got := f.state(id); got != "QUEUED//false/false" {
+				t.Fatalf("a failed JE update must leave the submission for retry: %s", got)
+			}
+			if len(f.sent) != 0 {
+				t.Fatalf("sent: %v", f.sent)
+			}
+			// The reason is logged only once the submission is JE, so only the failed update shows.
+			if got := f.failures(); fmt.Sprint(got) != fmt.Sprint([]string{"platform/finish_je_failed/" + id, "platform/dispatch_failed/"}) {
+				t.Fatalf("failure logs: %v", got)
+			}
+		})
+	}
+}
+
 func TestDispatchLeavesInfrastructureFailuresForRetry(t *testing.T) {
 	for _, tc := range []struct {
 		name, failMethod, setup string
