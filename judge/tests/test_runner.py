@@ -460,6 +460,25 @@ class RunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'invalid source'):
             sandbox.execute(job, compile_phase=True)
 
+    def test_one_source_limit_covers_validation_and_reading_back_the_source(self):
+        import tempfile
+        self.assertEqual(sandbox.SOURCE_LIMIT, 131072)
+        runtime = RUNTIMES['python314-isolate']
+        for limit in (8, 200000):
+            with self.subTest(limit=limit), patch.object(sandbox, 'SOURCE_LIMIT', limit), \
+                    tempfile.TemporaryDirectory() as tmp:
+                job = dict(runtime='python314-isolate', runtimeDigest='sha256:test', source='#' * limit,
+                           memoryLimitMb=512, timeLimitMs=1000, cases=[dict(input='', output='')])
+                host.validate_job(job, 'sha256:test')
+                (Path(tmp) / 'main.py').write_text(job['source'])
+                self.assertEqual(sandbox.collect_artifact(Path(tmp), runtime), job['source'].encode())
+                job['source'] += '#'
+                with self.assertRaisesRegex(ValueError, 'source'):
+                    host.validate_job(job, 'sha256:test')
+                with patch.object(sandbox, 'invoke') as invoke, self.assertRaisesRegex(ValueError, 'invalid source'):
+                    sandbox.execute(job, compile_phase=True)
+                invoke.assert_not_called()
+
     def test_cleanup_failure_stops_worker(self):
         import subprocess
         import tempfile

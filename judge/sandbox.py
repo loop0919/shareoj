@@ -18,6 +18,8 @@ ISOLATE = '/usr/local/bin/isolate'
 META = Path('/run/judge/meta')
 ARTIFACT = Path('/run/judge/main')
 OUTPUT_LIMIT = 16 * 1024 * 1024
+# Source validation (host.validate_job, compile phase) and reading an interpreted source back share this limit.
+SOURCE_LIMIT = 128 * 1024
 SCORE_FILE_LIMIT = 4096
 # testlib caps a message at 32,000 bytes before XML escaping, which can grow it sixfold.
 RESULT_FILE_LIMIT = 256 * 1024
@@ -77,7 +79,7 @@ def execute(request, compile_phase=False, *, artifact=None, checker_files=None, 
     runtime = RUNTIMES[request.get('runtime', 'cpp17-isolate')]
     if compile_phase:
         source = request.get('source')
-        if not isinstance(source, str) or not 0 < len(source.encode()) <= 131072 or '\0' in source:
+        if not isinstance(source, str) or not 0 < len(source.encode()) <= SOURCE_LIMIT or '\0' in source:
             raise ValueError('invalid source')
         memory, cpu, wall = 1024, 30, 40
     else:
@@ -254,7 +256,7 @@ def judge_verdict(metrics, protocol='legacy', points=False):
 
 def collect_artifact(box, runtime):
     if runtime['artifact'] == 'source':
-        return regular_read(box / runtime['source'], 131072)
+        return regular_read(box / runtime['source'], SOURCE_LIMIT)
     if runtime['artifact'] == 'generated-source':
         if not stat.S_ISDIR((box / runtime['compile_output']).parent.lstat().st_mode):
             raise ValueError('invalid compiler output directory')
