@@ -35,7 +35,9 @@ export default defineEventHandler(async event => {
     const result = await exchangeGoogleCode(event, query.code as string, verifier)
     const account = profileResultSchema.parse(await privateAPI(event, '/my/profile', { token: result.access_token }))
     saveSession(event, result, true)
-    return sendRedirect(event, account.profile ? next : (next === '/my' ? '/onboarding' : `/onboarding?${new URLSearchParams({ next })}`), 303)
+    // A Location header must be ASCII, so encode what loginDestination lets through; an existing %xx stays as is.
+    const destination = new URL(next, 'http://x')
+    return sendRedirect(event, account.profile ? destination.pathname + destination.search + destination.hash :(next === '/my' ? '/onboarding' : `/onboarding?${new URLSearchParams({ next })}`), 303)
   } catch {
     return sendRedirect(event, '/login?socialError=failed', 303)
   }

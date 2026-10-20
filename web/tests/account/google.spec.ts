@@ -54,6 +54,22 @@ test('Google login preserves a tester invitation and rejects external return pat
   }
 })
 
+test('Google login returns to a same-site path with non-ASCII characters, encoded', async ({ context }) => {
+  // The token endpoint stub (tests/fixtures/cognito-token.mjs) hands the code back as the access token,
+  // so a password login supplies a fixture token for alice, who has a profile.
+  const login = await context.request.post('/api/auth/login', { headers: { origin: 'http://127.0.0.1:13002' }, data: { username: 'alice@example.test', password: 'test-password' } })
+  expect(login.status()).toBe(200)
+  const token = (await context.cookies()).find(cookie => cookie.name === 'openoj_access')!.value
+  await context.clearCookies()
+  for (const [next, expected] of [['/problems/post', '/problems/post'], ['/グ', '/%E3%82%B0'],['/%E3%82%B0?q=グ#見出し', '/%E3%82%B0?q=%E3%82%B0#%E8%A6%8B%E5%87%BA%E3%81%97']]) {
+    const start = await context.request.get(`/auth/google?${new URLSearchParams({ next: next! })}`, { maxRedirects: 0 })
+    const state = new URL(start.headers().location!).searchParams.get('state')!
+    const callback = await context.request.get(`/auth/google/callback?${new URLSearchParams({ state, code: token })}`, { maxRedirects: 0 })
+    expect(callback.status()).toBe(303)
+    expect(callback.headers().location).toBe(expected)
+  }
+})
+
 test('CLI Google login uses the CLI PKCE challenge and returns only a signed code ticket to loopback', async ({ context }) => {
   const verifier = 'v'.repeat(43)
   const challenge = createHash('sha256').update(verifier).digest('base64url')

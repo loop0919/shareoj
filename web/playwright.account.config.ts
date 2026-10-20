@@ -16,7 +16,7 @@ export default defineConfig({
       gracefulShutdown: { signal: 'SIGTERM', timeout: 10000 },
     },
     {
-      command: 'node .output/server/index.mjs',
+      command: 'node --import ./tests/fixtures/cognito-token.mjs .output/server/index.mjs',
       env: { HOST: '127.0.0.1', PORT: webPort, NUXT_API_BASE_URL: `http://${apiAddress}`, NUXT_PUBLIC_SITE_URL: siteURL, NUXT_COGNITO_DOMAIN: 'https://example.auth.ap-northeast-1.amazoncognito.com', NUXT_COGNITO_CLIENT_ID: 'browser-client', NUXT_COGNITO_CLIENT_SECRET: 'browser-secret' },
       wait: { stdout: /Listening on/ },
     },
