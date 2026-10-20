@@ -8,7 +8,7 @@ const session = { cookie: 'openoj_access=valid-access', origin: 'https://judge.e
 const begin = { size: 1, sha256: 'a'.repeat(64) }
 
 // Playwright's request resolves dot segments such as %2e%2e before sending, so this sends the path as written.
-function send(method: 'GET' | 'POST', path: string, headers: Record<string, string> = session, body?: unknown) {
+function send(method: 'GET' | 'POST', path: string, headers: Record<string, string>, body?: unknown) {
   return new Promise<{ status: number, body: string }>((resolve, reject) => {
     const request = httpRequest({ host: '127.0.0.1', port: 13000, method, path, headers: body === undefined ? headers : { ...headers, 'content-type': 'application/json' } }, response => {
       let text = ''
