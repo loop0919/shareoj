@@ -195,9 +195,11 @@ def scaled_heap(at_512, memory):
     return at_512 * memory // 512
 
 
-def java_heap(command, memory):
-    """The Java command with its -Xmx256m (the value at 512 MiB) scaled to this run's memory limit."""
-    return [f'-Xmx{scaled_heap(256, memory)}m' if arg == '-Xmx256m' else arg for arg in command]
+def java_heap(command, memory, *, interactor=False):
+    """The Java command with its -Xmx256m (the value at 512 MiB) replaced for this run."""
+    # The interactor keeps a fixed cap; a submission's cap scales with its memory limit.
+    heap = '-Xmx128m' if interactor else f'-Xmx{scaled_heap(256, memory)}m'
+    return [heap if arg == '-Xmx256m' else arg for arg in command]
 
 
 def prepare_dependencies(box, runtime):

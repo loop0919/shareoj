@@ -65,6 +65,14 @@ class InteractiveTests(unittest.TestCase):
                     self.assertEqual([[arg for arg in command if arg.startswith(prefix)] for command in commands],
                                      [[prefix + value], [prefix + interactor]])
 
+    def test_java_interactor_heap_comes_from_the_flag_not_the_memory_value(self):
+        # Like run_args, java_heap tells the interactor apart by its flag, so its cap ignores the memory value.
+        command = list(interactive.RUNTIMES['java24-isolate']['run'])
+        for memory in (64, 256, 512):
+            with self.subTest(memory=memory):
+                self.assertEqual([arg for arg in interactive.sandbox.java_heap(command, memory, interactor=True)
+                                  if arg.startswith('-Xmx')], ['-Xmx128m'])
+
     def run_pair(self, source, interactor, wall=3, statuses=None, protocol='legacy', points=False):
         processes = [subprocess.Popen([sys.executable, '-c', code], stdin=subprocess.PIPE,
                                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)

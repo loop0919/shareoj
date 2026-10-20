@@ -105,7 +105,7 @@ def execute(job, case, artifact, diagnostic, score_file=False):
                                               result_file=score_file and i == 1)
             memory = job['memoryLimitMb'] if i == 0 else 256
             if RUNTIMES[name]['artifact'] == 'java':
-                command = sandbox.java_heap(command, memory)
+                command = sandbox.java_heap(command, memory, interactor=i == 1)
             args = sandbox.run_args(name, job['timeLimitMs'] / 1000 if i == 0 else 5,
                                     wall, memory, meta=meta, interactive=True, interactor=i == 1)
             commands.append([sandbox.ISOLATE, '--cg', f'--box-id={i}', *args, '--', *command])
