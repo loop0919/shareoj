@@ -611,4 +611,10 @@ func TestRollingUpdateHoldsAndRebindsUndispatchedSubmissions(t *testing.T) {
 			t.Fatalf("%s: got %s/%s, want %s", name, state, image, want)
 		}
 	}
+	// Unlike the burst hold, the window has no 3-hour cap and lasts until 15 minutes after the end.
+	contest("44444444-4444-4444-8444-444444444444", -4*time.Hour, -10*time.Minute, true)
+	window, err = time.Parse(time.RFC3339Nano, status()["nextContestWindowAt"].(string))
+	if err != nil || time.Since(window) < 4*time.Hour || time.Since(window) > 5*time.Hour {
+		t.Fatalf("contest window without a cap: %v %v", window, err)
+	}
 }
