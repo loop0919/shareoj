@@ -182,3 +182,20 @@ test('Ctrl+S saves the contest draft', async ({ page }) => {
   expect(bodies).toHaveLength(1)
   expect(bodies[0]!.draft.title).toBe('ショートカットで保存')
 })
+
+test('Ctrl+S does nothing while composing, with Shift or Alt, or on key repeat', async ({ page }) => {
+  const bodies = await routeDraft(page)
+  await page.goto('/my/contests/new')
+  await page.getByLabel('コンテストタイトル', { exact: true }).fill('保存しない操作')
+  const prevented = await page.evaluate(() => [{ isComposing: true }, { shiftKey: true }, { altKey: true }, { repeat: true }].map((init) => {
+    const event = new KeyboardEvent('keydown', { key: 's', ctrlKey: true, cancelable: true, bubbles: true, ...init })
+    window.dispatchEvent(event)
+    return event.defaultPrevented
+  }))
+  // As in the problem and post editors, only a repeat still keeps the browser from saving the page.
+  expect(prevented).toEqual([false, false, false, true])
+  await page.getByLabel('コンテストタイトル', { exact: true }).fill('ショートカットで保存')
+  await page.keyboard.press('Control+s')
+  await expect(page.locator('.draft-status')).toContainText('公開まであと')
+  expect(bodies.map(body => body.draft.title)).toEqual(['ショートカットで保存'])
+})

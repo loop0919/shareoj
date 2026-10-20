@@ -146,10 +146,9 @@ const {
 } = useMarkdownEditor()
 const mathSnippet = '\n$$\na^2 + b^2 = c^2\n$$\n'
 function saveWithShortcut(event: KeyboardEvent) {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
-    event.preventDefault()
-    if (ready.value && !locked.value && !busy.value) form.value?.requestSubmit()
-  }
+  if (event.isComposing || event.altKey || event.shiftKey || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
+  event.preventDefault()
+  if (!event.repeat && ready.value && !locked.value && !busy.value) form.value?.requestSubmit()
 }
 onMounted(() => window.addEventListener('keydown', saveWithShortcut))
 onBeforeUnmount(() => window.removeEventListener('keydown', saveWithShortcut))
