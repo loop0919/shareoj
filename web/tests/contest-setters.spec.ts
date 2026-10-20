@@ -175,6 +175,9 @@ test('after the start a setter still manages co-setters while the settings stay 
   await expect(page.getByLabel('招待リンク', { exact: true })).toHaveValue(new RegExp(`${token}$`))
   await page.getByRole('button', { name: '期間・ペナルティ', exact: true }).click()
   await expect(page.getByLabel('誤答ペナルティ（分）')).toBeDisabled()
+  // The settings are locked, yet the description still shows in the preview.
+  await page.getByRole('button', { name: 'タイトル・説明', exact: true }).click()
+  await expect(page.locator('.contest-preview').getByText('説明', { exact: true })).toBeVisible()
 })
 
 test('after the end invitations close while the owner can still remove co-setters', async ({ page }) => {

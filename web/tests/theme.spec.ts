@@ -34,7 +34,7 @@ test('system tracking, persistent overrides, SSR and editor input survive theme 
   expect(await (await page.request.get(problem)).text()).toContain('data-theme="dark"')
   expect(errors).toEqual([])
 })
-for (const path of ['/', '/problems/new', '/blog/new']) {
+for (const path of ['/', '/problems/new', '/blog/new', '/my/contests/new']) {
   test(`mobile selector and navigation persistence: ${path}`, async ({ page }, testInfo) => {
     await page.emulateMedia({ colorScheme: 'light' })
     await page.setViewportSize({ width: 320, height: 740 })

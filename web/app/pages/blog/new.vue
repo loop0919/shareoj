@@ -119,6 +119,14 @@ onBeforeRouteLeave(() => leaving || (!busy.value && (!ready.value || snapshot() 
 function beforeUnload(event: BeforeUnloadEvent) { if (ready.value && snapshot() !== saved) { event.preventDefault(); event.returnValue = '' } }
 onMounted(() => window.addEventListener('beforeunload', beforeUnload))
 onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
+const renderedSource = ref(markdown.value)
+let previewTimer: ReturnType<typeof setTimeout> | undefined
+watch(markdown, () => {
+  clearTimeout(previewTimer)
+  previewTimer = setTimeout(() => { renderedSource.value = markdown.value }, 150)
+})
+watch(ready, () => { renderedSource.value = markdown.value })
+onBeforeUnmount(() => clearTimeout(previewTimer))
 
 
 const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
@@ -214,7 +222,7 @@ onBeforeUnmount(() => {
         <div class="pane-heading"><h2>プレビュー</h2></div>
         <div ref="preview" class="preview-document post-preview" @scroll="previewScrolled">
           <p class="preview-title">{{ title || '無題の記事' }}</p>
-          <ProblemMarkdown v-if="markdown.trim()" :source="markdown" live />
+          <ProblemMarkdown v-if="renderedSource.trim()" :source="renderedSource" live />
           <p v-else class="muted">本文を書くと、ここにプレビューが表示されます。</p>
         </div>
       </section>
