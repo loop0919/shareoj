@@ -31,7 +31,7 @@ for (const { state, status, json, banner } of unavailable) {
     await Promise.all([page.waitForResponse('**/api/runtimes'), page.goto('/problems/new?fresh=1')])
     await expect(page.locator('.judge-banner')).toHaveText(banner)
     await page.getByRole('button', { name: '生成・検証・判定', exact: true }).click()
-    await expect(page.locator('.generator-options select option')).toHaveCount(0)
+    await expect(page.locator('.generator-options select option')).toHaveText(['cpp23-gcc（現在利用できません）'])
     await expect(page.getByRole('button', { name: '生成する', exact: true })).toBeDisabled()
     await expectNewCode(page, 'cpp23-gcc', ['cpp23-gcc（現在利用できません）'], 'testlib')
   })
@@ -47,9 +47,10 @@ for (const { state, status, json, banner } of unavailable) {
   })
 }
 
-for (const { items, preferred, protocol } of [
-  { items: [{ id: 'python314', label: 'Python' }, { id: 'cpp23-gcc', label: 'C++23' }], preferred: 'cpp23-gcc', protocol: 'testlib' },
-  { items: [{ id: 'cpp17', label: 'C++17' }, { id: 'python314', label: 'Python' }], preferred: 'cpp17', protocol: 'legacy' },
+for (const { items, preferred, protocol, generator } of [
+  { items: [{ id: 'python314', label: 'Python' }, { id: 'cpp23-gcc', label: 'C++23' }], preferred: 'cpp23-gcc', protocol: 'testlib', generator: ['Python', 'C++23'] },
+  // New generator code is in C++23 (GCC), which this judge does not offer.
+  { items: [{ id: 'cpp17', label: 'C++17' }, { id: 'python314', label: 'Python' }], preferred: 'cpp17', protocol: 'legacy', generator: ['cpp23-gcc（現在利用できません）', 'C++17', 'Python'] },
 ]) {
   test(`new checker and aggregator code start in ${preferred} when the judge offers ${items.map(item => item.id).join(', ')}`, async ({ page }) => {
     const labels = items.map(item => item.label)
@@ -57,7 +58,7 @@ for (const { items, preferred, protocol } of [
     await Promise.all([page.waitForResponse('**/api/runtimes'), page.goto('/problems/new?fresh=1')])
     await page.getByRole('button', { name: '生成・検証・判定', exact: true }).click()
     // These labels differ from the server-rendered catalog, so they show that the offered runtimes arrived.
-    await expect(page.locator('.generator-options select option')).toHaveText(labels)
+    await expect(page.locator('.generator-options select option')).toHaveText(generator)
     await expect(page.getByRole('button', { name: '生成する', exact: true })).toBeEnabled()
     await expectNewCode(page, preferred, labels, protocol)
   })
@@ -77,4 +78,33 @@ test('new judge code prefers C++23 (GCC), then the first runtime, and names C++2
   expect(preferredRuntime([{ id: 'cpp17' }, { id: 'python314' }])).toBe('cpp17')
   expect(preferredRuntime([])).toBe('cpp23-gcc')
   expect(preferredRuntime([{ id: '' }, { id: 'cpp17' }])).toBe('')
+})
+
+// The saved runtime stays selected and is named as unavailable, as in the checker and aggregator selects.
+test('the generator keeps a saved runtime the judge no longer offers and names it as unavailable', async ({ page }) => {
+  const offered = [{ id: 'cpp23-gcc', label: 'C++23' }, { id: 'python314', label: 'Python' }]
+  await page.route('**/api/runtimes', route => route.fulfill({ json: { items: offered } }))
+  await Promise.all([page.waitForResponse('**/api/runtimes'), page.goto('/problems/new?fresh=1')])
+  await page.locator('#problem-title').fill('生成の言語')
+  await page.getByRole('button', { name: '生成・検証・判定', exact: true }).click()
+  const language = page.locator('.generator-options select')
+  await expect(language.locator('option')).toHaveText(['C++23', 'Python'])
+  await language.selectOption('python314')
+  await page.getByLabel('入力生成のコード', { exact: true }).fill('print(1)')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
+  await page.route('**/api/runtimes', route => route.fulfill({ json: { items: offered.slice(0, 1) } }))
+  await Promise.all([page.waitForResponse('**/api/runtimes'), page.reload()])
+  await page.getByRole('button', { name: '生成・検証・判定', exact: true }).click()
+  // The server-rendered catalog still offers Python; the options show that the narrowed one arrived.
+  await expect(language.locator('option')).toHaveText(['python314（現在利用できません）', 'C++23'])
+  await expect(language).toHaveValue('python314')
+  await page.getByRole('button', { name: '生成する', exact: true }).click()
+  await expect(page.locator('.generator [role=alert]')).toHaveText('利用できる言語を選択してください。')
+  // Each mode keeps its own runtime; validation was left in C++23, which is still offered.
+  await page.getByRole('button', { name: '入力検証', exact: true }).click()
+  await expect(language.locator('option')).toHaveText(['C++23'])
+  await page.getByRole('button', { name: '入力生成', exact: true }).click()
+  await language.selectOption('cpp23-gcc')
+  await expect(language.locator('option')).toHaveText(['C++23'])
 })

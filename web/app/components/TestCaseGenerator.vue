@@ -151,7 +151,7 @@ async function generate() {
       <div v-show="judging"><slot name="checker" /></div>
       <div v-show="!judging">
         <div class="generator-options">
-          <label>言語<select v-model="program.runtime" :disabled="disabled || busy"><option v-for="item in available" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
+          <label>言語<select v-model="program.runtime" :disabled="disabled || busy"><option v-if="!available.some(item => item.id === program.runtime)" :value="program.runtime">{{ program.runtime }}（現在利用できません）</option><option v-for="item in available" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
           <label v-if="mode === 'input'">開始ケース番号<input v-model="start" type="number" step="1" :disabled="disabled || busy"></label>
           <label v-if="mode === 'input'">生成件数<input v-model="count" type="number" min="1" max="100" step="1" :disabled="disabled || busy"></label>
         </div>

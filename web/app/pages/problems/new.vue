@@ -83,20 +83,12 @@ const sidebarExpanded = ref(false)
 const problemSettingsExpanded = ref(false)
 const showErrors = ref(false)
 const touched = reactive({ title: false, markdown: false })
-const renderedSource = ref(activeMarkdown.value)
-let previewTimer: ReturnType<typeof setTimeout> | undefined
-watch(activeMarkdown, () => {
-  clearTimeout(previewTimer)
-  previewTimer = setTimeout(() => { renderedSource.value = activeMarkdown.value }, 150)
-})
-watch(ready, () => { renderedSource.value = activeMarkdown.value; nextTick(syncSource) })
+const { renderedSource, renderNow } = usePreviewSource(() => activeMarkdown.value, ready)
+watch(ready, () => nextTick(syncSource))
 watch(section, () => {
-  clearTimeout(previewTimer)
-  renderedSource.value = activeMarkdown.value
+  renderNow()
   nextTick(syncSource)
 })
-
-onBeforeUnmount(() => clearTimeout(previewTimer))
 
 function clearTestCases() {
   if (generating.value) return
@@ -106,7 +98,6 @@ function openManagement() {
   section.value = 'management'
 }
 const inputSnippet = '\n```input\n$N$\n$A_1 \\quad A_2 \\quad \\cdots \\quad A_N$\n```\n'
-const mathSnippet = '\n```math\n\\sum_{i=1}^{N} A_i\n```\n'
 </script>
 
 <template>

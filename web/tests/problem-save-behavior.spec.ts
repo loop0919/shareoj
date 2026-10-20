@@ -66,11 +66,12 @@ test('edits during an in-flight save are serialized with the next server version
   await expect(page.locator('#problem-title')).toHaveValue('後から編集した内容')
 })
 
-// Saves a new problem, then freezes the clock and records the title of every later write.
-// expectOneAutosave checks that the pending edit is written exactly once, when the 600 ms debounce ends.
-async function saveWithFrozenClock(page: Page) {
+// Saves a new problem, after prepare edits it further if given, then freezes the clock and records the title of every
+// later write. expectOneAutosave checks that the pending edit is written exactly once, when the 600 ms debounce ends.
+async function saveWithFrozenClock(page: Page, prepare?: () => Promise<void>) {
   await page.goto('/problems/new?fresh=1')
   await page.locator('#problem-title').fill('保存済みの題名')
+  await prepare?.()
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page).toHaveURL(/problem=/)
   const status = page.locator('[data-save-state]')
@@ -119,4 +120,33 @@ test('cancelling the delete confirmation autosaves only an unsaved edit, once af
   await page.locator('#problem-title').fill('削除せずに編集')
   await cancelDelete()
   await expectOneAutosave('削除せずに編集')
+})
+
+test('a generation that finishes behind the leave dialog leaves a single autosave timer', async ({ page }) => {
+  const { expectOneAutosave } = await saveWithFrozenClock(page, async () => {
+    await page.getByRole('button', { name: '生成・検証・判定', exact: true }).click()
+    await page.getByLabel('入力生成のコード', { exact: true }).fill('print(1)')
+  })
+  let finish!: () => void
+  const finished = new Promise<void>(resolve => { finish = resolve })
+  await page.route('**/api/my/submissions', async (route) => {
+    await finished
+    await route.fulfill({ json: { id: 'generation-job', status: 'DONE', result: { verdict: 'AC', cases: [{ output: '1\n' }] } } })
+  })
+  const generation = page.waitForRequest('**/api/my/submissions')
+  await page.getByRole('button', { name: '生成する', exact: true }).click()
+  await generation
+  // An edit during the generation makes leaving ask first, so the generation finishes behind the dialog.
+  await page.getByRole('button', { name: '問題文', exact: true }).click()
+  await page.locator('#problem-title').fill('生成中の編集')
+  await page.getByRole('link', { name: 'ShareOJ マイページ', exact: true }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  finish()
+  await expect(page.getByText('1件の入力を追加しました。', { exact: true })).toBeAttached()
+  await page.getByRole('button', { name: '編集を続ける', exact: true }).click()
+  await expect(page.getByRole('dialog')).toBeHidden()
+  // A timer left from the generation would write 600 ms after closing, before this edit's debounce ends.
+  await page.clock.runFor(300)
+  await page.locator('#problem-title').fill('閉じた後の編集')
+  await expectOneAutosave('閉じた後の編集')
 })

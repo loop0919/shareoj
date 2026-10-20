@@ -175,7 +175,7 @@ export function useProblemDraft() {
   }
 
   function saveWithShortcut(event: KeyboardEvent) {
-    if (event.isComposing || event.altKey || event.shiftKey || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
+    if (!isSaveShortcut(event)) return
     event.preventDefault()
     if (event.repeat || resolveLeave || confirmingDelete.value) return
     saveDraft(true)
@@ -231,15 +231,16 @@ export function useProblemDraft() {
     window.addEventListener('keydown', saveWithShortcut)
   })
 
-  // Starts the autosave timer without cancelling a pending one; callers that restart the debounce clear it first.
+  // Restarts the autosave timer, cancelling a pending one first, so at most one is ever pending, even when the draft
+  // changed behind a dialog.
   // Problems that save only on an explicit action get no timer, since saveDraft would only show its save reminder.
   function scheduleAutosave() {
+    clearTimeout(saveTimer)
     if (!manualSaveOnly.value) saveTimer = setTimeout(() => saveDraft(), autosaveDelayMs)
   }
   watch(draft, () => {
     if (!ready.value) return
     saveState.value = 'dirty'
-    clearTimeout(saveTimer)
     scheduleAutosave()
   })
 

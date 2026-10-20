@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	_ "embed"
 	"errors"
 	"flag"
 	"fmt"
@@ -233,7 +234,21 @@ output_suffix = ".out"
 samples = ["sample1"]
 `
 
+// The statement and editorial a new problem starts with; web/app/utils/problem-draft.ts imports the same file.
+//
+//go:embed problem-template.json
+var markdownTemplate []byte
+
+type markdownText struct {
+	Statement string `json:"statement"`
+	Editorial string `json:"editorial"`
+}
+
 func initProblem(directory string) error {
+	var text markdownText
+	if err := decodeJSON(markdownTemplate, &text); err != nil {
+		return err
+	}
 	// Mkdir deliberately refuses existing directories; init never overwrites work.
 	if err := os.Mkdir(directory, 0755); err != nil {
 		return err
@@ -241,8 +256,8 @@ func initProblem(directory string) error {
 	files := map[string]string{
 		"problem.toml":     template,
 		".gitignore":       ".shareoj.json\n.shareoj.lock\n",
-		"statement.md":     "## 問題文\n\n<!-- ここに問題文を記載 -->\n\n$T$ 個のテストケースが与えられるので、それぞれについて答えてください。\n\n## 制約\n\n- 入力される値はすべて整数\n\n## 入力\n\n入力は以下の形式で標準入力から与えられる。\n```input\n$T$\n$\\mathrm{case}_1$\n$\\mathrm{case}_2$\n$\\vdots$\n$\\mathrm{case}_T$\n```\n\n各テストケース $\\mathrm{case}_t ~ (1 \\leq t \\leq T)$ は以下の形式で与えられる。\n```input\n```\n\n## 出力\n\n$T$ 行出力せよ。 $t$ 行目には $t$ 番目のテストケースについての答えを出力せよ。\n\n<!-- テストケース画面の「サンプルを問題文に追加」ボタンから、サンプルを追加できます。 -->\n",
-		"editorial.md":     "## 解説\n\n<!-- ここに解説を記載 -->\n",
+		"statement.md":     text.Statement,
+		"editorial.md":     text.Editorial,
 		"input.cpp":        "#include <iostream>\nint main() { long long n; std::cin >> n; n = (n % 1000000000 + 1000000000) % 1000000000; std::cout << n << \" \" << n + 1 << \"\\n\"; }\n",
 		"output.cpp":       "#include <iostream>\nint main() { long long a, b; std::cin >> a >> b; std::cout << a + b << \"\\n\"; }\n",
 		"validate.cpp":     "#include <iostream>\nint main() { long long a, b; if (!(std::cin >> a >> b) || a < 0 || a > 1000000000 || b < 0 || b > 1000000000) return 1; std::cin >> std::ws; return std::cin.eof() ? 0 : 1; }\n",
@@ -348,12 +363,14 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		}
 		return err
 	}
-	needsDirectory := command == "init" || command == "check" || command == "push"
 	if command == "pull" && flags.NArg() != 2 {
 		return errors.New("expected pull <problem-id> <directory>; place options before the problem ID")
 	}
-	if (needsDirectory && flags.NArg() != 1) || (!needsDirectory && command != "pull" && flags.NArg() != 0) {
+	if (command == "init" || command == "check" || command == "push") && flags.NArg() != 1 {
 		return errors.New("expected one directory for init/check/push; place options before the directory")
+	}
+	if (command == "login" || command == "logout") && flags.NArg() != 0 {
+		return fmt.Errorf("%s takes no positional arguments", command)
 	}
 	if expected < -1 || expected > maxVersion {
 		return errors.New("invalid --expect-version")

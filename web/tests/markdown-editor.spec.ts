@@ -57,6 +57,33 @@ for (const [path, selector] of [
     await editor.press('Enter')
     await expect.poll(() => editor.locator('.cm-line').allTextContents()).toEqual(['```text', '- literal', ''])
   })
+
+  test(`the preview in ${path} follows 150 ms after the last edit`, async ({ page }) => {
+    await page.goto(path!)
+    const editor = page.locator(selector!)
+    await expect(editor).toBeEditable()
+    const preview = page.locator('#preview-pane')
+    await page.clock.install()
+    await page.clock.pauseAt(new Date(Date.now() + 1000))
+    await editor.fill('最初の段落')
+    await page.clock.runFor(100)
+    await expect(preview).not.toContainText('最初の段落')
+    await editor.fill('次の段落')
+    await page.clock.runFor(149)
+    await expect(preview).not.toContainText('次の段落')
+    await page.clock.runFor(1)
+    await expect(preview).toContainText('次の段落')
+  })
+
+  test(`the math button in ${path} inserts a math block`, async ({ page }) => {
+    await page.goto(path!)
+    const editor = page.locator(selector!)
+    await expect(editor).toBeEditable()
+    await editor.fill('数式の前')
+    await editor.press('ControlOrMeta+End')
+    await page.locator('.editor-toolbar').getByRole('button', { name: '数式', exact: true }).click()
+    await expect.poll(() => editor.locator('.cm-line').allTextContents()).toEqual(['数式の前', '```math', '\\sum_{i=1}^{N} A_i', '```', ''])
+  })
 }
 
 test('toolbar insertion preserves the selection, participates in undo, and enforces the length limit', async ({ page }) => {
