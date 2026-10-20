@@ -47,6 +47,26 @@ test('robots and sitemap expose canonical public entry points', async ({ request
   }
 })
 
+test('every sitemap entry point advertises a working share image', async ({ request }) => {
+  const xml = await (await request.get('/sitemap.xml')).text()
+  const locations = [...xml.matchAll(/<loc>(.*?)<\/loc>/g)].map(match => match[1]!)
+  expect(locations).not.toHaveLength(0)
+  for (const location of locations) {
+    const entry = await request.get(new URL(location).pathname)
+    expect(entry.status()).toBe(200)
+    const meta = (await entry.text()).match(/<meta[^>]*property="og:image"[^>]*>/)?.[0]
+    const image = meta?.match(/content="([^"]+)"/)?.[1]
+    expect(image, location).toMatch(/^https:\/\/judge\.example\/og\/.+\.png$/)
+    const response = await request.get(new URL(image!).pathname)
+    expect(response.status(), image).toBe(200)
+    expect(response.headers()['content-type']).toBe('image/png')
+    const png = await response.body()
+    expect(png.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a')
+    expect(png.readUInt32BE(16)).toBe(1200)
+    expect(png.readUInt32BE(20)).toBe(630)
+  }
+})
+
 test('site identity and metadata follow client navigation', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('navigation', { name: 'メインナビゲーション' }).getByRole('link', { name: 'コンテスト', exact: true }).click()

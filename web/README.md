@@ -305,8 +305,9 @@ the font license is in `server/assets/fonts/LICENSE.txt`. Nuxt stages the WASM u
 Dynamic images fetch only the public API, never session cookies or private fallbacks.
 Private and pre-start contest problems have no image preview. Responses use `no-store`
 to recheck publication on each fetch; X and Discord may independently cache previews.
-Guide titles live in `shared/social-pages.ts`. After deployment, verify a public URL
-with the [Discord Embed Debugger](https://discord.com/developers/embeds).
+The fixed pages' image titles live in `shared/social-pages.ts`, whose paths are also the
+sitemap's entry points; guide titles come from `shared/docs.ts`. After deployment, verify
+a public URL with the [Discord Embed Debugger](https://discord.com/developers/embeds).
 
 ## 作問とデータ取得の責務
 
