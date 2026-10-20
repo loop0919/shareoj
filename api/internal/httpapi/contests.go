@@ -59,7 +59,7 @@ func (p contestHandler) contest(w http.ResponseWriter, r *http.Request, owner st
 		}
 		err = p.Contests.Join(r.Context(), id, owner, in)
 		if err == nil {
-			result, err = p.Contests.Get(r.Context(), id, owner)
+			result, err = p.get(r, id, owner)
 		}
 	case r.Method == http.MethodPut:
 		var in contests.Input
