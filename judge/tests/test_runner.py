@@ -196,6 +196,27 @@ class RunnerTests(unittest.TestCase):
         reply['memoryBytes'] = float('nan')
         with self.assertRaises(ValueError): host.case_result(reply, 0, case)
 
+    def test_case_failure_flags_follow_ole_mle_tle_re_priority(self):
+        def reply(**changes):
+            return dict(index=0, status='', oom=False, overflow=False, exitCode=0, signal=0,
+                        cpuTimeMs=1, wallTimeMs=2, memoryBytes=4096, output='') | changes
+        # Every output differs from the expected one, so a failure judged after the comparison would read WA.
+        for overflow, oom, status, exit_code, signal, expected in [
+                (True, True, 'TO', 1, 9, 'OLE'), (True, False, '', 0, 0, 'OLE'),
+                (False, True, 'TO', 1, 9, 'MLE'), (False, True, '', 0, 0, 'MLE'),
+                (False, False, 'TO', 1, 9, 'TLE'), (False, False, 'TO', 0, 0, 'TLE'),
+                (False, False, 'SG', 0, 9, 'RE'), (False, False, 'RE', 1, 0, 'RE'),
+                (False, False, '', 1, 0, 'RE'), (False, False, '', 0, 9, 'RE'),
+                (False, False, '', 0, 0, 'WA')]:
+            with self.subTest(overflow=overflow, oom=oom, status=status, exitCode=exit_code, signal=signal):
+                result = host.case_result(reply(overflow=overflow, oom=oom, status=status, exitCode=exit_code, signal=signal),
+                                          0, {'output': 'expected'})
+                self.assertEqual(result['verdict'], expected)
+        self.assertEqual(host.case_result(reply(), 0, {'output': ' \n'})['verdict'], 'AC')
+        # A failed generation keeps its verdict and does not expose the output.
+        self.assertEqual(host.case_result(reply(status='TO', output=base64.b64encode(b'\0').decode()), 0, {'output': ''}, generate=True),
+                         {'name': 'ケース1', 'verdict': 'TLE', 'cpuTimeMs': 1, 'wallTimeMs': 2, 'memoryBytes': 4096})
+
     def test_judge_keeps_expected_output_private_and_compiles_once(self):
         calls = []
         progress = []

@@ -122,6 +122,49 @@ class InteractiveTests(unittest.TestCase):
             result, _ = self.run_pair(*codes, statuses={i: {'overflow': True}})
             self.assertEqual(result, 'OLE' if i == 0 else 'JE')
 
+    def test_resource_flags_of_each_side_follow_relay_rules(self):
+        # The peer keeps running, so only the finished side's metrics decide the result.
+        for i, flags, expected in [
+                (0, {'oom': True}, 'MLE'), (0, {'status': 'TO'}, 'TLE'), (0, {'status': 'TO', 'oom': True}, 'MLE'),
+                (0, {'overflow': True, 'oom': True}, 'OLE'), (0, {'exitCode': 1}, 'RE'),
+                (1, {'oom': True}, 'JE'), (1, {'status': 'TO'}, 'JE'), (1, {'status': 'TO', 'wallTimeout': True}, 'TLE')]:
+            with self.subTest(side=i, flags=flags):
+                codes = ['import time; time.sleep(10)'] * 2
+                codes[i] = 'pass'
+                result, log = self.run_pair(*codes, statuses={i: flags})
+                self.assertEqual(result, expected)
+                if 'wallTimeout' in flags:
+                    self.assertIn('経過時間超過', log)
+
+    def test_total_output_limit_wins_over_finished_metrics(self):
+        # The writer's metrics arrive in the same poll that first sees its total over the limit.
+        for i, finished, expected in [
+                (0, dict(status='', exitCode=0, signal=0, overflow=False, oom=True), 'OLE'),
+                (0, dict(status='RE', exitCode=1, signal=0, overflow=False, oom=False), 'OLE'),
+                (1, dict(status='RE', exitCode=1, signal=0, overflow=False, oom=False), 'JE')]:
+            with self.subTest(side=i, finished=finished):
+                codes = ['import time; time.sleep(10)'] * 2
+                codes[i] = "import sys; sys.stdout.write('x'*20000); sys.stdout.flush(); import time; time.sleep(10)"
+                processes = [subprocess.Popen([sys.executable, '-c', code], stdin=subprocess.PIPE,
+                                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
+                             for code in codes]
+                log = []
+                def observe(j):
+                    # Only the writer sends 'x', so this counts the bytes relayed from it.
+                    relayed = sum(entry.count('x') for entry in log)
+                    return finished if j == i and relayed > 10000 else None
+                try:
+                    with patch.object(interactive.sandbox, 'OUTPUT_LIMIT', 10000):
+                        result = interactive.relay(processes, observe, 3, log.append)
+                finally:
+                    for p in processes:
+                        if p.poll() is None:
+                            p.kill()
+                        p.wait()
+                        p.stdin.close()
+                        p.stdout.close()
+                self.assertEqual(result, expected)
+
     def test_jobs_reject_conflicting_modes_and_bad_interactors(self):
         from test_checker import job
         request = job()

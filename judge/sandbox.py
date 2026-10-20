@@ -224,6 +224,21 @@ def prepare_program(box, runtime, artifact, files=None, *, protocol='legacy', in
     return command
 
 
+def failure_verdict(metrics):
+    """Resource or exit failure of a run (OLE, MLE, TLE or RE), or None for a clean exit or a run still going; callers decide what it means for judge code."""
+    if metrics is None:
+        return None
+    if metrics['overflow']:
+        return 'OLE'
+    if metrics['oom']:
+        return 'MLE'
+    if metrics['status'] == 'TO':
+        return 'TLE'
+    if metrics['status'] or metrics['exitCode'] or metrics['signal']:
+        return 'RE'
+    return None
+
+
 def judge_verdict(metrics, protocol='legacy', points=False):
     if metrics['overflow'] or metrics['oom'] or metrics['status'] == 'TO':
         return 'JE'
