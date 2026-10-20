@@ -71,7 +71,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | C06 | コンテスト提出の閲覧条件をSQL断片1つにまとめ、2つの一覧で共有する | `api/internal/submissions/contest.go`、`problem.go` | 中・高・S | 維持・維持 | 完了（`da26be1`） |
 | C07 | 提出とリジャッジで重複する「採点できる下書きか」の条件を1か所で生成する | `api/internal/submissions/store.go`、`rejudge.go` | 中・高・M | 修正・修正 | 完了（`67fe6b4`） |
 | C08 | 問題とプロフィールのストアを具体型で持ち、実行時の型アサーションをやめる | `api/internal/httpapi/routes.go`ほか | 中・高・M | 修正・修正 | 完了（`57b902c`） |
-| C09 | 「利用できる言語」の判定と既定の言語を1か所にまとめる | `web/app/composables/useJudgeCatalog.ts`ほか | 低・中・S | 修正・維持 | 計画済み |
+| C09 | 「利用できる言語」の判定と既定の言語を1か所にまとめる | `web/app/composables/useJudgeCatalog.ts`ほか | 低・中・S | 修正・維持 | 完了（`2d1807a`） |
 | C10 | 自分の問題の詳細と一覧のスキーマを共通化 | `web/shared/types/account-problems.ts` | 低・中・S | 却下・却下 | 却下（変更漏れの根拠が履歴の読み違いで、共通化するとサーバー側の差が隠れる） |
 | C11 | problems.scanが読む列のリストを共有する | `api/internal/problems/store.go`ほか | 低・中・S | 修正・維持 | 完了（`18b879d`） |
 | C12 | 問題ページとコンテストの問題ページで、下書きから公開用の項目へ写す処理を共有する | `api/internal/problems/publication.go`、`api/internal/contests/store.go` | 低・中・S | 維持・維持 | 完了（`1bd2582`） |
@@ -218,6 +218,17 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 - レビュー: 必須1件。共有した定数のcontest列が壊れても、どのテストも失敗しなかった（既存のテストは部分文字列の比較で、`contestEditors`の欄に一致していた）。トップレベルの`contestId`を直接確かめるテストを足し、変異で検出できることを確かめた。
 - 検証（最終tree）: API `go test -count=1 ./...`（DB連携）、`go vet`、`gofmt -l`、`make package package-judge`、webの`npm run build`、アカウント系Playwright（30件）がすべて成功。
 
+### C09 利用できる言語の判定と既定の言語（`2d1807a`）
+
+- 計画: [plans/C09-judge-catalog-availability.md](plans/C09-judge-catalog-availability.md)。計画レビューは承認（軽微な指摘4件。実装時に反映）。
+- 変更: メンテナンス中や取得失敗時に言語の一覧を空にする規則（4つのコンポーネントに写されていた。5943ab4で4つ目を追加）を`usableRuntimes(catalog, error)`に、新しい判定用コードの既定の言語の式（2か所）を`preferredRuntime(items)`にまとめた（`web/app/utils/judge-catalog.ts`）。式は元のまま移した。
+- 守った点: 各画面の選択肢、「（現在利用できません）」の選択肢、既定の言語、`useJudgeCatalog()`、D14。レビュー担当が元の式と新しい関数を1000通り以上の入力で比べ、差がないことを確かめた。
+- 特性テスト: `web/tests/judge-catalog.spec.ts`（E2E 6件。メンテナンス中でも言語を並べる応答で、4画面がフラグに従うことと、既定の言語の選び方を確かめる。nodeテスト2件）。既存の`maintenance.spec.ts`は空の一覧を返すため、画面がフラグを見なくなっても検出できなかった。変異（1画面だけフラグを見ない）を検出することを確かめた。取得失敗（502）では、Nuxtがdataを消すため`error`の配線の誤りをE2Eで見分けられず、nodeテストだけが固定している。
+- simplify: 2つのE2Eで写していた10手順を`expectNewCode`にまとめ、コメントを短くした。
+- レビュー: 4観点とも必須の指摘なし。
+- 検証（最終tree）: webの`npm run typecheck`、`npm run package:lambda`、`npm run test:lambda`、`npm run build`、ブラウザーPlaywright（468件）、アカウント系Playwright（30件）、smokeがすべて成功。
+- 軽微（未対応）: nodeテストの`preferredRuntime([{ id: '' }, ...])`はAPIが返さない入力で`??`を固定している。`usableRuntimes`の`error`の型が`unknown`なので、呼び出し側が`.value`を付け忘れても型で防げない（今の4か所は正しい）。
+
 ## 保留事項
 
 調査で見つけた別件の不具合と、仕様の判断が要る点。直さずに記録だけする。
@@ -253,7 +264,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 
 ## 現在の作業と次の手順
 
-- 計画済み（いずれも計画レビュー承認）: C09、C13、C17（webの3件）。次はC09の実装。
+- 計画済み（いずれも計画レビュー承認）: C13、C17（webの2件）。次はC13の実装。
 - C11はC02・C08と同じ`api/internal/problems/store.go`に触れるため、その後に計画する。
 - C15〜C20は2観点の反証を行い、C15を保留、C16・C18・C19を却下、C17・C20を範囲を絞って採用した。
 - 2026-10-20 03:40ごろ利用上限で一時停止し、08:30に再開した。停止時に失敗したエージェント（C04のsimplify、C07の計画レビュー、C20の反証）は、ワークフローの再開で実行し直した。完了済みの作業は重複して実行していない。
