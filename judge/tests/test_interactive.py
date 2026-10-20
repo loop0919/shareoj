@@ -11,30 +11,35 @@ import interactive
 
 
 class InteractiveTests(unittest.TestCase):
+    def execute_stubbed(self, request, **prepare_program):
+        commands = []
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for i in range(2):
+                (root / str(i) / 'box').mkdir(parents=True)
+            def invoke(args, *, box_id=0, **kwargs):
+                return subprocess.CompletedProcess(args, 0, stdout=str(root / str(box_id)).encode())
+            def popen(command, **kwargs):
+                commands.append(command)
+                meta = Path(next(arg.removeprefix('--meta=') for arg in command if arg.startswith('--meta=')))
+                meta.write_text('time:0.1\ntime-wall:0.2\ncg-mem:1024')
+                return Mock(returncode=0, poll=Mock(return_value=0))
+            with patch.object(interactive.sandbox, 'invoke', invoke), \
+                    patch.object(interactive.sandbox, 'META', root / 'meta'), \
+                    patch.object(interactive.sandbox, 'prepare_program', **prepare_program), \
+                    patch.object(interactive.subprocess, 'Popen', popen), \
+                    patch.object(interactive, 'relay', return_value='AC'):
+                result = interactive.execute(request, request['cases'][0], root / 'checker', lambda _: None)
+        return result, commands
+
     def test_submission_memory_limit_is_separate_from_interactor_limit(self):
         from test_checker import job
         for memory in (64, 315, 512):
-            with self.subTest(memory=memory), tempfile.TemporaryDirectory() as tmp:
-                root = Path(tmp)
-                for i in range(2):
-                    (root / str(i) / 'box').mkdir(parents=True)
+            with self.subTest(memory=memory):
                 request = job()
                 request['memoryLimitMb'] = memory
                 request['interactor'] = request.pop('checker')
-                commands = []
-                def invoke(args, *, box_id=0, **kwargs):
-                    return subprocess.CompletedProcess(args, 0, stdout=str(root / str(box_id)).encode())
-                def popen(command, **kwargs):
-                    commands.append(command)
-                    meta = Path(next(arg.removeprefix('--meta=') for arg in command if arg.startswith('--meta=')))
-                    meta.write_text('time:0.1\ntime-wall:0.2\ncg-mem:1024')
-                    return Mock(returncode=0, poll=Mock(return_value=0))
-                with patch.object(interactive.sandbox, 'invoke', invoke), \
-                        patch.object(interactive.sandbox, 'META', root / 'meta'), \
-                        patch.object(interactive.sandbox, 'prepare_program', return_value=['/box/main']), \
-                        patch.object(interactive.subprocess, 'Popen', popen), \
-                        patch.object(interactive, 'relay', return_value='AC'):
-                    result = interactive.execute(request, request['cases'][0], root / 'checker', lambda _: None)
+                result, commands = self.execute_stubbed(request, return_value=['/box/main'])
                 self.assertEqual(result['verdict'], 'AC')
                 self.assertIn(f'--cg-mem={memory * 1024}', commands[0])
                 self.assertIn('--cg-mem=262144', commands[1])
@@ -50,29 +55,13 @@ class InteractiveTests(unittest.TestCase):
                     'typescript-deno29-isolate': ('--env=DENO_V8_FLAGS=', {64: v8 + '40', 256: v8 + '160', 512: v8 + '320'}, v8 + '128')}
         for name, (prefix, submission, interactor) in expected.items():
             for memory, value in submission.items():
-                with self.subTest(runtime=name, memory=memory), tempfile.TemporaryDirectory() as tmp:
-                    root = Path(tmp)
-                    for i in range(2):
-                        (root / str(i) / 'box').mkdir(parents=True)
+                with self.subTest(runtime=name, memory=memory):
                     request = job()
                     del request['checker']
                     request.update(runtime=name, memoryLimitMb=memory,
                                    interactor=dict(runtime=name.removesuffix('-isolate'), source='x'))
-                    commands = []
-                    def invoke(args, *, box_id=0, **kwargs):
-                        return subprocess.CompletedProcess(args, 0, stdout=str(root / str(box_id)).encode())
-                    def popen(command, **kwargs):
-                        commands.append(command)
-                        meta = Path(next(arg.removeprefix('--meta=') for arg in command if arg.startswith('--meta=')))
-                        meta.write_text('time:0.1\ntime-wall:0.2\ncg-mem:1024')
-                        return Mock(returncode=0, poll=Mock(return_value=0))
-                    with patch.object(interactive.sandbox, 'invoke', invoke), \
-                            patch.object(interactive.sandbox, 'META', root / 'meta'), \
-                            patch.object(interactive.sandbox, 'prepare_program',
-                                         side_effect=lambda box, runtime, *args, **kwargs: list(runtime['run'])), \
-                            patch.object(interactive.subprocess, 'Popen', popen), \
-                            patch.object(interactive, 'relay', return_value='AC'):
-                        interactive.execute(request, request['cases'][0], root / 'checker', lambda _: None)
+                    _, commands = self.execute_stubbed(
+                        request, side_effect=lambda box, runtime, *args, **kwargs: list(runtime['run']))
                     self.assertEqual([[arg for arg in command if arg.startswith(prefix)] for command in commands],
                                      [[prefix + value], [prefix + interactor]])
 

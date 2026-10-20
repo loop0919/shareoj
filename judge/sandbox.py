@@ -155,16 +155,21 @@ def execute(request, compile_phase=False, *, artifact=None, checker_files=None, 
 def run_args(runtime, cpu, wall, memory, *, compile_phase=False, meta=None, interactive=False, interactor=False):
     # Metadata and saved artifacts remain outside the sandbox.
     environment = list(ENVIRONMENT) + RUNTIMES[runtime].get('env', [])
+
+    def heap(compiling, interacting, at_512):
+        # Compilation and the interactor keep fixed caps; a submission's cap scales with its memory limit.
+        return compiling if compile_phase else interacting if interactor else scaled_heap(at_512, memory)
+
     if runtime == 'csharp14-isolate':
-        environment.append('DOTNET_GCHeapHardLimit=' + hex((512 if compile_phase else 128 if interactor else scaled_heap(192, memory)) * 1024 * 1024))
+        environment.append('DOTNET_GCHeapHardLimit=' + hex(heap(512, 128, 192) * 1024 * 1024))
     if runtime == 'go127-isolate':
-        environment.append('GOMEMLIMIT=' + str(384 if compile_phase else 160 if interactor else scaled_heap(384, memory)) + 'MiB')
+        environment.append('GOMEMLIMIT=' + str(heap(384, 160, 384)) + 'MiB')
     if runtime == 'ruby-truffle40-isolate':
-        environment.append('RUBYOPT=--vm.Xmx' + str(640 if compile_phase else 96 if interactor else scaled_heap(256, memory)) + 'm')
+        environment.append('RUBYOPT=--vm.Xmx' + str(heap(640, 96, 256)) + 'm')
     if runtime.startswith(('javascript-node', 'typescript-node')) or (compile_phase and runtime.startswith('typescript-bun')):
-        environment.append('NODE_OPTIONS=--max-old-space-size=' + str(640 if compile_phase else 128 if interactor else scaled_heap(320, memory)))
+        environment.append('NODE_OPTIONS=--max-old-space-size=' + str(heap(640, 128, 320)))
     if runtime.startswith(('javascript-deno', 'typescript-deno')):
-        environment.append('DENO_V8_FLAGS=--max-old-space-size=' + str(640 if compile_phase else 128 if interactor else scaled_heap(320, memory)))
+        environment.append('DENO_V8_FLAGS=--max-old-space-size=' + str(heap(640, 128, 320)))
     return [f'--meta={META if meta is None else meta}', f'--time={cpu}', f'--wall-time={wall}',
             f'--cg-mem={memory * 1024}', '--processes=32' if interactive else '--processes=64',
             # Pinned isolate 2.7: allow file locks only for the fixed Go build command.
@@ -190,10 +195,9 @@ def scaled_heap(at_512, memory):
     return at_512 * memory // 512
 
 
-def java_heap(command, memory, *, interactor=False):
-    """The Java command with its -Xmx256m (the value at 512 MiB) replaced for this run."""
-    heap = '-Xmx128m' if interactor else f'-Xmx{scaled_heap(256, memory)}m'
-    return [heap if arg == '-Xmx256m' else arg for arg in command]
+def java_heap(command, memory):
+    """The Java command with its -Xmx256m (the value at 512 MiB) scaled to this run's memory limit."""
+    return [f'-Xmx{scaled_heap(256, memory)}m' if arg == '-Xmx256m' else arg for arg in command]
 
 
 def prepare_dependencies(box, runtime):
