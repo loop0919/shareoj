@@ -108,7 +108,7 @@ createServer(async (req, res) => {
     if (['/my/problems/12121212-1212-4212-8212-121212121212/', '/my/problems/not-a-problem/', '/my/test-files'].some(prefix => path.startsWith(prefix))) {
       let body = ''
       for await (const chunk of req) body += chunk
-      return res.end(JSON.stringify({ path, url: req.url, method: req.method, body }))
+      return res.end(JSON.stringify({ path, url: req.url, method: req.method, type: req.headers['content-type'] ?? '', body }))
     }
     if (path.startsWith('/my/problems/')) return res.writeHead(404).end('{}')
     // This contest echoes what the web server forwarded, so tests can check the query it built (ADR 0024).

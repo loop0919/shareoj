@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -46,6 +47,12 @@ func TestPushLifecycle(t *testing.T) {
 	var uploaded string
 	requests, uploads, puts := 0, 0, 0
 	failUpload, raceSave, lostResponse := false, false, false
+	// The API refuses a JSON body without application/json (D03), so every request with a body must carry it.
+	requireJSON := func(r *http.Request) {
+		if mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mediaType != "application/json" {
+			t.Errorf("%s %s: Content-Type %q", r.Method, r.URL.Path, r.Header.Get("Content-Type"))
+		}
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
 		if r.URL.Path == "/object" {
@@ -72,6 +79,7 @@ func TestPushLifecycle(t *testing.T) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/test-files"):
 			uploads++
+			requireJSON(r)
 			if err := json.NewDecoder(r.Body).Decode(&pending); err != nil {
 				t.Error(err)
 			}
@@ -89,6 +97,7 @@ func TestPushLifecycle(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(saved)
 		case r.Method == "PUT":
 			puts++
+			requireJSON(r)
 			var input problem
 			if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 				t.Error(err)

@@ -25,7 +25,7 @@ test('test file routes check their IDs before building the API path', async () =
   const echo = async (method: 'GET' | 'POST', path: string, body?: unknown) => {
     const response = await send(method, path, session, body)
     expect(response.status, `${method} ${path}`).toBe(200)
-    return JSON.parse(response.body) as { path: string, url: string, method: string, body: string }
+    return JSON.parse(response.body) as { path: string, url: string, method: string, type: string, body: string }
   }
   const getPath = `/my/problems/${problem}/test-files/${file}`
   expect(await echo('GET', `/api${getPath}`)).toMatchObject({ path: getPath, url: getPath, method: 'GET' })
@@ -33,6 +33,8 @@ test('test file routes check their IDs before building the API path', async () =
   const begun = await echo('POST', `/api/my/problems/${problem}/test-files`, begin)
   expect(begun).toMatchObject({ path: `/my/problems/${problem}/test-files`, url: `/my/problems/${problem}/test-files`, method: 'POST' })
   expect(JSON.parse(begun.body)).toEqual(begin)
+  // The API refuses a JSON body without application/json (D03), so the web server must forward it as JSON.
+  expect(begun.type.split(';')[0].trim().toLowerCase()).toBe('application/json')
   expect((await send('POST', `/api/my/problems/${problem}/test-files`, session, { ...begin, sha256: 'a'.repeat(3000) })).status).toBe(413)
 
   // Each answers 404 without reaching the API: had it reached the fixture, the echo would answer 200 with the path it received.
