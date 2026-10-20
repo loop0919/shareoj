@@ -352,8 +352,11 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	if command == "pull" && flags.NArg() != 2 {
 		return errors.New("expected pull <problem-id> <directory>; place options before the problem ID")
 	}
-	if (needsDirectory && flags.NArg() != 1) || (!needsDirectory && command != "pull" && flags.NArg() != 0) {
+	if needsDirectory && flags.NArg() != 1 {
 		return errors.New("expected one directory for init/check/push; place options before the directory")
+	}
+	if (command == "login" || command == "logout") && flags.NArg() != 0 {
+		return fmt.Errorf("%s takes no positional arguments", command)
 	}
 	if expected < -1 || expected > maxVersion {
 		return errors.New("invalid --expect-version")

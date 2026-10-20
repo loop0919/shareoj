@@ -416,3 +416,36 @@ func TestLoginRefreshAndRedirect(t *testing.T) {
 		}
 	}
 }
+
+func TestPositionalArguments(t *testing.T) {
+	t.Setenv("SHAREOJ_CONFIG_DIR", t.TempDir())
+	t.Setenv("SHAREOJ_API_URL", "")
+	t.Setenv("SHAREOJ_ACCESS_TOKEN", "")
+	client, err := newClient(defaultAPI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, client.credential, "{}")
+	directory := "expected one directory for init/check/push; place options before the directory"
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"login", "foo"}, "login takes no positional arguments"},
+		{[]string{"login", "foo", "--google"}, "login takes no positional arguments"},
+		{[]string{"login", "--site", "x", "foo"}, "login takes no positional arguments"},
+		{[]string{"logout", "foo"}, "logout takes no positional arguments"},
+		{[]string{"init"}, directory},
+		{[]string{"check", "a", "b"}, directory},
+		{[]string{"push"}, directory},
+		{[]string{"pull", "id"}, "expected pull <problem-id> <directory>; place options before the problem ID"},
+	} {
+		if err := run(context.Background(), tc.args, io.Discard); err == nil || err.Error() != tc.want {
+			t.Errorf("%v: got %v, want %q", tc.args, err, tc.want)
+		}
+	}
+	// A rejected logout keeps the saved credentials.
+	if _, err := os.Stat(client.credential); err != nil {
+		t.Fatalf("credentials removed: %v", err)
+	}
+}
