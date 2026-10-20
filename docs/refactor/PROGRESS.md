@@ -69,7 +69,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | C04 | useProblemDraftの既定値と自動保存の再予約をまとめる | `web/app/composables/useProblemDraft.ts` | 低・高・S | 維持・修正 | 完了（`dbc7784`） |
 | C05 | ジャッジの失敗判定と上限検証をそれぞれ1か所にまとめる | `judge/sandbox.py`、`judge/host.py`、`judge/interactive.py` | 低・中・S | 修正・維持 | 完了（`47afc9a`。失敗判定だけをまとめ、上限検証の共通化は採らない） |
 | C06 | コンテスト提出の閲覧条件をSQL断片1つにまとめ、2つの一覧で共有する | `api/internal/submissions/contest.go`、`problem.go` | 中・高・S | 維持・維持 | 完了（`da26be1`） |
-| C07 | 提出とリジャッジで重複する「採点できる下書きか」の条件を1か所で生成する | `api/internal/submissions/store.go`、`rejudge.go` | 中・高・M | 修正・修正 | 計画済み |
+| C07 | 提出とリジャッジで重複する「採点できる下書きか」の条件を1か所で生成する | `api/internal/submissions/store.go`、`rejudge.go` | 中・高・M | 修正・修正 | 完了（`67fe6b4`） |
 | C08 | 問題とプロフィールのストアを具体型で持ち、実行時の型アサーションをやめる | `api/internal/httpapi/routes.go`ほか | 中・高・M | 修正・修正 | 完了（`57b902c`） |
 | C09 | 「利用できる言語」の判定と既定の言語を1か所にまとめる | `web/app/composables/useJudgeCatalog.ts`ほか | 低・中・S | 修正・維持 | 計画済み |
 | C10 | 自分の問題の詳細と一覧のスキーマを共通化 | `web/shared/types/account-problems.ts` | 低・中・S | 却下・却下 | 却下（変更漏れの根拠が履歴の読み違いで、共通化するとサーバー側の差が隠れる） |
@@ -186,6 +186,17 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 - 検証（最終tree）: `python3 -B -m unittest discover -s judge/tests`（145件）、`make package-judge`が成功。isolateの実機での確認（`judge/smoke.py`など）は本番環境が要るため実行していない。
 - 軽微（未対応）: REの条件のうち、statusだけが真の行（exitCode・signalが0）がテストの表にない。isolateのメタデータではREとSGに必ずexitcodeかexitsigが付くので、実害はほぼない。
 
+### C07 提出とリジャッジの受け付け条件（`67fe6b4`）
+
+- 計画: [plans/C07-gradable-draft-condition.md](plans/C07-gradable-draft-condition.md)。計画レビューは承認（軽微な指摘3件。実装時に反映）。
+- 変更: `CreateRun`と`Rejudge`に14行ずつ写されていた「採点できる下書きか」の条件（メモリ、判定用コード、対話ジャッジ、部分点）を`judgeReady(draft, runtime, checkerRuntimes, sampleCheck string) string`にまとめた。部分点の追加（d4909a6）とgroupsの条件（2c9923a）は2か所へ手で同じ差分を入れていた。ケース数の条件は呼び出し側に残した。
+- 守った点: `CreateRun`の生成SQLはバイト単位で同じ。`Rejudge`は`false OR `が1か所増えるだけで、三値論理でも結果は同じ。パラメータ番号、引数の順番、`ErrNotReady`と0件の区別、ジョブJSON。
+- 特性テスト: `TestSubmitAndRejudgeAgreeOnReadiness`（28通りの下書き×提出・サンプル・ローカル・リジャッジ）。変更前のコードで成功し、引数の取り違えの変異を検出することを確かめた。
+- simplify: `judgeReady`のdocコメントに`runtime`引数の役割（ローカルのDocker採点の制限）を移し、テストのIDを固定値にした。ケース数の条件も含める案は、`CreateRun`のバイト一致を崩すので見送り。
+- レビュー: 4観点とも必須の指摘なし。
+- 検証（最終tree）: API `go test -count=1 ./...`（DB連携）、`go vet`、`gofmt -l`、`make package package-judge`、webの`npm run build`、アカウント系Playwright（30件）がすべて成功。
+- 軽微（未対応）: `judgeReady`のdocコメントの1文目は、受け付け条件がすべてここにあるように読めるが、ケース数の条件（1〜100件）は呼び出し側に残っていて、書き方も2通りある。ケース数の上限を片方だけ変えても特性テストは検出しない。
+
 ## 保留事項
 
 調査で見つけた別件の不具合と、仕様の判断が要る点。直さずに記録だけする。
@@ -221,7 +232,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 
 ## 現在の作業と次の手順
 
-- 計画済み（いずれも計画レビュー承認）: C07、C09、C11、C13、C17、C20。次はC07の実装。
+- 計画済み（いずれも計画レビュー承認）: C09、C11、C13、C17、C20。次はC20の実装。
 - C11はC02・C08と同じ`api/internal/problems/store.go`に触れるため、その後に計画する。
 - C15〜C20は2観点の反証を行い、C15を保留、C16・C18・C19を却下、C17・C20を範囲を絞って採用した。
 - 2026-10-20 03:40ごろ利用上限で一時停止し、08:30に再開した。停止時に失敗したエージェント（C04のsimplify、C07の計画レビュー、C20の反証）は、ワークフローの再開で実行し直した。完了済みの作業は重複して実行していない。
