@@ -113,6 +113,11 @@ test('post tags link to the posts that carry them', async ({ page }) => {
 
 test('the tag filter reuses the spelling in use', async ({ page }, testInfo) => {
   await showProblemTags(page)
+  // The filtered list answers late, so the old page is still shown when the URL changes.
+  await page.route(url => url.pathname === '/api/problems' && url.searchParams.get('tag') === 'DP', async route => {
+    await new Promise(resolve => setTimeout(resolve, 50))
+    await route.continue()
+  })
   const loaded = tagsLoaded(page)
   await page.goto('/problems')
   await loaded
@@ -121,6 +126,8 @@ test('the tag filter reuses the spelling in use', async ({ page }, testInfo) => 
   await search.fill('ｄｐ')
   await page.getByRole('button', { name: '絞り込む', exact: true }).click()
   await expect(page).toHaveURL('/problems?tag=DP')
+  // The h1 reads 問題 on both pages; only the filtered page's form offers to clear the tag.
+  await expect(page.getByRole('link', { name: '絞り込みを解除' })).toBeVisible()
   await page.emulateMedia({ colorScheme: 'dark' })
   await page.getByRole('search').screenshot({ path: testInfo.outputPath('tag-filter-dark.png') })
   await page.emulateMedia({ colorScheme: 'light' })
