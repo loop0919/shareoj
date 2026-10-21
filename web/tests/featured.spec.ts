@@ -140,12 +140,28 @@ test('authors choose a problem and preference, see where it lands, apply and wit
   await page.keyboard.press('Escape')
   await expect(confirmation).toBeHidden()
   expect(withdrawals).toBe(0)
+  await withdrawButton.click()
+  await expect(confirmation).toBeVisible()
+  await page.mouse.click(2, 2)
+  await expect(confirmation).toBeHidden()
+  await expect(withdrawButton).toBeFocused()
+  expect(withdrawals).toBe(0)
   await page.setViewportSize({ width: 375, height: 812 })
   await withdrawButton.click()
   const bounds = (await confirmation.boundingBox())!
   expect(bounds.x).toBeGreaterThanOrEqual(0)
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(375)
+  let releaseWithdrawal!: () => void
+  const pendingWithdrawal = new Promise<void>(resolve => { releaseWithdrawal = resolve })
+  await page.route(`**/api/my/problems/${id}/featured`, async route => {
+    await pendingWithdrawal
+    await route.fallback()
+  }, { times: 1 })
   await confirmation.getByRole('button', { name: '取り下げる', exact: true }).click()
+  await expect(confirmation.getByRole('button', { name: '取り下げ中…' })).toBeDisabled()
+  await page.mouse.click(2, 2)
+  await expect(confirmation).toBeVisible()
+  releaseWithdrawal()
   await expect(confirmation.getByRole('alert')).toBeVisible()
   expect(applied).toBe(true)
   await expect(row).toContainText('応募中（定期便）')

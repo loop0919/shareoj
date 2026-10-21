@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vDialogDismiss } from '~/utils/dialog-dismiss'
 import { accountError } from '~/utils/account-problems'
 import type { ScoringMemory } from '~/utils/problem-draft'
 import type { EditorSection } from '~/utils/problem-readiness'
@@ -102,7 +103,7 @@ const inputSnippet = '\n```input\n$N$\n$A_1 \\quad A_2 \\quad \\cdots \\quad A_N
 
 <template>
   <div class="author-page">
-    <dialog ref="leaveDialog" class="leave-dialog" aria-labelledby="leave-title" aria-describedby="leave-description" @cancel.prevent="finishLeave('stay')">
+    <dialog v-dialog-dismiss ref="leaveDialog" class="leave-dialog" aria-labelledby="leave-title" aria-describedby="leave-description" @cancel.prevent="finishLeave('stay')">
       <h2 id="leave-title">未保存の変更があります</h2>
       <p id="leave-description">変更を保存してから移動しますか？ 保存せずに移動すると、未保存の変更は失われます。</p>
       <p v-if="leaveError" role="alert" class="field-error">{{ leaveError }}</p>
@@ -112,7 +113,7 @@ const inputSnippet = '\n```input\n$N$\n$A_1 \\quad A_2 \\quad \\cdots \\quad A_N
         <button type="button" class="editor-button primary" @click="finishLeave('save')">保存して移動</button>
       </div>
     </dialog>
-    <dialog ref="manageDialog" class="leave-dialog" aria-labelledby="manage-title" @cancel.prevent="closeDeleteConfirmation">
+    <dialog v-dialog-dismiss ref="manageDialog" class="leave-dialog" aria-labelledby="manage-title" @cancel.prevent="closeDeleteConfirmation">
       <h2 id="manage-title">この問題を削除しますか？</h2>
       <p class="manage-problem-title">{{ draft.title.trim() || '無題の問題' }}</p>
       <p>問題と、未保存の変更を削除します。この操作は取り消せません。</p>

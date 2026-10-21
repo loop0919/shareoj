@@ -28,6 +28,20 @@ for (const [path, selector, editorial] of [
     expect(externalRequests).toBe(0)
     expect(context.pages()).toHaveLength(1)
 
+    await external.click()
+    await dialog.click({ position: { x: 4, y: 4 } })
+    await expect(dialog).toBeVisible()
+    const bounds = (await dialog.boundingBox())!
+    await page.mouse.move(bounds.x + 4, bounds.y + 4)
+    await page.mouse.down()
+    await page.mouse.move(2, 2)
+    await page.mouse.up()
+    await expect(dialog).toBeVisible()
+    await page.mouse.click(2, 2)
+    await expect(dialog).toBeHidden()
+    expect(externalRequests).toBe(0)
+    await expect(page).toHaveURL(sourceUrl)
+
     await external.focus()
     await external.press('Enter')
     await expect(dialog).toBeVisible()

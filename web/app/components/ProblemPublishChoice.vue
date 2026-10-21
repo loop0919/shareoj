@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vDialogDismiss } from '~/utils/dialog-dismiss'
 import type { Readiness } from '~~/shared/types/account-problems'
 import { issueMessage } from '~/utils/problem-readiness'
 const props = defineProps<{ problemId: string, title: string, readiness?: Readiness, scheduled: boolean, applied: boolean }>()
@@ -16,7 +17,7 @@ const options = computed(() => [
 
 <template>
   <Teleport to="body">
-    <dialog ref="dialog" class="publish-choice" aria-labelledby="publish-choice-title" aria-describedby="publish-choice-problem">
+    <dialog v-dialog-dismiss ref="dialog" class="publish-choice" aria-labelledby="publish-choice-title" aria-describedby="publish-choice-problem">
       <header>
         <div>
           <h2 id="publish-choice-title">公開・応募</h2>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vDialogDismiss } from '~/utils/dialog-dismiss'
 import { renderProblemMarkdown } from '~/utils/problem-markdown'
 
 // A live preview re-renders while its source is edited. It marks source lines for scroll sync and
@@ -71,7 +72,7 @@ async function copyCode(event: MouseEvent) {
   <div ref="body" class="markdown-body" @click="copyCode($event); confirmExternalLink($event)" @auxclick="confirmExternalLink" v-html="html" />
   <span class="code-copy-status" role="status">{{ copyMessage }}</span>
   <Teleport to="body">
-    <dialog ref="linkDialog" class="leave-dialog" :aria-labelledby="linkTitleId">
+    <dialog v-dialog-dismiss ref="linkDialog" class="leave-dialog" :aria-labelledby="linkTitleId">
       <h2 :id="linkTitleId">外部サイトへ移動します</h2>
       <p>リンク先の URL を確認してから開いてください。</p>
       <p class="external-link-url" dir="ltr">{{ externalUrl }}</p>

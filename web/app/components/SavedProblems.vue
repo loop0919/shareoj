@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vDialogDismiss } from '~/utils/dialog-dismiss'
 import { accountListSchema, accountProblemSchema, type AccountSummary } from '~~/shared/types/account-problems'
 import { accountError } from '~/utils/account-problems'
 import { problemStatus, type ProblemStatus } from '~/utils/problem-readiness'
@@ -116,7 +117,7 @@ onMounted(() => { void loadAccount() })
     </template>
     <button v-if="accountMessage" class="editor-button" :disabled="accountLoading" @click="loadAccount()">再試行</button>
     <Teleport to="body">
-      <dialog ref="withdrawDialog" class="leave-dialog" :aria-labelledby="`${tooltipId}-withdraw-title`" :aria-describedby="`${tooltipId}-withdraw-description`" @cancel="withdrawing && $event.preventDefault()" @close="withdrawEntry = undefined">
+      <dialog v-dialog-dismiss ref="withdrawDialog" class="leave-dialog" :aria-labelledby="`${tooltipId}-withdraw-title`" :aria-describedby="`${tooltipId}-withdraw-description`" @cancel="withdrawing && $event.preventDefault()" @close="withdrawEntry = undefined">
         <h2 :id="`${tooltipId}-withdraw-title`">定期便の応募を取り下げますか？</h2>
         <p class="manage-problem-title">{{ withdrawEntry?.title.trim() || '無題の問題' }}</p>
         <p :id="`${tooltipId}-withdraw-description`">取り下げると、定期便の出題待ちから外れます。問題は未公開のまま保存されます。</p>
