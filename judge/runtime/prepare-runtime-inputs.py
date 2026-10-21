@@ -10,7 +10,7 @@ import urllib.request
 
 HERE = Path(__file__).resolve().parent
 LOCK = HERE / 'runtime-sources.lock.json'
-DEST = HERE / '.build/runtime-inputs'
+DEST = HERE.parent / '.build/runtime-inputs'
 
 
 def fetch_json(url):
@@ -69,7 +69,7 @@ if __name__ == '__main__':
         if args.lock:
             parser.error('extension versions must be selected and pinned explicitly')
         LOCK = HERE / ('runtime-addition-sources.lock.json' if args.additions else 'runtime-extension-sources.lock.json')
-        DEST = HERE / ('.build/addition-inputs' if args.additions else '.build/extension-inputs')
+        DEST = HERE.parent / ('.build/addition-inputs' if args.additions else '.build/extension-inputs')
     manifest = sources() if args.lock else json.loads(LOCK.read_text())
     if not args.lock and any(len(entry.get('sha256', '')) != 64 for entry in manifest['files'].values()):
         parser.error('every locked input must have a SHA-256 checksum')

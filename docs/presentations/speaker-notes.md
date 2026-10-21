@@ -94,7 +94,7 @@ SQS Standardの再配信を前提にしている。exactly-once実行を保証�
 
 - [web/app/content/docs/languages.md](../../web/app/content/docs/languages.md)
 - [docs/judge/runtime-policy.md](../../docs/judge/runtime-policy.md)
-- [judge/runtimes.py](../../judge/runtimes.py)
+- [judge/runner/runtimes.py](../../judge/runner/runtimes.py)
 
 ## 13 SSRと認証をサーバー側でつなぐ
 

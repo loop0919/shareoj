@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'runner'))
 import sandbox
 import host
 import worker
@@ -213,7 +213,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_all_runtime_commands_are_operator_owned_and_have_smoke_fixtures(self):
         import json
-        fixtures = json.loads((Path(__file__).resolve().parents[1] / 'language-smoke.json').read_text())
+        fixtures = json.loads((Path(__file__).resolve().parents[1] / 'runner/language-smoke.json').read_text())
         self.assertEqual(set(fixtures), set(RUNTIMES))
         for name, runtime in RUNTIMES.items():
             self.assertTrue(runtime['compile'][0].startswith(('/opt/judge-runtimes/', '/usr/bin/')))

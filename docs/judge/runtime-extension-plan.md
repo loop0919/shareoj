@@ -29,10 +29,10 @@ ac-library-csharpの`-atcoder`版はSourceExpanderを省く目的の配布であ
 | --- | --- | --- |
 | testlib | `1e4e8a24c79c6bad3becbdb5a332ffc352b7d5dd` | `runtime-extension-sources.lock.json` |
 | .NET | SDK 10.0.401、ランタイム10.0.12、C# 14 | 同上、参照DLLとRoslynも同じSDKから取得 |
-| NuGet | MathNet.Numerics 5.0.0、ac-library-csharp 4.1.4 | `dotnet-deps/packages.lock.json` |
+| NuGet | MathNet.Numerics 5.0.0、ac-library-csharp 4.1.4 | `judge/runtime/deps/dotnet/packages.lock.json` |
 | Java | Temurin 25.0.4.1+1 LTS、ac-library-java 2.0.0 | 新JDKは追加lock、JARは既存lock |
 | Nim | 2.2.10、refc、GCC 16.2.0、x86-64汎用命令 | `runtimes.py`、固定nim.cfgと互換パッチ |
-| Go | 1.27.1 | 追加lock、`go-deps/go.mod`と`go.sum` |
+| Go | 1.27.1 | 追加lock、`judge/runtime/deps/go/go.mod`と`go.sum` |
 
 Goの採用値はimmutable 0.4.3、gods 1.18.1、gostl 1.2.0、gonum 0.17.0である。
 ac-library-goは`v0.0.0-20260106091915-2caa314afb5a`、x/expは`v0.0.0-20260908205506-85c1c2202aba`へ固定する。
@@ -62,7 +62,7 @@ commitで指定されたものは、そのcommitを採用対象とし、安定�
 | sat | `faf1617f44d7632ee9601ebc13887644925dcc01` | `nim-lang/sat` |
 
 取得元の対応は[AtCoderのNim構築定義](https://img.atcoder.jp/file/language-update/2025-10/072-2-2-0_nim.toml)を照合した。
-各archiveは取得元とSHA-256を`judge/runtime-extension-sources.lock.json`へ固定する。
+各archiveは取得元とSHA-256を`judge/runtime/runtime-extension-sources.lock.json`へ固定する。
 Nimbleの依存定義から解決したnimblas、nimlapack、Unicodeデータなどの推移的依存も同じlockへ記録する。
 Nimble自体はビルド環境だけで使用し、提出のコンパイルには固定した`--path`と設定を渡す。
 
@@ -110,13 +110,13 @@ C++は既存の`cpp23-gcc`と`cpp23-clang`の構成を更新し、testlib対応�
 
 | 工程 | 主な変更先 | 完了条件 |
 | --- | --- | --- |
-| 配布物の固定 | `judge/prepare-runtime-inputs.py`、`runtime-sources.lock.json`、言語別lock | 配布元、正確な版、SHA-256、推移的依存、ライセンスを記録 |
-| ビルド | `judge/runtime.Dockerfile`、`build-runtimes.sh` | 別マシンで構築でき、提出側に取得処理が残らない |
-| コンパイルと実行 | `judge/runtimes.py`、`sandbox.py`、`interactive.py` | C#の単一アセンブリ収集、固定補助ファイル配置、用途別VM設定が動く |
+| 配布物の固定 | `judge/runtime/prepare-runtime-inputs.py`、`runtime-sources.lock.json`、言語別lock | 配布元、正確な版、SHA-256、推移的依存、ライセンスを記録 |
+| ビルド | `judge/runtime/runtime.Dockerfile`、`build-runtimes.sh` | 別マシンで構築でき、提出側に取得処理が残らない |
+| コンパイルと実行 | `judge/runner/runtimes.py`、`sandbox.py`、`interactive.py` | C#の単一アセンブリ収集、固定補助ファイル配置、用途別VM設定が動く |
 | testlibの保存 | APIの問題保存、公開、提出スナップショットとdispatch | `protocol`が保持され、省略時はlegacy、未知値は拒否 |
-| testlibの実行 | `judge/host.py`、`sandbox.py`、`interactive.py` | 引数、ファイル、終了コード、対話終了の優先規則が一致 |
+| testlibの実行 | `judge/runner/host.py`、`sandbox.py`、`interactive.py` | 引数、ファイル、終了コード、対話終了の優先規則が一致 |
 | 言語一覧 | `api/internal/submissions/runtimes.go`、`web/app/utils/runtime-label.ts`、画面と公開設定の許可値 | 提出、checker、interactorで同じ公開一覧を参照 |
-| 公開前の検証 | `judge/language-smoke.json`、`smoke.py`、`interactive_smoke.py`、関連tests | 全依存と三用途が同じdigestで合格 |
+| 公開前の検証 | `judge/runner/language-smoke.json`、`smoke.py`、`interactive_smoke.py`、関連tests | 全依存と三用途が同じdigestで合格 |
 | 配布と公開 | assets、fingerprint、admission、CI設定、runtime方針と利用ガイド | 補助ファイルも検証対象であり、未合格言語を公開しない |
 | メンテナンス表示 | `GET /runtimes`、共通レイアウト、提出と生成の画面、受付API | 同じ停止状態でバナーと操作制限を切り替え、APIへの直接要求も拒否 |
 

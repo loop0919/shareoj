@@ -160,7 +160,7 @@ Goは`api`と`cli`を、ビルドと同じGoのバージョンで`govulncheck`�
 npmは`web`の本番依存を`npm audit`で調べ、highとcriticalがあれば失敗する。
 修正版がないものや本番のLambdaバンドルに含まれないものは、理由と見直し日を付けて[web/npm-audit-allowlist.json](web/npm-audit-allowlist.json)に載せる。
 見直し日を過ぎると再び失敗する。
-`judge/go-deps`と`judge/addition-deps`は提出コードに提供するライブラリで、提出コードは元から任意のコードとして隔離して実行するため対象外とする。
+`judge/runtime/deps/go`と`judge/runtime/deps/additions`は提出コードに提供するライブラリで、提出コードは元から任意のコードとして隔離して実行するため対象外とする。
 
 AWSアカウント全体の設定（請求アラート、リージョン制限、GuardDuty、IAM Access Analyzer、CloudTrailのtrail）は、このリポジトリの管理対象外である。
 別フォルダ`~/aws-setting`で管理し、このリポジトリのCI/CDではデプロイしない。

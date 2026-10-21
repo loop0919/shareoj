@@ -5,11 +5,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 COPY .build/runtime.tar.gz /inputs/base-runtime.tar.gz
 RUN echo '553586f59fe5a1a28be31505c6984a85261cb0dd418574a15285d629f6cd17eb  /inputs/base-runtime.tar.gz' | sha256sum -c - && tar -xzf /inputs/base-runtime.tar.gz -C /opt
 COPY .build/extension-inputs /extension-inputs
-COPY build-runtime-extensions.sh /build/
+COPY runtime/build-runtime-extensions.sh /build/
 RUN bash /build/build-runtime-extensions.sh toolchains
 RUN bash /build/build-runtime-extensions.sh native
-COPY dotnet-deps /build/dotnet-deps
-COPY go-deps /build/go-deps
-COPY install-nim-packages.py nim-gmp-refc.patch bignum-refc.patch /build/
+COPY runtime/deps/dotnet /build/dotnet-deps
+COPY runtime/deps/go /build/go-deps
+COPY runtime/install-nim-packages.py runtime/deps/nim/nim-gmp-refc.patch runtime/deps/nim/bignum-refc.patch /build/
 RUN bash /build/build-runtime-extensions.sh packages
 RUN tar -C /opt -czf /runtime.tar.gz judge-runtimes && sha256sum /runtime.tar.gz

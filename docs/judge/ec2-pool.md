@@ -151,6 +151,7 @@ SSMがOnlineにならない場合や認証情報を取得できない場合は�
 
 各台にCloudWatchエージェントを`ec2`モードで導入する。
 設定は`terraform -chdir=infra/judge output -json cloudwatch_agent_configs`の台の名前に対応する値を使う。
+`judge/deploy/install-observability.sh`を各台へ`install-observability.sh`として配置し、ホスト上で次を実行する。
 
 ```sh
 sudo bash install-observability.sh amazon-cloudwatch-agent.deb 記録したSHA256 agent.json ec2

@@ -30,7 +30,7 @@
 
 ### Task 2: D12 Javaの対話ジャッジのヒープを明示の引数で判別する
 
-**Files:** `judge/sandbox.py`、`judge/interactive.py`、`judge/tests/`の該当テスト
+**Files:** `judge/runner/sandbox.py`、`judge/runner/interactive.py`、`judge/tests/`の該当テスト
 
 - B3の簡潔化（`015ea60`）の後、Javaの対話ジャッジ側の`-Xmx`だけが`memory==256`の値から決まっている。他の処理系と同じく`interactor`の明示の引数で決める。値（対話側は今と同じ、提出側は比例）は変えない。
 - 対話側でメモリの値を変えても対話側のJavaの値が変わらないことを確かめるテストを先に足す（変更前は落ちる）。

@@ -19,7 +19,7 @@
 - テストの削除・スキップ・検証の緩和はしない。この計画で、古い挙動を固定していて書き換えが要る既存テストはない（計画時に確認した）。
 - 範囲外の問題は直さずに報告する。
 - コードのコメントは英語で、周りと同じく1行程度にする。文書と報告は日本語で書く。
-- push、マージ、配布、AWSの操作はしない。`git stash`、`git reset`、`git rebase`、`git checkout`、`git switch`は使わない。isolateの実機テスト（`judge/smoke.py`、`judge/interactive_smoke.py`）は実行しない。
+- push、マージ、配布、AWSの操作はしない。`git stash`、`git reset`、`git rebase`、`git checkout`、`git switch`は使わない。isolateの実機テスト（`judge/runner/smoke.py`、`judge/runner/interactive_smoke.py`）は実行しない。
 
 ## 判定の記録（Ruling）
 
@@ -30,7 +30,7 @@
 - **D12の文書**：Ruling: `docs/judge/runtime-policy.md:73`の「Javaはヒープ256 MiB」は、512 MiB以外の提出では誤りになる。この1行だけを新しい挙動に合わせる。他の文書は変えない（`runtime-additions.md:58`と`interactive-judge.md:138`は、変更後も正しい）。
 - **D33の定数の置き場所**：Ruling: `sandbox.SOURCE_LIMIT = 128 * 1024`とし、`host`は`sandbox.SOURCE_LIMIT`を参照する。`host`はすでに`sandbox`をimportしている。逆向きにすると循環importになる。
 - **D11の直し方**：Ruling: `finish()`の本番APIテストの部分（`rollout.py:411-420`）を、`api_smoke(config, directory, config['nodes'])`の呼び出しに置き換える。この部分は`api_smoke()`（`:626-638`）の本体と、`--instance`の条件以外は同じ写しである。D11は、6b938aeが片方の写しだけを直したことで起きた。`rolling()`（`:721`）はすでに同じ呼び出しを使っている。2台以上のときの引数、カタログの確認、レポートのパスは変わらない。
-- **D34の範囲**：Ruling: 変更内容が`judge/host.py`と指定しているので、`host.validate_job`だけを確かめる。`sandbox.execute`の`invalid limits`は対象外にする。
+- **D34の範囲**：Ruling: 変更内容が`judge/runner/host.py`と指定しているので、`host.validate_job`だけを確かめる。`sandbox.execute`の`invalid limits`は対象外にする。
 
 ## Review Focus
 
@@ -78,8 +78,8 @@ Expected: `Ran 1 test`、`OK`（計画時に全値を確認済み）
 ### Task 2: D33 提出コードの長さの上限をsandbox.SOURCE_LIMITにまとめる
 
 **Files:**
-- Modify: `judge/sandbox.py:20-23`（定数の追加）、`:80`、`:257`
-- Modify: `judge/host.py:77`
+- Modify: `judge/runner/sandbox.py:20-23`（定数の追加）、`:80`、`:257`
+- Modify: `judge/runner/host.py:77`
 - Test: `judge/tests/test_runner.py`（`RunnerTests.test_source_size_limit`の直後、現在の448行の後）
 
 **Interfaces:**
@@ -130,13 +130,13 @@ Expected: `Ran 2 tests`、`OK`
 
 - [ ] **Step 5: コミットする**
 
-`git add judge/sandbox.py judge/host.py judge/tests/test_runner.py`、メッセージ：`refactor: ジャッジの提出コードの長さの上限をsandbox.SOURCE_LIMITの1か所にまとめる`
+`git add judge/runner/sandbox.py judge/runner/host.py judge/tests/test_runner.py`、メッセージ：`refactor: ジャッジの提出コードの長さの上限をsandbox.SOURCE_LIMITの1か所にまとめる`
 
 ### Task 3: D12 提出のヒープ上限をメモリ制限に比例させ、対話ジャッジ側を明示の引数で判別する
 
 **Files:**
-- Modify: `judge/sandbox.py:151-163`（`run_args`）、`run_args`の直後（`scaled_heap`と`java_heap`の追加）、`:112`の直後（`execute`の実行段階）
-- Modify: `judge/interactive.py:106-109`
+- Modify: `judge/runner/sandbox.py:151-163`（`run_args`）、`run_args`の直後（`scaled_heap`と`java_heap`の追加）、`:112`の直後（`execute`の実行段階）
+- Modify: `judge/runner/interactive.py:106-109`
 - Modify: `docs/judge/runtime-policy.md:73`
 - Test: `judge/tests/test_runner.py`（Task 1のテストの直後）
 - Test: `judge/tests/test_interactive.py`（`InteractiveTests.test_submission_memory_limit_is_separate_from_interactor_limit`の直後、現在の39行の後）
@@ -224,12 +224,12 @@ Expected: `test_compile_heap_caps_stay_fixed`だけが成功し、他の2つはF
 Run: Step 2と同じコマンド
 Expected: `Ran 3 tests`、`OK`
 
-Run: `cd /home/loop/judge/.claude/worktrees/refactor-maintainability && grep -n "memory == 256\|Xmx128m\|Xmx256m" judge/sandbox.py judge/interactive.py judge/runtimes.py`
+Run: `cd /home/loop/judge/.claude/worktrees/refactor-maintainability && grep -n "memory == 256\|Xmx128m\|Xmx256m" judge/runner/sandbox.py judge/runner/interactive.py judge/runner/runtimes.py`
 Expected: `memory == 256`は出ない。`Xmx`は`runtimes.py:32`と、`sandbox.py`の`java_heap`の中だけに出る
 
 - [ ] **Step 5: コミットする**
 
-`git add judge/sandbox.py judge/interactive.py docs/judge/runtime-policy.md judge/tests/test_runner.py judge/tests/test_interactive.py`、メッセージ：`fix: 提出のヒープ上限をメモリ制限に比例させ、対話ジャッジ側は明示の引数で判別する`
+`git add judge/runner/sandbox.py judge/runner/interactive.py docs/judge/runtime-policy.md judge/tests/test_runner.py judge/tests/test_interactive.py`、メッセージ：`fix: 提出のヒープ上限をメモリ制限に比例させ、対話ジャッジ側は明示の引数で判別する`
 
 ### Task 4: D11 rolloutのfinishは2台以上のときだけ--instanceを渡す
 
@@ -296,7 +296,7 @@ Expected: `OK`
 
 ## 範囲外（報告事項）
 
-- isolateの実機での確認（`judge/smoke.py`、`judge/interactive_smoke.py`）は行わない。比例させた小さいヒープ（64 MiBで、Java 32m、TruffleRuby 32m、C# 24 MiB）で各処理系が起動できるかは未確認である。smokeがメモリの境界を確かめるのはcpp17だけ（`judge/smoke.py:86-94`）。
+- isolateの実機での確認（`judge/runner/smoke.py`、`judge/runner/interactive_smoke.py`）は行わない。比例させた小さいヒープ（64 MiBで、Java 32m、TruffleRuby 32m、C# 24 MiB）で各処理系が起動できるかは未確認である。smokeがメモリの境界を確かめるのはcpp17だけ（`judge/runner/smoke.py:86-94`）。
 - JavaのVMのその他の固定値（`-Xms16m`、メタスペース96m、コードキャッシュ32m、直接メモリ32m）は、変更内容にないので比例させない。
 - D33のWeb側（`SubmissionForm.vue`の2か所）はB6で扱う。
 - `sandbox.execute`が自分で行う`timeLimitMs`の検証（`invalid limits`）のテストは、D34の対象外とした。

@@ -9,7 +9,7 @@
 ## 背景
 
 C++からtestlibを利用し、C#、Java 25、Nim、Goと指定された競技向けライブラリを追加したいという要望がある。
-既存環境は[ADR 0006](0006-use-lightsail-and-isolate.md)に従う2 GBのLightsailとisolateであり、言語ごとのコマンドを`judge/runtimes.py`に定義している。
+既存環境は[ADR 0006](0006-use-lightsail-and-isolate.md)に従う2 GBのLightsailとisolateであり、言語ごとのコマンドを`judge/runner/runtimes.py`に定義している。
 配布物を別のビルド環境で作り、同じランタイムを通常提出、スペシャルジャッジ、対話用ジャッジで使う。
 
 Java 24は保守状況を理由に公開を保留している。
@@ -126,11 +126,11 @@ Nimは`nim cpp`を使い、C++ヘッダーを参照できる構成にする。
 Nim 2.2.10を採用し、neo 0.3.5が使用する`shallowCopy`に合わせてメモリ管理を`refc`に固定する。
 Nim-GMP 0.2.7とbignum 1.0.6には、Nimのmajor versionだけでARC/ORC用destructorの型を選ぶ箇所がある。
 この条件にメモリ管理方式の確認を加え、refcでは既存の`var`引数の分岐を使う。
-修正は各1行の`judge/nim-gmp-refc.patch`と`judge/bignum-refc.patch`として保持し、指定版の取得元・SHA-256とパッチ原文を配布物へ記録する。
+修正は各1行の`judge/runtime/deps/nim/nim-gmp-refc.patch`と`judge/runtime/deps/nim/bignum-refc.patch`として保持し、指定版の取得元・SHA-256とパッチ原文を配布物へ記録する。
 要求にあるcommit固定の依存を、最新版や「安定版」という名前の別revisionへ変更しない。
 
 既存C++の再ビルドを避けるため、追加配布物は検証済みのベースアーカイブをSHA-256で確認してから拡張する。
-`judge/runtime-extension.Dockerfile`はそのベースを展開し、追加分だけを構築する。
+`judge/runtime/runtime-extension.Dockerfile`はそのベースを展開し、追加分だけを構築する。
 既存GCC、Clang、ACL、Boostはそのバイナリとファイルを引き継ぎ、C++の共有includeには`testlib.h`だけを追加する。
 
 Goは運用側の`go.mod`、`go.sum`、vendorツリーを提供し、`go build -mod=vendor`でコンパイルする。

@@ -22,11 +22,11 @@ HaskellはコンパイラをLTS対応版とし、ライブラリ全体をStackag
 
 ## 依存の固定
 
-対象一覧は[AtCoder 2025年10月一覧](https://img.atcoder.jp/file/language-update/2025-10/language-list.html)から抽出し、`judge/addition-deps/catalog.json`に保存する。
+対象一覧は[AtCoder 2025年10月一覧](https://img.atcoder.jp/file/language-update/2025-10/language-list.html)から抽出し、`judge/runtime/deps/additions/catalog.json`に保存する。
 追加指示によりTorch、LightGBM、Rumaleと専用の推移的依存を除外する。
 LibTorchも配布しない。
 
-公式配布物のURLとSHA-256は`judge/runtime-addition-sources.lock.json`に固定する。
+公式配布物のURLとSHA-256は`judge/runtime/runtime-addition-sources.lock.json`に固定する。
 npmは`package-lock.json`、JSRは`deno.lock`、Rubyは処理系別のGemfile.lock、Haskellは`cabal.project.freeze`とビルドplanを使用する。
 GHC組み込みパッケージはGHC付属版を維持する。
 HaskellのHackage index-stateは2026年9月18日00:00 UTCに固定し、ソースアーカイブのSHA-256も保存する。
@@ -71,8 +71,8 @@ Node.js／Bun向けTypeScriptの型検査時だけファイル数上限を256と
 ## ビルド
 
 ```sh
-python3 judge/prepare-runtime-inputs.py --additions
-docker build -f judge/runtime-additions.Dockerfile -t openoj-runtime:additions judge
+python3 judge/runtime/prepare-runtime-inputs.py --additions
+docker build -f judge/runtime/runtime-additions.Dockerfile -t openoj-runtime:additions judge
 docker create --name openoj-additions-export openoj-runtime:additions
 docker cp openoj-additions-export:/runtime.tar.gz judge/.build/runtime-additions.tar.gz
 docker rm openoj-additions-export

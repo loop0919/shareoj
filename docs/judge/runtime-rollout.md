@@ -32,8 +32,8 @@ ADR 0010の追加環境は、既存の検証済みアーカイブを拡張する
 追加依存の固定値と互換パッチは[実装計画](runtime-extension-plan.md)を参照する。
 
 ```sh
-python3 judge/prepare-runtime-inputs.py --extensions
-docker build -f judge/runtime-extension.Dockerfile -t openoj-runtime:adr0010 judge
+python3 judge/runtime/prepare-runtime-inputs.py --extensions
+docker build -f judge/runtime/runtime-extension.Dockerfile -t openoj-runtime:adr0010 judge
 docker create --name openoj-runtime-export openoj-runtime:adr0010
 docker cp openoj-runtime-export:/runtime.tar.gz judge/.build/runtime-adr0010.tar.gz
 docker rm openoj-runtime-export
@@ -48,13 +48,13 @@ RUNTIME_ARCHIVE=.build/runtime-adr0010.tar.gz bash judge/build-assets.sh
 
 ビルドにはUbuntu 24.04 x86_64のDocker環境と、配布物を展開できるディスク容量を用意する。
 コンパイラのビルドは2 GBのworker上では実行しない。
-取得元とSHA-256は`judge/runtime-sources.lock.json`、Rustの推移的依存は`judge/rust-Cargo.lock`へ固定している。
+取得元とSHA-256は`judge/runtime/runtime-sources.lock.json`、Rustの推移的依存は`judge/runtime/deps/rust/rust-Cargo.lock`へ固定している。
 通常の再構築では`--lock`を指定しない。
 版を更新する場合だけ取得元を確認してlockを更新し、新しいdigestで全テストをやり直す。
 
 ```sh
-python3 judge/prepare-runtime-inputs.py
-docker build -f judge/runtime.Dockerfile -t openoj-runtime:adr0007 judge
+python3 judge/runtime/prepare-runtime-inputs.py
+docker build -f judge/runtime/runtime.Dockerfile -t openoj-runtime:adr0007 judge
 docker create --name openoj-runtime-export openoj-runtime:adr0007
 docker cp openoj-runtime-export:/runtime.tar.gz judge/.build/runtime.tar.gz
 docker rm openoj-runtime-export
@@ -64,7 +64,7 @@ RUNTIME_ARCHIVE=.build/runtime.tar.gz bash judge/build-assets.sh
 
 `runtime.tar.gz`にはC23のGCC版とClang版、C++23のGCC版とClang版、CPython、PyPy、Codon、Rust、Javaを含める。
 復旧用のC++17はworker OSのGCCを使う。
-追加ライブラリと引数は`judge/runtimes.py`、正確な配布版はsource lockを参照する。
+追加ライブラリと引数は`judge/runner/runtimes.py`、正確な配布版はsource lockを参照する。
 CodonはCPython互換の全構文を保証せず、CPython連携とPyPIパッケージを提供しない。
 
 ## workerの作成とSSM登録

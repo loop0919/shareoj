@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from test_runner import host, sandbox, worker
 import test_checker
 from test_checker import reply
@@ -106,7 +107,7 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual([e['event'] for e in self.events()], ['job_received', 'failure'])
         progress.change_message_visibility.assert_called_once_with(QueueUrl='requests', ReceiptHandle='receipt', VisibilityTimeout=0)
         self.assertEqual(self.events()[-1]['reason'], 'runtime_mismatch')
-        unit = (Path(worker.__file__).parent / 'judge-worker.service').read_text()
+        unit = (Path(__file__).resolve().parents[1] / 'deploy/judge-worker.service').read_text()
         self.assertIn('RestartPreventExitStatus=' + str(worker.MISMATCH_STATUS) + '\n', unit)
 
     def test_fatal_error_is_not_released(self):

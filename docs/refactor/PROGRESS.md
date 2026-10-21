@@ -67,7 +67,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | C02 | SQLの文字列置換をやめ、テスター用一覧と提出詳細の非公開列を明示的に組み立てる | `api/internal/problems/store.go`、`api/internal/submissions/store.go` | 低・高・S | 修正・維持 | 完了（`f3f44a4`。範囲を`problems/store.go`の`list()`に限定し、submissions側は除外） |
 | C03 | BFFのエラー変換を切り出し、画面へ渡すエラーコードを名前付きの一覧にする | `web/server/utils/private-api.ts` | 低・高・S | 修正・維持 | 完了（`e5661c0`） |
 | C04 | useProblemDraftの既定値と自動保存の再予約をまとめる | `web/app/composables/useProblemDraft.ts` | 低・高・S | 維持・修正 | 完了（`dbc7784`） |
-| C05 | ジャッジの失敗判定と上限検証をそれぞれ1か所にまとめる | `judge/sandbox.py`、`judge/host.py`、`judge/interactive.py` | 低・中・S | 修正・維持 | 完了（`47afc9a`。失敗判定だけをまとめ、上限検証の共通化は採らない） |
+| C05 | ジャッジの失敗判定と上限検証をそれぞれ1か所にまとめる | `judge/runner/sandbox.py`、`judge/runner/host.py`、`judge/runner/interactive.py` | 低・中・S | 修正・維持 | 完了（`47afc9a`。失敗判定だけをまとめ、上限検証の共通化は採らない） |
 | C06 | コンテスト提出の閲覧条件をSQL断片1つにまとめ、2つの一覧で共有する | `api/internal/submissions/contest.go`、`problem.go` | 中・高・S | 維持・維持 | 完了（`da26be1`） |
 | C07 | 提出とリジャッジで重複する「採点できる下書きか」の条件を1か所で生成する | `api/internal/submissions/store.go`、`rejudge.go` | 中・高・M | 修正・修正 | 完了（`67fe6b4`） |
 | C08 | 問題とプロフィールのストアを具体型で持ち、実行時の型アサーションをやめる | `api/internal/httpapi/routes.go`ほか | 中・高・M | 修正・修正 | 完了（`57b902c`） |
@@ -78,7 +78,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | C13 | サイトマップと共有画像の静的ページ一覧を1つにする | `web/server/routes/sitemap.xml.get.ts`、`web/shared/social-pages.ts` | 低・中・S | 修正・修正 | 完了（`b5ad5e5`。固定ページ7件の写しを`socialPages`のキーにまとめる） |
 | C14 | 送り出しの順序と待ち時間の起点を1つのSQL断片で定義する | `api/internal/submissions/store.go`、`api/cmd/judge-bridge/` | 低・中・S | 却下・維持 | 却下（変更漏れの実例がなく、既に振る舞いのテストで固定済み） |
 | C15 | コンテストAPIの、パス末尾とメソッドの順序に依存する分岐をルートごとに分ける | `api/internal/httpapi/contests.go`、`routes.go` | 中・高・L | 修正・修正 | 保留（`contest()`を分けると、`%2F`を含むURLの応答（D01）が200から404に必ず変わる。外部動作の変更になるので人間の判断を待つ。挙動の変わらない部分だけでは効果が低い） |
-| C16 | `host.judge()`をコンパイル・実行・集計の段階に分ける | `judge/host.py`、`judge/interactive.py` | 中・高・L | 却下・修正 | 却下（部分点の読み取りは既に1か所にあり、残る違いは2経路で本当に違う処理。規模とジャッジ中心部の変更に見合う効果がない） |
+| C16 | `host.judge()`をコンパイル・実行・集計の段階に分ける | `judge/runner/host.py`、`judge/runner/interactive.py` | 中・高・L | 却下・修正 | 却下（部分点の読み取りは既に1か所にあり、残る違いは2経路で本当に違う処理。規模とジャッジ中心部の変更に見合う効果がない） |
 | C17 | ContestEditorのフォームとAPIの変換を純粋関数にする | `web/app/components/ContestEditor.vue` | 中・高・M | 修正・修正 | 完了（`7669f38`。12個のrefを1つのフォームにし、読み込みを純粋関数へ。本文の組み立てはコンポーネントに残す） |
 | C18 | 3つのMarkdown編集画面の表示切替・ツールバー・分割ハンドルを部品にする | `web/app/pages/problems/new.vue`ほか | 中・高・L | 却下・修正 | 却下（引用されたコミットの大半は部品化の対象に触れていない） |
 | C19 | ScoringEditorの採点方式の切り替え（退避と復元）を純粋関数に分ける | `web/app/components/ScoringEditor.vue` | 中・中・M | 却下・修正 | 却下（変更履歴は機能を作った当日の作業で、保守の痛みの根拠にならない。提案の関数は純粋にならない） |
@@ -183,7 +183,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 - 特性テスト: `case_result`の13通り、集計コードの4行、relayの8行で優先順位を固定した。変更前のコードへの変異12個をすべて検出し、そのうち9個は既存のテストでは検出できなかった。
 - simplify: docstringを実際の役割（実行の資源・終了の失敗の分類。判定用コードにとっての意味は呼び出し側が決める）に直した。
 - レビュー: 必須1件。relayで合計バイト数のOLEを`failure_verdict`より先に判定する順序がテストで固定されていなかった（計画と実装は「決定的には固定できない」としていたが誤り）。状態を持つ`observe`で順序を固定するテストを足し、順序を入れ替える変異で3件とも失敗することを確かめた。
-- 検証（最終tree）: `python3 -B -m unittest discover -s judge/tests`（145件）、`make package-judge`が成功。isolateの実機での確認（`judge/smoke.py`など）は本番環境が要るため実行していない。
+- 検証（最終tree）: `python3 -B -m unittest discover -s judge/tests`（145件）、`make package-judge`が成功。isolateの実機での確認（`judge/runner/smoke.py`など）は本番環境が要るため実行していない。
 - 軽微（未対応）: REの条件のうち、statusだけが真の行（exitCode・signalが0）がテストの表にない。isolateのメタデータではREとSGに必ずexitcodeかexitsigが付くので、実害はほぼない。
 
 ### C07 提出とリジャッジの受け付け条件（`67fe6b4`）
@@ -275,7 +275,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | D09 | `login`・`logout`に余分な引数を渡すと、init/check/push向けの文言が出る | `cli/main.go`の`run`（`needsDirectory`の判定） | 文言が実際の誤りと合わない |
 | D10 | 新規作成時の問題文と解説のひな形をCLIとWebが別々に持つ | `cli/main.go`の`initProblem`、`web/app/utils/problem-draft.ts:124,135` | 片方だけ変えるとずれる（494674fで手作業で同期した前例あり） |
 | D11 | rolloutの`finish()`が1台構成でも`--instance`を全台分渡し、api-smokeで失敗する | `judge/rollout.py:416-418` | 1台構成の通常配布を支援するかの判断が要る |
-| D12 | 処理系別のヒープ上限が「memory==256なら対話ジャッジ側」という前提のまま | `judge/sandbox.py:154-163` | 256 MiBの提出が小さいヒープで動き、MLEがREになりうる |
+| D12 | 処理系別のヒープ上限が「memory==256なら対話ジャッジ側」という前提のまま | `judge/runner/sandbox.py:154-163` | 256 MiBの提出が小さいヒープで動き、MLEがREになりうる |
 | D13 | 保存ショートカットの判定がコンテスト編集画面だけ違う（IME変換中やShift付きでも保存） | `web/app/components/ContestEditor.vue`の`saveWithShortcut`（149行） | 画面ごとに動きが違う |
 | D14 | 入出力生成・入力検証の言語選択に「現在利用できません」の選択肢がない | `web/app/components/TestCaseGenerator.vue:154` | 保存済みの言語がカタログにないと選択欄が空に見える |
 | D15 | Markdownエディターの画面ごとの差（プレビューの遅延、数式スニペット）とコンテスト編集画面だけテーマ切替がない点が意図的か不明 | `web/app/pages/problems/new.vue:86-97`、`ContestEditor.vue`の`editor-topbar`（507行） | 画面によって入力の重さと挿入される記法が違う |
@@ -296,8 +296,8 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | D30 | チーム戦のサンプル検証の「結果の詳細」リンクだけ`?from=team`が付かない | `web/app/components/SubmissionForm.vue:120`（同じファイルの:64と`ProblemSubmissionList.vue:31`は付ける。a33d0acは:64だけ直した） | パンくずリストが「この問題の自分の提出」になる。意図的な可能性もある |
 | D31 | ログイン後の戻り先の許可リストが、画面が付ける`next`の多くを受け付けず`/my`へ戻す | `web/shared/utils/login-destination.ts:3`（`/problems/post`、`/featured/apply`、`/problems/{短縮ID}`、`/my/contests`以下、`/my/submissions`を通さない）。呼ぶ側は`web/app/pages/problems/post.vue:88`ほか | 問題の投稿、定期便の応募、お気に入りなどからログインすると元のページに戻らない。許す範囲はオープンリダイレクト対策の判断が要る |
 | D32 | BFFが画面へ通すエラーコードのうち5つ（`invalid_avatar`、`invalid_submission`、`contest_participation_unavailable`、`invalid_contest`、`password_unavailable`）を、どの画面も読んでいない | `web/server/utils/private-api.ts`の`forwardedCodes` | 実害はない。専用の文言を足すか一覧から外すかは仕様の判断 |
-| D33 | 提出コードの長さの上限131072バイトが、検証（`judge/host.py:77`、`judge/sandbox.py:80`）と成果物の読み出し（`judge/sandbox.py:257`の`regular_read(..., 131072)`）に別々に書かれている | 左記の3か所（C05の計画で範囲外の報告事項とした） | 検証の上限だけを上げると、ソースが黙って切り詰められて誤ったRE・WAになりうる |
-| D34 | 提出の`timeLimitMs`の不正値を拒否する挙動のテストがない | `judge/host.py`の上限検証（C05の計画で報告事項とした） | 検証の退行に気づけない |
+| D33 | 提出コードの長さの上限131072バイトが、検証（`judge/runner/host.py:77`、`judge/runner/sandbox.py:80`）と成果物の読み出し（`judge/runner/sandbox.py:257`の`regular_read(..., 131072)`）に別々に書かれている | 左記の3か所（C05の計画で範囲外の報告事項とした） | 検証の上限だけを上げると、ソースが黙って切り詰められて誤ったRE・WAになりうる |
+| D34 | 提出の`timeLimitMs`の不正値を拒否する挙動のテストがない | `judge/runner/host.py`の上限検証（C05の計画で報告事項とした） | 検証の退行に気づけない |
 
 ## 最終レビュー（開始コミットからの累積差分）
 
@@ -324,7 +324,7 @@ push、PR作成、マージ、デプロイ、本番AWS・本番DBの操作はし
 | web アカウント系Playwright（実際のGo APIとDB） | 30件成功 |
 | web `node --test scripts/smoke-frontend.test.mjs` | 3件成功 |
 
-実行していない検証: Terraformの`validate`と`test`（インフラを変えておらず、プロバイダーの取得が要る）、isolateの実機での確認（`judge/smoke.py`、`judge/interactive_smoke.py`。本番環境が要る）、本番への配布と`judge/smoke-api.py`（委任の範囲外）。参考のgolangci-lintは、api・cliとも開始時と同じ件数（新しく足したテストで増えた1件は直した）。
+実行していない検証: Terraformの`validate`と`test`（インフラを変えておらず、プロバイダーの取得が要る）、isolateの実機での確認（`judge/runner/smoke.py`、`judge/runner/interactive_smoke.py`。本番環境が要る）、本番への配布と`judge/smoke-api.py`（委任の範囲外）。参考のgolangci-lintは、api・cliとも開始時と同じ件数（新しく足したテストで増えた1件は直した）。
 
 ## 状態と次の手順
 

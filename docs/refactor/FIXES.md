@@ -60,7 +60,7 @@
 | D31 | 元のページに戻す | ログイン後の戻り先は、同じサイト内のパス（`/`で始まり、`//`や`\`、制御文字を含まない）ならそのまま戻す。それ以外は`/my`。Googleログインも同じ関数を通る |
 | D32 | 専用文言 | `invalid_avatar`、`invalid_submission`、`contest_participation_unavailable`、`invalid_contest`、`password_unavailable`に、その画面で専用の文言を出す。`password_unavailable`は外部アカウントでログインした本人にだけ返るので、「外部アカウントでログインしているため、パスワードは変更できません」でよい |
 | D33 | 1か所に | 提出コードの長さの上限を、ジャッジ（`host.py`、`sandbox.py`の検証と読み出し）では定数1つに、Web（`SubmissionForm.vue`の2か所）でも1つにまとめる。言語をまたいだ共有はしない |
-| D34 | 書く | `judge/host.py`が不正な`timeLimitMs`を拒否する挙動のテストを足す |
+| D34 | 書く | `judge/runner/host.py`が不正な`timeLimitMs`を拒否する挙動のテストを足す |
 
 ## 進め方
 

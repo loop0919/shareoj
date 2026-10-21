@@ -292,7 +292,7 @@ for y,name,body,flow in [(148,'通常判定','出力を期待出力と比較','�
 
 page('言語環境を固定し、検証して公開する', '11  RUNTIMES',
      '言語一覧はリポジトリの言語ガイドに基づく例。受付可能なランタイムはGET /runtimesと提出欄が正とし、ここでは本番の公開状態を再確認していない。各言語の配布元、版、ライブラリをlockファイルで固定し、runtime名とdigestで採点条件を識別する。旧環境を保存して過去提出を再実行する仕組みは未実装。',
-     ['web/app/content/docs/languages.md','docs/judge/runtime-policy.md','judge/runtimes.py'])
+     ['web/app/content/docs/languages.md','docs/judge/runtime-policy.md','judge/runner/runtimes.py'])
 text('言語ガイドに掲載される環境',48,148,460,15,MUTED)
 text('C / C++ / Rust\nPython / Java / C#\nGo / Nim / Haskell\nJavaScript / TypeScript / Ruby',48,189,495,25,leading=1.75)
 line(570,150,570,419)

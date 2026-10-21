@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** isolateのメタデータから提出の失敗（OLE→MLE→TLE→RE）を決める規則を、`judge/sandbox.py`の`failure_verdict(metrics)`の1か所に置く。通常実行（`host.case_result`）、対話（`interactive.relay`）、集計コード（`host.judge`）の3経路は、この関数を呼ぶ。
+**Goal:** isolateのメタデータから提出の失敗（OLE→MLE→TLE→RE）を決める規則を、`judge/runner/sandbox.py`の`failure_verdict(metrics)`の1か所に置く。通常実行（`host.case_result`）、対話（`interactive.relay`）、集計コード（`host.judge`）の3経路は、この関数を呼ぶ。
 
 **Architecture:** `interactive.failure`の本体を、そのまま`sandbox.judge_verdict`の直前に移す。名前は`failure_verdict`にする。`host.py`の2か所にある写し（if/elifの連鎖と三項演算子の連鎖）を、この関数の呼び出しに置き換え、`interactive.failure`は削除する。先に、3経路の入口で優先順位を固定する特性テストを足す。
 
@@ -13,9 +13,9 @@
 ## 困りごと
 
 - 同じ規則が3か所に書かれている。
-  - `judge/host.py:278-285`：`case_result`のif/elifの連鎖
-  - `judge/interactive.py:16-27`：`failure(metrics)`。呼び出し元は`:41`の`relay`だけ
-  - `judge/host.py:520-521`：集計コードの判定。8d6ea6bで`interactive.failure`を三項演算子の連鎖に書き写したもの
+  - `judge/runner/host.py:278-285`：`case_result`のif/elifの連鎖
+  - `judge/runner/interactive.py:16-27`：`failure(metrics)`。呼び出し元は`:41`の`relay`だけ
+  - `judge/runner/host.py:520-521`：集計コードの判定。8d6ea6bで`interactive.failure`を三項演算子の連鎖に書き写したもの
 - 実行経路を足すたびに写しが増えている。253ffe9（対話）で2つ目、8d6ea6b（集計コード）で3つ目が入った。優先順位や条件を変えると、1つの経路だけ古い規則が残るおそれがある。
 - 集計コードの経路で`interactive.failure`を呼ぶと、依存の向きが不自然になる（hostがinteractiveのヘルパーを借りる）。そのため、規則はメタデータを解釈するsandboxに置く。
 
@@ -72,9 +72,9 @@
 - Test: `judge/tests/test_runner.py`（`RunnerTests.test_signal_137_is_not_automatically_mle`の直後、現在の197行の後）
 - Test: `judge/tests/test_scoring.py`（`AggregatorTests.test_failures_are_je_with_a_kept_diagnostic`の表。`'memory'`の行（現在の377-378行）の直後）
 - Test: `judge/tests/test_interactive.py`（`InteractiveTests.test_each_direction_and_stderr_resource_failure`の直後、現在の123行の後）
-- Modify: `judge/sandbox.py`（`judge_verdict`の直前、現在の227行の前に追加）
-- Modify: `judge/interactive.py:16-27`（削除）、`:41`
-- Modify: `judge/host.py:278-289`、`:520-521`
+- Modify: `judge/runner/sandbox.py`（`judge_verdict`の直前、現在の227行の前に追加）
+- Modify: `judge/runner/interactive.py:16-27`（削除）、`:41`
+- Modify: `judge/runner/host.py:278-289`、`:520-521`
 
 **Interfaces:**
 - Produces: `sandbox.failure_verdict(metrics: dict | None) -> str | None`。戻り値は`'OLE'`、`'MLE'`、`'TLE'`、`'RE'`、`None`のどれか。
@@ -141,16 +141,16 @@ Expected: `Ran 3 tests`、`OK`。失敗したら、コードは変えずに期�
    Expected: 出力なし（終了コード1）
 3. Run: `cd /home/loop/judge/.claude/worktrees/refactor-maintainability && grep -rn "failure_verdict" judge/ --include=*.py`
    Expected: 4行。`sandbox.py`の定義、`interactive.py`のrelay、`host.py`の`case_result`、`host.py`の集計コード
-4. Run: `cd /home/loop/judge/.claude/worktrees/refactor-maintainability && grep -n "'OLE'" judge/host.py judge/interactive.py judge/sandbox.py`
+4. Run: `cd /home/loop/judge/.claude/worktrees/refactor-maintainability && grep -n "'OLE'" judge/runner/host.py judge/runner/interactive.py judge/runner/sandbox.py`
    Expected: `host.py`は生成の合計サイズ超過（`item['verdict'] = 'OLE'`）の1行だけ。`interactive.py`はrelayの`:41`相当と`('MLE', 'OLE')`の行だけ。`sandbox.py`は`failure_verdict`の`return 'OLE'`だけ
 5. Run: `cd /home/loop/judge/.claude/worktrees/refactor-maintainability && git status --short`
-   Expected: 新しく変わったのは`judge/sandbox.py`、`judge/host.py`、`judge/interactive.py`、`judge/tests/test_runner.py`、`judge/tests/test_scoring.py`、`judge/tests/test_interactive.py`の6ファイルだけ。ステージ済みの`api/`の3ファイルは開始時のまま
+   Expected: 新しく変わったのは`judge/runner/sandbox.py`、`judge/runner/host.py`、`judge/runner/interactive.py`、`judge/tests/test_runner.py`、`judge/tests/test_scoring.py`、`judge/tests/test_interactive.py`の6ファイルだけ。ステージ済みの`api/`の3ファイルは開始時のまま
 6. Run: `cd /home/loop/judge/.claude/worktrees/refactor-maintainability && graphify update .`
    Expected: 終了コード0
 
 コミットメッセージの案（オーケストレーター用）：`refactor: ジャッジの失敗判定（OLE/MLE/TLE/RE）をsandbox.failure_verdictの1か所にまとめ、3経路の優先順位を特性テストで固定する`
 
-isolateの実機での確認（`judge/smoke.py`、`judge/interactive_smoke.py`）は、この委任範囲では行わない。未実行としてレポートに記録する。
+isolateの実機での確認（`judge/runner/smoke.py`、`judge/runner/interactive_smoke.py`）は、この委任範囲では行わない。未実行としてレポートに記録する。
 
 ## 完了条件
 

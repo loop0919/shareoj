@@ -88,6 +88,7 @@ Secretの値はTerraformで管理せず、AWSコンソールで保存する。
 [ランタイムの更新手順](runtime-rollout.md)に従い、受付停止、DBとキューのdrain、dispatch停止、ワーカー停止、退避を実施する。
 監視導入時はAWS公式のUbuntu amd64 Agentパッケージを操作端末で取得し、SHA-256を記録して専用S3経由で配布する。
 `terraform -chdir=infra/judge output -raw cloudwatch_agent_config`をJSONファイルとして配置する。
+`judge/deploy/install-observability.sh`を採点ホストへ`install-observability.sh`として配置し、ホスト上で次を実行する。
 
 ```sh
 sudo bash install-observability.sh amazon-cloudwatch-agent.deb 記録したSHA256 agent.json

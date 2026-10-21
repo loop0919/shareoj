@@ -13,6 +13,39 @@ Terraformは[infra/judge](../infra/judge/)に置く。
 EC2の台の構成、台数の制御、切り替え手順は[EC2の採点台の運用と切り替え](../docs/judge/ec2-pool.md)に従う。
 この文書のLightsailに関する手順は、切り替えが終わるまで有効である。
 
+## ディレクトリ構成
+
+採点処理、ランタイム構築、インストール資材を分けて配置する。
+配布や検証の操作用スクリプトは、このディレクトリの直下に置く。
+
+```text
+judge/
+├── runner/          # 採点、隔離、ワーカー、実機smoke、指紋の生成
+├── runtime/         # Dockerfile、ビルドスクリプト、取得元のlock
+│   └── deps/        # additions、dotnet、go、nim、rustの依存定義とパッチ
+├── deploy/          # インストールスクリプト、systemdの定義
+├── tests/           # ローカルで実行する単体テスト
+├── build-assets.sh  # ワーカー配布物の作成
+├── rollout.py       # 配布とOS更新
+├── verify.py        # 実機検証の登録と結果収集
+├── smoke-api.py     # 本番API経由の検証提出
+└── .build/          # 取得した入力、配布物、検証記録（Git管理外）
+```
+
+採点処理を読むときは、`runner/worker.py`の要求受信から、`runner/host.py`の採点、`runner/sandbox.py`の隔離実行へ進む。
+`runner/runtimes.py`は提出のコンパイルと実行のコマンドを定義し、`runtime/`はそのコマンドが使う言語環境を構築する。
+`notify.py`はAPI側のビルドでLambdaにパッケージする通知処理である。
+
+Dockerのビルドコンテキストは`judge/`とし、`-f judge/runtime/runtime.Dockerfile`などでDockerfileを指定する。
+`build-assets.sh`は`runner/`と`deploy/`から必要なファイルを集め、配布アーカイブの直下に配置する。
+採点ホスト上の配置は従来どおり`/opt/judge/`と`/opt/judge-runtimes/`を使う。
+
+単体テストはリポジトリのルートから実行する。
+
+```sh
+python3 -m unittest discover -s judge/tests -v
+```
+
 ## 隔離と制限
 
 提出ごとのVMは作らず、isolateの名前空間、UID 60000、cgroup v2で隔離する。
