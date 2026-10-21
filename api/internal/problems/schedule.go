@@ -10,7 +10,7 @@ import (
 
 var ErrSchedule = errors.New("problem cannot be scheduled")
 
-// Schedule captures the saved draft; editing it later does not change the reservation.
+// Schedule captures the saved draft; subsequent saves also update the reservation.
 func (s *Store) Schedule(ctx context.Context, owner, id string, version int64, at time.Time) (Problem, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {

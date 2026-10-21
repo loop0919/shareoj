@@ -354,8 +354,8 @@ func SummaryState(p Summary, applications int) ProblemState {
 
 // Save writes the draft and copies it into the contest that holds the problem. Once that contest has started, the
 // scoring definition stays as it is (ADR 0025); before, the contest's points follow a partial problem's full score.
-// With rules, a published problem and one in a contest whose results are not final must also meet the content rules,
-// since their judging uses the saved draft at once; setup code that writes test data leaves them out.
+// With rules, a published or scheduled problem and one in a contest whose results are not final must also meet the
+// content rules, since saving updates those copies too; setup code that writes test data leaves them out.
 func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft Draft, rules ...ContentRules) (Problem, error) {
 	if err := validateTestFiles(ctx, s.pool.Query, owner, id, draft.TestCases); err != nil {
 		return Problem{}, err
@@ -383,11 +383,14 @@ func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft
  WHERE cp.problem_id=$1 AND can_manage_problem(cp.problem_id,$2) FOR NO KEY UPDATE OF c`, id, owner); err != nil {
 			return Problem{}, err
 		}
-		p, err = scan(tx.QueryRow(ctx, `UPDATE problem_drafts SET draft=$4, published_draft=CASE WHEN published_draft IS NOT NULL THEN $4::jsonb ELSE NULL END, published_version=CASE WHEN published_draft IS NOT NULL THEN version+1 ELSE 0 END, version=version+1, updated_at=clock_timestamp() WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING `+problemColumns, owner, id, version, data))
+		p, err = scan(tx.QueryRow(ctx, `UPDATE problem_drafts SET draft=$4,
+ scheduled_draft=CASE WHEN scheduled_at IS NOT NULL THEN $4::jsonb ELSE NULL END,
+ scheduled_version=CASE WHEN scheduled_at IS NOT NULL THEN version+1 ELSE NULL END,
+ published_draft=CASE WHEN published_draft IS NOT NULL THEN $4::jsonb ELSE NULL END, published_version=CASE WHEN published_draft IS NOT NULL THEN version+1 ELSE 0 END, version=version+1, updated_at=clock_timestamp() WHERE can_manage_problem(id,$1) AND id=$2 AND version=$3 RETURNING `+problemColumns, owner, id, version, data))
 	}
 	var started bool
 	if err == nil && version != 0 {
-		started, err = checkSave(ctx, tx, id, p.PublishedVersion > 0, draft, rules)
+		started, err = checkSave(ctx, tx, id, p.PublishedVersion > 0 || p.ScheduledAt != nil, draft, rules)
 	}
 	if err == nil {
 		// Contest saves also lock the source problem before changing contest_problems.
@@ -420,7 +423,7 @@ func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft
 // checkSave runs after the problem row is locked, so a contest cannot take the problem in between. The contest's copy
 // still holds the previous draft, and its scoring is what the started contest judges with. It reports whether the
 // contest had started, so that the contest's points follow the same reading of the clock.
-func checkSave(ctx context.Context, tx pgx.Tx, id string, published bool, draft Draft, rules []ContentRules) (bool, error) {
+func checkSave(ctx context.Context, tx pgx.Tx, id string, publishedOrScheduled bool, draft Draft, rules []ContentRules) (bool, error) {
 	var previous []byte
 	var started, final bool
 	err := tx.QueryRow(ctx, `SELECT cp.draft->'scoring',c.starts_at<=clock_timestamp(),contest_results_final(c)
@@ -441,7 +444,7 @@ func checkSave(ctx context.Context, tx pgx.Tx, id string, published bool, draft 
 		}
 	}
 	for _, r := range rules {
-		if (published || (inContest && !final)) && !Publishable(draft, r.KnownRuntimes, r.EnabledRuntimes) {
+		if (publishedOrScheduled || (inContest && !final)) && !Publishable(draft, r.KnownRuntimes, r.EnabledRuntimes) {
 			return false, ErrIncomplete
 		}
 	}

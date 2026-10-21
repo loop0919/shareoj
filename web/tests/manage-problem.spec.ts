@@ -120,5 +120,5 @@ test('a scheduled problem says when it goes public, in JST', async ({ page }) =>
   await page.route(`**/api/my/problems/${id}`, route => route.fulfill({ json: { id, version: 1, publishedVersion: 0, scheduledAt: '2099-10-01T14:00:00Z', updatedAt: '2026-09-10T00:00:00Z', draft, readiness } }))
   await page.goto(`/problems/new?problem=${id}`)
   await page.getByRole('button', { name: '問題管理', exact: true }).click()
-  await expect(page.locator('p', { hasText: '公開予約中です。' })).toHaveText('2099/10/1 23:00:00 (JST)に公開予約中です。編集を公開内容に反映するには、保存後に予約を更新してください。予約を変更・取り消す')
+  await expect(page.locator('p', { hasText: '公開予約中です。' })).toHaveText('2099/10/1 23:00:00 (JST)に公開予約中です。「保存」を押すと、問題文・解説・採点設定が予約の公開内容に反映されます。予約を変更・取り消す')
 })

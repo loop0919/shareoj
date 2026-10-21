@@ -97,7 +97,7 @@ async function post(cancel = false) {
             <label for="post-scheduled-at">公開日時 (JST)</label>
             <input id="post-scheduled-at" v-model="scheduledAt" type="datetime-local" required :disabled="busy" :aria-invalid="invalidDate || undefined" :aria-describedby="invalidDate ? 'post-date-error post-when-hint' : 'post-when-hint'">
             <p v-if="invalidDate" id="post-date-error" class="field-error" role="alert">未来の公開日時をJSTで指定してください。</p>
-            <p id="post-when-hint" class="post-hint">予約した時点の保存済みの内容を公開します。そのあとの編集は、予約を更新すると反映されます。</p>
+            <p id="post-when-hint" class="post-hint">指定した日時に保存済みの内容を公開します。予約後も、編集画面で「保存」を押すと予約の公開内容に反映されます。</p>
           </div>
           <p v-else-if="selected" class="post-hint">保存済みの内容を公開し、誰でも閲覧・提出できるようにします。</p>
         </div>

@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures/account'
 
-// Saves a new problem and reopens it as published or as a contest problem, which save only on an explicit action.
+// Saves a new problem and reopens it as published, scheduled or as a contest problem, which save only on an explicit action.
 // The returned function counts the PUTs made after the reload.
 async function openManualSaveOnly(page: Page, mode: string) {
   await page.goto('/problems/new')
@@ -12,6 +12,7 @@ async function openManualSaveOnly(page: Page, mode: string) {
   const id = new URL(page.url()).searchParams.get('problem')!
   const stored = await page.evaluate(async id => (await fetch(`/api/my/problems/${id}`)).json(), id)
   stored.publishedVersion = mode === 'published' ? 1 : 0
+  stored.scheduledAt = mode === 'scheduled' ? '2099-10-01T14:00:00Z' : undefined
   stored.contestId = mode === 'contest' ? 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' : ''
   let writes = 0
   await page.route(`**/api/my/problems/${id}`, route => {
@@ -27,7 +28,7 @@ async function openManualSaveOnly(page: Page, mode: string) {
   return () => writes
 }
 
-for (const mode of ['published', 'contest']) {
+for (const mode of ['published', 'scheduled', 'contest']) {
   test(`${mode} problems save only on an explicit action`, async ({ page }) => {
     const writes = await openManualSaveOnly(page, mode)
     await page.locator('#problem-title').fill('明示的に反映')

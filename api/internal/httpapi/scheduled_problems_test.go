@@ -21,7 +21,7 @@ func scheduledProblem(t *testing.T, raw string) problems.Problem {
 	return p
 }
 
-func TestScheduledProblemPrivacyAndSnapshotPostgres(t *testing.T) {
+func TestScheduledProblemPrivacyAndSavedEditsPostgres(t *testing.T) {
 	f := newFeaturedTest(t)
 	p := f.draft("alice", 3)
 	path := "/my/problems/" + p.ID
@@ -39,9 +39,14 @@ func TestScheduledProblemPrivacyAndSnapshotPostgres(t *testing.T) {
 	if !strings.Contains(f.request("GET", "/my/problems", "alice", nil, 200), "scheduledAt") {
 		t.Fatal("reservation missing from author list")
 	}
-	// Saving even an incomplete draft leaves the complete reserved snapshot intact.
-	p.Draft.Markdown = ""
+	// Saved edits update the reservation without moving its publication time.
+	p.Draft.Markdown = "Updated statement"
+	p.Draft.Editorial = "UPDATED EDITORIAL"
 	p = scheduledProblem(t, f.request("PUT", path, "alice", map[string]any{"version": p.Version, "draft": p.Draft}, 200))
+	if p.ScheduledAt == nil || !p.ScheduledAt.Equal(at) || p.PublishedVersion != 0 {
+		t.Fatal(p)
+	}
+	f.request("GET", "/problems/"+p.ID, "", nil, 404)
 	due := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
 	f.exec(`UPDATE problem_drafts SET scheduled_at=$2 WHERE id=$1`, p.ID, due)
 	var wg sync.WaitGroup
@@ -57,12 +62,50 @@ func TestScheduledProblemPrivacyAndSnapshotPostgres(t *testing.T) {
 	if err := json.Unmarshal([]byte(f.request("GET", "/problems/"+p.ID, "", nil, 200)), &public); err != nil {
 		t.Fatal(err)
 	}
-	if public.Markdown != "Statement" || public.Editorial != "SECRET EDITORIAL" || !public.PublishedAt.Equal(due) {
+	if public.Markdown != p.Draft.Markdown || public.Editorial != p.Draft.Editorial || !public.PublishedAt.Equal(due) {
 		t.Fatal(public)
 	}
 	after := scheduledProblem(t, f.request("GET", path, "alice", nil, 200))
-	if after.ScheduledAt != nil || after.Version != p.Version+1 || after.PublishedVersion != 2 || !after.EverPublished || after.Draft.Markdown != "" {
+	if after.ScheduledAt != nil || after.Version != p.Version+1 || after.PublishedVersion != p.Version || !after.EverPublished || after.Draft.Markdown != p.Draft.Markdown {
 		t.Fatal(after)
+	}
+}
+
+func TestScheduledProblemRejectedEditsKeepReservationPostgres(t *testing.T) {
+	f := newFeaturedTest(t)
+	p := f.draft("alice", 3)
+	path := "/my/problems/" + p.ID
+	p = scheduledProblem(t, f.request("PUT", path+"/publication", "alice", map[string]any{"version": p.Version, "publish": true, "scheduledAt": time.Now().Add(time.Hour)}, 200))
+	for _, field := range []string{"markdown", "editorial", "testCases"} {
+		d := p.Draft
+		switch field {
+		case "markdown":
+			d.Markdown = ""
+		case "editorial":
+			d.Editorial = ""
+		case "testCases":
+			d.TestCases = nil
+		}
+		body := f.request("PUT", path, "alice", map[string]any{"version": p.Version, "draft": d}, 400)
+		if !strings.Contains(body, "incomplete_problem") {
+			t.Fatal(body)
+		}
+	}
+	d := p.Draft
+	d.Editorial = "REJECTED EDITORIAL"
+	f.request("PUT", path, "alice", map[string]any{"version": p.Version - 1, "draft": d}, 409)
+	f.request("PUT", path, "bob", map[string]any{"version": p.Version, "draft": d}, 404)
+	after := scheduledProblem(t, f.request("GET", path, "alice", nil, 200))
+	if after.Version != p.Version || !reflect.DeepEqual(after.Draft, p.Draft) || after.ScheduledAt == nil || !after.ScheduledAt.Equal(*p.ScheduledAt) {
+		t.Fatal(after)
+	}
+	f.exec(`UPDATE problem_drafts SET scheduled_at=clock_timestamp()-interval '1 second' WHERE id=$1`, p.ID)
+	var public problems.PublicProblem
+	if err := json.Unmarshal([]byte(f.request("GET", "/problems/"+p.ID, "", nil, 200)), &public); err != nil {
+		t.Fatal(err)
+	}
+	if public.Markdown != p.Draft.Markdown || public.Editorial != p.Draft.Editorial {
+		t.Fatal(public)
 	}
 }
 
@@ -174,16 +217,20 @@ func TestScheduledProblemImagesAndReleaseOnReadPostgres(t *testing.T) {
 	f := newFeaturedTest(t)
 	p := f.draft("alice", 3)
 	imageID := newSubmissionID()
+	oldImageID := newSubmissionID()
 	f.exec(`INSERT INTO content_images(id,owner_id,digest,media_type,data,size) VALUES($1,'alice','x','image/png','x',1)`, imageID)
-	f.exec(`UPDATE problem_drafts SET draft=jsonb_set(draft,'{editorial}',to_jsonb('![](/api/images/'||$2::text||')')) WHERE id=$1`, p.ID, imageID)
+	f.exec(`INSERT INTO content_images(id,owner_id,digest,media_type,data,size) VALUES($1,'alice','y','image/png','y',1)`, oldImageID)
+	f.exec(`UPDATE problem_drafts SET draft=jsonb_set(draft,'{editorial}',to_jsonb('![](/api/images/'||$2::text||')')) WHERE id=$1`, p.ID, oldImageID)
 	path := "/my/problems/" + p.ID
 	p = scheduledProblem(t, f.request("PUT", path+"/publication", "alice", map[string]any{"version": p.Version, "publish": true, "scheduledAt": time.Now().Add(time.Hour)}, 200))
-	p.Draft.Editorial = ""
-	p = scheduledProblem(t, f.request("PUT", path, "alice", map[string]any{"version": p.Version, "draft": p.Draft}, 200))
-	// Only the reservation still references the image. It stays private and cannot be deleted.
+	f.exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'tester')`, p.ID)
+	p.Draft.Editorial = "![](/api/images/" + imageID + ")"
+	p = scheduledProblem(t, f.request("PUT", path, "tester", map[string]any{"version": p.Version, "draft": p.Draft}, 200))
+	// A tester's saved edit replaces the reserved image, which stays private until publication.
 	f.request("GET", "/images/"+imageID, "", nil, 404)
 	f.request("GET", "/my/images/"+imageID, "bob", nil, 404)
 	f.request("DELETE", "/my/images/"+imageID, "alice", nil, 409)
+	f.request("DELETE", "/my/images/"+oldImageID, "alice", nil, 204)
 	f.exec(`UPDATE problem_drafts SET scheduled_at=clock_timestamp()-interval '1 second' WHERE id=$1`, p.ID)
 	// An image may be the first request after the deadline, before any problem page or minute tick.
 	f.request("GET", "/images/"+imageID, "", nil, 200)

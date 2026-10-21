@@ -32,15 +32,17 @@ test('failed leave-save explains how to keep editing or discard', async ({ page 
 
 const manualSaveCopy = {
   published: '「保存」を押すと公開内容に反映されます。',
+  scheduled: '「保存」を押すと予約の公開内容に反映されます。',
   contest: '「保存」を押すとコンテストの出題・採点内容に反映されます。',
 }
 
-for (const mode of ['published', 'contest'] as const) {
+for (const mode of ['published', 'scheduled', 'contest'] as const) {
   test(`${mode} drafts explain what saving updates`, async ({ page }) => {
     const id = '11111111-1111-4111-8111-111111111113'
     await page.route(`**/api/my/problems/${id}`, route => route.fulfill({ json: {
       id, version: 1, updatedAt: new Date().toISOString(),
       publishedVersion: mode === 'published' ? 1 : 0,
+      scheduledAt: mode === 'scheduled' ? '2099-10-01T14:00:00Z' : undefined,
       contestId: mode === 'contest' ? 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' : '',
       draft: { title: '文言確認', markdown: '', timeLimitMs: '2000', memoryLimitMb: '512', testCases: [] },
     } }))

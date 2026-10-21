@@ -47,7 +47,7 @@ export function useProblemDraft() {
     featuredPreference.value = problem.featuredPreference
     contestScheduled.value = problem.contestScheduled
   }
-  const manualSaveOnly = computed(() => !!publishedVersion.value || !!contestId.value)
+  const manualSaveOnly = computed(() => !!publishedVersion.value || !!scheduledAt.value || !!contestId.value)
   const publicationError = ref('')
   let cloudOwner = ''
   let disposed = false
