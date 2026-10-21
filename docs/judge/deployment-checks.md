@@ -147,6 +147,13 @@ OSのセキュリティ更新は`judge/rollout.py rolling`で配布する。
 `retire_nodes`は空にする。
 bridgeは`bridge_package`の内容に更新されるため、`run`と同じく本番のAPIと同じコミットからビルドする。
 
+互換性を保った言語追加も、同じ`rolling`で配布できる。
+`runtimes`には現在の公開言語を維持し、`publish_runtimes`に追加後の一覧を指定する。
+削除は許可しない。
+APIとfrontendは追加言語に対応した版を先にGitHub Actionsで配布し、公開設定は既存言語のままにする。
+先行台と残りの全台がsmokeと起動確認に合格してから、bridge、APIの順に言語を追加公開し、CIとTerraformの設定を同期する。
+公開後のAPI検証も含め、完了条件は`status: passed`かつ`step: complete`である。
+
 開始前に全台のEBSスナップショットを作成し、`completed`になったことを確認する。
 スナップショットの作成と保持は`rolling`でも実行しない。
 

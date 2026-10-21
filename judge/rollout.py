@@ -190,6 +190,10 @@ def preflight(config):
         raise ValueError('configure distinct approved runtimes, including the Python smoke runtime')
     if not config['api_url'].startswith('https://'):
         raise ValueError('configure an HTTPS API URL')
+    published = config.get('publish_runtimes', config['runtimes'])
+    if not isinstance(published, list) or any(not isinstance(name, str) or not re.fullmatch('[a-z][a-z0-9-]*', name) for name in published) or \
+            len(set(published)) != len(published) or not set(config['runtimes']) <= set(published):
+        raise ValueError('rolling publication may only add distinct runtime IDs')
     if aws(region, 'sts', 'get-caller-identity')['Account'] != config['account']:
         raise ValueError('wrong AWS account')
     if not config['nodes'] or len(set(config['nodes'])) != len(config['nodes']) or len(set(config['queues'])) != 4 or any(
@@ -669,6 +673,28 @@ def switch(config, directory, state, first, rest, verification):
     api_smoke(config, directory, [first])
 
 
+def publish_rolling_runtimes(config, directory, state):
+    """Add languages only after both rolling batches have passed smoke and started."""
+    requested = config.get('publish_runtimes', config['runtimes'])
+    if requested == config['runtimes']:
+        return config
+    hosts = set()
+    for label in ('first', 'rest'):
+        report = json.loads((directory / ('verify-' + label) / 'report.json').read_text())
+        digest, published = publication(report, ','.join(requested))
+        if digest != state['runtimeDigest'] or hosts & set(report['hosts']):
+            raise ValueError('rolling publication reports disagree')
+        hosts.update(report['hosts'])
+    if hosts != set(config['nodes']):
+        raise ValueError('rolling publication is missing verified hosts')
+    checkpoint(directory, state, 'publish-runtimes')
+    # The bridge must understand the added languages before the API accepts them.
+    update_env(config['region'], config['bridge'], dict(JUDGE_ENABLED_RUNTIMES=published))
+    update_env(config['region'], config['api'], dict(JUDGE_ENABLED_RUNTIMES=published))
+    sync_settings(config, directory, digest, requested, previous=state['previousDigest'])
+    return dict(config, runtimes=requested)
+
+
 def rolling(config, directory, state):
     """Roll an OS update through the pool while admission stays open (ADR 0014)."""
     region = config['region']
@@ -709,6 +735,7 @@ def rolling(config, directory, state):
     tag_digest(config, rest, digest)
     checkpoint(directory, state, 'api-smoke')
     healthy_workers(config, directory, digest)
+    config = publish_rolling_runtimes(config, directory, state)
     report = api_smoke(config, directory, config['nodes'])
     for name, enabled in state['alarm_actions'].items():
         aws(region, 'cloudwatch', 'enable-alarm-actions' if enabled else 'disable-alarm-actions', '--alarm-names', name)

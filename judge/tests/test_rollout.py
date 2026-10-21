@@ -15,6 +15,45 @@ import rollout
 
 
 class RolloutTests(unittest.TestCase):
+    def test_rolling_additions_require_ready_reports_from_every_host(self):
+        digest = 'sha256:' + 'a' * 64
+        config = dict(region='test', bridge='bridge', api='api', nodes=['first', 'rest'],
+                      runtimes=['python314'], publish_runtimes=['python314', 'whitespace13'])
+        state = dict(runtimeDigest=digest, previousDigest='old')
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            reports = {}
+            for index, node in enumerate(config['nodes']):
+                run_id = str(index) * 32
+                host = dict(runtimeDigest=digest, passedRuntimes=['python314-isolate', 'whitespace13-isolate'],
+                            failedRuntimes=[], ready=True, runId=run_id)
+                reports[node] = dict(host, hosts={node: host})
+                (directory / ('verify-' + node)).mkdir()
+            for fault in ('not-ready', 'missing-language', 'wrong-digest', 'missing-host', None):
+                first, rest = json.loads(json.dumps([reports['first'], reports['rest']]))
+                if fault == 'not-ready':
+                    rest['hosts']['rest']['ready'] = False
+                elif fault == 'missing-language':
+                    rest['hosts']['rest']['passedRuntimes'] = ['python314-isolate']
+                elif fault == 'wrong-digest':
+                    rest['runtimeDigest'] = rest['hosts']['rest']['runtimeDigest'] = 'sha256:' + 'b' * 64
+                elif fault == 'missing-host':
+                    rest['hosts'] = {'other': rest['hosts']['rest']}
+                for node, report in [('first', first), ('rest', rest)]:
+                    (directory / ('verify-' + node) / 'report.json').write_text(json.dumps(report))
+                with patch.object(rollout, 'update_env') as update, patch.object(rollout, 'sync_settings') as sync:
+                    if fault:
+                        with self.assertRaises(ValueError):
+                            rollout.publish_rolling_runtimes(config, directory, state)
+                        update.assert_not_called()
+                        sync.assert_not_called()
+                    else:
+                        result = rollout.publish_rolling_runtimes(config, directory, state)
+                        self.assertEqual(result['runtimes'], config['publish_runtimes'])
+                        self.assertEqual([c.args[1] for c in update.call_args_list], ['bridge', 'api'])
+                        self.assertTrue(all(c.args[2] == {'JUDGE_ENABLED_RUNTIMES': 'python314,whitespace13'} for c in update.call_args_list))
+                        sync.assert_called_once_with(config, directory, digest, config['publish_runtimes'], previous='old')
+
     def test_legacy_bridge_null_is_not_an_empty_database(self):
         def invoke(region, *args):
             Path(args[-1]).write_text('null')
