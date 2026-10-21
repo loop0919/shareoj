@@ -64,7 +64,7 @@ RUNTIMES['haskell-ghc910-isolate'] = dict(source='Main.hs',
     env=[*NATIVE_ENV, 'PATH=' + ROOT + '/haskell-deps/bin:/usr/bin:/bin'])
 RUNTIMES['ruby40-isolate'] = dict(source='main.rb', program='main.rb', artifact='source',
     compile=[ROOT + '/ruby/bin/ruby', '-c', '/box/main.rb'],
-    run=[ROOT + '/ruby/bin/ruby', '-rbundler/setup', '/box/main.rb'],
+    run=[ROOT + '/ruby/bin/ruby', '--yjit', '-rbundler/setup', '/box/main.rb'],
     env=[*NATIVE_ENV, 'BUNDLE_GEMFILE=' + ROOT + '/ruby-deps/Gemfile',
          'BUNDLE_PATH=' + ROOT + '/ruby-deps/bundle', 'BUNDLE_FROZEN=true'])
 RUNTIMES['ruby-truffle40-isolate'] = dict(source='main.rb', program='main.rb', artifact='source',

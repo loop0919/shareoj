@@ -67,10 +67,11 @@ def toolchains():
     unpack('cabal.tar.xz', ROOT / 'cabal/bin', strip=False)
     unpack('ruby.tar.xz', WORK / 'ruby')
     run('./configure', '--prefix=' + str(ROOT / 'ruby'), '--disable-install-doc',
-        '--disable-yjit', '--disable-zjit', '--enable-shared',
+        '--enable-yjit', '--disable-zjit', '--enable-shared', 'RUSTC=' + str(ROOT / 'rust/bin/rustc'),
         'LDFLAGS=-Wl,-rpath,' + str(ROOT / 'ruby/lib'), cwd=WORK / 'ruby')
     run('make', '-j4', cwd=WORK / 'ruby')
     run('make', 'install', cwd=WORK / 'ruby')
+    run(ROOT / 'ruby/bin/ruby', '--yjit', '-e', 'abort "YJIT is disabled" unless RubyVM::YJIT.enabled?')
     save_lock(INPUT / 'sources.json')
     save_lock(DEPS / 'catalog.json')
 

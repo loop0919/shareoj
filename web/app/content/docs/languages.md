@@ -26,7 +26,7 @@
 | JavaScript / TypeScript (Node.js) | Node.js 24.21.0 LTS / TypeScript 7.0.2 | JSは構文検査、TSは型検査後にJSを実行 |
 | JavaScript / TypeScript (Deno) | Deno 2.9.7 / TypeScript 6.0.3 | GitHub公式安定版、依存は事前キャッシュ |
 | JavaScript / TypeScript (Bun) | Bun 1.4.2 / TypeScript 7.0.2 | JSは構文検査、TSは型検査後にJSを実行 |
-| Ruby (CRuby) | CRuby 4.0.7 | 構文検査後に実行、YJITとZJITは無効 |
+| Ruby (CRuby) | CRuby 4.0.7 | 構文検査後に実行、YJITは有効、ZJITは無効 |
 | Ruby (TruffleRuby) | TruffleRuby Community 40.0.0 | 構文検査後に実行 |
 
 CとC++は`main`関数、Rustは`fn main()`を含めてください。

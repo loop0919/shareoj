@@ -917,6 +917,11 @@
       "input": "1 2\n"
     },
     {
+      "name": "yjit",
+      "source": "raise \"YJIT is disabled\" unless RubyVM::YJIT.enabled?; def add(a, b); a + b; end; 1000.times { raise \"wrong result\" unless add(1, 2) == 3 }; raise \"YJIT compiled no code\" unless RubyVM::YJIT.runtime_stats[:compiled_iseq_count] > 0; puts 3",
+      "verdict": "AC"
+    },
+    {
       "name": "wrong",
       "source": "puts 4",
       "verdict": "WA"
