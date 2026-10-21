@@ -158,7 +158,7 @@ run "database_contract" {
       aws_db_instance.application.storage_encrypted &&
       aws_db_instance.application.manage_master_user_password &&
       aws_db_instance.application.backup_retention_period == 7 &&
-      aws_db_instance.application.instance_class == "db.t4g.small" &&
+      aws_db_instance.application.instance_class == "db.t4g.micro" &&
       aws_db_instance.application.deletion_protection &&
       !aws_db_instance.application.skip_final_snapshot &&
       aws_vpc_security_group_ingress_rule.postgres.referenced_security_group_id == aws_security_group.application.id &&
