@@ -1,5 +1,32 @@
 import { test, expect } from '@playwright/test'
 
+test('user links show shared profile icons and keep initials when unavailable', async ({ page }) => {
+  const avatar = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6V6kAAAAASUVORK5CYII='
+  const requests: string[] = []
+  await page.route('**/api/users/*', route => {
+    const handle = route.request().url().split('/').pop()!
+    requests.push(handle)
+    return route.fulfill(handle === 'carol' ? { status: 503, json: {} } : { json: { handle, avatar: handle === 'alice' ? avatar : '' } })
+  })
+  await page.goto('/problems/11111111-1111-4111-8111-111111111111?view=submissions')
+  const authors = page.getByRole('link', { name: 'alice', exact: true })
+  await expect(authors).toHaveCount(2)
+  for (const author of await authors.all()) {
+    await expect(author.locator('img')).toHaveAttribute('src', avatar)
+    await expect(author.locator('.user-avatar')).toHaveAttribute('aria-hidden', 'true')
+  }
+  for (const handle of ['bob', 'carol']) {
+    await expect(page.getByRole('link', { name: handle, exact: true }).locator('.user-avatar')).toHaveText(handle[0]!.toUpperCase())
+  }
+  await expect.poll(() => requests.slice().sort()).toEqual(['alice', 'bob', 'carol'])
+  await page.getByRole('link', { name: '詳細', exact: true }).click()
+  await expect(page.getByRole('row', { name: '提出者 alice', exact: true }).locator('img')).toHaveAttribute('src', avatar)
+  for (const width of [320, 768]) {
+    await page.setViewportSize({ width, height: 800 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  }
+})
+
 test('public author and tester profiles are reachable without signing in', async ({ page }) => {
   await page.goto('/problems/11111111-1111-4111-8111-111111111111')
   await page.getByRole('link', { name: 'alice', exact: true }).click()
