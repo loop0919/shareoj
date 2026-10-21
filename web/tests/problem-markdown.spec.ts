@@ -2,6 +2,14 @@ import { expect, test } from '@playwright/test'
 import { renderProblemMarkdown } from '../app/utils/problem-markdown'
 import { draftErrors } from '../app/utils/problem-draft'
 
+test('content links open separate tabs safely while fragment links stay on the page', () => {
+  for (const href of ['/blog/article', 'https://judge.example/blog/article', 'https://example.com', '//example.com']) {
+    expect(renderProblemMarkdown(`[link](${href})`))
+      .toContain(`href="${href}" target="_blank" rel="noopener noreferrer"`)
+  }
+  expect(renderProblemMarkdown('[見出し](#section)')).toBe('<p><a href="#section">見出し</a></p>\n')
+})
+
 test('copy controls are available for code fences but not input or math', () => {
   for (const language of ['text', 'py', 'cpp', 'javascript', '']) {
     expect(renderProblemMarkdown(`\`\`\`${language}\na < b\n\`\`\``)).toContain('class="code-copy"')

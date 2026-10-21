@@ -53,6 +53,16 @@ const markdown = new MarkdownIt({ html: false, linkify: false, typographer: fals
   })
   .use(container, 'details')
 
+markdown.renderer.rules.link_open = (tokens, index, options, env, renderer) => {
+  const token = tokens[index]!
+  const href = token.attrGet('href')
+  if (typeof href === 'string' && !href.startsWith('#')) {
+    token.attrSet('target', '_blank')
+    token.attrSet('rel', 'noopener noreferrer')
+  }
+  return renderer.renderToken(tokens, index, options)
+}
+
 // Explicit heading anchors keep published guide links stable when titles change.
 markdown.core.ruler.before('inline', 'heading_ids', (state) => {
   for (let index = 0; index < state.tokens.length - 1; index++) {
