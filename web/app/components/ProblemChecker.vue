@@ -2,6 +2,7 @@
 import type { ProblemDraft } from '~~/shared/types/problem-draft'
 import { shortId } from '~~/shared/utils/short-id'
 import { preferredRuntime, usableRuntimes } from '~/utils/judge-catalog'
+import { hasSource } from '~/utils/has-source'
 
 const checker = defineModel<ProblemDraft['checker']>({ required: true })
 const interactor = defineModel<ProblemDraft['interactor']>('interactor', { required: true })
@@ -43,7 +44,7 @@ async function openProblem() {
     if (props.problemId) await navigateTo(`/problems/${shortId(props.problemId)}#submission-title`)
   } finally { opening.value = false }
 }
-const error = computed(() => code.value && (!code.value.source.trim() || new TextEncoder().encode(code.value.source).length > 65536 || code.value.source.includes('\0'))
+const error = computed(() => code.value && (!hasSource(code.value.runtime, code.value.source) || new TextEncoder().encode(code.value.source).length > 65536 || code.value.source.includes('\0'))
   ? '公開・採点するにはコードを1〜65,536バイトで、NUL文字を含めずに入力してください。' : '')
 </script>
 

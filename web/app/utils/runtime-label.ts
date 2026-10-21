@@ -23,6 +23,11 @@ const runtimeLabels = new Map([
   ['typescript-bun14', 'TypeScript (Bun 1.4)'],
   ['ruby40', 'Ruby (CRuby 4.0)'],
   ['ruby-truffle40', 'Ruby (TruffleRuby 40)'],
+  ['clay20250308', 'cLay (20250308-1)'],
+  ['dc152', 'dc (GNU dc 1.5.2)'],
+  ['nibbles101', 'Nibbles (1.01+)'],
+  ['brainfuck-tritium', 'Brainfuck (Tritium)'],
+  ['whitespace13', 'Whitespace (whitespacers 1.3)'],
 ])
 
 export function runtimeLabel(runtime: string) {

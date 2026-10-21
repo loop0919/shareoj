@@ -114,7 +114,7 @@ def validate_judge_code(code):
             or code['runtime'] + '-isolate' not in RUNTIMES):
         raise ValueError('judge code runtime or mode')
     source = code.get('source')
-    if not isinstance(source, str) or not source.strip() or len(source.encode()) > 65536 or '\0' in source:
+    if not isinstance(source, str) or not source or (code['runtime'] != 'whitespace13' and not source.strip()) or len(source.encode()) > 65536 or '\0' in source:
         raise ValueError('judge code source')
 
 

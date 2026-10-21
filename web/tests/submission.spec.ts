@@ -5,6 +5,30 @@ const problemId = '11111111-1111-4111-8111-111111111111'
 const submissionId = '22222222-2222-4222-8222-222222222222'
 const contestId = '88888888-8888-4888-8888-888888888888'
 
+test('Whitespace submits spaces, tabs and newlines without trimming', async ({ page }) => {
+  await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'alice' } } }))
+  await page.route('**/api/my/submissions', route => route.fulfill({ status: 503, json: {} }))
+  await page.goto(`/problems/${problemId}`)
+  const source = '   \t\t\n\t\n \t\n\n\n'
+  const editor = page.getByLabel('ソースコード', { exact: true })
+  const language = page.getByRole('combobox', { name: '言語' })
+  const submit = page.getByRole('button', { name: '提出する', exact: true })
+  await editor.fill(source)
+  await expect(submit).toBeDisabled()
+  await language.selectOption('whitespace13')
+  await expect(submit).toBeEnabled()
+  const request = page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/api/my/submissions'))
+  await submit.click()
+  expect((await request).postDataJSON().source).toBe(source)
+  await editor.fill('')
+  await expect(submit).toBeDisabled()
+  await editor.press('Tab')
+  await editor.press('Enter')
+  const typed = page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/api/my/submissions'))
+  await submit.click()
+  expect((await typed).postDataJSON().source).toBe('\t\n')
+})
+
 for (const scope of ['problem', 'contest']) {
   test(`${scope} public submission uses the full result view`, async ({ page }) => {
     const problemPath = scope === 'contest' ? `/contests/${shortId(contestId)}/A` : `/problems/${shortId(problemId)}`

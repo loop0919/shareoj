@@ -110,6 +110,20 @@ for engine, executable in [('node24', NODE), ('bun14', ROOT + '/bun/bun'), ('den
             compile=compile, run=command, artifact=artifact, compile_output=output,
             node_modules='js-deps/node_modules', deno_cache=deno, env=env)
 
+RUNTIMES['clay20250308-isolate'] = dict(source='main.clay', artifact='native',
+    compile=['/usr/bin/sh', ROOT + '/golf/compile-clay.sh'], run=['/box/main'])
+# These runtimes must not interpret checker/generator file arguments as programs or input.
+RUNTIMES['nibbles101-isolate'] = dict(source='main.nbl', artifact='native',
+    compile=['/usr/bin/sh', ROOT + '/golf/compile-nibbles.sh'], run=['/usr/bin/sh', '-c', 'exec /box/main'],
+    env=[*NATIVE_ENV, 'PATH=' + ROOT + '/ghc/bin:/usr/bin:/bin'])
+RUNTIMES['dc152-isolate'] = dict(source='main.dc', program='main.dc', artifact='source',
+    compile=['/usr/bin/true'], run=['/usr/bin/sh', '-c', 'exec ' + ROOT + '/golf/dc -f /box/main.dc'])
+RUNTIMES['brainfuck-tritium-isolate'] = dict(source='main.bf', program='main.bf', artifact='source',
+    compile=['/usr/bin/true'], run=['/usr/bin/sh', '-c', 'exec ' + ROOT + '/golf/tritium -b -B -e /box/main.bf'], env=NATIVE_ENV)
+RUNTIMES['whitespace13-isolate'] = dict(source='main.ws', program='main.ws', artifact='source',
+    compile=[ROOT + '/golf/wsc', '--dump', '/box/main.dump', '/box/main.ws'],
+    run=['/usr/bin/sh', '-c', 'exec ' + ROOT + '/golf/wsc /box/main.ws'], env=NATIVE_ENV)
+
 ENVIRONMENT = ['LANG=C.UTF-8', 'LC_ALL=C.UTF-8', 'HOME=/box',
                'OPENBLAS_NUM_THREADS=1', 'OMP_NUM_THREADS=1', 'MKL_NUM_THREADS=1',
                'NUMEXPR_NUM_THREADS=1', 'PYTHONDONTWRITEBYTECODE=1',

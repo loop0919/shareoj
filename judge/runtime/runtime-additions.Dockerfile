@@ -14,5 +14,6 @@ RUN python3 /build/build-runtime-additions.py ruby-native
 RUN python3 /build/build-runtime-additions.py ruby
 RUN python3 /build/build-runtime-additions.py truffleruby
 RUN python3 /build/build-runtime-additions.py haskell
+RUN python3 /build/build-runtime-additions.py golf
 RUN python3 /build/build-runtime-additions.py finish
 RUN tar -C /opt -czf /runtime.tar.gz judge-runtimes && sha256sum /runtime.tar.gz

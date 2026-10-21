@@ -2,8 +2,27 @@ package problems
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 )
+
+func TestWhitespaceJudgeSourcesAreNotEmpty(t *testing.T) {
+	for _, runtime := range []string{"whitespace13", "whitespace13-isolate", "cpp23-gcc"} {
+		if HasSource(runtime, "") || HasSource(runtime, " \t\n") != (runtime != "cpp23-gcc") {
+			t.Fatal(runtime)
+		}
+	}
+	for _, runtime := range []string{"whitespace13", "cpp23-gcc"} {
+		code := &Generator{Runtime: runtime, Source: " \t\n"}
+		for _, draft := range []Draft{{Checker: code}, {Interactor: code}, {Scoring: &Scoring{Mode: ScoringAggregate, Aggregator: code}}} {
+			issues := ContentIssues(draft, []string{runtime}, []string{runtime})
+			missing := slices.Contains(issues, IssueCheckerSource) || slices.Contains(issues, IssueInteractorSource) || slices.Contains(issues, IssueAggregatorSource)
+			if missing != (runtime != "whitespace13") {
+				t.Fatalf("%s: %v", runtime, issues)
+			}
+		}
+	}
+}
 
 func TestAssessListsEveryReason(t *testing.T) {
 	known := []string{"cpp17", "python314"}

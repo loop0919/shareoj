@@ -9,6 +9,11 @@ def failure_program(name):
     if name.startswith(('javascript-', 'typescript-')):
         return 'throw new Error("rejected");'
     families = {
+        'clay20250308-isolate': '{abort();}',
+        'dc152-isolate': '!kill -TERM $PPID\n',
+        'nibbles101-isolate': 'error "rejected"',
+        'brainfuck-tritium-isolate': '+[]',
+        'whitespace13-isolate': ' \n\n\n\n\n',
         'rust2024-isolate': 'fn main(){assert!(false);}',
         'java24-isolate': 'public class Main { public static void main(String[] args){assert false;} }',
         'java25-isolate': 'public class Main { public static void main(String[] args){assert false;} }',
@@ -50,7 +55,10 @@ def run(runtime, requested, fixtures, judge):
         check('cpp17-isolate', solution, c, 'AC', memory=memory)
         check('cpp17-isolate', allocate.replace('MEMORY', str(memory + 16)), c, 'MLE', memory=memory)
     for name in requested:
-        if name.startswith(('cpp', 'c23')):
+        role_fixtures = {f['name']: f for f in fixtures[name] if f['name'] in ('interactive', 'response')}
+        if 'interactive' in role_fixtures:
+            code = role_fixtures['interactive']['source']
+        elif name.startswith(('cpp', 'c23')):
             code = c
         elif name.startswith(('javascript-', 'typescript-')):
             code = deno if '-deno' in name else js
@@ -62,7 +70,7 @@ def run(runtime, requested, fixtures, judge):
         check(name, solution, code, 'AC')
         check(name, solution.replace('2*n', '3*n'), code, 'WA')
         # Verify the added runtimes on the submitted side too, with two flushed exchanges.
-        response = None
+        response = role_fixtures.get('response', {}).get('source')
         if name.startswith(('javascript-', 'typescript-')):
             if '-deno' in name:
                 response = 'const b=new Uint8Array(1);for(let i=0;i<2;i++){let s="";while(Deno.stdin.readSync(b)&&b[0]!==10)s+=String.fromCharCode(b[0]);Deno.stdout.writeSync(new TextEncoder().encode(2*Number(s)+"\\n"));}'

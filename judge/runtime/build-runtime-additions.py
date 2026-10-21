@@ -208,6 +208,62 @@ def haskell():
         raise RuntimeError('Haskell source archive checksums changed')
 
 
+def golf():
+    target = ROOT / 'golf'
+    target.mkdir(exist_ok=True)
+    for name in ('clay', 'bc', 'brainfuck', 'whitespace', 'nibbles', 'memoize', 'murmur-hash', 'dlist'):
+        unpack(name + '.tar.gz', WORK / name)
+    # GCC 16 no longer includes cassert transitively through bits/stdc++.h.
+    run(ROOT / 'gcc/bin/g++', '-std=c++17', '-O2', '-include', 'cassert', '-Wl,-rpath,' + str(ROOT / 'gcc/lib64'),
+        WORK / 'clay/clay.cpp', '-o', target / 'clay')
+    run('./configure', cwd=WORK / 'bc')
+    run('make', '-C', 'lib', '-j4', cwd=WORK / 'bc')
+    run('make', '-C', 'dc', '-j4', cwd=WORK / 'bc')
+    shutil.copy2(WORK / 'bc/dc/dc', target / 'dc')
+    # Pipe-based interactors must see pending output before the next input read.
+    source = WORK / 'brainfuck/tritium/bfi.c'
+    text = source.read_text()
+    before_read = 'else for(;;) {\n\tif (enable_trace || debug_mode) fflush(stdout);'
+    assert text.count(before_read) == 1
+    source.write_text(text.replace(before_read, 'else for(;;) {\n\tfflush(stdout);'))
+    run('make', '-j4', 'DO_LIBDL=', 'DO_TCC=', 'DO_LIGHT=', cwd=WORK / 'brainfuck/tritium')
+    shutil.copy2(WORK / 'brainfuck/tritium/bfi.out', target / 'tritium')
+    # The base runtime omits Cargo; use the same pinned Rust distribution for the builder.
+    unpack('golf-rust.tar.xz', WORK / 'golf-rust')
+    run('sh', 'install.sh', '--components=cargo', '--prefix=' + str(WORK / 'cargo'),
+        '--disable-ldconfig', cwd=WORK / 'golf-rust')
+    shutil.copy2(DEPS / 'golf/Cargo.lock', WORK / 'whitespace/Cargo.lock')
+    env = dict(os.environ, RUSTC=str(ROOT / 'rust/bin/rustc'), CARGO_HOME=str(WORK / 'cargo-home'))
+    run(WORK / 'cargo/bin/cargo', 'build', '--release', '--locked', cwd=WORK / 'whitespace', env=env)
+    shutil.copy2(WORK / 'whitespace/target/release/wsc', target / 'wsc')
+    save_lock(DEPS / 'golf/Cargo.lock', 'golf-Cargo.lock')
+    libraries = target / 'nibbles-lib'
+    shutil.copytree(WORK / 'memoize/src', libraries, dirs_exist_ok=True)
+    shutil.copytree(WORK / 'murmur-hash/Data', libraries / 'Data', dirs_exist_ok=True)
+    shutil.copytree(WORK / 'dlist/Data', libraries / 'Data', dirs_exist_ok=True)
+    db = next((ROOT / 'haskell-deps/store').glob('ghc-*/package.db'))
+    (target / 'nibbles.args').write_text('\n'.join(['-clear-package-db', '-global-package-db',
+        '-package-db', str(db), '-package', 'split', '-L' + str(ROOT / 'addition-native/lib')]) + '\n')
+    # Upstream's GHC 9.8+ compatibility fix for Template Haskell binders.
+    th = libraries / 'Data/Function/Memoize/TH.hs'
+    text = th.read_text()
+    assert text.count('COMPAT_TY_VAR_BNDR(())') == 1
+    th.write_text(text.replace('COMPAT_TY_VAR_BNDR(())', 'COMPAT_TY_VAR_BNDR(BndrVis)'))
+    source = WORK / 'nibbles/nibbles.hs'
+    text = source.read_text()
+    # Flush generated programs for interactive judging too.
+    assert text.count(' hSetEncoding stdout char8') == 1
+    source.write_text(text.replace(' hSetEncoding stdout char8', ' hSetBuffering stdout NoBuffering\\n\\\n   \\ hSetEncoding stdout char8'))
+    run(ROOT / 'ghc/bin/ghc', '-O', '-j1', '-i' + str(libraries),
+        '@' + str(target / 'nibbles.args'), 'nibbles.hs', '-o', target / 'nibbles', cwd=WORK / 'nibbles')
+    for name in ('compile-clay.sh', 'compile-nibbles.sh'):
+        shutil.copy2(DEPS / 'golf' / name, target / name)
+    for name, license in (('clay', 'LICENSE'), ('bc', 'COPYING'), ('brainfuck', 'LICENSE'),
+                          ('whitespace', 'LICENSE'), ('nibbles', 'LICENSE.txt'),
+                          ('memoize', 'LICENSE'), ('murmur-hash', 'LICENSE'), ('dlist', 'license.md')):
+        shutil.copy2(WORK / name / license, target / (name + '-LICENSE'))
+
+
 def finish():
     save_lock(INPUT / 'sources.json')
     save_lock(DEPS / 'catalog.json')
@@ -240,6 +296,7 @@ def finish():
     for source in explicit:
         shutil.copyfile(source, native / source.name)
     pending += [ROOT / 'ghc/bin/ghc', ROOT / 'ruby/bin/ruby']
+    pending += [ROOT / 'golf' / name for name in ('clay', 'dc', 'tritium', 'wsc', 'nibbles')]
     seen = set()
     while pending:
         path = pending.pop()
@@ -267,17 +324,17 @@ def finish():
     (ROOT / 'build-manifest/additions' / native_lock).write_text(json.dumps(native_hashes, indent=2) + '\n')
     # Keep inventory of vendored native objects and source cache alongside package-manager locks.
     checksums = {}
-    for subtree in ('ruby-deps', 'truffleruby-deps', 'haskell-deps', 'deno-deps', 'addition-native'):
+    for subtree in ('ruby-deps', 'truffleruby-deps', 'haskell-deps', 'deno-deps', 'addition-native', 'golf'):
         for path in sorted((ROOT / subtree).rglob('*')):
             if path.is_file() and not path.is_symlink():
                 with path.open('rb') as f:
                     checksums[str(path.relative_to(ROOT))] = hashlib.file_digest(f, 'sha256').hexdigest()
     (ROOT / 'build-manifest/additions/content-sha256.json').write_text(json.dumps(checksums, sort_keys=True) + '\n')
     for name in ('node', 'bun', 'deno', 'ghc', 'cabal', 'ruby', 'truffleruby', 'js-deps',
-                 'deno-deps', 'ruby-deps', 'truffleruby-deps', 'haskell-deps', 'addition-native'):
+                 'deno-deps', 'ruby-deps', 'truffleruby-deps', 'haskell-deps', 'addition-native', 'golf'):
         run('chmod', '-R', 'a+rX', ROOT / name)
 
 
 if __name__ == '__main__':
     {'toolchains': toolchains, 'javascript': javascript, 'ruby-native': ruby_native,
-     'ruby': ruby, 'truffleruby': lambda: ruby(True), 'haskell': haskell, 'finish': finish}[sys.argv[1]]()
+     'ruby': ruby, 'truffleruby': lambda: ruby(True), 'haskell': haskell, 'golf': golf, 'finish': finish}[sys.argv[1]]()

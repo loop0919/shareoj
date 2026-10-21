@@ -28,6 +28,11 @@
 | JavaScript / TypeScript (Bun) | Bun 1.4.2 / TypeScript 7.0.2 | JSは構文検査、TSは型検査後にJSを実行 |
 | Ruby (CRuby) | CRuby 4.0.7 | 構文検査後に実行、YJITは有効、ZJITは無効 |
 | Ruby (TruffleRuby) | TruffleRuby Community 40.0.0 | 構文検査後に実行 |
+| cLay | 20250308-1 / GCC 16.2.0 | C++へ変換後、`-std=c++23 -O2 -pipe` |
+| dc | GNU dc 1.5.2（bc 1.08.2同梱） | `dc -f main.dc` |
+| Nibbles | 1.01+ / GHC 9.10.3 | テキスト形式をHaskellへ変換し、`ghc -O`でコンパイル |
+| Brainfuck | Tritium（固定リビジョン `525d346c006e`） | 8ビットセル、バイト入出力、EOFは-1 |
+| Whitespace | whitespacers 1.3.0 | 構文検査後に実行、整数は多倍長 |
 
 CとC++は`main`関数、Rustは`fn main()`を含めてください。
 
@@ -35,11 +40,18 @@ Javaは`Main`クラスの`public static void main(String[] args)`から実行し
 
 CPythonとPyPyは実行前に構文検査を行います。 Codonはネイティブコードへコンパイルする環境で、利用できるのはCodonが対応するPythonの機能です。 CPython連携やPyPIパッケージの追加には対応していません。
 
+Nibblesはテキスト形式（`.nbl`）のソースを提出してください。
+Whitespaceでは半角スペース、タブ、改行をそのまま保存します。
+エディターのTabキーはタブを、Enterキーは自動字下げせず改行を入力します。
+dcとBrainfuckには実行前の構文検査がなく、エラー時の判定は終了コードと出力に従います。
+Nibbles、dc、Brainfuck、Whitespaceは、判定コードや生成コードに渡されるファイル引数を無視します。
+これらの言語では標準入力を使ってください。
+
 ## 追加ライブラリ {#libraries}
 
 各言語の標準ライブラリに加え、次のライブラリを用意しています。 提出時にパッケージをインストールすることはできません。
 
-### C++23（GCC・Clang共通）
+### C++23（GCC・Clang共通）とcLay
 
 | ライブラリ | バージョン |
 | --- | --- |
@@ -47,6 +59,7 @@ CPythonとPyPyは実行前に構文検査を行います。 Codonはネイティ
 | Boost（ヘッダーのみ） | 1.92.0 |
 | testlib | 固定リビジョン `1e4e8a24c79c` |
 
+cLayもC++23と同じヘッダーを利用できます。
 ACLは`#include <atcoder/all>`などで読み込めます。 別途リンクが必要なBoostライブラリは対象外です。
 
 testlibを使う判定コードの書き方は、[判定方法の設定](/docs/checkers#testlib)を確認してください。

@@ -19,6 +19,9 @@
 | JavaScript（Node.js 24、Deno 2.9、Bun 1.4） | 構文検査 | Lightsail / isolate | 実機smoke合格 |
 | TypeScript（Node.js 24、Deno 2.9、Bun 1.4） | 型検査 | Lightsail / isolate | 実機smoke合格。型エラーはCE |
 | Ruby（CRuby 4.0、TruffleRuby 40） | 構文検査 | Lightsail / isolate | 実機smoke合格 |
+| cLay、Nibbles | あり | Lightsail / isolate | 実装済み、未配布、実機smoke未実施 |
+| dc、Brainfuck | なし | Lightsail / isolate | 実装済み、未配布、実機smoke未実施 |
+| Whitespace | 構文検査 | Lightsail / isolate | 実装済み、未配布、実機smoke未実施 |
 | `txt` | 未決定 | 未決定 | 採用済み（判定方式は未決定） |
 
 C++17はUbuntu 24.04のg++を`-std=c++17 -O2 -pipe`で実行する。

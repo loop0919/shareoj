@@ -2,6 +2,7 @@
 import { maxFullScore, maxScoringGroups, type ProblemDraft, type Scoring } from '~~/shared/types/problem-draft'
 import { fullScore, groupNameError, type ScoringMemory, type TestCase } from '~/utils/problem-draft'
 import { preferredRuntime, usableRuntimes } from '~/utils/judge-catalog'
+import { hasSource } from '~/utils/has-source'
 
 // Partial scoring (ADR 0025): 一括採点 or 部分点採点, the groups with their points, and whether an aggregator scores the
 // groups. Cases join groups in the test case editor; this editor keeps their membership in step when a group is renamed
@@ -24,7 +25,7 @@ const methodNotes: Record<Method, string> = {
 // Switching back to 一括採点 clears the groups from the draft, and turning the switch off clears the aggregator. The
 // page keeps them in memory, so switching again restores them even after another section was opened.
 const defaultRuntime = () => preferredRuntime(available.value)
-const hasCode = (current: Scoring) => current.mode === 'aggregate' && !!current.aggregator?.source.trim()
+const hasCode = (current: Scoring) => current.mode === 'aggregate' && !!current.aggregator && hasSource(current.aggregator.runtime, current.aggregator.source)
 const hasWork = (current: Scoring) => !!current.groups.length || cases.value.some(item => item.groups?.length) || hasCode(current)
 const root = ref<HTMLElement>()
 // A declined switch leaves the model as it was, so nothing re-renders the control that already moved. The radios and
@@ -157,7 +158,7 @@ const aggregatorSource = computed({
   get: () => scoring.value?.aggregator?.source ?? '',
   set: source => { aggregatorDraft().source = source },
 })
-const aggregatorError = computed(() => aggregating.value && (!aggregatorSource.value.trim() || new TextEncoder().encode(aggregatorSource.value).length > 65536 || aggregatorSource.value.includes('\0'))
+const aggregatorError = computed(() => aggregating.value && (!hasSource(aggregatorRuntime.value, aggregatorSource.value) || new TextEncoder().encode(aggregatorSource.value).length > 65536 || aggregatorSource.value.includes('\0'))
   ? '公開・採点するには集計コードを1〜65,536バイトで、NUL文字を含めずに入力してください。' : '')
 </script>
 

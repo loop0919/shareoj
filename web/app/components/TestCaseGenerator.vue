@@ -3,6 +3,7 @@ import type { Submission } from '../../shared/types/submission'
 import { testFileSchema, type Generators } from '~~/shared/types/problem-draft'
 import { testCaseError, persistedDraft, type TestCase } from '~/utils/problem-draft'
 import { usableRuntimes } from '~/utils/judge-catalog'
+import { hasSource } from '~/utils/has-source'
 
 const cases = defineModel<TestCase[]>({ required: true })
 const config = defineModel<Generators>('config', { required: true })
@@ -51,7 +52,7 @@ async function generate() {
     failure.value = '追加後のテストケースは100件以内にしてください。'
     return
   }
-  if (!program.value.source.trim() || new TextEncoder().encode(program.value.source).length > 65536 || program.value.source.includes('\0')) {
+  if (!hasSource(program.value.runtime, program.value.source) || new TextEncoder().encode(program.value.source).length > 65536 || program.value.source.includes('\0')) {
     failure.value = 'ソースコードを1〜65,536バイトで入力してください。'
     return
   }

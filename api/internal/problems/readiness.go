@@ -76,7 +76,7 @@ func ContentIssues(d Draft, knownRuntimes, enabledRuntimes []string) []Issue {
 		if judge.code == nil {
 			continue
 		}
-		if strings.TrimSpace(judge.code.Source) == "" {
+		if !HasSource(judge.code.Runtime, judge.code.Source) {
 			issues = append(issues, judge.source)
 		}
 		// During judge maintenance no runtime is enabled, so every judge-code problem waits.
@@ -87,7 +87,7 @@ func ContentIssues(d Draft, knownRuntimes, enabledRuntimes []string) []Issue {
 	// The aggregator is judge code too, and an aggregate-mode problem cannot do without it.
 	if d.Scoring != nil && d.Scoring.Mode == ScoringAggregate {
 		a := d.Scoring.Aggregator
-		if a == nil || strings.TrimSpace(a.Source) == "" {
+		if a == nil || !HasSource(a.Runtime, a.Source) {
 			issues = append(issues, IssueAggregatorSource)
 		}
 		if a != nil && !slices.Contains(enabledRuntimes, a.Runtime) {

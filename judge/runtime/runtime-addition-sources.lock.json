@@ -1,6 +1,18 @@
 {
   "base_archive_sha256": "4e28c974185c64330731c15d9a0db1504c91b6c322dec92b28ecaa4bc69adfdc",
   "files": {
+    "bc.tar.gz": {
+      "license": "GPL-3.0-or-later",
+      "sha256": "ae470fec429775653e042015edc928d07c8c3b2fc59765172a330d3d87785f86",
+      "url": "https://ftp.gnu.org/gnu/bc/bc-1.08.2.tar.gz",
+      "version": "1.08.2 (dc 1.5.2)"
+    },
+    "brainfuck.tar.gz": {
+      "license": "GPL-2.0-or-later",
+      "sha256": "0c94792086a79151acf8f40cc905b003e5f50a77fabe819c49fb67555b65a66e",
+      "url": "https://codeload.github.com/rdebath/Brainfuck/tar.gz/525d346c006ea30dfc847ae3b32ed44d44fa9925",
+      "version": "525d346c006ea30dfc847ae3b32ed44d44fa9925"
+    },
     "bun.zip": {
       "sha256": "c678040f14fe0440eb839d37cbd0ce4c051a32da72806ac97de6a6aab6bf728f",
       "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-linux-x64-baseline.zip",
@@ -11,6 +23,12 @@
       "url": "https://downloads.haskell.org/~cabal/cabal-install-3.16.1.0/cabal-install-3.16.1.0-x86_64-linux-deb12.tar.xz",
       "version": "3.16.1.0"
     },
+    "clay.tar.gz": {
+      "license": "CC0-1.0",
+      "sha256": "ae90c8db1730a39c9e02b3d4844d0568906cacf8277b264606521b15282ae601",
+      "url": "https://codeload.github.com/laycrs/cLay/tar.gz/5798ba2e652c5438269199bde5388769a49ee8db",
+      "version": "20250308-1"
+    },
     "deno.zip": {
       "channel": "stable",
       "note": "LTS download server returned HTTP 403; official GitHub build of the same LTS release line.",
@@ -18,6 +36,12 @@
       "support_line": "2.9 LTS",
       "url": "https://github.com/denoland/deno/releases/download/v2.9.7/deno-x86_64-unknown-linux-gnu.zip",
       "version": "2.9.7"
+    },
+    "dlist.tar.gz": {
+      "license": "BSD-3-Clause",
+      "sha256": "173d637328bb173fcc365f30d29ff4a94292a1e0e5558aeb3dfc11de81510115",
+      "url": "https://hackage.haskell.org/package/dlist-1.0/dlist-1.0.tar.gz",
+      "version": "1.0"
     },
     "fiddle.gem": {
       "sha256": "7fa8ee3627271497f3add5503acdbc3f40b32f610fc1cf49634f083ef3f32eee",
@@ -27,6 +51,28 @@
       "sha256": "1ac63f04eac0ad551d45cbde38f27e0e3f43ceefd98833fae1fa3f2dbd042367",
       "url": "https://downloads.haskell.org/~ghc/9.10.3/ghc-9.10.3-x86_64-deb12-linux.tar.xz",
       "version": "9.10.3"
+    },
+    "golf-rust.tar.xz": {
+      "sha256": "5326b36c53de11d148c8f8dab6553a3d1006c2cfd32123683073fad3c302605b",
+      "url": "https://static.rust-lang.org/dist/rust-1.98.1-x86_64-unknown-linux-gnu.tar.xz"
+    },
+    "memoize.tar.gz": {
+      "license": "BSD-3-Clause",
+      "sha256": "342d3a4066af455e910ab996039ccede32c79fc294ec729d5dd1e03f1bdfa16a",
+      "url": "https://hackage.haskell.org/package/memoize-1.1.2/memoize-1.1.2.tar.gz",
+      "version": "1.1.2"
+    },
+    "murmur-hash.tar.gz": {
+      "license": "BSD-3-Clause",
+      "sha256": "71aa17132bff71814d653caed8f9da55c27e3c3425eb4db404fa65b3ca296dfe",
+      "url": "https://hackage.haskell.org/package/murmur-hash-0.1.0.11/murmur-hash-0.1.0.11.tar.gz",
+      "version": "0.1.0.11"
+    },
+    "nibbles.tar.gz": {
+      "license": "MIT",
+      "sha256": "66186997317fb2d5b3f987d4a24c5d6024cb7e5ee6e5c7f9a3d431117cbbd083",
+      "url": "https://codeload.github.com/darrenks/nibbles/tar.gz/5bbfddb9892baa5c6e3fd52e71a0db29ee994f06",
+      "version": "1.01+ (5bbfddb)"
     },
     "node.tar.xz": {
       "sha256": "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6",
@@ -42,6 +88,12 @@
       "sha256": "4d744085f48c8ba789228f3686e3c256fcc6b77ce1ff736e456b72031d0cb973",
       "url": "https://github.com/truffleruby/truffleruby/releases/download/graal-40.0.0/truffleruby-community-40.0.0-linux-amd64.tar.gz",
       "version": "40.0.0"
+    },
+    "whitespace.tar.gz": {
+      "license": "MPL-2.0",
+      "sha256": "e528891127c0ad260e9db46128a8a840b88d3c74d4cbc5e5e56b3ae3c8c6fffc",
+      "url": "https://codeload.github.com/CensoredUsername/whitespace-rs/tar.gz/5e496ec7c2a56569f9169471519b5071b4e6444b",
+      "version": "1.3.0"
     },
     "z3.zip": {
       "sha256": "f47be8d27d3230e823bf1eeede2fe0abaca55bb78d0b59974370e6689a92284a",

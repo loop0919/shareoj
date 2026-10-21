@@ -217,8 +217,11 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(set(fixtures), set(RUNTIMES))
         for name, runtime in RUNTIMES.items():
             self.assertTrue(runtime['compile'][0].startswith(('/opt/judge-runtimes/', '/usr/bin/')))
-            self.assertTrue(runtime['run'][0].startswith(('/opt/judge-runtimes/', '/box/')))
-            self.assertTrue({'AC', 'WA', 'CE', 'TLE'} <= {case['verdict'] for case in fixtures[name]})
+            self.assertTrue(runtime['run'][0] == '/usr/bin/sh' or runtime['run'][0].startswith(('/opt/judge-runtimes/', '/box/')))
+            required = {'AC', 'WA', 'TLE'}
+            if runtime['compile'] != ['/usr/bin/true']:
+                required.add('CE')
+            self.assertTrue(required <= {case['verdict'] for case in fixtures[name]}, name)
 
     def test_java_artifact_rejects_symlink_directory(self):
         import tempfile
@@ -512,6 +515,27 @@ class RunnerTests(unittest.TestCase):
             host.validate_job(job, 'sha256:test')
         with self.assertRaisesRegex(ValueError, 'invalid source'):
             sandbox.execute(job, compile_phase=True)
+
+    def test_whitespace_judge_source_survives_validation_and_artifact_copy(self):
+        import tempfile
+        source = '  \t \n\t\n \t\n\n\n'
+        code = dict(runtime='whitespace13', source=source)
+        host.validate_judge_code(code)
+        for invalid in ('', '\0', ' ' * 65537):
+            with self.assertRaises(ValueError):
+                host.validate_judge_code(dict(code, source=invalid))
+        with self.assertRaises(ValueError):
+            host.validate_judge_code(dict(code, runtime='cpp23-gcc'))
+        runtime = RUNTIMES['whitespace13-isolate']
+        with tempfile.TemporaryDirectory() as tmp:
+            box = Path(tmp)
+            (box / 'main.ws').write_text(source)
+            data = sandbox.collect_artifact(box, runtime)
+            self.assertEqual(data, source.encode())
+            artifact = box / 'artifact'
+            artifact.write_bytes(data)
+            sandbox.prepare_program(box, runtime, artifact)
+            self.assertEqual((box / 'main.ws').read_bytes(), source.encode())
 
     def test_one_source_limit_covers_validation_and_reading_back_the_source(self):
         import tempfile

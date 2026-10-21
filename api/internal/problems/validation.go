@@ -17,6 +17,15 @@ var (
 )
 
 func ValidID(id string) bool { return problemID.MatchString(id) }
+
+// Whitespace programs consist of spaces, tabs and newlines, so trimming loses the program.
+func HasSource(runtime, source string) bool {
+	if strings.TrimSuffix(runtime, "-isolate") == "whitespace13" {
+		return source != ""
+	}
+	return strings.TrimSpace(source) != ""
+}
+
 func ValidDraft(d Draft, knownRuntimes []string) bool {
 	if d.Difficulty != nil && (*d.Difficulty < 1 || *d.Difficulty > 10) {
 		return false

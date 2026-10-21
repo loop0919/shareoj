@@ -1109,5 +1109,264 @@
       "source": "raise \"leaked\" if File.exist?(\"marker\"); File.write(\"marker\",\"x\"); puts 3",
       "verdict": "AC"
     }
+  ],
+  "clay20250308-isolate": [
+    {
+      "name": "stdin",
+      "source": "{int a,b; rd(a,b); wt(a+b);}",
+      "verdict": "AC",
+      "input": "1 2\n"
+    },
+    {
+      "name": "wrong",
+      "source": "{wt(4);}",
+      "verdict": "WA"
+    },
+    {
+      "name": "syntax",
+      "source": "{invalid syntax!}",
+      "verdict": "CE"
+    },
+    {
+      "name": "exception",
+      "source": "{abort();}",
+      "verdict": "RE"
+    },
+    {
+      "name": "timeout",
+      "source": "{for(;;){}}",
+      "verdict": "TLE"
+    },
+    {
+      "name": "output",
+      "source": "{for(;;) puts(\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\");}",
+      "verdict": "OLE"
+    },
+    {
+      "name": "library-boost-acl",
+      "source": "#include <boost/multiprecision/cpp_int.hpp>\n#include <atcoder/dsu>\n{atcoder::dsu d(3); d.merge(0,1); boost::multiprecision::cpp_int x=1; x<<=100; if(d.size(0)!=2 || (x>>100)!=1) abort(); wt(3);}",
+      "verdict": "AC"
+    },
+    {
+      "name": "interactive",
+      "source": "{for(int n=10;n<12;n++){printf(\"%d\\n\",n);fflush(stdout);int x; if(scanf(\"%d\",&x)!=1 || x!=2*n)abort();}}",
+      "verdict": "AC",
+      "input": "20\n22\n",
+      "output": "10\n11\n"
+    },
+    {
+      "name": "response",
+      "source": "{for(int i=0;i<2;i++){int x; if(scanf(\"%d\",&x)!=1)abort();printf(\"%d\\n\",2*x);fflush(stdout);}}",
+      "verdict": "AC",
+      "input": "10\n11\n",
+      "output": "20\n22\n"
+    }
+  ],
+  "dc152-isolate": [
+    {
+      "name": "stdin",
+      "source": "?+p",
+      "verdict": "AC",
+      "input": "1 2\n"
+    },
+    {
+      "name": "wrong",
+      "source": "4p",
+      "verdict": "WA"
+    },
+    {
+      "name": "exception",
+      "source": "!kill -TERM $PPID\n",
+      "verdict": "RE"
+    },
+    {
+      "name": "timeout",
+      "source": "[lxx]dsxx",
+      "verdict": "TLE"
+    },
+    {
+      "name": "output",
+      "source": "[3plxx]dsxx",
+      "verdict": "OLE"
+    },
+    {
+      "name": "bigint",
+      "source": "2 200 ^ 2 200 ^ / 2 + p",
+      "verdict": "AC"
+    },
+    {
+      "name": "interactive",
+      "source": "[!kill -TERM $PPID\n]sf 10p ? 20 !=f 11p ? 22 !=f",
+      "verdict": "AC",
+      "input": "20\n22\n",
+      "output": "10\n11\n"
+    },
+    {
+      "name": "response",
+      "source": "?2*p ?2*p",
+      "verdict": "AC",
+      "input": "10\n11\n",
+      "output": "20\n22\n"
+    }
+  ],
+  "brainfuck-tritium-isolate": [
+    {
+      "name": "stdin",
+      "source": ",.",
+      "verdict": "AC",
+      "input": "3"
+    },
+    {
+      "name": "wrong",
+      "source": "[-]++++++++++++++++++++++++++++++++++++++++++++++++++++.",
+      "verdict": "WA"
+    },
+    {
+      "name": "exception",
+      "source": "+[]",
+      "verdict": "RE"
+    },
+    {
+      "name": "timeout",
+      "source": ",[,]",
+      "verdict": "TLE",
+      "input": "x"
+    },
+    {
+      "name": "output",
+      "source": ",[.]",
+      "verdict": "OLE",
+      "input": "x"
+    },
+    {
+      "name": "byte-wrap",
+      "source": "-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------.",
+      "verdict": "AC"
+    },
+    {
+      "name": "interactive",
+      "source": "[-]+++++++++++++++++++++++++++++++++++++++++++++++++.[-]++++++++++++++++++++++++++++++++++++++++++++++++.[-]++++++++++.[-],--------------------------------------------------[[]][-],------------------------------------------------[[]][-],----------[[]][-]+++++++++++++++++++++++++++++++++++++++++++++++++.[-]+++++++++++++++++++++++++++++++++++++++++++++++++.[-]++++++++++.[-],--------------------------------------------------[[]][-],--------------------------------------------------[[]][-],----------[[]]",
+      "verdict": "AC",
+      "input": "20\n22\n",
+      "output": "10\n11\n"
+    },
+    {
+      "name": "response",
+      "source": "[-],-------------------------------------------------[[]][-],------------------------------------------------[[]][-],----------[[]][-]++++++++++++++++++++++++++++++++++++++++++++++++++.[-]++++++++++++++++++++++++++++++++++++++++++++++++.[-]++++++++++.[-],-------------------------------------------------[[]][-],-------------------------------------------------[[]][-],----------[[]][-]++++++++++++++++++++++++++++++++++++++++++++++++++.[-]++++++++++++++++++++++++++++++++++++++++++++++++++.[-]++++++++++.",
+      "verdict": "AC",
+      "input": "10\n11\n",
+      "output": "20\n22\n"
+    },
+    {
+      "name": "byte-io",
+      "source": ",.,.",
+      "input": "é",
+      "output": "é",
+      "verdict": "AC"
+    }
+  ],
+  "whitespace13-isolate": [
+    {
+      "name": "stdin",
+      "source": "    \n\t\n\t\t    \n\t\t\t\t\n \t\n\n\n",
+      "verdict": "AC",
+      "input": "3\n"
+    },
+    {
+      "name": "wrong",
+      "source": "   \t  \n\t\n \t\n\n\n",
+      "verdict": "WA"
+    },
+    {
+      "name": "syntax",
+      "source": " ",
+      "verdict": "CE"
+    },
+    {
+      "name": "exception",
+      "source": " \n\n\n\n\n",
+      "verdict": "RE"
+    },
+    {
+      "name": "timeout",
+      "source": "\n    \n\n \n  \n",
+      "verdict": "TLE"
+    },
+    {
+      "name": "output",
+      "source": "\n    \n   \t\t\n\t\n \t\n \n  \n",
+      "verdict": "OLE"
+    },
+    {
+      "name": "bigint",
+      "source": "   \t                                                                                                                                                                                                        \n   \t                                                                                                                                                                                                        \n\t \t    \t \n\t   \t\n \t\n\n\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "interactive",
+      "source": "   \t \t \n\t\n \t   \t \t \n\t\n      \n\t\n\t\t    \n\t\t\t   \t \t  \n\t  \t\n\t   \n \n\n\n    \n   \t \t\t\n\t\n \t   \t \t \n\t\n      \n\t\n\t\t    \n\t\t\t   \t \t\t \n\t  \t\n\t  \t\n \n\n\n   \t\n\n\n\n",
+      "verdict": "AC",
+      "input": "20\n22\n",
+      "output": "10\n11\n"
+    },
+    {
+      "name": "response",
+      "source": "    \n\t\n\t\t    \n\t\t\t   \t \n\t  \n\t\n \t   \t \t \n\t\n      \n\t\n\t\t    \n\t\t\t   \t \n\t  \n\t\n \t   \t \t \n\t\n  \n\n\n",
+      "verdict": "AC",
+      "input": "10\n11\n",
+      "output": "20\n22\n"
+    }
+  ],
+  "nibbles101-isolate": [
+    {
+      "name": "stdin",
+      "source": "+_",
+      "verdict": "AC",
+      "input": "1 2\n"
+    },
+    {
+      "name": "wrong",
+      "source": "4",
+      "verdict": "WA"
+    },
+    {
+      "name": "syntax",
+      "source": "\"",
+      "verdict": "CE"
+    },
+    {
+      "name": "exception",
+      "source": "error \"rejected\"",
+      "verdict": "RE"
+    },
+    {
+      "name": "timeout",
+      "source": "+ , ~",
+      "verdict": "TLE"
+    },
+    {
+      "name": "output",
+      "source": ", ~",
+      "verdict": "OLE"
+    },
+    {
+      "name": "bigint",
+      "source": "+2 / ^2 200 ^2 200",
+      "verdict": "AC"
+    },
+    {
+      "name": "interactive",
+      "source": ": \"10\\n\" ? == `r =1 allLines 20 : \"11\\n\" ? == `r =2 allLines 22 \"\" error \"answer\" error \"answer\"",
+      "verdict": "AC",
+      "input": "20\n22\n",
+      "output": "10\n11\n"
+    },
+    {
+      "name": "response",
+      "source": "? == `r =1 allLines 10 : \"20\\n\" ? == `r =2 allLines 11 \"22\\n\" error \"input\" error \"input\"",
+      "verdict": "AC",
+      "input": "10\n11\n",
+      "output": "20\n22\n"
+    }
   ]
 }

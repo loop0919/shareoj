@@ -1,4 +1,4 @@
-# Haskell、JavaScript、TypeScript、Rubyの追加
+# 追加ランタイムの構築
 
 既存14ランタイムの実体を保持して9ランタイムを追加し、2026年9月19日に既存の公開12言語と合わせて21言語を公開した。
 実機smokeに合格したIDだけを公開する。
@@ -19,6 +19,37 @@ Denoはユーザーが承認したGitHub公式安定版を使用する。
 LTS専用配布物としては扱わない。
 BunとRubyはLTSの指定がないため安定版を固定する。
 HaskellはコンパイラをLTS対応版とし、ライブラリ全体をStackage snapshotそのものに固定する方式ではない。
+
+## cLay、dc、Nibbles、Brainfuck、Whitespaceの追加
+
+この5言語は実装済みだが、配布と実機smokeは未実施である。
+既存のビルド手順でランタイムとworkerを再構築し、`rollout.py run`の実機検証に合格したIDだけを公開する。
+
+| 公開ID | 固定した処理系 |
+| --- | --- |
+| `clay20250308` | [cLay](https://github.com/laycrs/cLay)、20250308-1、`5798ba2e652c5438269199bde5388769a49ee8db` |
+| `dc152` | GNU bc 1.08.2同梱のdc 1.5.2 |
+| `nibbles101` | [Nibbles](https://github.com/darrenks/nibbles)、1.01+、`5bbfddb9892baa5c6e3fd52e71a0db29ee994f06` |
+| `brainfuck-tritium` | [Tritium](https://github.com/rdebath/Brainfuck)、`525d346c006ea30dfc847ae3b32ed44d44fa9925` |
+| `whitespace13` | [whitespacers](https://github.com/CensoredUsername/whitespace-rs)、1.3.0、`5e496ec7c2a56569f9169471519b5071b4e6444b` |
+
+cLayはC++へ変換し、既存のGCCでC++23としてコンパイルする。
+Boost 1.92.0のヘッダーとACL 1.6を利用できる。
+Nibblesはテキスト形式をHaskellへ変換してからGHCでコンパイルし、両方をコンパイル枠で処理する。
+処理系の依存としてmemoize 1.1.2、murmur-hash 0.1.0.11、dlist 1.0と既存のsplitを固定する。
+memoizeにはGHC 9.8以降のTemplate Haskell互換修正を適用し、Nibblesが生成するmainでは対話に備えて標準出力のバッファリングを無効にする。
+WhitespaceのRust依存は`golf/Cargo.lock`で固定する。
+ビルド用Cargoはベース配布物と同じRust配布物から導入し、各処理系のライセンスを成果物に同梱する。
+
+Brainfuckは8ビットセル、バイト入出力とEOF=-1を指定し、入力前に標準出力をフラッシュする修正を適用する。
+dcとBrainfuckは実行前の構文検査を行わず、Whitespaceは`wsc --dump`で検査する。
+Nibbles、dc、Brainfuck、Whitespaceはcheckerなどの追加ファイル引数を処理系に渡さず、標準入力を使用する。
+Whitespaceの空白だけのソースはAPI、worker、編集画面で保持し、エディターのTabとEnterにも空白を変換しない設定を適用する。
+
+2026年10月21日のローカル検証では、固定した既存ランタイム上で5処理系のビルドと代表プログラムの実行を確認した。
+cLayのBoostとACL、各言語の逐次対話、時間制限と出力制限に使うfixtureも確認した。
+Python 155テスト、Goの関連テスト、Webの型検査、ビルドとブラウザ61テスト、Terraform 1.14のvalidateが成功した。
+これらは実機のisolate内での判定検証や公開判定を代替しない。
 
 ## 依存の固定
 
