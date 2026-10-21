@@ -22,8 +22,9 @@ HaskellはコンパイラをLTS対応版とし、ライブラリ全体をStackag
 
 ## cLay、dc、Nibbles、Brainfuck、Whitespaceの追加
 
-この5言語は実装済みだが、配布と実機smokeは未実施である。
-既存のビルド手順でランタイムとworkerを再構築し、`rollout.py run`の実機検証に合格したIDだけを公開する。
+この5言語はCRubyのYJIT有効化と合わせてローリング配布し、公開済みである。
+EC2の3台すべてで全28ランタイムの実機smokeと起動確認に合格してから公開し、本番APIの検証も通過した。
+配布物と検証結果は[適用記録](runtime-rollout.md)に記録する。
 
 | 公開ID | 固定した処理系 |
 | --- | --- |

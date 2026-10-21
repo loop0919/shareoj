@@ -805,3 +805,39 @@ TLEが1回だけの提出`697bacc6-af0c-485e-990e-891fd22fc43a`と、サンプ�
 Terraform stateはrefresh-onlyで実状態へ同期した。
 全体planに残るbridgeの予約同時実行数と配布用S3オブジェクトの差分は適用していない。
 bridge本体はLambda API経由で更新済みで、コードのSHA-256（Base64）は`LUOjofVoh8+8YsruK+ZAADwgaYYMmm+iKIr6V30mmKM=`である。
+
+## 2026-10-21（UTC）のYJITと5言語のローリング配布
+
+CRuby 4.0.7のYJITを有効にし、cLay、dc、Nibbles、Brainfuck、Whitespaceを追加公開した。
+cLayではBoost 1.92.0のヘッダーとACL 1.6を利用できる。
+APIとfrontendは`ab9680a`の[Actions run 39609119983](https://github.com/loop0919/shareoj/actions/runs/39609119983)で先行配布し、workerは出力超過テストを調整した`7d0ee54`から構築した。
+
+実行記録は`judge/.build/rolling-languages-20261021T132956Z/`に保存した。
+同ディレクトリの`config.json`を使って`judge/rollout.py rolling`を実行し、`state.json`の`status: passed`と`step: complete`を確認した。
+提出受付は維持し、先行台の検証後に送り出しを一時停止して処理中の提出を排出し、新環境へ切り替えた。
+先行台で採点を再開してから残り2台を更新した。
+既存21言語は切り替え中も公開し、追加5言語は全台の検証と起動確認後に公開した。
+
+| 配布物 | SHA-256 |
+| --- | --- |
+| ランタイム | `e5bbf5a173252c7ebd36376b21c1b9e5b7be0eff569bac6c3b4640329072c234` |
+| worker | `02e12154a19733384361c982e5acfed640ff814c1a5d8214b47b03e1e3cc4c45` |
+| bridge | `24dafc1320bf8fe79a91f598e037db6d470a05daf60f755579ee26aa35b65b15` |
+
+固定済みの既存ランタイムを保持してRubyと追加5言語を再構築し、入力アーカイブと再構築手順のSHA-256を`build-input-sha256.txt`へ保存した。
+新しい採点環境は`sha256:02d24de587c4a84ec7b0419993e1d4ccc2d118c45394db07c95296b925329b60`で、3台のOSパッケージとkernel `7.0.0-1014-aws`も一致した。
+
+先行台`i-0ea862364b0f1cfe5`の結果は`verify-first/report.json`、残りの`i-0ac1465ccde7188b2`と`i-01fb59a0d1acbfd13`の結果は`verify-rest/report.json`に保存した。
+各台で全28ランタイムが合格し、`failedRuntimes=[]`、両レポートの`ready=true`を確認した。
+YJITのコンパイル、cLayのBoost・ACL、追加言語の通常実行・対話実行・制限超過の判定を含む。
+
+先行台への切り替え後のAPI検証は`api-1792594432555785723.json`、全台の起動と追加言語の公開後は`api-1792597743035982267.json`に保存した。
+両方とも`status: passed`、`cleanup: complete`である。
+最終検証ではprimaryとburst-2の採点区間が重なることも確認した。
+APIとサイトの言語一覧は26言語、`maintenance=false`で一致した。
+CI変数とTerraform入力を同期し、Terraform stateをrefresh-onlyで更新した。
+監視通知を戻し、保守用の保持期限を15分へ短縮した。
+
+成功後、標準処理で古いS3配布物1世代（6,041,409,932 bytes）を削除し、`releasePruned: true`を確認した。
+復旧用のEBSスナップショット`snap-09026c940938f0bbe`、`snap-050988fa0058640e5`、`snap-0d847ff5f3b2d6777`は配布前にcompletedを確認し、保持している。
+作成結果と完了確認は`snapshots.json`と`snapshots-completed.json`に保存した。
