@@ -143,6 +143,22 @@ class InteractiveTests(unittest.TestCase):
             self.assertEqual(result, 'TLE')
             self.assertIn('経過時間超過', log)
 
+    def test_exit_between_observation_and_poll_cannot_skip_final_metrics(self):
+        for source_code, judge_code, expected in [(2, 7, 'RE'), (0, 1, 'WA'), (0, 3, 'JE'), (0, 7, 'AC'), (0, 0, 'AC')]:
+            with self.subTest(source=source_code, judge=judge_code):
+                processes = [Mock(poll=Mock(return_value=code),
+                                  stdin=Mock(closed=True), stdout=Mock(closed=True))
+                             for code in (source_code, judge_code)]
+                # Pipes have reached EOF, but both processes exit just after observe returns None.
+                metrics = [dict(status='' if code == 0 else 'RE', exitCode=code,
+                                signal=0, overflow=False, oom=False) for code in (source_code, judge_code)]
+                observe = Mock(side_effect=[None, None, *metrics])
+                with patch.object(interactive.os, 'set_blocking'), \
+                        patch.object(interactive.select, 'select', return_value=([], [], [])):
+                    result = interactive.relay(processes, observe, 3, lambda _: None, 'testlib', points=True)
+                self.assertEqual(result, expected)
+                self.assertEqual(observe.call_count, 4)
+
     def test_each_direction_and_stderr_resource_failure(self):
         with patch.object(interactive.sandbox, 'OUTPUT_LIMIT', 10000):
             for i in (0, 1):

@@ -39,7 +39,8 @@ def relay(processes, observe, wall, diagnostic, protocol='legacy', points=False)
         if wall_expired or time.monotonic() >= deadline:
             diagnostic('対話全体の経過時間超過（応答待ちを含む）\n')
             return 'TLE'
-        if all(p.poll() is not None for p in processes) and all(s.closed for s in outputs):
+        # Accept only exits whose metrics were checked above, not a later poll racing with them.
+        if all(m is not None for m in metrics) and all(s.closed for s in outputs):
             return 'AC'
         reads = [outputs[i] for i in range(2) if not outputs[i].closed and
                  (inputs[1-i].closed or len(buffers[i]) < BUFFER_LIMIT)]
