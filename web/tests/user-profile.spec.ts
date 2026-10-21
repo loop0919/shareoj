@@ -16,7 +16,10 @@ test('user links show shared profile icons and keep initials when unavailable', 
     await expect(author.locator('.user-avatar')).toHaveAttribute('aria-hidden', 'true')
   }
   for (const handle of ['bob', 'carol']) {
-    await expect(page.getByRole('link', { name: handle, exact: true }).locator('.user-avatar')).toHaveText(handle[0]!.toUpperCase())
+    const link = page.getByRole('link', { name: handle, exact: true })
+    await expect(link).toHaveText(handle)
+    await expect(link).toHaveAccessibleName(handle)
+    await expect.poll(() => link.locator('[data-initial]').evaluate(element => getComputedStyle(element, '::before').content)).toBe(`"${handle[0]!.toUpperCase()}"`)
   }
   await expect.poll(() => requests.slice().sort()).toEqual(['alice', 'bob', 'carol'])
   await page.getByRole('link', { name: '詳細', exact: true }).click()

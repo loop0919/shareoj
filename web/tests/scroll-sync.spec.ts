@@ -80,6 +80,7 @@ test('scroll sync can be turned off, persists, and keeps the line when switching
   await expectAligned(editor, preview)
   await toggle.click()
   await page.reload()
+  await expect(page.locator('#problem-source')).toBeEditable()
   await settings.click()
   await expect(toggle).toHaveAttribute('aria-checked', 'false')
   await toggle.click()
