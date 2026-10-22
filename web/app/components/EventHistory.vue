@@ -22,7 +22,7 @@ onMounted(load)
     <h2 id="events-heading">イベント</h2>
     <LoadingSpinner v-if="loading" label="イベントを読み込み中" />
     <p v-else-if="error" role="alert">{{ error }} <button class="editor-button" @click="load">再試行</button></p>
-    <EmptyState v-else-if="!items.length" kind="event" title="イベントはまだありません。" description="自分の問題がお気に入りに追加されたり、初めて正解されたり、ユーザー解説が書かれたり、自分のコンテストに共同作成者が加わったりすると、ここに表示されます。" />
+    <EmptyState v-else-if="!items.length" kind="event" title="イベントはまだありません。" description="自分の問題がお気に入りに追加されたり、初めて正解されたり、ユーザー解説が書かれたり、自分のコンテストに共同作成者が加わったり、コンテストで質問や回答、結果の公開があったり、自分の提出がリジャッジされたりすると、ここに表示されます。" />
     <ul v-else class="event-list">
       <li v-for="item in items" :key="item.id">
         <NuxtLink :to="notificationLink(item)">{{ notificationTitle(item) }}</NuxtLink>
