@@ -62,7 +62,7 @@ func (s *Store) Rejudge(ctx context.Context, in RejudgeInput) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	// Each submitter whose submission went back to the queue gets one bell notification. A user without a profile
+	// Each submitter whose submission went back to the queue, the one who rejudged included, gets one bell notification. A user without a profile
 	// (the actor or the submitter) is skipped because of the foreign keys.
 	var queued int64
 	err = tx.QueryRow(ctx, `WITH q AS (UPDATE submissions s SET status='QUEUED',result=NULL,progress=NULL,judge_attempt=gen_random_uuid(),
@@ -87,7 +87,7 @@ func (s *Store) Rejudge(ctx context.Context, in RejudgeInput) (int64, error) {
   RETURNING s.owner_id),
 n AS (INSERT INTO notifications(owner_id,problem_id,actor_id,kind)
   SELECT DISTINCT q.owner_id,$1::uuid,$6,'rejudge' FROM q
-  WHERE q.owner_id<>$6 AND EXISTS(SELECT 1 FROM user_profiles WHERE owner_id=$6) AND EXISTS(SELECT 1 FROM user_profiles WHERE owner_id=q.owner_id))
+  WHERE EXISTS(SELECT 1 FROM user_profiles WHERE owner_id=$6) AND EXISTS(SELECT 1 FROM user_profiles WHERE owner_id=q.owner_id))
 SELECT COUNT(*) FROM q`,
 		in.ProblemID, in.Runtimes, in.SubmissionIDs, in.Image, in.CheckerRuntimes, in.Actor).Scan(&queued)
 	if err != nil {

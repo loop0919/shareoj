@@ -113,31 +113,33 @@ func TestRejudgeNotificationsPostgres(t *testing.T) {
 	if got := h.request("POST", "/my/problems/"+plain+"/rejudge", "alice", `{}`, 202); got != `{"queued":4}` {
 		t.Fatalf("queued: %s", got)
 	}
-	for _, user := range []string{"bob", "carol"} {
+	// The one who rejudges hears about their own submissions too.
+	for _, user := range []string{"bob", "carol", "alice"} {
 		got := bell(user)
 		if len(got) != 1 || got[0].Kind != "rejudge" || got[0].Actor != "alice" || got[0].ProblemID != plain ||
 			got[0].ContestID != "" || got[0].ProblemIndex != nil || got[0].Title != "Plain" {
 			t.Fatalf("%s: %+v", user, got)
 		}
 	}
-	if got := bell("alice"); len(got) != 0 {
-		t.Fatalf("alice: %+v", got)
-	}
 	// The contest problem at position 1 names the contest, its index and the contest copy's title.
 	if got := h.request("POST", "/my/problems/"+second+"/rejudge", "alice", `{}`, 202); got != `{"queued":4}` {
 		t.Fatalf("queued: %s", got)
 	}
-	got := bell("carol")
-	if len(got) != 2 {
-		t.Fatalf("carol: %+v", got)
-	}
-	for _, g := range got {
-		if g.ProblemID == second && (g.ContestID != contest || g.ProblemIndex == nil || *g.ProblemIndex != 1 || g.Title != "Contest copy") {
-			t.Fatalf("contest rejudge: %+v", g)
+	for _, user := range []string{"carol", "alice"} {
+		got := bell(user)
+		matches := 0
+		for _, g := range got {
+			if g.ProblemID != second {
+				continue
+			}
+			matches++
+			if g.ContestID != contest || g.ProblemIndex == nil || *g.ProblemIndex != 1 || g.Title != "Contest copy" {
+				t.Fatalf("contest rejudge: %+v", g)
+			}
 		}
-	}
-	if got := bell("alice"); len(got) != 0 {
-		t.Fatalf("alice: %+v", got)
+		if len(got) != 2 || matches != 1 {
+			t.Fatalf("%s: %+v", user, got)
+		}
 	}
 	// A problem taken down and put into a contest that has not started stays hidden from its submitter: no contest,
 	// no index and no title, neither the contest copy's nor the working draft's.
@@ -158,7 +160,7 @@ func TestRejudgeNotificationsPostgres(t *testing.T) {
 	if got := h.request("POST", "/my/problems/"+exPub+"/rejudge", "alice", `{}`, 202); got != `{"queued":1}` {
 		t.Fatalf("queued: %s", got)
 	}
-	got = bell("dave")
+	got := bell("dave")
 	if len(got) != 1 || got[0].Kind != "rejudge" || got[0].ContestID != "" || got[0].ProblemIndex != nil || got[0].Title != "" {
 		t.Fatalf("before the start: %+v", got)
 	}
