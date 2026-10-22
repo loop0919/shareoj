@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type { PublicProblem } from './problem'
 import { shortId } from '../utils/short-id'
 // hasEditorial is present only when the viewer may read the editorial now. False means none is registered.
@@ -97,3 +98,8 @@ export function labelIndex(label: unknown) {
   return index - 1
 }
 export const contestProblemPath = (contestId: string, index: number) => `/contests/${shortId(contestId)}/${problemLabel(index)}`
+
+export const contestScheduleSchema = z.object({
+  items: z.array(z.object({ id: z.string().uuid(), title: z.string(), startsAt: z.string().datetime({ offset: true }), endsAt: z.string().datetime({ offset: true }) })),
+})
+export type ScheduledContest = z.infer<typeof contestScheduleSchema>['items'][number]

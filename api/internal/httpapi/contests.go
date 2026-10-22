@@ -76,6 +76,18 @@ func (p contestHandler) contestList(w http.ResponseWriter, r *http.Request, owne
 	writeAuthJSON(w, 200, offsetResponse[contests.Contest]{Items: list, HasMore: more})
 }
 
+func (p contestHandler) contestSchedule(w http.ResponseWriter, r *http.Request, owner string) {
+	if !p.available(w) {
+		return
+	}
+	items, err := p.Contests.ParticipationSchedule(r.Context(), owner)
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, map[string]any{"items": items})
+}
+
 func (p contestHandler) contestDetail(w http.ResponseWriter, r *http.Request, owner string) {
 	id, ok := p.contestID(w, r, "contest_not_found")
 	if !ok {

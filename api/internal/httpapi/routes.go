@@ -176,6 +176,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	private("GET /my/tester-invitations/{token}", problems.testerInvitation, false)
 	private("POST /my/tester-invitations/{token}", problems.testerInvitation, false)
 	private("GET /my/contests", contests.contestList, true)
+	private("GET /my/contest-schedule", contests.contestSchedule, false)
 	private("GET /my/contests/{id}", contests.contestDetail, true)
 	private("PUT /my/contests/{id}", contests.saveContest, true)
 	private("GET /my/contests/drafts", contests.contestDrafts, false)

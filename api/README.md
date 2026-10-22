@@ -646,6 +646,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 
 | API | 動作 |
 | --- | --- |
+| `GET /my/contest-schedule` | 参加登録した終了前のコンテストの`id`、`title`、`startsAt`、`endsAt`を開始の昇順で最大50件、`{"items":[...]}`で返す |
 | `GET /my/contests/{id}/team` | メンバーに自分のチームの`id`、`name`、`members`、`onsite`と参加コード`code`を返す |
 | `PUT /my/contests/{id}/team/code` | 参加コードを作り直してチームを返す。終了まで |
 | `PUT /my/contests/{id}/team/name` | `{"name":"..."}`でチーム名を変えてチームを返す。終了まで |
