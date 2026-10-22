@@ -84,9 +84,11 @@ async function serveNotifications(page: Page, first: unknown[], later: unknown[]
 test('a new question is shown once and opens the clarifications', async ({ page, context, baseURL }) => {
   await presetCookie(context, baseURL!)
   await fakeNotifications(page, { permission: 'granted', answer: 'granted' })
-  await serveNotifications(page, [], [notice('clarification_question')])
+  const counter = await serveNotifications(page, [], [notice('clarification_question')])
   await page.clock.install()
   await page.goto('/')
+  // The bell appears once the account is known, which can be after the page loads; its poll counts from then.
+  await expect.poll(() => counter.count).toBe(1)
   await page.clock.runFor(30_000)
   await expect.poll(() => shown(page)).toEqual([{ title: '質問が届きました', body: '春のコンテスト', tag: 'notification:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa0' }])
   await page.clock.runFor(30_000)
