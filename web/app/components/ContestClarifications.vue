@@ -104,7 +104,7 @@ async function publish(item: Clarification) {
         <button class="editor-button primary" :disabled="saving || !question.trim() || !problemId">質問を送信</button>
       </form>
       <p v-else-if="!contest.staff" class="muted">質問は開催中のコンテストに参加すると送信できます。</p>
-      <div class="clarification-actions"><h2>質問一覧</h2><button class="editor-button" :disabled="loading" @click="load">質問を更新</button></div>
+      <div class="clarification-actions"><h2>質問一覧</h2><RefreshButton label="質問を更新" :busy="loading" :disabled="loading" @click="load" /></div>
       <p v-if="loadError" role="alert" class="notice">{{ loadError }}</p>
       <p v-if="saveError" role="alert" class="notice">{{ saveError }}</p>
       <p v-if="!items && loading" role="status">読み込み中…</p>
