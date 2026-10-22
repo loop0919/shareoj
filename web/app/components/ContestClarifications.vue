@@ -87,7 +87,7 @@ async function publish(item: Clarification) {
 
 <template>
   <section class="contest-section clarifications" aria-labelledby="clarifications-title">
-    <h1 id="clarifications-title">質問・回答</h1>
+    <h1 id="clarifications-title">質問</h1>
     <p v-if="!user" class="notice">質問・回答の閲覧には<NuxtLink :to="{ path: '/login', query: { next: $route.fullPath } }">ログイン</NuxtLink>が必要です。</p>
     <template v-else>
       <p class="muted">非公開の質問は、質問者本人・コンテスト作成者本人・対象問題の作問者とテスターだけが閲覧できます。全体公開された質問は、ログインしたすべての利用者が閲覧できます。</p>

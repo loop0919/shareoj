@@ -23,7 +23,7 @@ async function open(page: Page, staff = false) {
   const refreshed = page.waitForResponse(`**/api/contests/${id}`)
   await page.getByRole('button', { name: '今すぐ更新' }).click()
   await refreshed
-  await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '質問・回答', exact: true }).click()
+  await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '質問', exact: true }).click()
 }
 
 test('participant asks a private question and sees an escaped answer', async ({ page }) => {
@@ -101,7 +101,7 @@ test('manager keeps conflicted input, answers, and confirms publication', async 
 test('anonymous page and proxy require login; writes enforce same origin and body size', async ({ page, request }) => {
   await page.route('**/api/auth/me', route => route.fulfill({ json: { user: null } }))
   await page.goto(`${path}?view=clarifications`)
-  await expect(page.getByRole('region', { name: '質問・回答', exact: true })).toContainText('閲覧にはログインが必要です')
+  await expect(page.getByRole('region', { name: '質問', exact: true })).toContainText('閲覧にはログインが必要です')
   for (const [method, url] of [['GET', base], ['POST', base], ['PUT', `${base}/${qid}`]]) {
     const response = await request.fetch(url!, { method, data: {} })
     expect(response.status()).toBe(401)
