@@ -164,8 +164,10 @@ test('a tab signed out elsewhere stops alerting', async ({ page, context, baseUR
   await page.clock.install()
   await page.goto('/')
   await expect.poll(() => counter.count).toBe(1)
-  await page.clock.runFor(60_000)
-  await expect.poll(() => counter.count).toBeGreaterThanOrEqual(3)
+  // A poll sets its next one only once it is answered, so the clock moves on after each answer.
+  await page.clock.runFor(30_000)
+  await expect(page.locator('.notification-panel [role="alert"]')).toHaveText(/通知を取得できませんでした。/)
+  await page.clock.runFor(30_000)
   await expect(bell(page)).toHaveAttribute('aria-label', '通知（未読1件）')
   expect(await shown(page)).toEqual([])
 })
