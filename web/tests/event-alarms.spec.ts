@@ -85,6 +85,42 @@ test('a timer that wakes more than five minutes late stays quiet', async ({ page
   await expect.poll(() => shown(page)).toEqual([started(9, otherId)])
 })
 
+test('a start after a sleep notifies on time', async ({ page, context, baseURL }) => {
+  await prepare(page, context, baseURL!)
+  await serve(page, [scheduled(50, 120)])
+  await open(page)
+  await page.clock.runFor('05:00')
+  // The computer sleeps from T+5 to T+45: the wall clock jumps, while the timers wait as if no time had passed.
+  await page.clock.setSystemTime(T + 45 * 60_000)
+  await page.clock.runFor('07:00')
+  await expect.poll(() => shown(page)).toEqual([started(50)])
+  // The timer set before the sleep does not ring again.
+  await page.clock.runFor('01:00:00')
+  expect(await shown(page)).toEqual([started(50)])
+})
+
+test('waking is noticed before the next read', async ({ page, context, baseURL }) => {
+  await prepare(page, context, baseURL!)
+  await serve(page, [scheduled(48, 120)])
+  await open(page)
+  await page.clock.runFor('02:00')
+  // Asleep from T+2 to T+45; by the wall clock the next read would come at T+53, too late for the start.
+  await page.clock.setSystemTime(T + 45 * 60_000)
+  await page.clock.runFor('05:00')
+  await expect.poll(() => shown(page)).toEqual([started(48)])
+})
+
+test('a page shown after a sleep rings a start that just passed', async ({ page, context, baseURL }) => {
+  await prepare(page, context, baseURL!)
+  await serve(page, [scheduled(44, 120)])
+  await open(page)
+  await page.clock.runFor('02:00')
+  // Asleep from T+2 to T+45, a minute past the start; the page is shown again before the next beat.
+  await page.clock.setSystemTime(T + 45 * 60_000)
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await expect.poll(() => shown(page)).toEqual([started(44)])
+})
+
 test('a moved start notifies at the new time', async ({ page, context, baseURL }) => {
   await prepare(page, context, baseURL!)
   const state = await serve(page, [scheduled(20)])
