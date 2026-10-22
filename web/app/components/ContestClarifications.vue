@@ -142,6 +142,7 @@ async function publish(item: Clarification) {
 </template>
 
 <style scoped>
+.clarifications > h1 { margin: 0 0 20px; font-size: 1.25rem; letter-spacing: normal; }
 .clarification { border-top: 1px solid var(--color-border); padding: 24px 0; }
 .clarification h3, .clarification h4 { margin: 0 0 12px; }
 .clarification-text { white-space: pre-wrap; overflow-wrap: anywhere; }
