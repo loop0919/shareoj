@@ -91,7 +91,6 @@ async function publish(item: Clarification) {
     <h1 id="clarifications-title">質問</h1>
     <p v-if="!user" class="notice">質問・回答の閲覧には<NuxtLink :to="{ path: '/login', query: { next: $route.fullPath } }">ログイン</NuxtLink>が必要です。</p>
     <template v-else>
-      <p class="muted clarification-intro">非公開の質問は、質問者本人・コンテスト作成者本人・対象問題の作問者とテスターだけが閲覧できます。全体公開された質問は、ログインしたすべての利用者が閲覧できます。</p>
       <form v-if="canAsk" class="clarification-form clarification-ask" aria-labelledby="clarification-ask-title" @submit.prevent="ask">
         <h2 id="clarification-ask-title">質問する</h2>
         <div class="clarification-field">
