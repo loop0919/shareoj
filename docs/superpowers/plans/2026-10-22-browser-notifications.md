@@ -414,3 +414,68 @@ Expected: PASS
 git add web/app/utils/event-alarms.ts web/app/composables/useEventAlarms.ts web/app/composables/useContestJoin.ts web/app/layouts/default.vue web/tests/event-alarms.spec.ts
 git commit -m "feat: コンテストの開始と終了、定期便の時刻にブラウザ通知を出す"
 ```
+
+### Task 8: 自分の提出のリジャッジをベルに出す
+
+2026-10-23に利用者の依頼で追加した。ブラウザ通知は出さず、ベルだけに出す。通知するのはリジャッジを始めたとき。
+
+**Files:**
+- Create: `api/internal/database/043_rejudge_notifications.sql`
+- Modify: `api/internal/database/database.go`（embedと`migrations()`の末尾）
+- Modify: `api/internal/submissions/rejudge.go`（`Rejudge`）
+- Modify: `api/internal/notifications/store.go`（`Notification`と`List`。構造体のコメントの「contest_setterだけがコンテストを指す」という古い記述も直す）
+- Modify: `web/shared/types/notification.ts`
+- Modify: `docs/adr/0027-notify-open-pages-and-bell.md`（表に1行、説明に1段落、影響の「4種類」を5種類に）
+- Test: `api/internal/httpapi/rejudge_notifications_test.go`、`web/tests/contest-notifications.spec.ts`（追記）
+
+**Interfaces:**
+- Produces: 通知の種類`rejudge`。`problem_id`だけを持つ（`contest_id`はNULL。既存の`notifications_subject`の問題側の条件に当たる）。
+- Produces（Go）: `Notification`に`ProblemIndex *int \`json:"problemIndex,omitempty"\``を足す。`List`は`kind='rejudge'`のとき、問題が`contest_problems`にあれば（1問は最大1コンテスト）`ContestID`と`ProblemIndex`（`position`）を埋め、`Title`をコンテストの写しの題（`cp.draft->>'title'`）にする。コンテストになければ公開版の題（`published_draft->>'title'`）、それもなければ下書きの題。
+- Produces（TS）: `problemNotification`の`kind`に`'rejudge'`を足し、`contestId: z.string().uuid().optional()`と`problemIndex: z.number().int().nonnegative().optional()`を足す。`notificationMessages.rejudge = 'がリジャッジしました'`。`notificationLink`は`rejudge`で`contestId`と`problemIndex`があれば`` `${contestProblemPath(contestId, problemIndex)}?view=my-submissions` ``、なければ`` `/problems/${shortId(problemId)}?view=my-submissions` ``。`notificationTitle`の空の題は、`problemId`を持つ通知なら「無題の問題」にする（`rejudge`は`contestId`を持っても問題の通知である）。`bellAlert`は`rejudge`で`null`のまま。
+
+- [ ] **Step 1: Goのテストを書く**
+
+`TestRejudgeNotificationsPostgres`。作者`alice`の問題に、`bob`の提出2件、`carol`の提出1件、`alice`の提出1件を採点済みで用意し、`alice`がリジャッジする。
+
+- `bob`と`carol`にそれぞれちょうど1件の`kind == "rejudge"`、`actor == "alice"`、`problemId == その問題`がある。`alice`にはない。
+- コンテストにない問題では`contestId`がなく、題は公開版の題。
+- コンテストの2問目（`position == 1`）の問題をリジャッジすると、提出者の通知に`contestId`と`problemIndex == 1`があり、題はコンテストの写しの題。
+- リジャッジの応答の件数（戻した提出の数）は今までどおり。
+
+- [ ] **Step 2: 失敗を確かめる**
+
+Run: `cd api && go test ./internal/httpapi -run TestRejudgeNotificationsPostgres -count=1`
+Expected: FAIL（通知が0件）
+
+- [ ] **Step 3: マイグレーション`043_rejudge_notifications.sql`を追加する**
+
+`notifications_kind_check`を作り直し、042の一覧に`'rejudge'`を足す。`notifications_subject`は変えない。
+
+- [ ] **Step 4: `Rejudge`で提出者に通知を作る**
+
+提出を待ち状態に戻す同じトランザクションで、戻した提出の提出者の重複を除いた集合から、リジャッジした人を除いて`kind='rejudge'`、`problem_id`、`actor_id=リジャッジした人`の通知を作る。提出者とリジャッジした人に`user_profiles`の行がなければ作らない。戻した件数の返り値は変えない。
+
+- [ ] **Step 5: `List`と`Notification`を上のInterfacesのとおりに変え、Goのテストを通す**
+
+Run: `cd api && go test ./... -count=1`
+Expected: PASS
+
+- [ ] **Step 6: Webのテストを書き足す**
+
+`contest-notifications.spec.ts`のベルの表に`rejudge`の2行（コンテストなし、`contestId`と`problemIndex: 1`つき）を足し、`aliceがリジャッジしました`の文言と、リンク`/problems/<short>?view=my-submissions`と`/contests/<short>/B?view=my-submissions`を確かめる。
+
+- [ ] **Step 7: `notification.ts`を変え、Webのテストを通す**
+
+Run: `cd web && npm run build && npx playwright test tests/contest-notifications.spec.ts tests/browser-notifications.spec.ts --output=<scratchpad>/pw` と `npx nuxt typecheck`
+Expected: PASS
+
+- [ ] **Step 8: ADR 0027に追記する**
+
+表に「リジャッジされた｜リジャッジで待ち状態に戻った提出の提出者（リジャッジした本人を除く）｜出さない｜出す」を足す。説明に「リジャッジの通知は、リジャッジを始めたときに提出者ごとに1件作る。クリックで、その問題の「自分の提出」（コンテストの問題ならコンテストの問題ページの「自分の提出」）を開く。」を足す。影響の「4種類」を「5種類（質問、回答、全体公開、結果の公開、リジャッジ）」にする。
+
+- [ ] **Step 9: コミットする**
+
+```bash
+git add api/internal/database/043_rejudge_notifications.sql api/internal/database/database.go api/internal/submissions/rejudge.go api/internal/notifications/store.go api/internal/httpapi/rejudge_notifications_test.go web/shared/types/notification.ts web/tests/contest-notifications.spec.ts docs/adr/0027-notify-open-pages-and-bell.md
+git commit -m "feat: 自分の提出のリジャッジをベルで知らせる"
+```
