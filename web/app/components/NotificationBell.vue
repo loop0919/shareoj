@@ -7,7 +7,19 @@ const items = ref<Notification[]>([])
 const unread = ref(0)
 const error = ref('')
 const opening = ref(false)
+const { wants, show } = useBrowserNotifications()
 let request = 0
+// Ids this page has already seen; null until the first successful fetch, which only fills it.
+let seen: Set<string> | null = null
+function announce(list: Notification[]) {
+  if (!seen) { seen = new Set(list.map(item => item.id)); return }
+  for (const item of list) {
+    if (seen.has(item.id)) continue
+    seen.add(item.id)
+    const alert = bellAlert(item)
+    if (alert && wants('clarifications')) show(alert)
+  }
+}
 async function refresh() {
   if (opening.value || menu.value?.open) return
   const current = ++request
@@ -16,6 +28,7 @@ async function refresh() {
   try {
     const result = await $fetch('/api/my/notifications')
     if (current === request && user.value?.id === owner) {
+      announce(result.notifications)
       items.value = result.notifications
       unread.value = items.value.length
       error.value = ''
@@ -51,9 +64,9 @@ function toggle() {
 }
 onMounted(() => { void refresh(); document.addEventListener('click', outside) })
 onBeforeUnmount(() => { ++request; document.removeEventListener('click', outside) })
-watch(() => user.value?.id, () => { ++request; items.value = []; unread.value = 0; close(); void refresh() })
+watch(() => user.value?.id, () => { ++request; seen = null; items.value = []; unread.value = 0; close(); void refresh() })
 watch(() => route.fullPath, () => { close(); void refresh() })
-usePolling(refresh, 30_000, () => !!user.value)
+usePolling(refresh, 30_000, () => !!user.value, () => wants('clarifications'))
 </script>
 
 <template>
