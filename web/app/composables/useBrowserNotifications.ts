@@ -14,8 +14,11 @@ export function useBrowserNotifications() {
   })
   const supported = useState('browser-notifications-supported', () => false)
   const permission = useState<NotificationPermission | 'unsupported'>('browser-notifications-permission', () => 'unsupported')
+  // Chrome for Android's desktop site passes the check below, but its constructor throws; after that the page counts as
+  // a phone and stops trying.
+  const broken = useState('browser-notifications-broken', () => false)
   onMounted(() => {
-    supported.value = typeof Notification === 'function' && !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+    supported.value = !broken.value && typeof Notification === 'function' && !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
     permission.value = supported.value ? Notification.permission : 'unsupported'
   })
 
@@ -27,8 +30,20 @@ export function useBrowserNotifications() {
   function wants(kind: BrowserNotificationKind) {
     return supported.value && permission.value === 'granted' && settings.value.enabled && settings.value.kinds[kind]
   }
+  // Never throws, so a failure leaves the bell and the remaining alarms alone.
   function show(notice: BrowserNotice) {
-    const shown = new Notification(notice.title, { body: notice.body, tag: notice.key, icon: '/favicon.svg' })
+    let shown: Notification
+    try {
+      // Many systems cannot show an SVG notification icon.
+      shown = new Notification(notice.title, { body: notice.body, tag: notice.key, icon: '/apple-touch-icon.png' })
+    } catch (error) {
+      if (error instanceof TypeError) {
+        broken.value = true
+        supported.value = false
+        permission.value = 'unsupported'
+      }
+      return
+    }
     shown.onclick = () => {
       window.focus()
       void navigateTo(notice.url)

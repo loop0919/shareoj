@@ -1,72 +1,22 @@
 <script setup lang="ts">
-import { notificationLink, notificationMessages, notificationTitle, type Notification } from '~~/shared/types/notification'
+import { notificationLink, notificationMessages, notificationTitle } from '~~/shared/types/notification'
+// A view of the bell state the layout polls (useNotificationPolling); opening the panel reads the notifications.
 const { user } = useAccount()
 const route = useRoute()
 const menu = ref<HTMLDetailsElement>()
-const items = ref<Notification[]>([])
-const unread = ref(0)
-const error = ref('')
-const opening = ref(false)
-const { wants, show } = useBrowserNotifications()
-let request = 0
-// Ids this page has already seen; null until the first successful fetch, which only fills it.
-let seen: Set<string> | null = null
-function announce(list: Notification[]) {
-  if (!seen) { seen = new Set(list.map(item => item.id)); return }
-  for (const item of list) {
-    if (seen.has(item.id)) continue
-    seen.add(item.id)
-    const alert = bellAlert(item)
-    if (alert && wants('clarifications')) show(alert)
-  }
-}
-async function refresh() {
-  if (opening.value || menu.value?.open) return
-  const current = ++request
-  const owner = user.value?.id
-  if (!owner) { items.value = []; unread.value = 0; return }
-  try {
-    const result = await $fetch('/api/my/notifications')
-    if (current === request && user.value?.id === owner) {
-      announce(result.notifications)
-      items.value = result.notifications
-      unread.value = items.value.length
-      error.value = ''
-    }
-  } catch { if (current === request) error.value = '通知を取得できませんでした。' }
-}
+const { items, unread, error, opening, viewing, refresh, open } = useNotificationBell()
 function close() { if (menu.value) menu.value.open = false }
 function outside(event: MouseEvent) { if (event.target instanceof Node && !menu.value?.contains(event.target)) close() }
-async function open() {
-  if (opening.value) return
-  const current = ++request
-  const owner = user.value?.id
-  const previousUnread = unread.value
-  unread.value = 0
-  opening.value = true
-  error.value = ''
-  try {
-    const result = await $fetch('/api/my/notifications/read', { method: 'POST' })
-    if (current === request && user.value?.id === owner) items.value = result.notifications
-  } catch {
-    if (current === request && user.value?.id === owner) {
-      unread.value = previousUnread
-      error.value = '通知を既読にできませんでした。もう一度お試しください。'
-    }
-  } finally {
-    opening.value = false
-    if (!menu.value?.open) void refresh()
-  }
-}
 function toggle() {
-  if (menu.value?.open) void open()
+  viewing.value = !!menu.value?.open
+  if (viewing.value) void open()
   else if (!opening.value) void refresh()
 }
-onMounted(() => { void refresh(); document.addEventListener('click', outside) })
-onBeforeUnmount(() => { ++request; document.removeEventListener('click', outside) })
-watch(() => user.value?.id, () => { ++request; seen = null; items.value = []; unread.value = 0; close(); void refresh() })
-watch(() => route.fullPath, () => { close(); void refresh() })
-usePolling(refresh, 30_000, () => !!user.value, () => wants('clarifications'))
+onMounted(() => { document.addEventListener('click', outside) })
+// An editor page hides the bell, possibly open; the polls go on there.
+onBeforeUnmount(() => { viewing.value = false; document.removeEventListener('click', outside) })
+watch(() => user.value?.id, close)
+watch(() => route.fullPath, close)
 </script>
 
 <template>

@@ -1,6 +1,6 @@
 import type { BrowserContext, Page } from '@playwright/test'
 import { expect, test } from './fixtures/account'
-import { fakeNotifications, shown } from './fixtures/notifications'
+import { attempts, fakeNotifications, shown } from './fixtures/notifications'
 import { shortId } from '../shared/utils/short-id'
 
 const cookieName = 'openoj-browser-notifications'
@@ -71,15 +71,16 @@ async function presetCookie(context: BrowserContext, baseURL: string, clarificat
   const value = encodeURIComponent(JSON.stringify({ enabled: true, kinds: { clarifications, contests: true, featured: true, editorials: true } }))
   await context.addCookies([{ name: cookieName, value, url: baseURL }])
 }
-// The first request answers `first`; every later one answers `later`.
-async function serveNotifications(page: Page, first: unknown[], later: unknown[]) {
+// The nth request answers the nth list, and every later one the last; a number answers with that status instead.
+async function serveNotifications(page: Page, ...answers: (unknown[] | number)[]) {
   const counter = { count: 0 }
   await page.route('**/api/my/notifications', route => {
-    counter.count++
-    return route.fulfill({ json: { notifications: counter.count === 1 ? first : later } })
+    const answer = answers[Math.min(++counter.count, answers.length) - 1]!
+    return typeof answer === 'number' ? route.fulfill({ status: answer, json: {} }) : route.fulfill({ json: { notifications: answer } })
   })
   return counter
 }
+const bell = (page: Page) => page.locator('summary[title="通知"]')
 
 test('a new question is shown once and opens the clarifications', async ({ page, context, baseURL }) => {
   await presetCookie(context, baseURL!)
@@ -91,6 +92,8 @@ test('a new question is shown once and opens the clarifications', async ({ page,
   await expect.poll(() => counter.count).toBe(1)
   await page.clock.runFor(30_000)
   await expect.poll(() => shown(page)).toEqual([{ title: '質問が届きました', body: '春のコンテスト', tag: 'notification:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa0' }])
+  // The layout polls for the bell, and the bell polls nothing itself.
+  expect(counter.count).toBe(2)
   await page.clock.runFor(30_000)
   expect(await shown(page)).toHaveLength(1)
   await page.evaluate(() => (window as unknown as { __instances: { onclick: () => void }[] }).__instances[0]!.onclick())
@@ -115,6 +118,48 @@ test('a switched-off clarification kind stays quiet', async ({ page, context, ba
   await page.clock.install()
   await page.goto('/')
   await page.clock.runFor(60_000)
+  expect(await shown(page)).toEqual([])
+})
+
+test('an editor page without the bell still shows a new question', async ({ page, context, baseURL }) => {
+  await presetCookie(context, baseURL!)
+  await fakeNotifications(page, { permission: 'granted', answer: 'granted' })
+  const counter = await serveNotifications(page, [], [notice('clarification_question')])
+  await page.clock.install()
+  await page.goto('/problems/new')
+  await expect.poll(() => counter.count).toBe(1)
+  await expect(bell(page)).toHaveCount(0)
+  await page.clock.runFor(30_000)
+  await expect.poll(() => shown(page)).toEqual([{ title: '質問が届きました', body: '春のコンテスト', tag: 'notification:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa0' }])
+})
+
+test('a browser that cannot construct notifications keeps the bell and stops trying', async ({ page, context, baseURL }) => {
+  await presetCookie(context, baseURL!)
+  await fakeNotifications(page, { permission: 'granted', answer: 'granted', throws: true })
+  const first = notice('clarification_question')
+  const counter = await serveNotifications(page, [], [first], [first, notice('clarification_answer', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb0')])
+  await page.clock.install()
+  await page.goto('/')
+  await expect.poll(() => counter.count).toBe(1)
+  await page.clock.runFor(30_000)
+  await expect(bell(page)).toHaveAttribute('aria-label', '通知（未読1件）')
+  await page.clock.runFor(30_000)
+  await expect(bell(page)).toHaveAttribute('aria-label', '通知（未読2件）')
+  await expect(page.locator('.notification-panel [role="alert"]')).toHaveCount(0)
+  // The first failure counts the browser as one that cannot notify, like a phone.
+  expect(await attempts(page)).toBe(1)
+})
+
+test('a tab signed out elsewhere stops alerting', async ({ page, context, baseURL }) => {
+  await presetCookie(context, baseURL!)
+  await fakeNotifications(page, { permission: 'granted', answer: 'granted' })
+  const counter = await serveNotifications(page, [], 401, [notice('clarification_question')])
+  await page.clock.install()
+  await page.goto('/')
+  await expect.poll(() => counter.count).toBe(1)
+  await page.clock.runFor(60_000)
+  await expect.poll(() => counter.count).toBeGreaterThanOrEqual(3)
+  await expect(bell(page)).toHaveAttribute('aria-label', '通知（未読1件）')
   expect(await shown(page)).toEqual([])
 })
 

@@ -31,6 +31,7 @@ watch(() => route.fullPath, closeCreateMenu)
 const { user, refreshAccount, refreshProfile } = useAccount()
 onMounted(() => { void refreshAccount().then(account => { if (account) return refreshProfile() }).catch(() => {}) })
 useEventAlarms()
+useNotificationPolling()
 </script>
 
 <template>
