@@ -12,6 +12,25 @@ const every = 10 * minute
 const slept = 2 * minute
 const kinds: BrowserNotificationKind[] = ['contests', 'featured', 'editorials']
 
+// The keys rung in this browser with their times, so neither a reload nor another tab rings them again. It holds one
+// user at a time, and each write drops keys too old to catch up.
+const rungStorage = 'openoj-rung-alarms'
+const kept = 10 * minute
+function storedRung(owner: string): Record<string, number> {
+  try {
+    const saved = JSON.parse(localStorage.getItem(rungStorage) ?? 'null') as { user?: unknown, keys?: unknown } | null
+    if (saved?.user === owner && saved.keys && typeof saved.keys === 'object') return saved.keys as Record<string, number>
+  } catch { /* Without storage each page remembers only its own. */ }
+  return {}
+}
+function storeRung(owner: string, alarm: Alarm) {
+  const since = Date.now() - kept
+  const keys = Object.fromEntries(Object.entries(storedRung(owner)).filter(([, at]) => at >= since))
+  keys[alarm.key] = alarm.at
+  try { localStorage.setItem(rungStorage, JSON.stringify({ user: owner, keys })) }
+  catch { /* Without storage each page remembers only its own. */ }
+}
+
 // The read of the running useEventAlarms, for pages that change the schedule.
 let reread: (() => void) | undefined
 // Reads the schedule again now, as after joining a contest. Without the layout's useEventAlarms it does nothing.
@@ -26,7 +45,7 @@ export function useEventAlarms() {
   const { user } = useAccount()
   const { wants, show } = useBrowserNotifications()
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
-  // Keys already rung for this user, so an alarm set again or caught up never rings twice.
+  // Keys this page rang for the user; the stored ones add those of reloads and other tabs.
   const rung = new Set<string>()
   let owner: string | undefined
   // The alarms of the last successful read, set again at once on waking, before the network may be back.
@@ -40,12 +59,16 @@ export function useEventAlarms() {
     for (const timer of timers.values()) clearTimeout(timer)
     timers.clear()
   }
+  // Storage is read each time, so a key another tab rang a moment ago counts.
+  function rang(key: string) {
+    return rung.has(key) || (!!owner && Object.hasOwn(storedRung(owner), key))
+  }
   // True when shown.
   function ring(alarm: Alarm) {
     timers.delete(alarm.key)
-    if (rung.has(alarm.key)) return false
+    if (Date.now() - alarm.at > late || rang(alarm.key)) return false
     rung.add(alarm.key)
-    if (Date.now() - alarm.at > late) return false
+    if (owner) storeRung(owner, alarm)
     show(alarm)
     return true
   }
@@ -54,7 +77,7 @@ export function useEventAlarms() {
     clear()
     const now = Date.now()
     for (const alarm of alarms) {
-      if (rung.has(alarm.key) || !wants(alarm.kind) || now - alarm.at > late || alarm.at > now + horizon) continue
+      if (!wants(alarm.kind) || now - alarm.at > late || alarm.at > now + horizon || rang(alarm.key)) continue
       if (alarm.at <= now) ring(alarm)
       else timers.set(alarm.key, setTimeout(() => { if (ring(alarm)) void read() }, alarm.at - now))
     }

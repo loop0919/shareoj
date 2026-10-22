@@ -10,6 +10,7 @@ const T = Date.parse('2026-10-23T03:00:00Z')
 const at = (minutes: number) => new Date(T + minutes * 60_000).toISOString()
 const contestId = '88888888-8888-4888-8888-888888888888'
 const otherId = '99999999-9999-4999-8999-999999999999'
+const thirdId = '77777777-7777-4777-8777-777777777777'
 const title = '秋のコンテスト'
 const scheduled = (start: number, end = start + 60, id = contestId): ScheduledContest => ({ id, title, startsAt: at(start), endsAt: at(end) })
 const started = (start: number, id = contestId) => ({ title: 'コンテストが始まりました', body: title, tag: `contest-start:${id}:${at(start)}` })
@@ -104,7 +105,8 @@ test('waking is noticed before the next read', async ({ page, context, baseURL }
   await serve(page, [scheduled(48, 120)])
   await open(page)
   await page.clock.runFor('02:00')
-  // Asleep from T+2 to T+45; by the wall clock the next read would come at T+53, too late for the start.
+  // Asleep from T+2 to T+45. By the wall clock the next read is not due before T+53, so only the beat can ring the
+  // start by T+50.
   await page.clock.setSystemTime(T + 45 * 60_000)
   await page.clock.runFor('05:00')
   await expect.poll(() => shown(page)).toEqual([started(48)])
@@ -119,6 +121,39 @@ test('a page shown after a sleep rings a start that just passed', async ({ page,
   await page.clock.setSystemTime(T + 45 * 60_000)
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
   await expect.poll(() => shown(page)).toEqual([started(44)])
+})
+
+test('a start rings once across reloads and pages', async ({ page, context, baseURL }) => {
+  await prepare(page, context, baseURL!)
+  const state = await serve(page, [scheduled(-2)])
+  await open(page)
+  // Opened two minutes after the start, the page still announces it.
+  await expect.poll(() => shown(page)).toEqual([started(-2)])
+  // After a reload, a start not announced yet still rings, which shows the page has caught up without the first one.
+  state.items = [scheduled(-2), scheduled(-1, 60, otherId)]
+  await page.reload()
+  await expect.poll(() => shown(page)).toEqual([started(-1, otherId)])
+  // So does a second page of the same browser.
+  const second = await context.newPage()
+  await fakeNotifications(second, { permission: 'granted', answer: 'granted' })
+  await second.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'ui-test-user' } } }))
+  await serve(second, [scheduled(-2), scheduled(-1, 60, otherId), scheduled(-1, 60, thirdId)])
+  await second.goto('/terms')
+  await expect.poll(() => shown(second)).toEqual([started(-1, thirdId)])
+})
+
+test('without browser storage a start still rings once', async ({ page, context, baseURL }) => {
+  await prepare(page, context, baseURL!)
+  await page.addInitScript(() => Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('blocked', 'SecurityError') } }))
+  await serve(page, [scheduled(2)])
+  await open(page)
+  const reread = page.waitForResponse('**/api/my/contest-schedule')
+  await page.clock.runFor('02:00')
+  await expect.poll(() => shown(page)).toEqual([started(2)])
+  // The read after the start finds it rung in memory.
+  await (await reread).finished()
+  await page.clock.runFor('03:00')
+  expect(await shown(page)).toEqual([started(2)])
 })
 
 test('a moved start notifies at the new time', async ({ page, context, baseURL }) => {
