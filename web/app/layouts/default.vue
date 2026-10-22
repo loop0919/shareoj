@@ -30,6 +30,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onOutsideClick))
 watch(() => route.fullPath, closeCreateMenu)
 const { user, refreshAccount, refreshProfile } = useAccount()
 onMounted(() => { void refreshAccount().then(account => { if (account) return refreshProfile() }).catch(() => {}) })
+useEventAlarms()
 </script>
 
 <template>

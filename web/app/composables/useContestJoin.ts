@@ -12,7 +12,10 @@ export function useContestJoin(id: () => string) {
     error.value = ''
     try {
       // Without a team or a passphrase the request stays empty, as from the pages before them.
-      return await $fetch<Contest>(`/api/my/contests/${id()}/participation`, { method: 'POST', ...body && Object.keys(body).length ? { body } : {} })
+      const contest = await $fetch<Contest>(`/api/my/contests/${id()}/participation`, { method: 'POST', ...body && Object.keys(body).length ? { body } : {} })
+      // The new contest's start and end get their notifications without waiting for the next read.
+      refreshEventAlarms()
+      return contest
     } catch (failure) {
       error.value = contestTeamError(failure, fallback)
       return undefined
