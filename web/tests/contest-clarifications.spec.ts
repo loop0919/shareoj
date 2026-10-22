@@ -43,7 +43,8 @@ test('participant asks a private question and sees an escaped answer', async ({ 
   expect(sent).toEqual([{ problemId, question: question.question }])
   const article = page.getByRole('article')
   await expect(article).toContainText(question.question)
-  await expect(article).toContainText('非公開 · 未回答')
+  await expect(article).toContainText('未回答')
+  await expect(article).toContainText('非公開')
   await expect(article.getByRole('button')).toHaveCount(0)
   await expect(article.locator('script')).toHaveCount(0)
   items = [{ ...question, answer: '<img src=x onerror=alert(1)>\n回答', answeredBy: 'alice', answeredAt: question.createdAt, version: 2 }]

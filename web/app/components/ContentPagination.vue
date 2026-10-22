@@ -1,12 +1,12 @@
 <script setup lang="ts">
-defineProps<{ index: number, hasNext: boolean, loading: boolean }>()
+defineProps<{ index: number, hasNext: boolean, loading: boolean, disabled?: boolean }>()
 defineEmits<{ move: [direction: -1 | 1] }>()
 </script>
 <template>
   <nav class="content-pagination" aria-label="ページネーション">
-    <button class="editor-button" :disabled="loading || index === 0" @click="$emit('move', -1)">前へ</button>
+    <button class="editor-button" :disabled="loading || disabled || index === 0" @click="$emit('move', -1)">前へ</button>
     <span class="pagination-status"><span role="status">{{ index + 1 }} ページ</span><LoadingSpinner v-if="loading" inline /></span>
-    <button class="editor-button" :disabled="loading || !hasNext" @click="$emit('move', 1)">次へ</button>
+    <button class="editor-button" :disabled="loading || disabled || !hasNext" @click="$emit('move', 1)">次へ</button>
   </nav>
 </template>
 <style scoped>
