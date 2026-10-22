@@ -57,5 +57,11 @@ func (s *Store) Reveal(ctx context.Context, id, actor string, operator bool) err
 	if _, err = tx.Exec(ctx, `UPDATE contests SET revealed_at=clock_timestamp() WHERE id=$1`, id); err != nil {
 		return err
 	}
+	// An operator without a profile cannot be the actor of a notification (the foreign key), so then only the bell stays quiet.
+	if _, err = tx.Exec(ctx, `INSERT INTO notifications(owner_id,contest_id,actor_id,kind)
+ SELECT p.owner_id,p.contest_id,$2,'contest_results' FROM contest_participants p
+ WHERE p.contest_id=$1 AND p.owner_id<>$2 AND EXISTS(SELECT 1 FROM user_profiles WHERE owner_id=$2)`, id, actor); err != nil {
+		return err
+	}
 	return tx.Commit(ctx)
 }

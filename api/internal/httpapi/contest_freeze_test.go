@@ -424,11 +424,37 @@ func TestContestFreezePostgres(t *testing.T) {
 		t.Fatalf("revealed: %+v", revealed)
 	}
 	exec(`DELETE FROM submissions WHERE id=$1`, tessQueued)
+	// The reveal rings the participants' bell once, and not the setters'.
+	resultsBell := func(viewer string) int {
+		t.Helper()
+		var page struct {
+			Notifications []struct{ Kind, Actor, ContestID string }
+		}
+		decode(request("GET", "/my/notifications?history=1", viewer, nil, 200), &page)
+		n := 0
+		for _, item := range page.Notifications {
+			if item.Kind == "contest_results" {
+				if item.Actor != "ops" || item.ContestID != cid {
+					t.Fatalf("%s: %+v", viewer, item)
+				}
+				n++
+			}
+		}
+		return n
+	}
+	for viewer, want := range map[string]int{"bob": 1, "carol": 1, "cos": 0, "ops": 0} {
+		if got := resultsBell(viewer); got != want {
+			t.Fatalf("%s results notifications: %d, want %d", viewer, got, want)
+		}
+	}
 	// Any setter may ask again, including a co-setter who does not own the contest.
 	var again contests.Contest
 	decode(request("POST", "/my/contests/"+cid+"/reveal", "cos", nil, 200), &again)
 	if again.RevealedAt == nil || !again.RevealedAt.Equal(*revealed.RevealedAt) {
 		t.Fatalf("reveal again: %+v", again)
+	}
+	if got := resultsBell("bob"); got != 1 {
+		t.Fatalf("results notifications after revealing again: %d", got)
 	}
 
 	// After the reveal everything is public, and the public table counts every submission.
