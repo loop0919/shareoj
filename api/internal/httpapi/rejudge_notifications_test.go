@@ -54,12 +54,14 @@ func TestRejudgeNotificationsPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	exec(`INSERT INTO user_profiles(owner_id,handle) VALUES ('alice','alice'),('bob','bob'),('carol','carol')`)
+	exec(`INSERT INTO user_profiles(owner_id,handle) VALUES ('alice','alice'),('bob','bob'),('carol','carol'),('dave','dave')`)
 	const (
 		plain   = "11111111-1111-4111-8111-111111111111"
 		first   = "22222222-2222-4222-8222-222222222222"
 		second  = "33333333-3333-4333-8333-333333333333"
 		contest = "44444444-4444-4444-8444-444444444444"
+		exPub   = "55555555-5555-4555-8555-555555555555"
+		future  = "66666666-6666-4666-8666-666666666666"
 	)
 	difficulty := 1
 	for id, title := range map[string]string{plain: "Plain", first: "First", second: "Second"} {
@@ -136,5 +138,33 @@ func TestRejudgeNotificationsPostgres(t *testing.T) {
 	}
 	if got := bell("alice"); len(got) != 0 {
 		t.Fatalf("alice: %+v", got)
+	}
+	// A problem taken down and put into a contest that has not started stays hidden from its submitter: no contest,
+	// no index and no title, neither the contest copy's nor the working draft's.
+	d := problems.Draft{Title: "Ex public", Markdown: "Add", Difficulty: &difficulty, TimeLimitMS: "2000", MemoryLimitMB: "512", TestCases: []problems.TestCase{{Input: "1 2", Output: "3"}}}
+	if _, err := store.Save(ctx, "alice", exPub, 0, d); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Publish(ctx, "alice", exPub, 1, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Publish(ctx, "alice", exPub, 2, false); err != nil {
+		t.Fatal(err)
+	}
+	exec(`INSERT INTO contests(id,owner_id,title,description,starts_at,ends_at,released) VALUES ($1,'alice','f','d',clock_timestamp()+interval '1 hour',clock_timestamp()+interval '2 hours',false)`, future)
+	exec(`INSERT INTO contest_problems(contest_id,problem_id,position,points,draft,problem_version)
+ SELECT $1,id,1,100,jsonb_set(draft,'{title}','"Future copy"'),1 FROM problem_drafts WHERE id=$2`, future, exPub)
+	insert(exPub, "dave")
+	if got := h.request("POST", "/my/problems/"+exPub+"/rejudge", "alice", `{}`, 202); got != `{"queued":1}` {
+		t.Fatalf("queued: %s", got)
+	}
+	got = bell("dave")
+	if len(got) != 1 || got[0].Kind != "rejudge" || got[0].ContestID != "" || got[0].ProblemIndex != nil || got[0].Title != "" {
+		t.Fatalf("before the start: %+v", got)
+	}
+	exec(`UPDATE contests SET starts_at=clock_timestamp()-interval '1 minute' WHERE id=$1`, future)
+	got = bell("dave")
+	if len(got) != 1 || got[0].ContestID != future || got[0].ProblemIndex == nil || *got[0].ProblemIndex != 1 || got[0].Title != "Future copy" {
+		t.Fatalf("after the start: %+v", got)
 	}
 }
