@@ -36,3 +36,4 @@ Architecture Decision Record（ADR）は、採用した設計だけでなく、�
 | [0024](0024-team-and-onsite-participation.md) | Accepted（個人参加、合言葉の文字、オンサイトの切り替えは2026-10-19に変更） | チーム戦を参加コードで組み、オンサイト参加を会場の合言葉で区別する |
 | [0025](0025-score-partially-with-test-groups.md) | Accepted | テストケースのグループごとに部分点を付ける |
 | [0026](0026-switch-problem-tags-on-problem-list.md) | Accepted | 問題のタグを問題一覧で表示に切り替えられるようにする |
+| [0027](0027-notify-open-pages-and-bell.md) | Proposed | コンテストと定期便の出来事を、開いている画面のブラウザ通知とベルで知らせる |
