@@ -9,15 +9,17 @@ import (
 
 type (
 	Store struct{ Pool *pgxpool.Pool }
-	// Notification names a problem, or for kind contest_setter a contest or contest draft, with its title.
+	// Notification names a problem, or a contest or contest draft (contest_setter, clarifications, results), with its
+	// title. A rejudge names the problem and, when it is in a contest, the contest and its problem index.
 	Notification struct {
-		ID        string    `json:"id"`
-		ProblemID string    `json:"problemId,omitempty"`
-		ContestID string    `json:"contestId,omitempty"`
-		Title     string    `json:"title"`
-		Actor     string    `json:"actor"`
-		Kind      string    `json:"kind"`
-		CreatedAt time.Time `json:"createdAt"`
+		ID           string    `json:"id"`
+		ProblemID    string    `json:"problemId,omitempty"`
+		ContestID    string    `json:"contestId,omitempty"`
+		ProblemIndex *int      `json:"problemIndex,omitempty"`
+		Title        string    `json:"title"`
+		Actor        string    `json:"actor"`
+		Kind         string    `json:"kind"`
+		CreatedAt    time.Time `json:"createdAt"`
 	}
 )
 
@@ -25,8 +27,11 @@ func (s *Store) List(ctx context.Context, owner string, read, history bool) ([]N
 	// UPDATE ... RETURNING gives the bell exactly the notifications read by this
 	// request. Events arriving afterwards stay unread.
 	// A contest notification takes its title from the contest, or from the draft before publication.
-	const columns = `SELECT n.id,COALESCE(n.problem_id::text,''),COALESCE(n.contest_id::text,''),COALESCE(p.draft->>'title',c.title,cd.draft->>'title',''),u.handle,n.kind,n.created_at`
-	const joins = ` LEFT JOIN problem_drafts p ON p.id=n.problem_id LEFT JOIN contests c ON c.id=n.contest_id LEFT JOIN contest_drafts cd ON cd.id=n.contest_id
+	// A rejudge also finds the contest of the problem (a problem is in at most one) and titles itself from the contest
+	// copy, which is what the submission was judged against, else the published version, else the draft.
+	const columns = `SELECT n.id,COALESCE(n.problem_id::text,''),COALESCE(n.contest_id::text,rcp.contest_id::text,''),rcp.position,
+ COALESCE(CASE WHEN n.kind='rejudge' THEN COALESCE(rcp.draft->>'title',p.published_draft->>'title') END,p.draft->>'title',c.title,cd.draft->>'title',''),u.handle,n.kind,n.created_at`
+	const joins = ` LEFT JOIN problem_drafts p ON p.id=n.problem_id LEFT JOIN contest_problems rcp ON n.kind='rejudge' AND rcp.problem_id=n.problem_id LEFT JOIN contests c ON c.id=n.contest_id LEFT JOIN contest_drafts cd ON cd.id=n.contest_id
  JOIN user_profiles u ON u.owner_id=n.actor_id WHERE (p.id IS NOT NULL OR c.id IS NOT NULL OR cd.id IS NOT NULL)`
 	query := columns + ` FROM notifications n` + joins + ` AND n.owner_id=$1 AND n.read_at IS NULL ORDER BY n.created_at DESC,n.id DESC`
 	if read {
@@ -42,7 +47,7 @@ func (s *Store) List(ctx context.Context, owner string, read, history bool) ([]N
 	items := []Notification{}
 	for rows.Next() {
 		var item Notification
-		if err = rows.Scan(&item.ID, &item.ProblemID, &item.ContestID, &item.Title, &item.Actor, &item.Kind, &item.CreatedAt); err != nil {
+		if err = rows.Scan(&item.ID, &item.ProblemID, &item.ContestID, &item.ProblemIndex, &item.Title, &item.Actor, &item.Kind, &item.CreatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, item)

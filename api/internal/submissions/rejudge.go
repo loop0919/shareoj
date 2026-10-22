@@ -62,7 +62,10 @@ func (s *Store) Rejudge(ctx context.Context, in RejudgeInput) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	tag, err := tx.Exec(ctx, `UPDATE submissions s SET status='QUEUED',result=NULL,progress=NULL,judge_attempt=gen_random_uuid(),
+	// Each submitter whose submission went back to the queue gets one bell notification. A user without a profile
+	// (the actor or the submitter) is skipped because of the foreign keys.
+	var queued int64
+	err = tx.QueryRow(ctx, `WITH q AS (UPDATE submissions s SET status='QUEUED',result=NULL,progress=NULL,judge_attempt=gen_random_uuid(),
   dispatched_at=NULL,started_at=NULL,finished_at=NULL,rejudged_at=clock_timestamp(),
   problem_version=t.version,problem_title=t.draft->>'title',
   job=jsonb_build_object('privateDraft',COALESCE(s.job->'privateDraft','false'::jsonb),'image',$4::text,'easyTest',false,
@@ -80,12 +83,16 @@ func (s *Store) Rejudge(ctx context.Context, in RejudgeInput) (int64, error) {
   ) t
   WHERE s.id=t.id AND s.status='DONE' AND t.draft IS NOT NULL
   AND jsonb_array_length(COALESCE(t.draft->'testCases','[]'::jsonb)) BETWEEN 1 AND 100
-  AND `+judgeReady("t.draft", "s.runtime", "$5::text[]", "false"),
-		in.ProblemID, in.Runtimes, in.SubmissionIDs, in.Image, in.CheckerRuntimes)
+  AND `+judgeReady("t.draft", "s.runtime", "$5::text[]", "false")+`
+  RETURNING s.owner_id),
+n AS (INSERT INTO notifications(owner_id,problem_id,actor_id,kind)
+  SELECT DISTINCT q.owner_id,$1::uuid,$6,'rejudge' FROM q
+  WHERE q.owner_id<>$6 AND EXISTS(SELECT 1 FROM user_profiles WHERE owner_id=$6) AND EXISTS(SELECT 1 FROM user_profiles WHERE owner_id=q.owner_id))
+SELECT COUNT(*) FROM q`,
+		in.ProblemID, in.Runtimes, in.SubmissionIDs, in.Image, in.CheckerRuntimes, in.Actor).Scan(&queued)
 	if err != nil {
 		return 0, err
 	}
-	queued := tag.RowsAffected()
 	if queued == 0 {
 		// Nothing queued: either nothing to rejudge, or the current problem cannot be judged.
 		var eligible bool
