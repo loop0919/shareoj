@@ -14,7 +14,7 @@ test('settings split the profile into tabs reached from the account menu', async
   await page.getByRole('navigation', { name: 'アカウント', exact: true }).getByRole('link', { name: '設定', exact: true }).click()
   await expect(page).toHaveURL('/my/settings')
   const tabs = page.getByRole('navigation', { name: '設定の項目', exact: true })
-  await expect(tabs.getByRole('button')).toHaveText(['プロフィール', '外部サービス', '認証設定', '表示', 'アカウント削除'])
+  await expect(tabs.getByRole('button')).toHaveText(['プロフィール', '外部サービス', '認証設定', '表示', '通知', 'アカウント削除'])
   await expect(tabs.getByRole('button', { name: 'プロフィール', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByLabel('ユーザーID', { exact: true })).toHaveValue('ui_test')
   await expect(page.getByLabel('AtCoder ID', { exact: true })).toHaveCount(0)
