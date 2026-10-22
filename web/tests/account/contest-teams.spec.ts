@@ -182,7 +182,7 @@ test('the venue passphrase makes participants onsite, a mistake registers nothin
   // The onsite table holds both, and the filter stays in the URL.
   await guest.goto(`/contests/${shortId(id)}?view=standings&scope=onsite`)
   await expect(guest.locator('.standings-table tbody tr')).toHaveCount(2)
-  await expect(guest.getByRole('group', { name: '表示する参加者' }).getByRole('radio', { name: 'オンサイトのみ' })).toBeChecked()
+  await expect(guest.getByRole('switch', { name: 'オンサイトのみ表示' })).toBeChecked()
   // Replacing the passphrase checks the rule and stops the old one.
   await venue.getByRole('button', { name: '差し替える', exact: true }).click()
   const fresh = venue.getByLabel('新しい会場の合言葉', { exact: true })

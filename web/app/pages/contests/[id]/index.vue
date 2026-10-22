@@ -26,11 +26,10 @@ const frozen = computed(() => {
 })
 // Staff may switch to the table without the freeze while it hides something; everyone else always gets the frozen one.
 const canSwitchStandings = computed(() => contest.value?.canViewLiveStandings === true && frozen.value)
-const standingsMode = ref<'frozen' | 'live'>('frozen')
-const showLive = computed(() => standingsMode.value === 'live' && canSwitchStandings.value)
-const standingsModes = [{ value: 'frozen' as const, label: '凍結した順位表' }, { value: 'live' as const, label: '凍結なし' }]
+const liveChosen = ref(false)
+const showLive = computed(() => liveChosen.value && canSwitchStandings.value)
 // 全員 or オンサイトのみ, kept in the URL and shared by the standings and the submissions (ADR 0024).
-const { onsite: onsiteOnly, scope, scopes } = useOnsiteScope(() => contest.value?.onsiteDivision === true)
+const { onsite: onsiteOnly } = useOnsiteScope(() => contest.value?.onsiteDivision === true)
 const teamContest = computed(() => contest.value?.teamMode === true)
 // The rows carry the view they were read for. While a switch loads, the other view's rows are hidden, so the live table
 // never sits under the frozen notice (ADR 0023) nor the frozen one under the live notice, and the whole table never
@@ -185,13 +184,11 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
     <section v-if="activeView === 'standings'" id="standings" class="contest-section" aria-labelledby="standings-title">
       <header class="contest-section-heading"><h1 id="standings-title" ref="standingsTitle" tabindex="-1">公式順位表</h1><div class="standings-actions"><button v-if="contest.canRevealResults" type="button" class="editor-button contest-reveal" :disabled="revealing" :aria-busy="revealing" @click="reveal">{{ revealing ? '公開中…' : '結果を公開' }}</button><RefreshButton label="今すぐ更新" :busy="updating" :disabled="updating" @click="update" /></div></header>
       <p v-if="revealError" class="notice notice-error" role="alert">{{ revealError }}</p>
-      <p v-if="user && (contest.excluded || contest.staff)" class="notice">{{ contest.excluded ? 'このコンテストのスタッフを務めたため、提出は公式順位の対象外です。' : 'スタッフ（作成者・作問者・テスター）としての提出は公式順位の対象外です。' }}</p>
       <div v-if="canSwitchStandings || contest.onsiteDivision" class="standings-filters">
-        <div v-if="canSwitchStandings" class="standings-mode"><SegmentedChoice v-model="standingsMode" legend="順位表の表示" name="standings-mode" :options="standingsModes" hide-legend /></div>
-        <div v-if="contest.onsiteDivision" class="standings-mode"><SegmentedChoice v-model="scope" legend="表示する参加者" name="standings-scope" :options="scopes" hide-legend /></div>
+        <InlineSwitch v-if="canSwitchStandings" v-model="liveChosen">凍結なしで表示</InlineSwitch>
+        <InlineSwitch v-if="contest.onsiteDivision" v-model="onsiteOnly">オンサイトのみ表示</InlineSwitch>
       </div>
-      <p v-if="showLive" class="notice">凍結なしの順位表を表示しています。スタッフだけが見られます。</p>
-      <p v-else-if="frozen" class="notice">{{ freezeTime }}以降の提出の結果は、結果発表まで伏せています。</p>
+      <p v-if="frozen && !showLive" class="notice">{{ freezeTime }}以降の提出の結果は、結果発表まで伏せています。</p>
       <p v-if="onsiteOnly" class="muted standings-scope-note">オンサイト参加{{ teamContest ? 'のチームと個人' : 'の人' }}だけを、振り直した順位で表示しています。小さい数字は全体の順位です。</p>
       <p v-if="standingsError" class="notice notice-error" role="alert">順位表を取得できませんでした。</p>
       <LoadingSpinner v-if="!standingsError && switchingStandings" label="順位表を読み込み中" />
@@ -233,7 +230,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <h1 id="submissions-title">提出一覧</h1>
       <p v-if="!canViewSubmissions" class="notice">提出一覧と提出コードはコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。<template v-if="contest.teamMode">チームのメンバーは、開催中もチームの提出を閲覧できます。</template>{{ frozenNote }}</p>
       <template v-else><p class="muted">{{ teamOnly ? '開催中は、チームの提出だけを表示しています。提出コードを閲覧できます。' : '提出コードを閲覧できます。練習提出も掲載します。' }}{{ frozenNote }}</p>
-      <div v-if="contest.onsiteDivision && !teamOnly" class="standings-mode submissions-scope"><SegmentedChoice v-model="scope" legend="表示する提出" name="submissions-scope" :options="scopes" hide-legend /></div>
+      <div v-if="contest.onsiteDivision && !teamOnly" class="submissions-scope"><InlineSwitch v-model="onsiteOnly">オンサイトのみ表示</InlineSwitch></div>
       <p v-if="submissionsError" class="notice notice-error" role="alert">{{ submissionsError }}</p>
       <LoadingSpinner v-if="!submissions && !submissionsError" label="提出一覧を読み込み中" />
       <template v-if="submissions"><p v-if="!submissions.items.length" class="contest-empty muted">提出はまだありません。</p><div v-else class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0"><table class="content-table"><thead><tr><th scope="col">問題</th><th scope="col">ユーザー</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th v-if="showSubmissionScore" scope="col">得点</th><th scope="col">結果</th><th scope="col">提出日時 (JST)</th></tr></thead><tbody><tr v-for="s in submissions.items" :key="s.id"><th scope="row"><NuxtLink :to="`/contests/${shortId(contest.id)}/submissions/${shortId(s.id)}`">{{ s.problemTitle }}</NuxtLink></th><td><UserLink :handle="s.author" /></td><td class="submission-usage">{{ s.sourceBytes == null ? '—' : `${s.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage">{{ submissionUsage(s.result) }}</td><td v-if="showSubmissionScore" class="submission-score" :data-full="(s.result?.scoring && s.result.scoring.score === s.result.scoring.maxScore) || undefined">{{ s.result?.scoring ? formatScore(s.result.scoring.score) : '—' }}</td><td><SubmissionStatus :item="s" /></td><td>{{ contestDate(s.createdAt) }}<span v-if="new Date(s.createdAt) >= new Date(contest.endsAt)"> · 練習</span></td></tr></tbody></table></div><ContentPagination :index="offset / 50" :has-next="submissions.hasMore" :loading="updating" @move="direction => offset += direction * 50" /></template>
@@ -295,9 +292,8 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 /* A partial score keeps the ordinary colour; the accent marks the full score (ADR 0025). */
 .standing-partial { color: var(--color-ink); }
 .standing-wrong { color: var(--color-error); }
-.standings-filters { display: flex; flex-wrap: wrap; gap: 0 16px; }
-.standings-mode { flex: 1 1 16rem; max-width: 24rem; margin-bottom: 16px; }
-.submissions-scope { margin-top: 16px; }
+.standings-filters { display: flex; flex-wrap: wrap; gap: 0 24px; margin-bottom: 8px; }
+.submissions-scope { margin-top: 8px; }
 .standings-scope-note { margin: 0 0 16px; font-size: .8125rem; }
 .standing-team { display: block; font-weight: 600; overflow-wrap: anywhere; }
 .standing-members { display: block; color: var(--color-muted); font-size: .75rem; font-weight: 400; }

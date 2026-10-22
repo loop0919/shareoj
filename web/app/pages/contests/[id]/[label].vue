@@ -31,7 +31,7 @@ const frozenNote = computed(() => route.query.view === 'submissions' && contest.
 // see, so 「すべての提出」 stays closed to them as to everyone outside the staff.
 const team = computed(() => !!contest.value?.team)
 const canViewAll = computed(() => contest.value?.canViewSubmissions === true && !(team.value && contest.value?.status === 'running'))
-const { onsite, scope, scopes } = useOnsiteScope(() => contest.value?.onsiteDivision === true && route.query.view === 'submissions')
+const { onsite } = useOnsiteScope(() => contest.value?.onsiteDivision === true && route.query.view === 'submissions')
 useSeoMeta({ title: () => `${problem.value?.title} | ${contest.value?.title} | ShareOJ` })
 // The viewer's roles decide the menu and the form, so both follow a login or logout.
 watch(() => user.value?.id, () => { void Promise.all([refresh(), refreshContest()]) })
@@ -45,7 +45,7 @@ useSharePreview({ title: () => problem.value!.title, path: problemPath, descript
     <nav class="problem-menu" aria-label="問題メニュー"><NuxtLink :to="problemPath" :aria-current="showingEditorial || submissionView ? undefined : 'page'">問題文</NuxtLink><NuxtLink v-if="canReadEditorial" :to="{ path: problemPath, query: { view: 'editorial' } }" :aria-current="showingEditorial ? 'page' : undefined">解説</NuxtLink><NuxtLink :to="{ path: problemPath, query: { view: 'my-submissions' } }" :aria-current="route.query.view === 'my-submissions' ? 'page' : undefined">{{ team ? 'チームの提出' : '自分の提出' }}</NuxtLink><NuxtLink :to="{ path: problemPath, query: { view: 'submissions' } }" :aria-current="route.query.view === 'submissions' ? 'page' : undefined">すべての提出</NuxtLink></nav>
     <template v-if="submissionView">
       <p v-if="route.query.view === 'submissions' && !canViewAll" class="notice submission-notice">提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。<template v-if="team">開催中のチームの提出は「チームの提出」で確認できます。</template>{{ frozenNote }}</p>
-      <template v-else><p v-if="frozenNote" class="muted submission-freeze">{{ frozenNote }}</p><div v-if="route.query.view === 'submissions' && contest.onsiteDivision" class="submission-scope"><SegmentedChoice v-model="scope" legend="表示する提出" name="problem-submissions-scope" :options="scopes" hide-legend /></div><ProblemSubmissionList :key="String(route.query.view)" :problem-id="problem.id" :contest-id="contest.id" :mine="route.query.view === 'my-submissions'" :team="team && route.query.view === 'my-submissions'" :onsite="onsite" :scored="!!problem.scoring" /></template>
+      <template v-else><p v-if="frozenNote" class="muted submission-freeze">{{ frozenNote }}</p><div v-if="route.query.view === 'submissions' && contest.onsiteDivision" class="submission-scope"><InlineSwitch v-model="onsite">オンサイトのみ表示</InlineSwitch></div><ProblemSubmissionList :key="String(route.query.view)" :problem-id="problem.id" :contest-id="contest.id" :mine="route.query.view === 'my-submissions'" :team="team && route.query.view === 'my-submissions'" :onsite="onsite" :scored="!!problem.scoring" /></template>
     </template>
     <article v-else class="problem-body">
       <template v-if="showingEditorial"><ProblemMarkdown v-if="problem.editorial" :source="problem.editorial" /><p v-else class="muted">解説は終了後に公開されます。終了後も表示されない場合は未登録です。</p><UserEditorials v-if="contest.status === 'ended'" :problem-id="problem.id" /></template>
@@ -57,5 +57,5 @@ useSharePreview({ title: () => problem.value!.title, path: problemPath, descript
 <style scoped>
 .submission-notice { margin-block: 32px 64px; }
 .submission-freeze { margin-block: 24px 0; }
-.submission-scope { max-width: 24rem; margin-top: 24px; }
+.submission-scope { margin-top: 16px; }
 </style>

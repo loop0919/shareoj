@@ -362,9 +362,9 @@ const runningContest = {
   canEdit: false, participating: false, canViewSubmissions: false, problems: [{ id: '11111111-1111-4111-8111-111111111111', title: 'A + B', points: 100 }],
 }
 
-for (const [role, flags, notice, participation] of [
-  ['setter', { official: false, staff: true, setter: true }, 'スタッフ（作成者・作問者・テスター）としての提出は公式順位の対象外です。', 'スタッフ（作成者・作問者・テスター）は公式参加の対象外です。'],
-  ['former setter', { official: false, staff: false, setter: false, excluded: true }, 'このコンテストのスタッフを務めたため、提出は公式順位の対象外です。', 'このコンテストのスタッフを務めたため、参加できません。'],
+for (const [role, flags, participation] of [
+  ['setter', { official: false, staff: true, setter: true }, 'スタッフ（作成者・作問者・テスター）は公式参加の対象外です。'],
+  ['former setter', { official: false, staff: false, setter: false, excluded: true }, 'このコンテストのスタッフを務めたため、参加できません。'],
 ] as const) {
   test(`contest pages list every setter and explain the ${role}'s place`, async ({ page }) => {
     const contest = { ...runningContest, ...flags }
@@ -377,8 +377,9 @@ for (const [role, flags, notice, participation] of [
     // The server render reads the fixture API, so refresh in the browser to use the routed contest.
     await page.goto(`/contests/${shortId(contest.id)}?view=standings`, { waitUntil: 'networkidle' })
     await page.getByRole('button', { name: '今すぐ更新' }).click()
-    await expect(page.getByText(notice, { exact: true })).toBeVisible()
+    // The participation line explains it once; the standings do not repeat it.
     await expect(page.getByText(participation, { exact: true })).toBeVisible()
+    await expect(page.locator('#standings .notice')).toHaveCount(0)
     await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '概要', exact: true }).click()
     await expect(page.locator('.problem-meta')).toContainText('作成者 alice、bob')
     await expect(page.locator('.problem-meta')).toContainText('作問者 carol')

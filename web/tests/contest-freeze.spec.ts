@@ -109,24 +109,24 @@ test('staff switch to the standings without the freeze only when they choose it'
   const requests = await routeContest(page, state)
   await openStandings(page)
   // Participants and strangers get no choice, and staff get none while the freeze hides nothing.
-  await expect(page.getByRole('group', { name: '順位表の表示' })).toHaveCount(0)
+  await expect(page.getByRole('switch', { name: '凍結なしで表示' })).toHaveCount(0)
   state.contest = { ...state.contest, canViewLiveStandings: true, freezeAt: '2099-09-15T13:00:00Z' }
   await page.getByRole('button', { name: '今すぐ更新' }).click()
   await expect(page.locator('.standings-table tbody tr')).toHaveCount(3)
-  await expect(page.getByRole('group', { name: '順位表の表示' })).toHaveCount(0)
+  await expect(page.getByRole('switch', { name: '凍結なしで表示' })).toHaveCount(0)
   state.contest = { ...state.contest, freezeAt: contest.freezeAt }
   await page.getByRole('button', { name: '今すぐ更新' }).click()
-  const modes = page.getByRole('group', { name: '順位表の表示' })
-  await expect(modes.getByRole('radio', { name: '凍結した順位表' })).toBeChecked()
-  await expect(modes.getByRole('radio', { name: '凍結なし' })).not.toBeChecked()
+  const live = page.getByRole('switch', { name: '凍結なしで表示' })
+  await expect(live).not.toBeChecked()
   await expect(notice(page).last()).toHaveText('22:00以降の提出の結果は、結果発表まで伏せています。')
   expect(requests.length).toBeGreaterThan(0)
   expect(requests.every(live => live === null)).toBe(true)
-  await modes.getByRole('radio', { name: '凍結なし' }).check()
+  await live.check()
   await expect(page.locator('.standings-table tbody tr')).toHaveCount(1)
   await expect(page.locator('.standings-table tbody tr')).toContainText('carol')
   expect(requests.at(-1)).toBe('1')
-  await expect(notice(page).last()).toHaveText('凍結なしの順位表を表示しています。スタッフだけが見られます。')
+  // The switch says which table this is, so no notice repeats it.
+  await expect(notice(page)).toHaveCount(0)
   // Refreshing keeps the chosen table.
   await page.getByRole('button', { name: '今すぐ更新' }).click()
   await expect(page.locator('.standings-table tbody tr')).toHaveCount(1)
@@ -134,7 +134,7 @@ test('staff switch to the standings without the freeze only when they choose it'
   // Until the frozen table arrives the live rows give way to a spinner, so they never sit under the frozen notice.
   let release = () => {}
   state.hold = new Promise(resolve => { release = resolve })
-  await modes.getByRole('radio', { name: '凍結した順位表' }).check()
+  await live.uncheck()
   await expect(page.locator('#standings .loading-spinner')).toHaveText('順位表を読み込み中')
   await expect(page.locator('.standings-table')).toHaveCount(0)
   await expect(page.getByText('参加者はまだいません。')).toHaveCount(0)
@@ -146,12 +146,12 @@ test('staff switch to the standings without the freeze only when they choose it'
   expect(requests.at(-1)).toBeNull()
   await expect(notice(page).last()).toHaveText('22:00以降の提出の結果は、結果発表まで伏せています。')
   // Once the results are published both tables match, so the choice goes away even if live was chosen.
-  await modes.getByRole('radio', { name: '凍結なし' }).check()
+  await live.check()
   await expect.poll(() => requests.at(-1)).toBe('1')
   state.contest = { ...state.contest, status: 'ended', revealed: true, revealedAt: '2026-09-15T15:00:00Z', resultsFinal: true }
   await page.getByRole('button', { name: '今すぐ更新' }).click()
-  await expect(page.getByRole('group', { name: '順位表の表示' })).toHaveCount(0)
-  await expect(notice(page)).toHaveText(['スタッフ（作成者・作問者・テスター）としての提出は公式順位の対象外です。'])
+  await expect(page.getByRole('switch', { name: '凍結なしで表示' })).toHaveCount(0)
+  await expect(notice(page)).toHaveCount(0)
   await expect.poll(() => requests.at(-1)).toBeNull()
 })
 
@@ -202,8 +202,8 @@ test('setters publish the results after confirming and learn why pending runs bl
   await expect(page.getByRole('alert')).toHaveCount(0)
   await expect(page.locator('.standing-frozen')).toHaveCount(0)
   await expect(page.locator('.standings-table tbody tr')).toHaveCount(1)
-  await expect(page.getByRole('group', { name: '順位表の表示' })).toHaveCount(0)
-  await expect(notice(page)).toHaveText(['スタッフ（作成者・作問者・テスター）としての提出は公式順位の対象外です。'])
+  await expect(page.getByRole('switch', { name: '凍結なしで表示' })).toHaveCount(0)
+  await expect(notice(page)).toHaveCount(0)
   expect(reveals).toEqual(['POST', 'POST', 'POST'])
 })
 
@@ -227,7 +227,7 @@ test('the standings heading keeps every control on screen at each width', async 
   await routeContest(page, { contest: { ...contest, setter: true, staff: true, canViewLiveStandings: true, canRevealResults: true }, rows: () => frozenRows })
   await openStandings(page)
   const heading = page.getByRole('heading', { name: '公式順位表' })
-  const controls = [heading, page.getByRole('button', { name: '結果を公開', exact: true }), page.getByRole('button', { name: '今すぐ更新' }), page.getByRole('group', { name: '順位表の表示' })]
+  const controls = [heading, page.getByRole('button', { name: '結果を公開', exact: true }), page.getByRole('button', { name: '今すぐ更新' }), page.getByRole('switch', { name: '凍結なしで表示' })]
   for (const width of [320, 375, 414, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)

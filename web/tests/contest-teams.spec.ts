@@ -868,9 +868,9 @@ test('team standings name each team with its members beside those who joined alo
   await expect(table.locator('tfoot tr').first().locator('td').first()).toContainText('Alpha')
   await expect(table.locator('tfoot th')).toHaveText(['FA（初正解）', '正解数 / 提出数（チーム・個人）'])
   await expect(table.locator('tfoot tr').nth(1).locator('td')).toHaveText(['2 / 2'])
-  const scopes = page.getByRole('group', { name: '表示する参加者' })
-  await expect(scopes.getByRole('radio', { name: '全員' })).toBeChecked()
-  await scopes.getByRole('radio', { name: 'オンサイトのみ' }).check()
+  const onsite = page.getByRole('switch', { name: 'オンサイトのみ表示' })
+  await expect(onsite).not.toBeChecked()
+  await onsite.check()
   await expect(page).toHaveURL(/[?&]view=standings&scope=onsite$/)
   await expect(table.locator('tbody tr')).toHaveCount(2)
   // The rank is among the onsite rows; the whole table's rank stands beside it, and FA and counts follow the rows shown.
@@ -884,13 +884,13 @@ test('team standings name each team with its members beside those who joined alo
   // A link keeps the filter, and the filter keeps the server's choice of the frozen or live table separate.
   await page.reload({ waitUntil: 'networkidle' })
   await page.getByRole('button', { name: '今すぐ更新' }).click()
-  await expect(page.getByRole('group', { name: '表示する参加者' }).getByRole('radio', { name: 'オンサイトのみ' })).toBeChecked()
+  await expect(onsite).toBeChecked()
   await expect(table.locator('tbody tr')).toHaveCount(2)
   await noHorizontalScroll(page)
   await page.setViewportSize({ width: 375, height: 900 })
   await page.locator('#standings').screenshot({ path: test.info().outputPath('onsite-standings-375.png') })
   await page.setViewportSize({ width: 1280, height: 900 })
-  await page.getByRole('group', { name: '表示する参加者' }).getByRole('radio', { name: '全員' }).check()
+  await onsite.uncheck()
   await expect(page).toHaveURL(/[?&]view=standings$/)
   await expect(table.locator('tbody tr')).toHaveCount(3)
   await page.locator('#standings').screenshot({ path: test.info().outputPath('team-standings-1280.png') })
@@ -910,7 +910,7 @@ test('individual standings keep handles and mark onsite rows; contests without a
   state.contest = { ...base, status: 'running' }
   await page.goto(`/contests/${shortId(id)}?view=standings&scope=onsite`, { waitUntil: 'networkidle' })
   await page.getByRole('button', { name: '今すぐ更新' }).click()
-  await expect(page.getByRole('group', { name: '表示する参加者' })).toHaveCount(0)
+  await expect(page.getByRole('switch', { name: 'オンサイトのみ表示' })).toHaveCount(0)
   // Without a division the filter in the URL is ignored.
   expect(state.standings.at(-1)!.get('scope')).toBeNull()
 })
@@ -919,11 +919,11 @@ test('the contest submission list filters onsite participants in the URL, and te
   const contest = { ...base, status: 'ended' as const, startsAt: '2026-09-15T12:00:00Z', endsAt: '2026-09-15T14:00:00Z', onsiteDivision: true, canViewSubmissions: true, resultsFinal: true }
   const state = await routeContest(page, contest, { items: [submission('aaaaaaaa-0000-4000-8000-000000000001', 'bob')] })
   await open(page, 'submissions')
-  const scopes = page.getByRole('group', { name: '表示する提出' })
-  await expect(scopes.getByRole('radio', { name: '全員' })).toBeChecked()
+  const onsite = page.getByRole('switch', { name: 'オンサイトのみ表示' })
+  await expect(onsite).not.toBeChecked()
   await expect(page.locator('#submissions tbody tr')).toHaveCount(1)
   expect(state.lists.at(-1)!.query.get('scope')).toBeNull()
-  await scopes.getByRole('radio', { name: 'オンサイトのみ' }).check()
+  await onsite.check()
   await expect(page).toHaveURL(/[?&]view=submissions&scope=onsite$/)
   await expect.poll(() => state.lists.at(-1)!.query.get('scope')).toBe('onsite')
   expect(state.lists.at(-1)!.query.get('offset')).toBe('0')
@@ -932,7 +932,7 @@ test('the contest submission list filters onsite participants in the URL, and te
   state.contest = { ...contest, status: 'running', resultsFinal: false, endsAt: '2099-09-15T14:00:00Z', teamMode: true, participating: true, team: { id: alpha, name: 'Alpha', members: ['ui_test', 'bob'], onsite: false } }
   await reread(page, 'submissions')
   await expect(page.getByText('開催中は、チームの提出だけを表示しています。提出コードを閲覧できます。')).toBeVisible()
-  await expect(page.getByRole('group', { name: '表示する提出' })).toHaveCount(0)
+  await expect(page.getByRole('switch', { name: 'オンサイトのみ表示' })).toHaveCount(0)
   await expect.poll(() => state.lists.at(-1)!.query.get('scope')).toBeNull()
   await expect(page.locator('#submissions tbody tr a').first()).toHaveAttribute('href', `/contests/${shortId(id)}/submissions/${shortId('aaaaaaaa-0000-4000-8000-000000000001')}`)
   // In a frozen team contest the note names teammates among those who see the frozen submissions.
@@ -976,10 +976,11 @@ test('the problem page lists the team\'s submissions with their submitters and f
   // After the end the list opens with the onsite filter in the URL.
   state.contest = { ...contest, status: 'ended', endsAt: '2026-09-15T14:00:00Z', resultsFinal: true }
   await page.goto(`/contests/${shortId(id)}/A?view=submissions&scope=onsite`, { waitUntil: 'networkidle' })
-  await expect(page.getByRole('group', { name: '表示する提出' }).getByRole('radio', { name: 'オンサイトのみ' })).toBeChecked({ timeout: 20000 })
+  const onsite = page.getByRole('switch', { name: 'オンサイトのみ表示' })
+  await expect(onsite).toBeChecked({ timeout: 20000 })
   await expect.poll(() => state.lists.at(-1)!.query.get('scope')).toBe('onsite')
   expect(state.lists.at(-1)!.query.get('mine')).toBe('0')
-  await page.getByRole('group', { name: '表示する提出' }).getByRole('radio', { name: '全員' }).check()
+  await onsite.uncheck()
   await expect(page).toHaveURL(/[?&]view=submissions$/)
   await expect.poll(() => state.lists.at(-1)!.query.get('scope')).toBeNull()
   await noHorizontalScroll(page)
