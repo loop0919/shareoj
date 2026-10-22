@@ -23,6 +23,7 @@ func TestHeadServesReadPostgres(t *testing.T) {
 		{"/my/submissions", "alice", map[string]any{"problemId": p1, "runtime": "cpp17", "source": "x"}},
 		{"/my/problems/" + p1 + "/rejudge", "alice", map[string]any{"submissionIds": []string{}}},
 		{"/my/contests/" + cid + "/participants", "alice", map[string]any{"onsite": true}},
+		{"/my/contests/" + cid + "/clarifications", "alice", map[string]any{"problemId": p1, "question": "HEAD must not write"}},
 		{"/my/problems/" + p1, "alice", nil},
 		{"/my/featured", "alice", nil},
 		{"/contests/" + cid, "", nil},

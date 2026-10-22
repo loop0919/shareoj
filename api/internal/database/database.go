@@ -146,6 +146,9 @@ var contestOnsiteDropKeptOpenSchema string
 //go:embed 040_submission_full_score.sql
 var submissionFullScoreSchema string
 
+//go:embed 041_contest_clarifications.sql
+var contestClarificationsSchema string
+
 // migrations lists the schemas in version order: version N is the Nth entry, from NNN_*.sql.
 // Add a migration at the end under the next number. Deployed databases record the versions they applied, so never
 // remove or reorder an entry; a reverted migration keeps its number reserved, like 019_reserved.sql.
@@ -191,6 +194,7 @@ func migrations() []string {
 		contestTeamIndividualsSchema,
 		contestOnsiteDropKeptOpenSchema,
 		submissionFullScoreSchema,
+		contestClarificationsSchema,
 	}
 }
 

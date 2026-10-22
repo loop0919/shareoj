@@ -666,6 +666,10 @@ func contestError(w http.ResponseWriter, err error) {
 		authError(w, 429, "contest_attempts_limited")
 	case errors.Is(err, pgx.ErrNoRows):
 		authError(w, 404, "contest_not_found")
+	case errors.Is(err, contests.ErrClarificationUnavailable):
+		authError(w, 409, "clarification_unavailable")
+	case errors.Is(err, contests.ErrClarificationConflict):
+		authError(w, 409, "clarification_conflict")
 	case errors.Is(err, contests.ErrParticipationUnavailable):
 		authError(w, 409, "contest_participation_unavailable")
 	case errors.Is(err, contests.ErrSetterNotFound):

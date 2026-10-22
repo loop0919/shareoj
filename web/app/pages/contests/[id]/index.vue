@@ -174,6 +174,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <p><NuxtLink to="/docs/contest-rules">ルール</NuxtLink></p>
     </section>
     <ContestSetterTools v-if="activeView === 'overview' && contest.setter && (contest.teamMode || contest.onsiteDivision)" :contest="contest" @changed="refreshStandings()" />
+    <ContestClarifications v-if="activeView === 'clarifications'" :key="user?.id ?? 'anonymous'" :contest="contest" />
     <section v-if="activeView === 'problems'" id="problems" class="contest-section" aria-labelledby="problems-title">
       <h1 id="problems-title">問題</h1>
       <p v-if="contest.status === 'scheduled'" class="notice">問題文は開始時刻に公開されます。</p>

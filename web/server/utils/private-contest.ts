@@ -8,7 +8,7 @@ import { limitedJSON, privateHeaders, requireSameOrigin } from './private-reques
 export async function contestAction(event: H3Event, suffix: string | (() => string), limit = 0) {
   privateHeaders(event)
   if (!hasSession(event)) throw createError({ statusCode: 401 })
-  const method = event.method as 'GET' | 'PUT' | 'DELETE'
+  const method = event.method as 'GET' | 'POST' | 'PUT' | 'DELETE'
   if (method !== 'GET') requireSameOrigin(event)
   const id = getRouterParam(event, 'id') ?? ''
   if (!/^[a-f0-9-]{36}$/.test(id)) throw createError({ statusCode: 404 })
