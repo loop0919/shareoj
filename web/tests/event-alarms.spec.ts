@@ -77,6 +77,20 @@ for (const [label, nextSlots, want] of [
   })
 }
 
+for (const [label, failing, want] of [
+  ['a failing 定期便 read still sets the contest alarms', '**/api/featured', [started(2)]],
+  ['a failing schedule read still sets the 定期便 alarms', '**/api/my/contest-schedule', [released]],
+] as const) {
+  test(label, async ({ page, context, baseURL }) => {
+    await prepare(page, context, baseURL!)
+    await serve(page, [scheduled(2)], { ...quiet, nextAt: at(1), nextSlots: [fresh, missing('hard')] })
+    await page.route(failing, route => route.fulfill({ status: 500, json: {} }))
+    await open(page)
+    await page.clock.runFor('03:00')
+    await expect.poll(() => shown(page)).toEqual([...want])
+  })
+}
+
 test('a timer that wakes more than five minutes late stays quiet', async ({ page, context, baseURL }) => {
   await prepare(page, context, baseURL!)
   await serve(page, [scheduled(2, 120), scheduled(9, 120, otherId)])
@@ -123,6 +137,34 @@ test('a page shown after a sleep rings a start that just passed', async ({ page,
   await expect.poll(() => shown(page)).toEqual([started(44)])
 })
 
+test('showing the page reads again only after a sleep', async ({ page, context, baseURL }) => {
+  await prepare(page, context, baseURL!)
+  const state = await serve(page, [])
+  await open(page)
+  await page.clock.runFor('02:00')
+  // A tab switch while awake keeps the timers and reads nothing.
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  // Asleep from T+2 to T+20, meanwhile joined on another device: showing the page reads again and rings the start.
+  state.items = [scheduled(19)]
+  await page.clock.setSystemTime(T + 20 * 60_000)
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await expect.poll(() => shown(page)).toEqual([started(19)])
+  expect(state.reads).toBe(2)
+})
+
+test('a schedule read refused for a signed-out tab cancels the timers', async ({ page, context, baseURL }) => {
+  await prepare(page, context, baseURL!)
+  await serve(page, [scheduled(15)])
+  await open(page)
+  // Signed out in another tab before the read at T+10.
+  await page.route('**/api/my/contest-schedule', route => route.fulfill({ status: 401, json: {} }))
+  const reread = page.waitForResponse('**/api/my/contest-schedule')
+  await page.clock.runFor('10:00')
+  await (await reread).finished()
+  await page.clock.runFor('10:00')
+  expect(await shown(page)).toEqual([])
+})
+
 test('a start rings once across reloads and pages', async ({ page, context, baseURL }) => {
   await prepare(page, context, baseURL!)
   const state = await serve(page, [scheduled(-2)])
@@ -148,7 +190,8 @@ test('without browser storage a start still rings once', async ({ page, context,
   await serve(page, [scheduled(2)])
   await open(page)
   const reread = page.waitForResponse('**/api/my/contest-schedule')
-  await page.clock.runFor('02:00')
+  // The read after a ring waits up to 30 seconds.
+  await page.clock.runFor('02:30')
   await expect.poll(() => shown(page)).toEqual([started(2)])
   // The read after the start finds it rung in memory.
   await (await reread).finished()
@@ -188,6 +231,31 @@ test('a contest joined after the page opened notifies too', async ({ page, conte
   await expect(page.getByText('参加済み', { exact: true })).toBeVisible()
   await page.clock.runFor('03:00')
   await expect.poll(() => shown(page)).toEqual([started(3)])
+})
+
+test('leaving a team before the start cancels its alarms', async ({ page, context, baseURL }) => {
+  await prepare(page, context, baseURL!)
+  const state = await serve(page, [scheduled(5)])
+  const team = { id: 'aaaaaaaa-1111-4111-8111-000000000001', name: 'Alpha', members: ['ui_test'], onsite: false }
+  const contest: Contest = {
+    id: contestId, title, author: 'alice', problemAuthors: [], testers: [], description: '', startsAt: at(5), endsAt: at(65), penaltyMinutes: 5,
+    version: 1, status: 'scheduled', canEdit: false, participating: true, official: true, canViewSubmissions: false, problems: [],
+    teamMode: true, maxTeamSize: null, onsiteDivision: false, team, onsite: false,
+  }
+  await page.route(`**/api/contests/${contestId}`, route => route.fulfill({ json: contest }))
+  await page.route(`**/api/my/contests/${contestId}/team`, route => route.fulfill({ json: { ...team, code: 'ABCDEFGHJK' } }))
+  await page.route(`**/api/my/contests/${contestId}/team/members/ui_test`, route => {
+    state.items = []
+    Object.assign(contest, { participating: false, team: null })
+    return route.fulfill({ status: 204 })
+  })
+  await open(page, `/contests/${shortId(contestId)}/team`)
+  const reread = page.waitForResponse('**/api/my/contest-schedule')
+  page.once('dialog', dialog => void dialog.accept())
+  await page.getByRole('button', { name: 'チームを抜ける', exact: true }).click()
+  await (await reread).finished()
+  await page.clock.runFor('06:00')
+  expect(await shown(page)).toEqual([])
 })
 
 test('a switched-off kind sets no timer and skips its read', async ({ page, context, baseURL }) => {

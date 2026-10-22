@@ -115,6 +115,8 @@ async function leave() {
   action.value = 'leave'; report('')
   try {
     await $fetch(`${base.value}/members/${encodeURIComponent(me.value)}`, { method: 'DELETE' })
+    // Leaving ends the registration, so the contest's start and end no longer notify.
+    refreshEventAlarms()
     emit('changed')
     showToast('チームを抜けました')
   } catch (error) { report(teamError(error), true) }

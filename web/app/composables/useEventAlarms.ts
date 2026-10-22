@@ -1,3 +1,5 @@
+import type { ScheduledContest } from '~~/shared/types/contest'
+import type { FeaturedPage } from '~~/shared/types/featured'
 import type { BrowserNotificationKind } from '~/composables/useBrowserNotifications'
 import { eventAlarms, type Alarm } from '~/utils/event-alarms'
 
@@ -7,6 +9,9 @@ const late = 5 * minute
 // Timers cover the coming day only, well within what setTimeout can wait; later events get theirs on a later read.
 const horizon = 24 * 60 * minute
 const every = 10 * minute
+// The read after a ring waits a random moment up to this, so the browsers ringing at a contest's start or at 23:00 do
+// not all read in the same second.
+const spread = 30_000
 // A beat later than its minute by more than this means the computer slept. Hidden tabs may hold a beat to the next
 // minute, which stays below it.
 const slept = 2 * minute
@@ -48,7 +53,10 @@ export function useEventAlarms() {
   // Keys this page rang for the user; the stored ones add those of reloads and other tabs.
   const rung = new Set<string>()
   let owner: string | undefined
-  // The alarms of the last successful read, set again at once on waking, before the network may be back.
+  // The last answer of each source; one that fails keeps its old answer, so a failing 定期便 leaves the contests alone.
+  let schedule: ScheduledContest[] = []
+  let featured: FeaturedPage | null = null
+  // The alarms of the last read, set again at once on waking, before the network may be back.
   let latest: Alarm[] = []
   let next: ReturnType<typeof setTimeout> | undefined
   let beat: ReturnType<typeof setTimeout> | undefined
@@ -79,22 +87,32 @@ export function useEventAlarms() {
     for (const alarm of alarms) {
       if (!wants(alarm.kind) || now - alarm.at > late || alarm.at > now + horizon || rang(alarm.key)) continue
       if (alarm.at <= now) ring(alarm)
-      else timers.set(alarm.key, setTimeout(() => { if (ring(alarm)) void read() }, alarm.at - now))
+      else timers.set(alarm.key, setTimeout(() => { if (ring(alarm)) soon() }, alarm.at - now))
     }
+  }
+  // A ring may bring new times, as a 定期便 release brings the next round's, so the schedule is read again.
+  function soon() {
+    clearTimeout(next)
+    next = setTimeout(read, Math.random() * spread)
   }
   function wake() {
     arm(latest)
     void read()
   }
+  // True when the wall clock has moved on much further than a beat since the last look, as across a sleep.
+  function asleep() {
+    const now = Date.now()
+    const gap = now - last
+    last = now
+    return gap > minute + slept
+  }
   // Counts minutes without the network to notice a sleep.
   function pulse() {
-    const now = Date.now()
-    const woke = now - last > minute + slept
-    last = now
     beat = setTimeout(pulse, minute)
-    if (woke) wake()
+    if (asleep()) wake()
   }
-  function visible() { if (document.visibilityState === 'visible') wake() }
+  // Showing the page catches up only after a sleep; a tab switch alone keeps the timers and reads nothing.
+  function visible() { if (document.visibilityState === 'visible' && asleep()) wake() }
   function start() {
     if (beat !== undefined) return
     last = Date.now()
@@ -107,29 +125,29 @@ export function useEventAlarms() {
     beat = undefined
     document.removeEventListener('visibilitychange', visible)
     clear()
+    schedule = []
+    featured = null
     latest = []
   }
   async function read() {
     clearTimeout(next)
     const current = ++request
     const contests = wants('contests')
-    const featured = wants('featured') || wants('editorials')
-    if (!user.value || !(contests || featured)) { stop(); return }
+    const releases = wants('featured') || wants('editorials')
+    if (!user.value || !(contests || releases)) { stop(); return }
     start()
-    try {
-      const [schedule, page] = await Promise.all([
-        contests ? $fetch('/api/my/contest-schedule') : null,
-        featured ? $fetch('/api/featured') : null,
-      ])
-      if (current === request) {
-        latest = eventAlarms(schedule?.items ?? [], page)
-        arm(latest)
-      }
-    } catch {
-      // The timers already set stay until a later read succeeds.
-    } finally {
-      if (current === request) next = setTimeout(read, every)
-    }
+    const [mine, page] = await Promise.allSettled([
+      contests ? $fetch('/api/my/contest-schedule') : null,
+      releases ? $fetch('/api/featured') : null,
+    ])
+    if (current !== request) return
+    // A tab signed out elsewhere stops ringing; another sign-in on this page starts over through the watch below.
+    if (mine.status === 'rejected' && (mine.reason as { statusCode?: number }).statusCode === 401) { stop(); return }
+    next = setTimeout(read, every)
+    if (mine.status === 'fulfilled') schedule = mine.value?.items ?? []
+    if (page.status === 'fulfilled') featured = page.value
+    latest = eventAlarms(schedule, featured)
+    arm(latest)
   }
   onMounted(() => {
     reread = read
