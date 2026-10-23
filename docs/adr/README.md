@@ -37,3 +37,4 @@ Architecture Decision Record（ADR）は、採用した設計だけでなく、�
 | [0025](0025-score-partially-with-test-groups.md) | Accepted | テストケースのグループごとに部分点を付ける |
 | [0026](0026-switch-problem-tags-on-problem-list.md) | Accepted | 問題のタグを問題一覧で表示に切り替えられるようにする |
 | [0027](0027-notify-open-pages-and-bell.md) | Accepted | コンテストと定期便の出来事を、開いている画面のブラウザ通知とベルで知らせる |
+| [0028](0028-paginate-lists-by-page-number.md) | Accepted | 一覧をページ番号で送り、表示件数を選べるようにし、順位表で自分の行を残す |
