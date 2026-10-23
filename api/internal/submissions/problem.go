@@ -66,7 +66,7 @@ func (s *Store) ProblemList(ctx context.Context, problemID, contestID, viewer st
 	if err != nil {
 		return ContestSubmissionList{}, err
 	}
-	return submissionList(rows)
+	return submissionList(rows, 50)
 }
 
 func (s *Store) ProblemGet(ctx context.Context, problemID, id, viewer string) (Submission, error) {

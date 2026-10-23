@@ -19,18 +19,19 @@ import (
 
 // Aliases keep the original response types available beside route-local handlers.
 type (
-	publicProblemResponse    = problems.PublicProblem
-	publicProblemPage        = cursorResponse[problems.PublicProblem]
-	publicPostResponse       = posts.Post
-	publicPostPage           = cursorResponse[posts.Post]
-	publicEditorialList      = itemsResponse[posts.Editorial]
-	publicTagList            = itemsResponse[tags.Tag]
-	publicContestResponse    = contests.Contest
-	publicContestPage        = offsetResponse[contests.Contest]
-	publicContestProblem     = contests.ContestProblem
-	publicStandingsResponse  = []contests.Standing
-	publicSubmissionResponse = submissions.Submission
-	publicSubmissionPage     = submissions.ContestSubmissionList
+	publicProblemResponse       = problems.PublicProblem
+	publicProblemPage           = cursorResponse[problems.PublicProblem]
+	publicPostResponse          = posts.Post
+	publicPostPage              = cursorResponse[posts.Post]
+	publicEditorialList         = itemsResponse[posts.Editorial]
+	publicTagList               = itemsResponse[tags.Tag]
+	publicContestResponse       = contests.Contest
+	publicContestPage           = offsetResponse[contests.Contest]
+	publicContestProblem        = contests.ContestProblem
+	publicStandingsResponse     = []contests.Standing
+	publicSubmissionResponse    = submissions.Submission
+	publicSubmissionPage        = submissions.ContestSubmissionList
+	publicContestSubmissionPage = submissions.CountedSubmissionList
 )
 
 // These envelopes are used by both the handlers and the schema generator.
@@ -97,6 +98,11 @@ func onsiteParameter(description string) *huma.Param {
 // onsiteSubmissionParameters are the parameters of a contest's submission lists.
 func onsiteSubmissionParameters() []*huma.Param {
 	return append(offsetParameters(), onsiteParameter("onsiteを指定すると、表示した時点でオンサイト区分の参加者（チーム戦では、オンサイトのチームのメンバーと、個人で参加したオンサイトの参加者）がこのコンテストに出した提出だけを返します。スタッフの提出と、参加登録していない人の練習の提出は含みません。"))
+}
+
+// limitParameter declares the page size of a list.
+func limitParameter() *huma.Param {
+	return &huma.Param{Name: "limit", In: "query", Description: "1ページの件数。1〜100。省略すると50件。", Schema: &huma.Schema{Type: "integer", Minimum: floatPointer(1), Maximum: floatPointer(100), Default: 50}}
 }
 
 func intPointer(v int) *int           { return &v }

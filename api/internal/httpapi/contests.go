@@ -248,11 +248,15 @@ func (p contestHandler) contestSubmissions(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
+	limit, ok := pageLimit(w, r)
+	if !ok {
+		return
+	}
 	onsite, ok := onsiteScope(w, r)
 	if !ok {
 		return
 	}
-	result, err := p.Submissions.ContestList(r.Context(), id, owner, offset, onsite)
+	result, err := p.Submissions.ContestList(r.Context(), id, owner, offset, limit, onsite)
 	if err != nil {
 		contestError(w, err)
 		return

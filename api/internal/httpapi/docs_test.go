@@ -106,6 +106,14 @@ func TestPublicDocumentation(t *testing.T) {
 				t.Fatal("missing scope parameter", path)
 			}
 		}
+		if !slices.ContainsFunc(doc.Paths["/contests/{id}/submissions"]["get"].Parameters, func(p struct {
+			Name, In string
+			Required bool
+		}) bool {
+			return p.Name == "limit" && p.In == "query" && !p.Required
+		}) {
+			t.Fatal("missing limit parameter")
+		}
 		// Invitation links, venue passphrases and team join codes are for setters and members only, never in a public
 		// type (ADR 0022, ADR 0024).
 		for name, schema := range doc.Components.Schemas {

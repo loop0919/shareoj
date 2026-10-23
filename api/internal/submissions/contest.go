@@ -89,26 +89,39 @@ type ContestSubmissionList struct {
 	HasMore bool         `json:"hasMore"`
 }
 
+// CountedSubmissionList is a page of the contest's submissions with the number of all of them.
+type CountedSubmissionList struct {
+	ContestSubmissionList
+	Total int `json:"total"`
+}
+
 // ContestList lists the contest's submissions; onsite keeps those of participants who are onsite now.
-func (s *Store) ContestList(ctx context.Context, contestID, viewer string, offset int, onsite bool) (ContestSubmissionList, error) {
+func (s *Store) ContestList(ctx context.Context, contestID, viewer string, offset, limit int, onsite bool) (CountedSubmissionList, error) {
 	var allowed bool
 	// Members of a team may list from the start; contestPublic keeps only their team's submissions until the end.
 	err := s.Pool.QueryRow(ctx, `SELECT c.ends_at<=statement_timestamp() OR contest_staff(c.id,$2)
  OR (c.starts_at<=statement_timestamp() AND cardinality(contest_teammates(c.id,$2))>0) FROM contests c WHERE c.id=$1`, contestID, viewer).Scan(&allowed)
 	if err != nil {
-		return ContestSubmissionList{}, err
+		return CountedSubmissionList{}, err
 	}
 	if !allowed {
-		return ContestSubmissionList{}, pgx.ErrNoRows
+		return CountedSubmissionList{}, pgx.ErrNoRows
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT `+columns+` FROM submissions WHERE `+contestPublic+` ORDER BY created_at DESC,id DESC LIMIT 51 OFFSET $2`, contestID, offset, viewer, onsite)
+	rows, err := s.Pool.Query(ctx, `SELECT `+columns+` FROM submissions WHERE `+contestPublic+` ORDER BY created_at DESC,id DESC LIMIT $5 OFFSET $2`, contestID, offset, viewer, onsite, limit+1)
 	if err != nil {
-		return ContestSubmissionList{}, err
+		return CountedSubmissionList{}, err
 	}
-	return submissionList(rows)
+	page, err := submissionList(rows, limit)
+	if err != nil {
+		return CountedSubmissionList{}, err
+	}
+	result := CountedSubmissionList{ContestSubmissionList: page}
+	// contestPublic leaves $2 unused here, so PostgreSQL cannot type it unless the query refers to it.
+	err = s.Pool.QueryRow(ctx, `SELECT count(*) FROM submissions WHERE `+contestPublic+` AND $2::integer>=0`, contestID, offset, viewer, onsite).Scan(&result.Total)
+	return result, err
 }
 
-func submissionList(rows pgx.Rows) (ContestSubmissionList, error) {
+func submissionList(rows pgx.Rows, limit int) (ContestSubmissionList, error) {
 	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Submission, error) {
 		item, e := scan(row)
 		item = publicSubmission(item)
@@ -125,9 +138,9 @@ func submissionList(rows pgx.Rows) (ContestSubmissionList, error) {
 	if err != nil {
 		return ContestSubmissionList{}, err
 	}
-	result := ContestSubmissionList{Items: items, HasMore: len(items) > 50}
+	result := ContestSubmissionList{Items: items, HasMore: len(items) > limit}
 	if result.HasMore {
-		result.Items = items[:50]
+		result.Items = items[:limit]
 	}
 	return result, nil
 }
