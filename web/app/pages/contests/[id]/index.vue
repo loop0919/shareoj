@@ -75,16 +75,27 @@ const canViewSubmissions = computed(() => contest.value?.canViewSubmissions === 
 // While the contest runs a team member sees only the team's submissions, so the onsite filter has nothing to narrow.
 const teamOnly = computed(() => !!contest.value?.team && contest.value.status === 'running')
 const filterSubmissions = computed(() => onsiteOnly.value && !teamOnly.value)
-const submissions = ref<{ items: Submission[], hasMore: boolean } | null>(null)
+const submissions = ref<{ items: Submission[], hasMore: boolean, total: number } | null>(null)
 const submissionsError = ref('')
-const offset = ref(0)
+const submissionsSize = usePageSize('submissions')
+const submissionsOffset = computed(() => (requestedPage.value - 1) * submissionsSize.value)
+const submissionsLast = computed(() => lastPage(submissions.value?.total ?? 0, submissionsSize.value))
+const submissionsPage = computed(() => clampPage(requestedPage.value, submissionsLast.value))
+const showSubmissionPages = computed(() => !!submissions.value?.items.length || submissionsPage.value > 1)
+const resizeSubmissions = (size: PageSize) => resizePage(submissionsSize, submissionsPage.value, size)
 const { run: requestSubmissions, invalidate: invalidateSubmissions } = useLatestRequest()
 function loadSubmissions() {
   if (activeView.value !== 'submissions' || !canViewSubmissions.value) { invalidateSubmissions(); submissions.value = null; return Promise.resolve() }
-  const query = { offset: offset.value, ...filterSubmissions.value ? { scope: 'onsite' } : {} }
+  const query = { offset: submissionsOffset.value, limit: submissionsSize.value, ...filterSubmissions.value ? { scope: 'onsite' } : {} }
   return requestSubmissions(JSON.stringify([query, user.value?.id]),
-    () => $fetch<{ items: Submission[], hasMore: boolean }>(`${base}/submissions`, { query }),
-    result => { submissions.value = result; submissionsError.value = '' },
+    () => $fetch<{ items: Submission[], hasMore: boolean, total: number }>(`${base}/submissions`, { query }),
+    result => {
+      submissions.value = result
+      submissionsError.value = ''
+      // Rows dropped since the page was opened, so it is past the end: the last page shows instead.
+      const last = lastPage(result.total, submissionsSize.value)
+      if (requestedPage.value > last) void goToPage(last)
+    },
     () => { submissionsError.value = '提出一覧を取得できませんでした。' })
 }
 // User editorials exist only after the end, when the problems become public.
@@ -112,8 +123,8 @@ async function update() {
   finally { updating.value = false }
 }
 watch(() => user.value?.id, () => { invalidateSubmissions(); submissions.value = null; void update() })
-watch([offset, activeView, canViewSubmissions], () => { void loadSubmissions() })
-watch(filterSubmissions, () => { offset.value = 0; void loadSubmissions() })
+// Keyed on plain values, so the route catching up with a page that is already requested does not load it again.
+watch([submissionsOffset, submissionsSize, filterSubmissions, activeView, canViewSubmissions], () => { void loadSubmissions() })
 watch([activeView, () => contest.value?.status], () => { void loadEditorials() })
 onMounted(() => { void loadSubmissions(); void loadEditorials() })
 usePolling(update, 15000)
@@ -266,7 +277,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <div v-if="contest.onsiteDivision && !teamOnly" class="submissions-scope"><InlineSwitch v-model="onsiteOnly">オンサイトのみ表示</InlineSwitch></div>
       <p v-if="submissionsError" class="notice notice-error" role="alert">{{ submissionsError }}</p>
       <LoadingSpinner v-if="!submissions && !submissionsError" label="提出一覧を読み込み中" />
-      <template v-if="submissions"><p v-if="!submissions.items.length" class="contest-empty muted">提出はまだありません。</p><div v-else class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0"><table class="content-table"><thead><tr><th scope="col">問題</th><th scope="col">ユーザー</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th v-if="showSubmissionScore" scope="col">得点</th><th scope="col">結果</th><th scope="col">提出日時 (JST)</th></tr></thead><tbody><tr v-for="s in submissions.items" :key="s.id"><th scope="row"><NuxtLink :to="`/contests/${shortId(contest.id)}/submissions/${shortId(s.id)}`">{{ s.problemTitle }}</NuxtLink></th><td><UserLink :handle="s.author" /></td><td class="submission-usage">{{ s.sourceBytes == null ? '—' : `${s.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage">{{ submissionUsage(s.result) }}</td><td v-if="showSubmissionScore" class="submission-score" :data-full="(s.result?.scoring && s.result.scoring.score === s.result.scoring.maxScore) || undefined">{{ s.result?.scoring ? formatScore(s.result.scoring.score) : '—' }}</td><td><SubmissionStatus :item="s" /></td><td>{{ contestDate(s.createdAt) }}<span v-if="new Date(s.createdAt) >= new Date(contest.endsAt)"> · 練習</span></td></tr></tbody></table></div><ContentPagination :index="offset / 50" :has-next="submissions.hasMore" :loading="updating" @move="direction => offset += direction * 50" /></template>
+      <template v-if="submissions"><ListToolbar v-if="showSubmissionPages" :total="submissions.total" :page="submissionsPage" :size="submissionsSize" unit="件" :link="pageLink" @update:size="resizeSubmissions" /><p v-if="!submissions.items.length" class="contest-empty muted">提出はまだありません。</p><div v-else class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0"><table class="content-table"><thead><tr><th scope="col">問題</th><th scope="col">ユーザー</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th v-if="showSubmissionScore" scope="col">得点</th><th scope="col">結果</th><th scope="col">提出日時 (JST)</th></tr></thead><tbody><tr v-for="s in submissions.items" :key="s.id"><th scope="row"><NuxtLink :to="`/contests/${shortId(contest.id)}/submissions/${shortId(s.id)}`">{{ s.problemTitle }}</NuxtLink></th><td><UserLink :handle="s.author" /></td><td class="submission-usage">{{ s.sourceBytes == null ? '—' : `${s.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage">{{ submissionUsage(s.result) }}</td><td v-if="showSubmissionScore" class="submission-score" :data-full="(s.result?.scoring && s.result.scoring.score === s.result.scoring.maxScore) || undefined">{{ s.result?.scoring ? formatScore(s.result.scoring.score) : '—' }}</td><td><SubmissionStatus :item="s" /></td><td>{{ contestDate(s.createdAt) }}<span v-if="new Date(s.createdAt) >= new Date(contest.endsAt)"> · 練習</span></td></tr></tbody></table></div><PageNav v-if="showSubmissionPages" class="submissions-pages" :page="submissionsPage" :last="submissionsLast" :link="pageLink" /></template>
       </template>
     </section>
     <section v-if="activeView === 'editorials'" id="editorials" class="contest-section" aria-labelledby="editorials-title">
@@ -330,7 +341,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 .standing-partial { color: var(--color-ink); }
 .standing-wrong { color: var(--color-error); }
 .standings-filters { display: flex; flex-wrap: wrap; gap: 0 24px; margin-bottom: 8px; }
-.standings-pages { margin-top: 16px; }
+.standings-pages, .submissions-pages { margin-top: 16px; }
 .submissions-scope { margin-top: 8px; }
 .standings-scope-note { margin: 0 0 16px; font-size: .8125rem; }
 .standing-team { display: block; font-weight: 600; overflow-wrap: anywhere; }

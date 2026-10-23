@@ -10,6 +10,7 @@ export default defineEventHandler(async event => {
   const query = getQuery(event)
   if ((query.mine === '1' || query.mine === 'team') && !hasSession(event)) throw createError({ statusCode: 401 })
   const search = new URLSearchParams({ offset: typeof query.offset === 'string' ? query.offset : '0', mine: typeof query.mine === 'string' ? query.mine : '0' })
+  if (typeof query.limit === 'string') search.set('limit', query.limit)
   // The onsite division is the only filter of the standings and the submission lists (ADR 0024).
   const onsite = query.scope === 'onsite' ? '&scope=onsite' : ''
   if (onsite) search.set('scope', 'onsite')
