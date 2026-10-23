@@ -49,7 +49,7 @@ test('standings show compact results, participant counts and earliest AC includi
   await expect(fa.locator('td').nth(2)).toHaveText('—')
   await expect(table.locator('tfoot tr').nth(1).locator('td')).toHaveText(['3 / 3', '1 / 2', '0 / 1', '0 / 0'])
   // A single page still says how many rows there are, but has no page numbers.
-  await expect(page.getByText('全 3 件中 1〜3 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 3 件中 1〜3 件目' })).toBeVisible()
   await expect(page.getByRole('navigation', { name: 'ページ', exact: true })).toHaveCount(0)
   // Refresh must recompute counts and FA when a pending result becomes AC.
   standings[1]!.problems.b = { points: 100, wrong: 0, pending: 0, acceptedAt: '2026-09-15T12:04:00Z' }
@@ -181,7 +181,7 @@ test('standings are split into pages with AtCoder spacing', async ({ page }, tes
   const table = page.locator('.standings-table')
   const navs = page.getByRole('navigation', { name: 'ページ', exact: true })
   const first = table.locator('tbody tr').first().locator('th')
-  await expect(page.getByText('全 1,000 件中 381〜400 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 1,000 件中 381〜400 件目' })).toBeVisible()
   await expectPages(navs.first(), ['1', '5', '13', '17', '18', '19', '21', '22', '23', '27', '35', '50'], '20')
   // The numbers come again below the table.
   await expect(navs).toHaveCount(2)
@@ -193,7 +193,7 @@ test('standings are split into pages with AtCoder spacing', async ({ page }, tes
   await expect(table.locator('tfoot tr').nth(0).locator('td').nth(0)).toHaveText('user00:01')
   await expect(table.locator('tfoot tr').nth(1).locator('td')).toHaveText(['500 / 1000', '0 / 0', '0 / 0', '0 / 0'])
   // The count, the size and the numbers share one line on a wide screen and wrap without a sideways scroll on a narrow one.
-  const boxes = await Promise.all([page.getByText('全 1,000 件中 381〜400 件目', { exact: true }), page.getByLabel('表示件数'), navs.first()].map(item => item.boundingBox()))
+  const boxes = await Promise.all([page.locator('.list-count', { hasText: '全 1,000 件中 381〜400 件目' }), page.getByLabel('表示件数'), navs.first()].map(item => item.boundingBox()))
   for (const box of boxes) expect(Math.abs(box!.y + box!.height / 2 - (boxes[0]!.y + boxes[0]!.height / 2))).toBeLessThan(8)
   await page.screenshot({ path: testInfo.outputPath('standings-pages-1280.png') })
   await page.setViewportSize({ width: 320, height: 900 })
@@ -218,11 +218,11 @@ test('standings are split into pages with AtCoder spacing', async ({ page }, tes
   await expect(first).toHaveText('user980')
   // A page past the end shows the last one, and anything but a whole number from 1 the first.
   await openStandings(page, '&page=999')
-  await expect(page.getByText('全 1,000 件中 981〜1,000 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 1,000 件中 981〜1,000 件目' })).toBeVisible()
   await expect(navs.first().locator('span[aria-current="page"]')).toHaveText('50')
   for (const value of ['abc', '0']) {
     await openStandings(page, `&page=${value}`)
-    await expect(page.getByText('全 1,000 件中 1〜20 件目', { exact: true })).toBeVisible()
+    await expect(page.locator('.list-count', { hasText: '全 1,000 件中 1〜20 件目' })).toBeVisible()
     await expect(first).toHaveText('user0')
   }
 })
@@ -231,7 +231,7 @@ test('the page size is remembered per browser and keeps the first row', async ({
   await routeThousand(page)
   await openStandings(page, '&page=3')
   const size = page.getByLabel('表示件数')
-  await expect(page.getByText('全 1,000 件中 41〜60 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 1,000 件中 41〜60 件目' })).toBeVisible()
   await expect(size).toHaveValue('20')
   // Row 41 topped the page, so 50 rows a page opens the first page. The size and the page change together: page 3 at 50
   // rows a page (from user100) never renders on the way.
@@ -241,7 +241,7 @@ test('the page size is remembered per browser and keeps the first row', async ({
   })
   await size.selectOption('50')
   await expect(page).toHaveURL(/\?view=standings$/)
-  await expect(page.getByText('全 1,000 件中 1〜50 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 1,000 件中 1〜50 件目' })).toBeVisible()
   await expect(page.locator('.standings-table tbody tr')).toHaveCount(50)
   const added = await page.evaluate(() => (window as unknown as { addedRows: string[] }).addedRows)
   expect(added).toContain('user0')
@@ -249,33 +249,33 @@ test('the page size is remembered per browser and keeps the first row', async ({
   await page.reload({ waitUntil: 'networkidle' })
   await page.getByRole('button', { name: '今すぐ更新' }).click()
   await expect(size).toHaveValue('50')
-  await expect(page.getByText('全 1,000 件中 1〜50 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 1,000 件中 1〜50 件目' })).toBeVisible()
   expect((await context.cookies()).find(cookie => cookie.name === 'openoj-page-size-standings')?.value).toBe('50')
   // Row 51 tops the second page; at 20 rows a page it is on the third.
   await page.getByRole('navigation', { name: 'ページ', exact: true }).first().getByRole('link', { name: '2', exact: true }).click()
-  await expect(page.getByText('全 1,000 件中 51〜100 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 1,000 件中 51〜100 件目' })).toBeVisible()
   await size.selectOption('20')
   await expect(page).toHaveURL(/[?&]page=3$/)
-  await expect(page.getByText('全 1,000 件中 41〜60 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 1,000 件中 41〜60 件目' })).toBeVisible()
   // A size that is not offered reads as the initial 20.
   await context.addCookies([{ name: 'openoj-page-size-standings', value: '7', url: new URL(page.url()).origin }])
   await openStandings(page, '')
-  await expect(page.getByText('全 1,000 件中 1〜20 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 1,000 件中 1〜20 件目' })).toBeVisible()
   await expect(size).toHaveValue('20')
 })
 
 test('switching the scope or the freeze returns to the first page', async ({ page }) => {
   await routeThousand(page, { ...contest, onsiteDivision: true, freezeAt: '2026-09-15T13:00:00Z', canViewLiveStandings: true })
   await openStandings(page, '&page=3')
-  await expect(page.getByText('全 1,000 件中 41〜60 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 1,000 件中 41〜60 件目' })).toBeVisible()
   await page.getByRole('switch', { name: 'オンサイトのみ表示' }).click()
   await expect(page).toHaveURL(/\?view=standings&scope=onsite$/)
-  await expect(page.getByText('全 1,000 件中 1〜20 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 1,000 件中 1〜20 件目' })).toBeVisible()
   await openStandings(page, '&page=3')
-  await expect(page.getByText('全 1,000 件中 41〜60 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 1,000 件中 41〜60 件目' })).toBeVisible()
   await page.getByRole('switch', { name: '凍結なしで表示' }).click()
   await expect(page).toHaveURL(/\?view=standings$/)
-  await expect(page.getByText('全 1,000 件中 1〜20 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 1,000 件中 1〜20 件目' })).toBeVisible()
 })
 
 test('a page chosen under the table opens at its first row', async ({ page }) => {
@@ -283,10 +283,10 @@ test('a page chosen under the table opens at its first row', async ({ page }) =>
   await openStandings(page, '&page=20')
   const navs = page.getByRole('navigation', { name: 'ページ', exact: true })
   await navs.last().scrollIntoViewIfNeeded()
-  await expect(page.getByText('全 1,000 件中 381〜400 件目', { exact: true })).not.toBeInViewport()
+  await expect(page.locator('.list-count', { hasText: '全 1,000 件中 381〜400 件目' })).not.toBeInViewport()
   await navs.last().getByRole('link', { name: '21', exact: true }).click()
   await expect(page).toHaveURL(/[?&]page=21$/)
-  await expect(page.getByText('全 1,000 件中 401〜420 件目', { exact: true })).toBeInViewport()
+  await expect(page.locator('.list-count', { hasText: '全 1,000 件中 401〜420 件目' })).toBeInViewport()
   await expect(page.locator('.standings-table tbody tr').first().locator('th')).toHaveText('user400')
 })
 
@@ -295,21 +295,21 @@ test('the refresh keeps the page, and shows the last page once rows drop', async
   await routeThousand(page, contest, () => rows)
   const current = page.getByRole('navigation', { name: 'ページ', exact: true }).first().locator('span[aria-current="page"]')
   await openStandings(page, '&page=50')
-  await expect(page.getByText('全 1,000 件中 981〜1,000 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 1,000 件中 981〜1,000 件目' })).toBeVisible()
   rows = thousand.slice(0, 990)
   await page.getByRole('button', { name: '今すぐ更新' }).click()
-  await expect(page.getByText('全 990 件中 981〜990 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 990 件中 981〜990 件目' })).toBeVisible()
   await expect(current).toHaveText('50')
   rows = thousand.slice(0, 970)
   await page.getByRole('button', { name: '今すぐ更新' }).click()
-  await expect(page.getByText('全 970 件中 961〜970 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 970 件中 961〜970 件目' })).toBeVisible()
   await expect(current).toHaveText('49')
   // The URL keeps the page asked for, so rows coming back return to it.
   await expect(page).toHaveURL(/[?&]page=50$/)
   await openStandings(page, '&page=20')
-  await expect(page.getByText('全 970 件中 381〜400 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 970 件中 381〜400 件目' })).toBeVisible()
   await Promise.all([page.waitForResponse(response => response.url().includes('/standings')), page.getByRole('button', { name: '今すぐ更新' }).click()])
-  await expect(page.getByText('全 970 件中 381〜400 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 970 件中 381〜400 件目' })).toBeVisible()
   await expect(current).toHaveText('20')
   await expect(page.locator('.standings-table tbody tr').first().locator('th')).toHaveText('user380')
 })
@@ -322,7 +322,7 @@ signedIn('own row is highlighted and pinned above or below the page', async ({ p
   await routeThousand(page, contest, () => rows)
   await openStandings(page, '&page=3')
   const lines = page.locator('.standings-table tbody tr')
-  await expect(page.getByText('全 100 件中 41〜60 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 100 件中 41〜60 件目' })).toBeVisible()
   await expect(lines).toHaveCount(22)
   const mine = lines.first()
   await expect(mine).toHaveClass(/standing-mine/)
@@ -367,4 +367,31 @@ signedIn('own team row is highlighted in a team contest', async ({ page }) => {
   const mine = page.locator('.standings-table tbody tr.standing-mine')
   await expect(mine).toHaveCount(1)
   await expect(mine.locator('th')).toContainText('チームA')
+})
+
+test('a page change is announced and keeps focus in the list', async ({ page }) => {
+  let rows = thousand
+  await routeThousand(page, contest, () => rows)
+  await openStandings(page, '&page=20')
+  const status = page.locator('.list-toolbar [role="status"]')
+  const count = page.locator('.list-count')
+  // Nothing is announced for the page that was opened.
+  await expect(status).toHaveText('')
+  const link = page.getByRole('navigation', { name: 'ページ', exact: true }).first().getByRole('link', { name: '21', exact: true })
+  await link.focus()
+  await page.keyboard.press('Enter')
+  await expect(page).toHaveURL(/[?&]page=21$/)
+  await expect(status).toHaveText('全 1,000 件中 401〜420 件目')
+  await expect(count).toBeFocused()
+  // A poll that only changes the total says nothing.
+  rows = [...thousand, { ...thousand[0]!, rank: 1001, handle: 'user1000' }]
+  await page.getByRole('button', { name: '今すぐ更新' }).click()
+  await expect(count).toHaveText('全 1,001 件中 401〜420 件目')
+  await expect(status).toHaveText('全 1,000 件中 401〜420 件目')
+  // A new size is announced, and the select the viewer is on keeps focus.
+  const size = page.getByLabel('表示件数')
+  await size.focus()
+  await size.selectOption('50')
+  await expect(status).toHaveText('全 1,001 件中 401〜450 件目')
+  await expect(size).toBeFocused()
 })
