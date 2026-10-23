@@ -199,6 +199,8 @@ test('standings are split into pages with AtCoder spacing', async ({ page }, tes
   await page.setViewportSize({ width: 320, height: 900 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('standings-pages-320.png'), fullPage: true })
+  await page.setViewportSize({ width: 375, height: 900 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.setViewportSize({ width: 1280, height: 720 })
   await navs.first().getByRole('link', { name: '35', exact: true }).click()
   await expect(page).toHaveURL(/[?&]page=35$/)

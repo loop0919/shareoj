@@ -135,6 +135,10 @@ test('the submission list pages by number and size', async ({ page }) => {
   await expect(pages.getByRole('link', { name: '1', exact: true })).toBeVisible()
   await expect(pages.getByRole('link', { name: '3', exact: true })).toBeVisible()
   await expect(pages.locator('[aria-current="page"]')).toHaveText('2')
+  for (const width of [320, 375]) {
+    await page.setViewportSize({ width, height: 900 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  }
 
   requested.length = 0
   await page.getByLabel('表示件数').selectOption('20')
