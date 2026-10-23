@@ -163,6 +163,8 @@ createServer(async (req, res) => {
     if (query.get('tag')?.includes(',')) return res.writeHead(400).end(JSON.stringify({ error: 'invalid_tag' }))
     if (query.get('tag') === 'pagination') {
       const offset = Number(query.get('offset') ?? 0), limit = Number(query.get('limit') ?? 50)
+      // Like the real API, which answers an offset above a million with 400.
+      if (!(offset <= 1000000)) return res.writeHead(400).end(JSON.stringify({ error: 'invalid_offset' }))
       return res.end(JSON.stringify({ items: pagedProblems.slice(offset, offset + limit), nextCursor: '', total: pagedProblems.length }))
     }
     const matches = (!query.get('author') || query.get('author') === 'alice') && (!query.get('tag') || problem.tags.includes(query.get('tag')))

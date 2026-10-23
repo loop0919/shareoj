@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { clampPage, lastPage } from '~/utils/pagination'
+import { clampPage, lastPage, pageOffset } from '~/utils/pagination'
 import type { PageSize } from '~/composables/usePageSize'
 import { shortId } from '~~/shared/utils/short-id'
 // Each tag gets a fresh list and pagination.
@@ -34,7 +34,7 @@ const tag = typeof route.query.tag === 'string' ? route.query.tag : ''
 // The page is in the URL and the page size in a cookie, so the server renders the rows the viewer sees (ADR 0028).
 const { requested, link, resize } = usePageQuery()
 const size = usePageSize('problems')
-const offset = computed(() => (requested.value - 1) * size.value)
+const offset = computed(() => pageOffset(requested.value, size.value))
 // A fixed key, so useFetch reloads once a move has set both the offset and the size: a key made of them is watched
 // synchronously and would load the old page at the new size in between. The route catching up with a page already
 // requested leaves the offset, and so the list, as it is.

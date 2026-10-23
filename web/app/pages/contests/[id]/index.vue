@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { submissionUsage } from '~/utils/submission-usage'
 import { formatScore } from '~/utils/score'
-import { clampPage, lastPage } from '~/utils/pagination'
+import { clampPage, lastPage, pageOffset } from '~/utils/pagination'
 import { isOwnStanding, pinnedStanding } from '~/utils/standings-page'
 import type { PageSize } from '~/composables/usePageSize'
 import { contestAuthors, contestDate, contestFreezeTime, contestProblemPath, contestStatus, contestView, contestViews, frozenSubmissionsNote, problemLabel, type Standing, type StandingCell } from '~~/shared/types/contest'
@@ -78,7 +78,7 @@ const filterSubmissions = computed(() => onsiteOnly.value && !teamOnly.value)
 const submissions = ref<{ items: Submission[], hasMore: boolean, total: number } | null>(null)
 const submissionsError = ref('')
 const submissionsSize = usePageSize('submissions')
-const submissionsOffset = computed(() => (requestedPage.value - 1) * submissionsSize.value)
+const submissionsOffset = computed(() => pageOffset(requestedPage.value, submissionsSize.value))
 const submissionsLast = computed(() => lastPage(submissions.value?.total ?? 0, submissionsSize.value))
 const submissionsPage = computed(() => clampPage(requestedPage.value, submissionsLast.value))
 const showSubmissionPages = computed(() => !!submissions.value?.items.length || submissionsPage.value > 1)

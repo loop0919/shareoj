@@ -21,3 +21,10 @@ export function pageAfterResize(page: number, from: number, to: number) { return
 export function pageRange(total: number, page: number, size: number) {
   return { first: (page - 1) * size + 1, last: Math.min(page * size, total) }
 }
+
+// The API refuses an offset above this. A page that far out only has to come back empty, so the list can answer with its
+// last page; a long run of digits in ?page= would otherwise reach Infinity.
+const maxOffset = 1_000_000
+
+// The offset of the requested page's first row, kept to a whole number the API accepts.
+export function pageOffset(page: number, size: number) { return Math.min((page - 1) * size, maxOffset) }

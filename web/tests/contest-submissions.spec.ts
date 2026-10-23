@@ -108,6 +108,8 @@ test('the submission list pages by number and size', async ({ page }) => {
     const url = new URL(route.request().url())
     if (url.pathname.endsWith('/submissions')) {
       const offset = Number(url.searchParams.get('offset')), limit = Number(url.searchParams.get('limit'))
+      // Like the real API, which answers an offset above a million with 400.
+      if (!(offset <= 1000000)) return route.fulfill({ status: 400, json: { error: 'invalid_offset' } })
       requested.push(`offset=${offset}&limit=${limit}${url.searchParams.get('scope') ? `&scope=${url.searchParams.get('scope')}` : ''}`)
       const items = Array.from({ length: Math.max(Math.min(limit, total - offset), 0) }, (_, i) => ({
         id: `00000000-0000-4000-8000-${String(offset + i).padStart(12, '0')}`, contestId: id, problemId: pid, problemTitle: 'A + B', author: `user${offset + i}`,
@@ -129,7 +131,7 @@ test('the submission list pages by number and size', async ({ page }) => {
     await page.evaluate(path => (window as unknown as { useNuxtApp: () => { $router: { push: (to: string) => Promise<unknown> } } }).useNuxtApp().$router.push(path), `/contests/${id}?view=submissions${query}`)
   }
   await open('&page=2')
-  await expect(page.getByText('全 120 件中 51〜100 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 120 件中 51〜100 件目' })).toBeVisible()
   expect(requested).toEqual(['offset=50&limit=50'])
   const pages = page.getByRole('navigation', { name: 'ページ' }).last()
   await expect(pages.getByRole('link', { name: '1', exact: true })).toBeVisible()
@@ -143,7 +145,7 @@ test('the submission list pages by number and size', async ({ page }) => {
   requested.length = 0
   await page.getByLabel('表示件数').selectOption('20')
   await expect(page).toHaveURL(/page=3/)
-  await expect(page.getByText('全 120 件中 41〜60 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 120 件中 41〜60 件目' })).toBeVisible()
   // One request, with the new size and page together: the stale offset=50&limit=20 is never asked for.
   expect(requested).not.toContain('offset=50&limit=20')
   expect(requested.filter(query => query === 'offset=40&limit=20')).toHaveLength(1)
@@ -151,7 +153,7 @@ test('the submission list pages by number and size', async ({ page }) => {
 
   total = 121
   await page.clock.fastForward(15000)
-  await expect(page.getByText('全 121 件中 41〜60 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 121 件中 41〜60 件目' })).toBeVisible()
   await expect(page).toHaveURL(/page=3/)
 
   await page.getByRole('switch', { name: 'オンサイトのみ表示' }).click({ force: true })
@@ -160,5 +162,13 @@ test('the submission list pages by number and size', async ({ page }) => {
 
   await open('&page=99')
   await expect(page).toHaveURL(/page=7/)
-  await expect(page.getByText('全 121 件中 121〜121 件目', { exact: true })).toBeVisible()
+  await expect(page.locator('.list-count', { hasText: '全 121 件中 121〜121 件目' })).toBeVisible()
+
+  // Digits beyond what the API takes as an offset still end on the last page.
+  for (const value of ['99999', '9'.repeat(400)]) {
+    await open(`&page=${value}`)
+    await expect(page).toHaveURL(/page=7/)
+    await expect(page.locator('.list-count', { hasText: '全 121 件中 121〜121 件目' })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'ページ' }).last().locator('[aria-current="page"]')).toHaveText('7')
+  }
 })
