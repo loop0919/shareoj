@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { submissionUsage } from '~/utils/submission-usage'
 import { formatScore } from '~/utils/score'
+import { clampPage, lastPage, pageAfterResize } from '~/utils/pagination'
+import type { PageSize } from '~/composables/usePageSize'
 import { contestAuthors, contestDate, contestFreezeTime, contestProblemPath, contestStatus, contestView, contestViews, frozenSubmissionsNote, problemLabel, type Standing, type StandingCell } from '~~/shared/types/contest'
 import { fullId, shortId } from '~~/shared/utils/short-id'
 import type { Submission } from '~~/shared/types/submission'
@@ -44,6 +46,26 @@ const switchingStandings = computed(() => !!standingsData.value && (standingsDat
 const standings = computed(() => switchingStandings.value ? undefined : standingsData.value?.rows)
 // Team contests mix team rows, which have no handle, and individuals' rows; a team's id cannot collide with a handle.
 const standingKey = (row: Standing) => row.team?.id ?? row.handle
+// The API returns every row and the table is split here, so the footer still counts them all (ADR 0028). The page holds
+// across the refresh, and once rows drop and it is gone the last page shows instead.
+const { requested: requestedPage, link: pageLink, go: goToPage } = usePageQuery()
+const standingsSize = usePageSize('standings')
+const standingsTotal = computed(() => standings.value?.length ?? 0)
+const standingsLast = computed(() => lastPage(standingsTotal.value, standingsSize.value))
+const standingsPage = computed(() => clampPage(requestedPage.value, standingsLast.value))
+// The page's rows are the positions from standingsStart up to, not including, standingsEnd.
+const standingsStart = computed(() => (standingsPage.value - 1) * standingsSize.value)
+const standingsEnd = computed(() => Math.min(standingsStart.value + standingsSize.value, standingsTotal.value))
+const pageStandings = computed(() => standings.value?.slice(standingsStart.value, standingsEnd.value))
+// The count and the page numbers come with the table once it has a row.
+const showStandingsPages = computed(() => !standingsError.value && standingsTotal.value > 0 && !!contest.value?.problems.length)
+function resizeStandings(size: PageSize) {
+  const page = pageAfterResize(standingsPage.value, standingsSize.value, size)
+  standingsSize.value = size
+  void goToPage(page)
+}
+// Like the onsite switch, choosing the frozen or the live table starts over at the first page.
+watch(liveChosen, () => { void goToPage(1) })
 const canViewSubmissions = computed(() => contest.value?.canViewSubmissions === true)
 // While the contest runs a team member sees only the team's submissions, so the onsite filter has nothing to narrow.
 const teamOnly = computed(() => !!contest.value?.team && contest.value.status === 'running')
@@ -193,11 +215,12 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <p v-if="standingsError" class="notice notice-error" role="alert">順位表を取得できませんでした。</p>
       <LoadingSpinner v-if="!standingsError && switchingStandings" label="順位表を読み込み中" />
       <p v-else-if="!standingsError && !standings?.length" class="contest-empty muted">{{ onsiteOnly ? 'オンサイトの参加者はまだいません。' : '参加者はまだいません。' }}</p>
+      <ListToolbar v-if="showStandingsPages" :total="standingsTotal" :page="standingsPage" :size="standingsSize" unit="件" :link="pageLink" @update:size="resizeStandings" />
       <div v-if="!standingsError && !switchingStandings && contest.problems.length" class="content-table-scroll" role="region" aria-label="順位表のスクロール領域" tabindex="0" :aria-busy="updating">
         <table class="content-table standings-table">
           <thead><tr><th scope="col">順位</th><th scope="col">{{ teamContest ? 'チーム・個人' : 'ユーザー' }}</th><th scope="col">得点</th><th scope="col">時間</th><th v-for="(p, i) in contest.problems" :key="p.id || i" scope="col"><NuxtLink v-if="contest.status !== 'scheduled' && p.id" :to="contestProblemPath(contest.id, i)">{{ problemLabel(i) }}</NuxtLink><span v-else>{{ problemLabel(i) }}</span></th></tr></thead>
           <tbody>
-            <tr v-for="row in standings" :key="standingKey(row)">
+            <tr v-for="row in pageStandings" :key="standingKey(row)">
               <td>{{ row.rank }}<small v-if="onsiteOnly && row.overallRank" class="standing-overall">全体 {{ row.overallRank }} 位</small></td>
               <th scope="row">
                 <template v-if="row.team"><span class="standing-team">{{ row.team.name }}</span><span class="standing-members"><template v-for="(member, index) in row.team.members" :key="member"><span v-if="index">、</span><UserLink :handle="member" /></template></span></template>
@@ -225,6 +248,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
           </tfoot>
         </table>
       </div>
+      <PageNav v-if="showStandingsPages" class="standings-pages" :page="standingsPage" :last="standingsLast" :link="pageLink" />
     </section>
     <section v-if="activeView === 'submissions'" id="submissions" class="contest-section" aria-labelledby="submissions-title">
       <h1 id="submissions-title">提出一覧</h1>
@@ -293,6 +317,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 .standing-partial { color: var(--color-ink); }
 .standing-wrong { color: var(--color-error); }
 .standings-filters { display: flex; flex-wrap: wrap; gap: 0 24px; margin-bottom: 8px; }
+.standings-pages { margin-top: 16px; }
 .submissions-scope { margin-top: 8px; }
 .standings-scope-note { margin: 0 0 16px; font-size: .8125rem; }
 .standing-team { display: block; font-weight: 600; overflow-wrap: anywhere; }
