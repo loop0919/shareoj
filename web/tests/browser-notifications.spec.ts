@@ -172,7 +172,7 @@ test('a tab signed out elsewhere stops alerting', async ({ page, context, baseUR
   expect(await shown(page)).toEqual([])
 })
 
-for (const [label, clarifications, atLeast] of [['keep polling when wanted', true, 2], ['stop polling when not', false, 0]] as const) {
+for (const [label, clarifications] of [['keep polling when wanted', true], ['stop polling when not', false]] as const) {
   test(`hidden tabs ${label}`, async ({ page, context, baseURL }) => {
     await presetCookie(context, baseURL!, clarifications)
     await fakeNotifications(page, { permission: 'granted', answer: 'granted' })
@@ -180,13 +180,23 @@ for (const [label, clarifications, atLeast] of [['keep polling when wanted', tru
       Object.defineProperty(document, 'hidden', { get: () => true })
       Object.defineProperty(document, 'visibilityState', { get: () => 'hidden' })
     })
-    const counter = await serveNotifications(page, [], [])
+    const first = notice('clarification_question')
+    const second = notice('clarification_answer', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb0')
+    const counter = await serveNotifications(page, [], [first], [first, second])
     await page.clock.install()
     await page.goto('/')
     await expect.poll(() => counter.count).toBeGreaterThanOrEqual(1)
     const before = counter.count
-    await page.clock.runFor(90_000)
-    await expect.poll(() => counter.count - before).toBeGreaterThanOrEqual(atLeast)
-    if (!atLeast) expect(counter.count - before).toBe(0)
+    if (clarifications) {
+      // Each response schedules the next poll; wait for the bell before advancing again.
+      for (const unread of [1, 2]) {
+        await page.clock.runFor(30_000)
+        await expect(bell(page)).toHaveAttribute('aria-label', `通知（未読${unread}件）`)
+      }
+      expect(counter.count - before).toBe(2)
+    } else {
+      await page.clock.runFor(90_000)
+      expect(counter.count - before).toBe(0)
+    }
   })
 }
