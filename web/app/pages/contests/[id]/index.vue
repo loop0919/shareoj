@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { submissionUsage } from '~/utils/submission-usage'
 import { formatScore } from '~/utils/score'
-import { clampPage, lastPage, pageAfterResize } from '~/utils/pagination'
+import { clampPage, lastPage } from '~/utils/pagination'
 import type { PageSize } from '~/composables/usePageSize'
 import { contestAuthors, contestDate, contestFreezeTime, contestProblemPath, contestStatus, contestView, contestViews, frozenSubmissionsNote, problemLabel, type Standing, type StandingCell } from '~~/shared/types/contest'
 import { fullId, shortId } from '~~/shared/utils/short-id'
@@ -48,7 +48,7 @@ const standings = computed(() => switchingStandings.value ? undefined : standing
 const standingKey = (row: Standing) => row.team?.id ?? row.handle
 // The API returns every row and the table is split here, so the footer still counts them all (ADR 0028). The page holds
 // across the refresh, and once rows drop and it is gone the last page shows instead.
-const { requested: requestedPage, link: pageLink, go: goToPage } = usePageQuery()
+const { requested: requestedPage, link: pageLink, go: goToPage, resize: resizePage } = usePageQuery()
 const standingsSize = usePageSize('standings')
 const standingsTotal = computed(() => standings.value?.length ?? 0)
 const standingsLast = computed(() => lastPage(standingsTotal.value, standingsSize.value))
@@ -59,11 +59,7 @@ const standingsEnd = computed(() => Math.min(standingsStart.value + standingsSiz
 const pageStandings = computed(() => standings.value?.slice(standingsStart.value, standingsEnd.value))
 // The count and the page numbers come with the table once it has a row.
 const showStandingsPages = computed(() => !standingsError.value && standingsTotal.value > 0 && !!contest.value?.problems.length)
-function resizeStandings(size: PageSize) {
-  const page = pageAfterResize(standingsPage.value, standingsSize.value, size)
-  standingsSize.value = size
-  void goToPage(page)
-}
+const resizeStandings = (size: PageSize) => resizePage(standingsSize, standingsPage.value, size)
 // Like the onsite switch, choosing the frozen or the live table starts over at the first page.
 watch(liveChosen, () => { void goToPage(1) })
 const canViewSubmissions = computed(() => contest.value?.canViewSubmissions === true)

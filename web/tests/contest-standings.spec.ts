@@ -160,8 +160,8 @@ test('the refresh button is an icon on the heading row at every width', async ({
 const thousand: Standing[] = Array.from({ length: 1000 }, (_, i) => ({ rank: i + 1, handle: `user${i}`, points: i % 2 ? 0 : 100, timeMs: 0, problems: {
   a: i % 2 ? { points: 0, wrong: 1, pending: 0 } : { points: 100, wrong: 0, pending: 0, acceptedAt: new Date(Date.parse(startsAt) + (i + 1) * 1000).toISOString() },
 } }))
-async function routeThousand(page: Page, current: Contest = contest) {
-  await page.route(`**/api/contests/${id}**`, route => route.fulfill({ json: route.request().url().includes('/standings') ? thousand : current }))
+async function routeThousand(page: Page, current: Contest = contest, rows = () => thousand) {
+  await page.route(`**/api/contests/${id}**`, route => route.fulfill({ json: route.request().url().includes('/standings') ? rows() : current }))
 }
 // The server renders the fixture's empty table; the refresh reads the routed rows.
 async function openStandings(page: Page, query: string) {
@@ -228,11 +228,19 @@ test('the page size is remembered per browser and keeps the first row', async ({
   const size = page.getByLabel('表示件数')
   await expect(page.getByText('全 1,000 件中 41〜60 件目', { exact: true })).toBeVisible()
   await expect(size).toHaveValue('20')
-  // Row 41 topped the page, so 50 rows a page opens the first page.
+  // Row 41 topped the page, so 50 rows a page opens the first page. The size and the page change together: page 3 at 50
+  // rows a page (from user100) never renders on the way.
+  await page.locator('.standings-table tbody').evaluate(tbody => {
+    const added: string[] = (window as unknown as { addedRows: string[] }).addedRows = []
+    new MutationObserver(records => { for (const record of records) for (const node of record.addedNodes) if (node instanceof HTMLTableRowElement) added.push(node.querySelector('th')?.textContent?.trim() ?? '') }).observe(tbody, { childList: true })
+  })
   await size.selectOption('50')
   await expect(page).toHaveURL(/\?view=standings$/)
   await expect(page.getByText('全 1,000 件中 1〜50 件目', { exact: true })).toBeVisible()
   await expect(page.locator('.standings-table tbody tr')).toHaveCount(50)
+  const added = await page.evaluate(() => (window as unknown as { addedRows: string[] }).addedRows)
+  expect(added).toContain('user0')
+  expect(added).not.toContain('user100')
   await page.reload({ waitUntil: 'networkidle' })
   await page.getByRole('button', { name: '今すぐ更新' }).click()
   await expect(size).toHaveValue('50')
@@ -263,4 +271,40 @@ test('switching the scope or the freeze returns to the first page', async ({ pag
   await page.getByRole('switch', { name: '凍結なしで表示' }).click()
   await expect(page).toHaveURL(/\?view=standings$/)
   await expect(page.getByText('全 1,000 件中 1〜20 件目', { exact: true })).toBeVisible()
+})
+
+test('a page chosen under the table opens at its first row', async ({ page }) => {
+  await routeThousand(page)
+  await openStandings(page, '&page=20')
+  const navs = page.getByRole('navigation', { name: 'ページ', exact: true })
+  await navs.last().scrollIntoViewIfNeeded()
+  await expect(page.getByText('全 1,000 件中 381〜400 件目', { exact: true })).not.toBeInViewport()
+  await navs.last().getByRole('link', { name: '21', exact: true }).click()
+  await expect(page).toHaveURL(/[?&]page=21$/)
+  await expect(page.getByText('全 1,000 件中 401〜420 件目', { exact: true })).toBeInViewport()
+  await expect(page.locator('.standings-table tbody tr').first().locator('th')).toHaveText('user400')
+})
+
+test('the refresh keeps the page, and shows the last page once rows drop', async ({ page }) => {
+  let rows = thousand
+  await routeThousand(page, contest, () => rows)
+  const current = page.getByRole('navigation', { name: 'ページ', exact: true }).first().locator('span[aria-current="page"]')
+  await openStandings(page, '&page=50')
+  await expect(page.getByText('全 1,000 件中 981〜1,000 件目', { exact: true })).toBeVisible()
+  rows = thousand.slice(0, 990)
+  await page.getByRole('button', { name: '今すぐ更新' }).click()
+  await expect(page.getByText('全 990 件中 981〜990 件目', { exact: true })).toBeVisible()
+  await expect(current).toHaveText('50')
+  rows = thousand.slice(0, 970)
+  await page.getByRole('button', { name: '今すぐ更新' }).click()
+  await expect(page.getByText('全 970 件中 961〜970 件目', { exact: true })).toBeVisible()
+  await expect(current).toHaveText('49')
+  // The URL keeps the page asked for, so rows coming back return to it.
+  await expect(page).toHaveURL(/[?&]page=50$/)
+  await openStandings(page, '&page=20')
+  await expect(page.getByText('全 970 件中 381〜400 件目', { exact: true })).toBeVisible()
+  await Promise.all([page.waitForResponse(response => response.url().includes('/standings')), page.getByRole('button', { name: '今すぐ更新' }).click()])
+  await expect(page.getByText('全 970 件中 381〜400 件目', { exact: true })).toBeVisible()
+  await expect(current).toHaveText('20')
+  await expect(page.locator('.standings-table tbody tr').first().locator('th')).toHaveText('user380')
 })
