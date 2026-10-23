@@ -2,6 +2,7 @@
 import { submissionUsage } from '~/utils/submission-usage'
 import { formatScore } from '~/utils/score'
 import { clampPage, lastPage } from '~/utils/pagination'
+import { isOwnStanding, pinnedStanding } from '~/utils/standings-page'
 import type { PageSize } from '~/composables/usePageSize'
 import { contestAuthors, contestDate, contestFreezeTime, contestProblemPath, contestStatus, contestView, contestViews, frozenSubmissionsNote, problemLabel, type Standing, type StandingCell } from '~~/shared/types/contest'
 import { fullId, shortId } from '~~/shared/utils/short-id'
@@ -13,7 +14,7 @@ useResponseHeader('Vary').value = 'Cookie'
 const route = useRoute()
 // The layout header shows the contest menu that switches these views.
 const activeView = computed(() => contestView(route.query.view))
-const { user } = useAccount()
+const { user, profile } = useAccount()
 const { showToast } = useToast()
 const id = fullId(route.params.id)
 const base = `/api/contests/${encodeURIComponent(id)}`
@@ -56,7 +57,15 @@ const standingsPage = computed(() => clampPage(requestedPage.value, standingsLas
 // The page's rows are the positions from standingsStart up to, not including, standingsEnd.
 const standingsStart = computed(() => (standingsPage.value - 1) * standingsSize.value)
 const standingsEnd = computed(() => Math.min(standingsStart.value + standingsSize.value, standingsTotal.value))
-const pageStandings = computed(() => standings.value?.slice(standingsStart.value, standingsEnd.value))
+// The viewer's own row outside the page is added before or after it, set off by a separator (null).
+const standingLines = computed(() => {
+  const rows = standings.value
+  if (!rows) return []
+  const lines: (Standing | null)[] = rows.slice(standingsStart.value, standingsEnd.value)
+  const pinned = pinnedStanding(rows, standingsStart.value, standingsEnd.value, profile.value?.handle)
+  if (!pinned) return lines
+  return pinned.place === 'before' ? [pinned.row, null, ...lines] : [...lines, null, pinned.row]
+})
 // The count and the page numbers come with the table once it has a row.
 const showStandingsPages = computed(() => !standingsError.value && standingsTotal.value > 0 && !!contest.value?.problems.length)
 const resizeStandings = (size: PageSize) => resizePage(standingsSize, standingsPage.value, size)
@@ -216,12 +225,15 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
         <table class="content-table standings-table">
           <thead><tr><th scope="col">順位</th><th scope="col">{{ teamContest ? 'チーム・個人' : 'ユーザー' }}</th><th scope="col">得点</th><th scope="col">時間</th><th v-for="(p, i) in contest.problems" :key="p.id || i" scope="col"><NuxtLink v-if="contest.status !== 'scheduled' && p.id" :to="contestProblemPath(contest.id, i)">{{ problemLabel(i) }}</NuxtLink><span v-else>{{ problemLabel(i) }}</span></th></tr></thead>
           <tbody>
-            <tr v-for="row in pageStandings" :key="standingKey(row)">
+            <template v-for="row in standingLines" :key="row ? standingKey(row) : '⋮'">
+            <tr v-if="!row" class="standing-gap" aria-hidden="true"><td :colspan="4 + contest.problems.length">⋮</td></tr>
+            <tr v-else :class="{ 'standing-mine': isOwnStanding(row, profile?.handle) }">
               <td>{{ row.rank }}<small v-if="onsiteOnly && row.overallRank" class="standing-overall">全体 {{ row.overallRank }} 位</small></td>
               <th scope="row">
                 <template v-if="row.team"><span class="standing-team">{{ row.team.name }}</span><span class="standing-members"><template v-for="(member, index) in row.team.members" :key="member"><span v-if="index">、</span><UserLink :handle="member" /></template></span></template>
                 <UserLink v-else :handle="row.handle" />
                 <span v-if="row.onsite && !onsiteOnly" class="standing-onsite">オンサイト</span>
+                <span v-if="isOwnStanding(row, profile?.handle)" class="visually-hidden">（自分）</span>
               </th><td class="standing-total">{{ row.scoreText ?? row.points }}</td><td>{{ duration(row.timeMs) }}</td>
               <td v-for="(p, i) in contest.problems" :key="p.id || i">
                 <template v-if="row.problems[p.id]">
@@ -237,6 +249,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
                 <span v-else class="muted">—</span>
               </td>
             </tr>
+            </template>
           </tbody>
           <tfoot>
             <tr><th colspan="4" scope="row">{{ contest.partialScoring ? (onsiteOnly ? 'FA（初の満点・オンサイト）' : 'FA（初の満点）') : (onsiteOnly ? 'FA（初正解・オンサイト）' : 'FA（初正解）') }}</th><td v-for="(stat, i) in problemStats" :key="stat.id || i"><template v-if="stat.accepted"><span v-for="row in stat.first" :key="standingKey(row)" class="standing-fa"><template v-if="row.team">{{ row.team.name }}</template><UserLink v-else :handle="row.handle" /></span><small>{{ stat.time }}</small></template><span v-else class="muted">—</span></td></tr>
@@ -303,6 +316,10 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 .standings-table th, .standings-table td { padding: 8px 12px; border: 1px solid var(--color-line); text-align: center; font-variant-numeric: tabular-nums; }
 .standings-table thead, .standings-table tfoot, .standings-table tbody tr:nth-child(even) { background: var(--color-surface); }
 .standings-table tbody th { text-align: left; }
+/* After the even-row rule, so the highlight wins on any row. */
+.standings-table tbody tr.standing-mine { background: var(--color-accent-soft); }
+.standings-table tbody tr.standing-mine th { box-shadow: inset 4px 0 0 var(--color-accent); }
+.standings-table tbody tr.standing-gap td { padding-block: 0; color: var(--color-muted); line-height: 1; }
 .standings-table tfoot th { font-weight: 500; }
 .standing-total { font-weight: 700; }
 /* The spoken counts are absolutely positioned; anchoring them here keeps them inside the scrolling table. */

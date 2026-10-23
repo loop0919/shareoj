@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { Contest, Standing } from '../shared/types/contest'
+import { test as signedIn } from './fixtures/account'
 
 const id = '88888888-8888-4888-8888-888888888888'
 const startsAt = '2026-09-15T12:00:00Z'
@@ -185,6 +186,8 @@ test('standings are split into pages with AtCoder spacing', async ({ page }, tes
   // The numbers come again below the table.
   await expect(navs).toHaveCount(2)
   await expect(table.locator('tbody tr')).toHaveCount(20)
+  // Signed out, no row is anyone's own.
+  await expect(page.locator('.standing-mine')).toHaveCount(0)
   await expect(first).toHaveText('user380')
   // The footer counts every row, not only the page's.
   await expect(table.locator('tfoot tr').nth(0).locator('td').nth(0)).toHaveText('user00:01')
@@ -307,4 +310,59 @@ test('the refresh keeps the page, and shows the last page once rows drop', async
   await expect(page.getByText('全 970 件中 381〜400 件目', { exact: true })).toBeVisible()
   await expect(current).toHaveText('20')
   await expect(page.locator('.standings-table tbody tr').first().locator('th')).toHaveText('user380')
+})
+
+// The fixture's account is ui_test; the hundred rows put it at the given position.
+const hundred = (mine: number, patch: (row: Standing, i: number) => Standing = row => row): Standing[] => Array.from({ length: 100 }, (_, i) => patch({ rank: i + 1, handle: i === mine ? 'ui_test' : `user${i}`, points: 0, timeMs: 0, problems: {} }, i))
+
+signedIn('own row is highlighted and pinned above or below the page', async ({ page }) => {
+  let rows = hundred(11)
+  await routeThousand(page, contest, () => rows)
+  await openStandings(page, '&page=3')
+  const lines = page.locator('.standings-table tbody tr')
+  await expect(page.getByText('全 100 件中 41〜60 件目', { exact: true })).toBeVisible()
+  await expect(lines).toHaveCount(22)
+  const mine = lines.first()
+  await expect(mine).toHaveClass(/standing-mine/)
+  await expect(mine.locator('td').first()).toHaveText('12')
+  await expect(mine).toHaveCSS('background-color', 'rgb(237, 249, 241)')
+  await expect(mine.locator('th .visually-hidden')).toHaveText('（自分）')
+  await expect(lines.nth(1)).toHaveText('⋮')
+  await expect(lines.nth(1)).toHaveAttribute('aria-hidden', 'true')
+  await expect(lines.nth(1).locator('td')).toHaveAttribute('colspan', '8')
+  await expect(lines.nth(2).locator('th')).toHaveText('user40')
+  await expect(page.locator('.standing-mine')).toHaveCount(1)
+  // After the page it follows the rows, above the footer.
+  rows = hundred(86)
+  await page.getByRole('button', { name: '今すぐ更新' }).click()
+  await expect(lines.nth(21)).toHaveClass(/standing-mine/)
+  await expect(lines.nth(20)).toHaveText('⋮')
+  await expect(lines).toHaveCount(22)
+  await expect(page.locator('.standings-table tfoot')).toBeVisible()
+  // Inside the page it is highlighted in place, with nothing added.
+  rows = hundred(45)
+  await page.getByRole('button', { name: '今すぐ更新' }).click()
+  await expect(lines).toHaveCount(20)
+  await expect(lines.filter({ hasText: '⋮' })).toHaveCount(0)
+  await expect(lines.nth(5)).toHaveClass(/standing-mine/)
+  await expect(page.locator('.standing-mine')).toHaveCount(1)
+  await expect(lines.nth(5)).toHaveCSS('background-color', 'rgb(237, 249, 241)')
+})
+
+signedIn('a tie across the page boundary is placed by position', async ({ page }) => {
+  await routeThousand(page, contest, () => hundred(60, (row, i) => i >= 59 ? { ...row, rank: 60 } : row))
+  await openStandings(page, '&page=3')
+  const lines = page.locator('.standings-table tbody tr')
+  await expect(lines).toHaveCount(22)
+  await expect(lines.last()).toHaveClass(/standing-mine/)
+  await expect(lines.nth(20)).toHaveText('⋮')
+})
+
+signedIn('own team row is highlighted in a team contest', async ({ page }) => {
+  const teams = hundred(-1, (row, i) => i === 1 ? { ...row, handle: '', team: { id: 't1', name: 'チームA', members: ['bob', 'ui_test'], onsite: false } } : row)
+  await routeThousand(page, { ...contest, teamMode: true }, () => teams)
+  await openStandings(page, '')
+  const mine = page.locator('.standings-table tbody tr.standing-mine')
+  await expect(mine).toHaveCount(1)
+  await expect(mine.locator('th')).toContainText('チームA')
 })
