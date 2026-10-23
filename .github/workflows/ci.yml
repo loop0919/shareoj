@@ -13,35 +13,18 @@ permissions:
   contents: read
 
 jobs:
-  web:
-    name: Test SSR frontend
+  web-build:
+    name: Build SSR frontend
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: openoj_test
-          POSTGRES_PASSWORD: test-only-password
-          POSTGRES_DB: openoj_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U openoj_test -d openoj_test"
-          --health-interval 5s --health-timeout 5s --health-retries 12
-    env:
-      TEST_DATABASE_URL: postgresql://openoj_test:test-only-password@127.0.0.1:5432/openoj_test?sslmode=disable
+    timeout-minutes: 10
+    outputs:
+      playwright-version: ${{ steps.playwright.outputs.version }}
     defaults:
       run:
         working-directory: web
     steps:
       - name: Check out repository
         uses: actions/checkout@v7.0.0
-      - name: Set up Go
-        uses: actions/setup-go@v7.0.0
-        with:
-          go-version-file: api/go.mod
-          cache-dependency-path: api/go.sum
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -54,6 +37,21 @@ jobs:
         run: npm run typecheck
       - name: Build SSR server
         run: npm run build
+      - name: Read Playwright version
+        id: playwright
+        run: node -e 'console.log("version=" + require("./package-lock.json").packages["node_modules/@playwright/test"].version)' >> "$GITHUB_OUTPUT"
+      - name: Archive SSR server
+        run: tar -czf .build/ssr.tar.gz .output
+      - name: Upload SSR server for browser tests
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-ssr
+          path: web/.build/ssr.tar.gz
+          include-hidden-files: true
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+          overwrite: true
       - name: Build and test frontend Lambda
         run: |
           npm run package:lambda
@@ -69,25 +67,6 @@ jobs:
           terraform init -backend=false -input=false -lockfile=readonly
           terraform validate
           terraform test
-      - name: Install Chromium
-        run: |
-          # Playwright downloads its own Chromium. The runner's unrelated Chrome
-          # APT feed can have inconsistent indexes while Google publishes updates.
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google-chrome.sources
-          npx playwright install --with-deps chromium
-      - name: Test SSR, browser rendering and PostgreSQL accounts
-        shell: bash
-        run: |
-          # The suites use separate API servers, ports and output directories.
-          npm test &
-          browser_pid=$!
-          npx playwright test --config playwright.account.config.ts &
-          account_pid=$!
-          # Wait for both suites and preserve either failure (bare wait loses it).
-          status=0
-          wait "$browser_pid" || status=1
-          wait "$account_pid" || status=1
-          exit "$status"
       - name: Test deployment smoke checks
         run: node --test scripts/smoke-frontend.test.mjs
 
@@ -101,6 +80,93 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           overwrite: true
+
+  web-tests:
+    name: Test frontend (${{ matrix.suite }}, ${{ matrix.shard }}/2)
+    needs: web-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [browser, account]
+        shard: [1, 2]
+        include:
+          - suite: browser
+            config: playwright.config.ts
+          - suite: account
+            config: playwright.account.config.ts
+    # Match the lockfile so browsers and OS libraries are ready without apt downloads.
+    container:
+      image: mcr.microsoft.com/playwright:v${{ needs.web-build.outputs.playwright-version }}-noble
+      options: --ipc=host
+    services:
+      postgres:
+        image: ${{ matrix.suite == 'account' && 'postgres:17' || '' }}
+        env:
+          POSTGRES_USER: openoj_test
+          POSTGRES_PASSWORD: test-only-password
+          POSTGRES_DB: openoj_test
+        options: >-
+          --health-cmd "pg_isready -U openoj_test -d openoj_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      TEST_DATABASE_URL: postgresql://openoj_test:test-only-password@postgres:5432/openoj_test?sslmode=disable
+      PLAYWRIGHT_HTML_OPEN: never
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.0
+      - name: Set up Go
+        if: matrix.suite == 'account'
+        uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Download SSR server
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend-ssr
+          path: web/.build
+      - name: Extract SSR server
+        run: tar -xzf .build/ssr.tar.gz
+      - name: Run browser tests
+        run: npx playwright test --config ${{ matrix.config }} --shard=${{ matrix.shard }}/2 --reporter=dot,html
+      - name: Upload browser report and failure traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-${{ matrix.suite }}-${{ matrix.shard }}
+          path: |
+            web/playwright-report/
+            web/test-results/
+            web/test-results-account/
+          retention-days: 7
+          overwrite: true
+
+  web:
+    # Keep the existing required check; every shard must succeed before it passes.
+    name: Test SSR frontend
+    if: ${{ always() }}
+    needs: [web-build, web-tests]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Require all frontend checks
+        env:
+          BUILD_RESULT: ${{ needs.web-build.result }}
+          TEST_RESULT: ${{ needs.web-tests.result }}
+        run: test "$BUILD_RESULT" = success && test "$TEST_RESULT" = success
 
   test:
     name: Test and package API

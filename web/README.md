@@ -225,6 +225,23 @@ npx playwright test --config playwright.account.config.ts
 Cognitoの代わりにテスト用の署名鍵でトークンを発行し、実際のJWT検証、Go API、Nuxt、PostgreSQLを通して保存と再編集を確認する。
 テスト用の認証処理はGoの`_test.go`だけに含まれ、本番バイナリには入らない。
 
+CIではSSRを一度ビルドし、画面テストと実DBテストをそれぞれ2分割して別のランナーで実行する。
+実DBテストはランナーごとに独立したPostgreSQLを使い、同じDB内では1ワーカーで実行する。
+ブラウザーとOSライブラリは[公式Playwrightイメージ](https://playwright.dev/docs/docker)を使い、バージョンを`package-lock.json`に合わせる。
+すべての分割が成功した場合だけ`Test SSR frontend`が成功し、デプロイへ進む。
+自動リトライは行わない。
+
+分割をローカルで再実行する場合は、次の`1/2`を対象の番号に変える。
+
+```console
+npx playwright test --shard=1/2
+npx playwright test --config playwright.account.config.ts --shard=1/2
+```
+
+CIの実行結果には`playwright-browser-1`などの名前で、所要時間を確認できるHTMLレポートと失敗時のトレースを7日間保存する。
+アーティファクトを展開し、`npx playwright show-report <展開先>/playwright-report`で開く。
+トレースは`npx playwright show-trace <trace.zipのパス>`で開く。
+
 手動では、開発サーバー起動後に HTML を確認できる。
 
 ```console
