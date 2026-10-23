@@ -89,18 +89,36 @@ func (p problemHandler) publishedProblems(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	list, err := p.Store.PublicList(ctx, cursor, problems.ListFilter{Author: author, Tag: tag})
+	offset, ok := contestOffset(w, r)
+	if !ok {
+		return
+	}
+	limit, ok := pageLimit(w, r)
+	if !ok {
+		return
+	}
+	if cursor != nil && r.URL.Query().Has("offset") {
+		authError(w, 400, "invalid_request")
+		return
+	}
+	filter := problems.ListFilter{Author: author, Tag: tag}
+	list, err := p.Store.PublicList(ctx, cursor, offset, limit, filter)
 	if err != nil {
 		problemError(w, err)
 		return
 	}
 	next := ""
-	if len(list) > 50 {
-		list = list[:50]
-		last := list[49]
+	if len(list) > limit {
+		list = list[:limit]
+		last := list[limit-1]
 		next = nextContentCursor(last.ID, last.PublishedAt)
 	}
-	writeAuthJSON(w, 200, cursorResponse[problems.PublicProblem]{Items: list, NextCursor: next})
+	total, err := p.Store.PublicCount(ctx, filter)
+	if err != nil {
+		problemError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, countedCursorResponse[problems.PublicProblem]{Items: list, NextCursor: next, Total: total})
 }
 
 type publicationInput struct {

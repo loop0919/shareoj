@@ -20,7 +20,7 @@ import (
 // Aliases keep the original response types available beside route-local handlers.
 type (
 	publicProblemResponse       = problems.PublicProblem
-	publicProblemPage           = cursorResponse[problems.PublicProblem]
+	publicProblemPage           = countedCursorResponse[problems.PublicProblem]
 	publicPostResponse          = posts.Post
 	publicPostPage              = cursorResponse[posts.Post]
 	publicEditorialList         = itemsResponse[posts.Editorial]
@@ -42,6 +42,13 @@ type itemsResponse[T any] struct {
 type cursorResponse[T any] struct {
 	Items      []T    `json:"items"`
 	NextCursor string `json:"nextCursor" doc:"次ページのcursor。空文字なら最後のページ。"`
+}
+
+// countedCursorResponse also tells how many items the list has in all.
+type countedCursorResponse[T any] struct {
+	Items      []T    `json:"items"`
+	NextCursor string `json:"nextCursor" doc:"次ページのcursor。空文字なら最後のページ。"`
+	Total      int    `json:"total" doc:"条件に合う問題の総数。"`
 }
 
 type offsetResponse[T any] struct {
@@ -84,6 +91,13 @@ func catalogueParameters() []*huma.Param {
 		{Name: "author", In: "query", Description: "作者のユーザーIDで絞り込み。", Schema: &huma.Schema{Type: "string", Pattern: userHandle.String()}},
 		{Name: "tag", In: "query", Description: "タグで絞り込み。表記は完全一致です。GET /tagsのnameを指定してください。", Schema: &huma.Schema{Type: "string", MaxLength: intPointer(tags.MaxLength)}},
 	}
+}
+
+// problemParameters are the parameters of the public problem list.
+func problemParameters() []*huma.Param {
+	return append(catalogueParameters(),
+		&huma.Param{Name: "offset", In: "query", Description: "先頭からスキップする件数。cursorと同時には指定できません。", Schema: &huma.Schema{Type: "integer", Minimum: floatPointer(0), Maximum: floatPointer(1000000), Default: 0}},
+		limitParameter())
 }
 
 func offsetParameters() []*huma.Param {

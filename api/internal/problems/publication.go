@@ -138,19 +138,36 @@ func (p *PublicProblem) SetStatement(d Draft) {
 	p.Scoring = d.PublicScoring()
 }
 
-// PublicList returns at most 51 problems, newest first. A tag matches only while the problem's tags are public.
-func (s *Store) PublicList(ctx context.Context, cursor *Cursor, filter ListFilter) ([]PublicProblem, error) {
-	query := `SELECT d.id,d.published_draft->>'title',(d.published_draft->>'difficulty')::integer,d.published_draft->>'timeLimitMs',d.published_draft->>'memoryLimitMb',u.handle,d.published_at,(SELECT count(*) FROM problem_favorites f WHERE f.problem_id=d.id),` + publicSolverCount + `,(SELECT avg(difficulty)::float8 FROM problem_difficulty_votes WHERE problem_id=d.id),(SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id),CASE WHEN problem_tags_hidden(d.id) THEN '[]' ELSE COALESCE(d.published_draft->'tags','[]') END FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id WHERE d.published_draft IS NOT NULL AND ($1='' OR u.handle=$1)`
+// publicFilter is the condition that PublicList and PublicCount share. A tag matches only while the problem's tags are
+// public.
+func publicFilter(filter ListFilter) (string, []any) {
+	where := ` WHERE d.published_draft IS NOT NULL AND ($1='' OR u.handle=$1)`
 	args := []any{filter.Author}
 	if filter.Tag != "" {
 		args = append(args, filter.Tag)
-		query += fmt.Sprintf(` AND d.published_draft->'tags' @> jsonb_build_array($%d::text) AND NOT problem_tags_hidden(d.id)`, len(args))
+		where += fmt.Sprintf(` AND d.published_draft->'tags' @> jsonb_build_array($%d::text) AND NOT problem_tags_hidden(d.id)`, len(args))
 	}
+	return where, args
+}
+
+// PublicCount counts every public problem that PublicList can return for the filter.
+func (s *Store) PublicCount(ctx context.Context, filter ListFilter) (int, error) {
+	where, args := publicFilter(filter)
+	var n int
+	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id`+where, args...).Scan(&n)
+	return n, err
+}
+
+// PublicList returns at most limit+1 problems, newest first, after the cursor or the first offset problems.
+func (s *Store) PublicList(ctx context.Context, cursor *Cursor, offset, limit int, filter ListFilter) ([]PublicProblem, error) {
+	where, args := publicFilter(filter)
+	query := `SELECT d.id,d.published_draft->>'title',(d.published_draft->>'difficulty')::integer,d.published_draft->>'timeLimitMs',d.published_draft->>'memoryLimitMb',u.handle,d.published_at,(SELECT count(*) FROM problem_favorites f WHERE f.problem_id=d.id),` + publicSolverCount + `,(SELECT avg(difficulty)::float8 FROM problem_difficulty_votes WHERE problem_id=d.id),(SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id),CASE WHEN problem_tags_hidden(d.id) THEN '[]' ELSE COALESCE(d.published_draft->'tags','[]') END FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id` + where
 	if cursor != nil {
 		args = append(args, cursor.UpdatedAt, cursor.ID)
 		query += fmt.Sprintf(` AND (d.published_at,d.id)<($%d,$%d::uuid)`, len(args)-1, len(args))
 	}
-	rows, err := s.pool.Query(ctx, query+` ORDER BY d.published_at DESC,d.id DESC LIMIT 51`, args...)
+	args = append(args, limit+1, offset)
+	rows, err := s.pool.Query(ctx, query+fmt.Sprintf(` ORDER BY d.published_at DESC,d.id DESC LIMIT $%d OFFSET $%d`, len(args)-1, len(args)), args...)
 	if err != nil {
 		return nil, err
 	}

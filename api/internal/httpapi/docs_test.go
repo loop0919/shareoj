@@ -114,6 +114,16 @@ func TestPublicDocumentation(t *testing.T) {
 		}) {
 			t.Fatal("missing limit parameter")
 		}
+		for _, name := range []string{"offset", "limit"} {
+			if !slices.ContainsFunc(doc.Paths["/problems"]["get"].Parameters, func(p struct {
+				Name, In string
+				Required bool
+			}) bool {
+				return p.Name == name && p.In == "query" && !p.Required
+			}) {
+				t.Fatal("missing problems parameter", name)
+			}
+		}
 		// Invitation links, venue passphrases and team join codes are for setters and members only, never in a public
 		// type (ADR 0022, ADR 0024).
 		for name, schema := range doc.Components.Schemas {
