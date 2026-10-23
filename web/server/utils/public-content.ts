@@ -7,10 +7,10 @@ export async function publicContent(event: H3Event, path: string) {
     throw createError({ statusCode: status === 404 ? 404 : status === 400 ? 400 : 502, statusMessage: status === 404 ? 'Not found' : 'Content service unavailable' })
   }
 }
-export function publicCursor(event: H3Event) {
+export function publicCursor(event: H3Event, keys: string[] = ['cursor', 'author', 'tag']) {
   const query = getQuery(event)
   const params = new URLSearchParams()
-  for (const key of ['cursor', 'author', 'tag']) {
+  for (const key of keys) {
     if (typeof query[key] === 'string') params.set(key, query[key])
   }
   return params.size ? `?${params}` : ''

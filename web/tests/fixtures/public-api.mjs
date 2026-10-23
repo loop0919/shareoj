@@ -13,6 +13,11 @@ const partialContest = {
   status: 'running', canEdit: false, official: true, participating: false, canViewSubmissions: false, partialScoring: true,
   problems: [{ id: partialProblem.id, title: partialProblem.title, points: 100, partial: true }, { id: problem.id, title: problem.title, points: 200 }],
 }
+// The list tagged pagination, newest first, paged by offset and limit (ADR 0028).
+const pagedProblems = Array.from({ length: 120 }, (_, i) => ({
+  id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`, title: `問題 ${String(i + 1).padStart(3, '0')}`, author: 'alice', publishedAt: '2026-09-10T00:00:00Z',
+  timeLimitMs: 2000, memoryLimitMb: 256, difficulty: 10, favoriteCount: 3, solverCount: 12, tags: ['pagination'],
+}))
 // The API leaves out the tags of a problem in a 定期便 round.
 const featuredProblem = { ...problem, id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', title: '定期便の新作', difficulty: 9, editorial: '', tags: [], editorialHidden: true, editorialRevealAt: '2099-09-29T13:00:00Z' }
 const tags = [
@@ -156,8 +161,12 @@ createServer(async (req, res) => {
   else if (path === '/problems') {
     const query = new URL(req.url, 'http://localhost').searchParams
     if (query.get('tag')?.includes(',')) return res.writeHead(400).end(JSON.stringify({ error: 'invalid_tag' }))
+    if (query.get('tag') === 'pagination') {
+      const offset = Number(query.get('offset') ?? 0), limit = Number(query.get('limit') ?? 50)
+      return res.end(JSON.stringify({ items: pagedProblems.slice(offset, offset + limit), nextCursor: '', total: pagedProblems.length }))
+    }
     const matches = (!query.get('author') || query.get('author') === 'alice') && (!query.get('tag') || problem.tags.includes(query.get('tag')))
-    res.end(JSON.stringify({ items: matches ? [problem] : [], nextCursor: '' }))
+    res.end(JSON.stringify({ items: matches ? [problem] : [], nextCursor: '', total: matches ? 1 : 0 }))
   }
   else if (path === `/problems/${problem.id}`) res.end(JSON.stringify(problem))
   else if (path === `/problems/${partialProblem.id}`) res.end(JSON.stringify(partialProblem))
