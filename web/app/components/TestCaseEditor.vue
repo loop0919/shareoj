@@ -66,7 +66,7 @@ function openImport() {
   importDialog.value?.showModal()
 }
 let mounted = true
-onBeforeUnmount(() => { mounted = false })
+onBeforeUnmount(() => { mounted = false; cancelAnimationFrame(scrollFrame) })
 async function selectFiles(event: Event, key: 'input' | 'output') {
   const control = event.target as HTMLInputElement
   const files = Array.from(control.files ?? [])
@@ -129,6 +129,69 @@ function toggleGroup(name: string, member: boolean) {
   else groups.delete(name)
   item.groups = props.scoring.groups.map(group => group.name).filter(value => groups.has(value))
 }
+// The saved order is the judging order, so authors can move samples back to the top.
+const list = ref<HTMLUListElement>()
+const moveStatus = ref('')
+function move(from: number, to: number) {
+  if (locked.value || from === to) return
+  const open = cases.value[selected.value]
+  const [item] = cases.value.splice(from, 1)
+  cases.value.splice(to, 0, item!)
+  selected.value = cases.value.indexOf(open!)
+  moveStatus.value = `${fileName(item!, to)}を${to + 1}番目に移動しました。`
+}
+async function moveByKey(event: KeyboardEvent, index: number) {
+  const to = index + (event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0)
+  if (to === index) return
+  event.preventDefault()
+  if (to < 0 || to >= cases.value.length) return
+  move(index, to)
+  await nextTick()
+  list.value?.querySelectorAll<HTMLButtonElement>('.case-grip')[to]?.focus()
+}
+// Pointer events cover mouse and touch; the handle's touch-action stops a touch drag from scrolling instead.
+// slot is the gap the case drops into: 0 is above the first row and cases.length below the last.
+const drag = ref<{ from: number, slot: number, y: number, offset: number, left: number, width: number }>()
+let scrollFrame = 0
+const dropSlot = computed(() => drag.value && drag.value.slot !== drag.value.from && drag.value.slot !== drag.value.from + 1 ? drag.value.slot : -1)
+function slotAt(y: number) {
+  const rows = Array.from(list.value?.children ?? [])
+  const index = rows.findIndex(row => { const box = row.getBoundingClientRect(); return y < box.top + box.height / 2 })
+  return index < 0 ? rows.length : index
+}
+function startDrag(event: PointerEvent, index: number) {
+  if (locked.value || event.button !== 0) return
+  event.preventDefault()
+  const handle = event.currentTarget as HTMLElement
+  handle.setPointerCapture(event.pointerId)
+  const row = handle.parentElement!.getBoundingClientRect()
+  drag.value = { from: index, slot: index, y: event.clientY, offset: event.clientY - row.top, left: row.left, width: row.width }
+  scrollFrame = requestAnimationFrame(scrollEdge)
+}
+function moveDrag(event: PointerEvent) {
+  if (!drag.value) return
+  drag.value.y = event.clientY
+  drag.value.slot = slotAt(event.clientY)
+}
+function endDrag(drop: boolean) {
+  if (!drag.value) return
+  const { from, slot } = drag.value
+  drag.value = undefined
+  cancelAnimationFrame(scrollFrame)
+  if (drop) move(from, slot > from ? slot - 1 : slot)
+}
+// Holding a case near the top or bottom of the list scrolls it, so a short list on a phone reaches every row.
+function scrollEdge() {
+  const element = list.value
+  if (!drag.value || !element) return
+  const box = element.getBoundingClientRect()
+  const step = drag.value.y < box.top + 24 ? -8 : drag.value.y > box.bottom - 24 ? 8 : 0
+  if (step) {
+    element.scrollTop += step
+    drag.value.slot = slotAt(drag.value.y)
+  }
+  scrollFrame = requestAnimationFrame(scrollEdge)
+}
 function add() {
   if (locked.value || cases.value.length >= 100) return
   const used = new Set(cases.value.map(item => item.name?.trim()))
@@ -163,14 +226,19 @@ function add() {
             <button type="button" class="editor-button case-import" :disabled="locked" aria-label="ファイルから一括追加" title="ファイルから一括追加" @click="openImport"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0L8 8m4-4 4 4M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></svg></button>
           </div>
         </div>
-        <ul>
-          <li v-for="(item, index) in cases" :key="index">
-            <button type="button" :aria-current="selected === index ? 'true' : undefined" :disabled="locked" :title="fileName(item, index)" @click="selected = index">
+        <ul ref="list">
+          <li v-for="(item, index) in cases" :key="index" :class="{ 'case-dragging': drag?.from === index }">
+            <span v-if="dropSlot === index" class="case-drop" aria-hidden="true" />
+            <button type="button" class="case-grip" :aria-label="`${fileName(item, index)}を移動`" title="ドラッグか ↑↓ キーで並べ替え" :disabled="locked" @pointerdown="startDrag($event, index)" @pointermove="moveDrag" @pointerup="endDrag(true)" @pointercancel="endDrag(false)" @keydown="moveByKey($event, index)"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="6" r="1.5" /><circle cx="15" cy="6" r="1.5" /><circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" /><circle cx="9" cy="18" r="1.5" /><circle cx="15" cy="18" r="1.5" /></svg></button>
+            <button type="button" class="case-select" :aria-current="selected === index ? 'true' : undefined" :disabled="locked" :title="fileName(item, index)" @click="selected = index">
               <svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H5v20h14V7Zm0 0v5h5M8 12h8M8 16h6" /></svg>
               <span>{{ fileName(item, index) }}</span><span v-if="ungrouped(item)" class="case-ungrouped" title="どのグループにも属していません">無所属</span><svg v-if="item.isSample" class="sample-flag" viewBox="0 0 24 24" role="img" aria-label="サンプルケース"><path d="M5 21V3m0 1c5-4 9 4 14 0v10c-5 4-9-4-14 0" /></svg>
             </button>
+            <span v-if="dropSlot === cases.length && index === cases.length - 1" class="case-drop case-drop-end" aria-hidden="true" />
           </li>
         </ul>
+        <div v-if="drag" class="case-drag-ghost" aria-hidden="true" :style="{ top: `${drag.y - drag.offset}px`, left: `${drag.left + 24}px`, width: `${drag.width - 24}px` }">{{ fileName(cases[drag.from]!, drag.from) }}</div>
+        <p class="visually-hidden" role="status">{{ moveStatus }}</p>
       </nav>
       <div v-if="current" class="case-detail">
         <div class="case-name">
@@ -256,15 +324,23 @@ function add() {
 .case-add { flex-shrink: 0; font-weight: 600; }
 .case-import { display: inline-flex; align-items: center; justify-content: center; width: var(--editor-control-size); padding: 0; }
 .case-files ul { list-style: none; margin: 0; padding: 4px 0; overflow-y: auto; }
-.case-files li { margin: 0; }
-.case-files li button { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 10px 12px; background: transparent; border: 0; border-left: 3px solid transparent; color: var(--color-ink); text-align: left; font-family: var(--font-code); font-size: .8125rem; cursor: pointer; }
-.case-files li button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.case-files li button svg { flex-shrink: 0; }
-.case-files li button:hover, .case-files li button[aria-current] { background: var(--color-accent-soft); color: var(--color-accent); }
-.case-files li button[aria-current] { border-left-color: var(--color-accent); }
-.case-files li button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
-.case-files li button:active { background: var(--color-line); }
-.case-files li button:disabled { opacity: .5; cursor: not-allowed; }
+.case-files li { position: relative; display: flex; margin: 0; border-left: 3px solid transparent; }
+.case-files li:has(> .case-select:hover), .case-files li:has(> .case-select[aria-current]) { background: var(--color-accent-soft); }
+.case-files li:has(> .case-select[aria-current]) { border-left-color: var(--color-accent); }
+.case-files li:has(> .case-select:active) { background: var(--color-line); }
+.case-select { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 10px 12px 10px 4px; background: transparent; border: 0; color: var(--color-ink); text-align: left; font-family: var(--font-code); font-size: .8125rem; cursor: pointer; }
+.case-select span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.case-select svg { flex-shrink: 0; }
+.case-select:hover, .case-select[aria-current] { color: var(--color-accent); }
+.case-select:focus-visible, .case-grip:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.case-select:disabled, .case-grip:disabled { opacity: .5; cursor: not-allowed; }
+.case-grip { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 28px; padding: 0; background: transparent; border: 0; color: var(--color-muted); cursor: grab; touch-action: none; }
+.case-grip .editor-icon { fill: currentColor; stroke: none; }
+.case-grip:not(:disabled):hover { color: var(--color-ink); }
+.case-dragging { opacity: .4; }
+.case-drop { position: absolute; z-index: 11; left: -3px; right: 0; top: -1px; height: 2px; background: var(--color-accent); pointer-events: none; }
+.case-drop-end { top: auto; bottom: -1px; }
+.case-drag-ghost { position: fixed; z-index: 10; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-paper); box-shadow: 0 6px 18px rgb(0 0 0 / .18); color: var(--color-ink); font-family: var(--font-code); font-size: .8125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; cursor: grabbing; }
 .case-detail { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .case-name { background: var(--color-surface); display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--color-line); }
 .case-name label { margin: 0; font-size: .75rem; white-space: nowrap; }
@@ -279,8 +355,8 @@ function add() {
 .case-delete:focus-visible { outline-color: var(--color-error); }
 .case-delete:active:not(:disabled) { transform: translateY(1px); }
 .case-delete:disabled, .case-add:disabled, .case-import:disabled { opacity: .5; cursor: not-allowed; }
-@media (pointer: coarse) { .case-delete, .case-add { min-height: 44px; } .case-import { width: 44px; min-height: 44px; } }
-.case-files li button .case-ungrouped { flex-shrink: 0; margin-left: auto; padding: 0 4px; border: 1px solid var(--color-error); border-radius: 3px; color: var(--color-error); font-size: .6875rem; line-height: 1.5; overflow: visible; }
+@media (pointer: coarse) { .case-delete, .case-add { min-height: 44px; } .case-import { width: 44px; min-height: 44px; } .case-grip { width: 44px; } }
+.case-select .case-ungrouped { flex-shrink: 0; margin-left: auto; padding: 0 4px; border: 1px solid var(--color-error); border-radius: 3px; color: var(--color-error); font-size: .6875rem; line-height: 1.5; overflow: visible; }
 .case-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0; padding: 8px 12px; border: 0; border-bottom: 1px solid var(--color-line); min-width: 0; }
 .case-groups legend { float: left; margin-right: 4px; padding: 0; font-size: .75rem; }
 .group-chip { position: relative; display: inline-flex; align-items: center; min-height: 32px; padding: 2px 12px; border: 1px solid var(--color-line); border-radius: 999px; background: var(--color-paper); font-size: .8125rem; cursor: pointer; overflow-wrap: anywhere; }
@@ -314,7 +390,7 @@ function add() {
   .case-files { border-right: 0; border-bottom: 1px solid var(--color-line); }
   .file-list-heading { padding: 4px 8px; }
   .case-files ul { padding: 0; max-height: 132px; }
-  .case-files li button { padding: 6px 8px; min-height: 44px; }
+  .case-select { padding: 6px 8px 6px 4px; min-height: 44px; }
   .case-fields { flex: none; grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(2, 320px); }
 }
 </style>

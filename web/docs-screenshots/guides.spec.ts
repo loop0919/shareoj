@@ -76,6 +76,7 @@ test('test cases', async ({ page }) => {
     page.getByRole('button', { name: 'ファイルから一括追加' }).first(),
     page.getByText('サンプルケースにする', { exact: true }),
     page.getByRole('button', { name: 'サンプルを問題文に追加' }),
+    page.getByRole('button', { name: 'sample_1を移動', exact: true }),
   ])
   await shoot(page, 'problem-tests')
 })

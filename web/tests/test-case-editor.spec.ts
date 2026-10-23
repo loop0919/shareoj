@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures/account'
 
 test('difficulty picker shows grades and supports keyboard selection and persistence', async ({ page }, testInfo) => {
@@ -247,7 +248,7 @@ test('file selection imports automatically and preserves the opposite side acros
     expect(picker.isMultiple()).toBe(true)
     await picker.setFiles(Object.entries(files).map(([name, content]) => ({ name, mimeType: 'text/plain', buffer: Buffer.isBuffer(content) ? content : Buffer.from(content) })))
     if (invalid) await expect(page.locator('.test-case-editor [role=alert]')).toBeVisible()
-    else await expect(page.locator('.test-case-editor [role=status]')).toContainText('件更新しました。')
+    else await expect(dialog.getByRole('status')).toContainText('件更新しました。')
     await expect(page.getByRole('button', { name: `${label}を選択`, exact: true })).toBeEnabled()
   }
   const dialog = page.getByRole('dialog', { name: 'ファイルから一括追加' })
@@ -415,4 +416,100 @@ test('append samples preserves the statement, excludes private cases, and saves 
   const id = new URL(page.url()).searchParams.get('problem')
   const saved = await page.evaluate(async id => (await (await fetch(`/api/my/problems/${id}`)).json()).draft.markdown, id)
   expect(saved === 'a'.repeat(100_000)).toBe(true)
+})
+
+async function addCases(page: Page, names: string[]) {
+  await page.getByRole('button', { name: 'テストケース', exact: true }).click()
+  for (const [index, name] of names.entries()) {
+    await page.getByRole('button', { name: 'テストケースを追加' }).click()
+    await page.getByLabel(`テストケース名 ${index + 1}`, { exact: true }).fill(name)
+  }
+}
+
+async function dragHandle(page: Page, name: string, to: { x: number, y: number }) {
+  const start = (await page.getByRole('button', { name: `${name}を移動`, exact: true }).boundingBox())!
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(to.x, to.y, { steps: 8 })
+  await expect(page.locator('.case-drop')).toBeVisible()
+  await page.mouse.up()
+}
+
+test('dragging a case handle drops it at the line, keeps the selection, and saves the order', async ({ page }) => {
+  await page.goto('/problems/new')
+  await addCases(page, ['a.txt', 'b.txt', 'c.txt'])
+  const rows = page.locator('.case-files li')
+  // The lower half of a row drops after it; moving down must not skip a row.
+  const b = (await rows.nth(1).boundingBox())!
+  await dragHandle(page, 'a.txt', { x: b.x + b.width / 2, y: b.y + b.height * .75 })
+  await expect(rows).toHaveText(['b.txt', 'a.txt', 'c.txt'])
+  await expect(page.getByLabel('テストケース名 3', { exact: true })).toHaveValue('c.txt')
+  const top = (await rows.nth(0).boundingBox())!
+  await dragHandle(page, 'c.txt', { x: top.x + top.width / 2, y: top.y + top.height * .25 })
+  await expect(rows).toHaveText(['c.txt', 'b.txt', 'a.txt'])
+  await expect(page.getByLabel('テストケース名 1', { exact: true })).toHaveValue('c.txt')
+  await expect(page.locator('.case-drop')).toHaveCount(0)
+  await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
+  await page.reload()
+  await page.getByRole('button', { name: 'テストケース', exact: true }).click()
+  await expect(rows).toHaveText(['c.txt', 'b.txt', 'a.txt'])
+})
+
+test('arrow keys on a case handle move the case one row and announce its position', async ({ page }) => {
+  await page.goto('/problems/new')
+  await addCases(page, ['a.txt', 'b.txt', 'c.txt'])
+  const rows = page.locator('.case-files li')
+  await page.getByRole('navigation', { name: 'テストケース一覧' }).getByRole('button', { name: 'a.txt', exact: true }).click()
+  await page.getByRole('button', { name: 'b.txtを移動', exact: true }).focus()
+  await page.keyboard.press('ArrowUp')
+  await expect(rows).toHaveText(['b.txt', 'a.txt', 'c.txt'])
+  await expect(page.getByRole('button', { name: 'b.txtを移動', exact: true })).toBeFocused()
+  await expect(page.getByRole('status').filter({ hasText: 'b.txtを1番目に移動しました。' })).toBeAttached()
+  // Moving another case past the selected one keeps the selected case open.
+  await expect(page.getByLabel('テストケース名 2', { exact: true })).toHaveValue('a.txt')
+  await page.keyboard.press('ArrowUp')
+  await expect(rows).toHaveText(['b.txt', 'a.txt', 'c.txt'])
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('ArrowDown')
+  await expect(rows).toHaveText(['a.txt', 'c.txt', 'b.txt'])
+  await expect(page.getByRole('button', { name: 'b.txtを移動', exact: true })).toBeFocused()
+  await expect(page.getByRole('status').filter({ hasText: 'b.txtを3番目に移動しました。' })).toBeAttached()
+  await expect(page.getByLabel('テストケース名 1', { exact: true })).toHaveValue('a.txt')
+})
+
+test('case handles are disabled while cases are generated', async ({ page }) => {
+  await page.route('**/api/my/submissions', route => route.fulfill({ json: { id: 'generation-job', status: 'QUEUED' } }))
+  await page.route('**/api/my/submissions/generation-job', route => route.fulfill({ json: { id: 'generation-job', status: 'QUEUED' } }))
+  await page.goto('/problems/new')
+  await addCases(page, ['a.txt'])
+  await page.getByRole('button', { name: '生成・検証・判定', exact: true }).click()
+  await page.getByLabel('入力生成のコード', { exact: true }).fill('int main(){}')
+  await page.getByRole('button', { name: '生成する', exact: true }).click()
+  await page.getByRole('button', { name: 'テストケース', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'テストケースを追加' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'a.txtを移動', exact: true })).toBeDisabled()
+})
+
+test.describe('touch reordering', () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 358, height: 567 } })
+  test('dragging a handle to the edge of a short list scrolls it and drops the case at the top', async ({ page }) => {
+    await page.goto('/problems/new')
+    await page.getByRole('button', { name: 'テストケース', exact: true }).click()
+    for (let i = 0; i < 8; i++) await page.getByRole('button', { name: 'テストケースを追加', exact: true }).click()
+    const list = page.locator('.case-files ul')
+    await list.evaluate(element => { element.scrollTop = element.scrollHeight })
+    const handle = (await page.getByRole('button', { name: 'case_008.txtを移動', exact: true }).boundingBox())!
+    const edge = (await list.boundingBox())!
+    const touch = await page.context().newCDPSession(page)
+    const at = (x: number, y: number) => [{ x, y, id: 1 }]
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(handle.x + handle.width / 2, handle.y + handle.height / 2) })
+    for (let step = 1; step <= 8; step++) {
+      const y = handle.y + handle.height / 2 + (edge.y + 6 - handle.y - handle.height / 2) * step / 8
+      await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(handle.x + handle.width / 2, y) })
+    }
+    await expect.poll(() => list.evaluate(element => element.scrollTop)).toBe(0)
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await expect(page.locator('.case-files li').first()).toHaveText('case_008.txt')
+    await expect(page.locator('.case-files li')).toHaveCount(8)
+  })
 })
