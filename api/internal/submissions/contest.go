@@ -92,7 +92,7 @@ type ContestSubmissionList struct {
 // CountedSubmissionList is a page of the contest's submissions with the number of all of them.
 type CountedSubmissionList struct {
 	ContestSubmissionList
-	Total int `json:"total"`
+	Total int `json:"total" doc:"条件に合う提出の総数。"`
 }
 
 // ContestList lists the contest's submissions; onsite keeps those of participants who are onsite now.

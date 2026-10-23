@@ -46,6 +46,7 @@ curl https://api.share-oj.net/problems
 一覧の取得方法は2種類あります。
 
 - `/problems` と `/posts` は、応答の `nextCursor` を次のリクエストの `cursor` に渡します。`nextCursor` が空なら最後のページです。
+- `/problems` は `offset` と `limit`（1〜100）でも位置を指定できます。`/problems` とコンテストの提出一覧は、応答の `total` に総件数を返します。
 - 提出の一覧、`/contests`、`/featured` などは `offset` で位置を指定し、応答の `hasMore` で続きがあるかを判断します。
 
 1ページの件数はエンドポイントごとに異なります。
