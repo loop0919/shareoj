@@ -192,10 +192,14 @@ func TestKnockoutDocker(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
+	data, err := exec.CommandContext(ctx, "docker", "image", "inspect", "--format={{.Id}}", image).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
 	source := "#include <iostream>\nint main(){int n;std::cin>>n;if(n==1||n==3)for(;;){};}"
 	for _, mode := range []string{"normal", "sample", "validation", "generation"} {
 		t.Run(mode, func(t *testing.T) {
-			job := Job{Image: image, TimeLimitMS: 100, MemoryLimitMB: 64,
+			job := Job{Image: strings.TrimSpace(string(data)), TimeLimitMS: 100, MemoryLimitMB: 64,
 				EasyTest: mode == "sample", Validate: mode == "validation", Generate: mode == "generation",
 				Cases: []Case{{Input: "1"}, {Input: "2"}, {Input: "3"}, {Input: "4"}}}
 			r := Judge(ctx, source, job)

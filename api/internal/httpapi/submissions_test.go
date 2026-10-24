@@ -432,7 +432,8 @@ func TestSubmissionsPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := request("GET", "/my/submissions/"+item.ID, "alice", "", 200)
-	if !strings.Contains(got, `"verdict":"AC"`) || strings.Contains(got, `"cases"`) {
+	// The author sees each case's verdict, never the job's test data.
+	if !strings.Contains(got, `"verdict":"AC"`) || strings.Contains(got, `"input"`) {
 		t.Fatal(got)
 	}
 	// Saving is sufficient for subsequent submissions to use the new cases.
