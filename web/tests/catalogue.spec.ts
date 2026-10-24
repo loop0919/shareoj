@@ -58,7 +58,7 @@ test('problem list pages by number and keeps the page in the URL', async ({ page
   await expect(pages.locator('span[aria-current="page"]')).toHaveText('2')
   const first = rows.first()
   await expect(first.getByRole('cell', { name: '2 秒・256 MiB', exact: true })).toBeVisible()
-  await expect(table.getByRole('columnheader', { name: '公開日', exact: true })).toBeVisible()
+  await expect(table.getByRole('columnheader').first()).toHaveText('公開日')
   await expect(first.locator('time')).toHaveAttribute('datetime', '2026-09-10T00:00:00Z')
   await expect(first.getByRole('cell', { name: '2026/9/10', exact: true })).toBeVisible()
   await expect(table.getByRole('columnheader', { name: '正解者数', exact: true })).toBeVisible()
