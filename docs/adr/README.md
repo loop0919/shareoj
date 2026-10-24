@@ -40,3 +40,4 @@ Architecture Decision Record（ADR）は、採用した設計だけでなく、�
 | [0028](0028-paginate-lists-by-page-number.md) | Accepted | 一覧をページ番号で送り、表示件数を選べるようにし、順位表で自分の行を残す |
 | [0029](0029-switch-problem-tags-per-page.md) | Accepted | 問題のタグの表示をページごとに切り替え、設定の「表示」タブをなくす |
 | [0030](0030-list-own-contest-submissions.md) | Accepted | コンテストの自分の提出を一覧にし、見られない「すべての提出」をメニューに出さない |
+| [0031](0031-run-code-without-problem.md) | Proposed | 問題に結び付けずにコードを実行する「コード実行」を加える |
