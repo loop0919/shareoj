@@ -64,10 +64,19 @@ export type Standing = {
 // authors are the contest's setters; canReadEditorial is the server's answer for this viewer.
 export type ContestProblemDetail = Omit<PublicProblem, 'timeLimitMs' | 'memoryLimitMb'> & { timeLimitMs: string, memoryLimitMb: string, authors?: string[], canReadEditorial?: boolean }
 export const contestStatus = { scheduled: '開催予定', running: '開催中', ended: '終了' }
-export const contestViews = { overview: '概要', problems: '問題', standings: '順位表', submissions: '提出一覧', editorials: '解説一覧', clarifications: '質問' }
+export const contestViews = { overview: '概要', problems: '問題', standings: '順位表', 'my-submissions': '自分の提出', submissions: 'すべての提出', editorials: '解説一覧', clarifications: '質問' }
 export type ContestView = keyof typeof contestViews
 export function contestView(value: unknown): ContestView {
-  return value === 'problems' || value === 'standings' || value === 'submissions' || value === 'editorials' || value === 'clarifications' ? value : 'overview'
+  return value === 'problems' || value === 'standings' || value === 'my-submissions' || value === 'submissions' || value === 'editorials' || value === 'clarifications' ? value : 'overview'
+}
+// A team member's own list holds the team's submissions (ADR 0024), so it goes by the team's name.
+export function ownSubmissionsLabel(contest: Pick<Contest, 'team'>) {
+  return contest.team ? 'チームの提出' : '自分の提出'
+}
+// While the contest runs, a team member sees the team's submissions in the own list, so the whole list stays closed to
+// them as to everyone outside the staff (ADR 0030).
+export function canViewAllSubmissions(contest: Pick<Contest, 'canViewSubmissions' | 'team' | 'status'>) {
+  return contest.canViewSubmissions && !(contest.team && contest.status === 'running')
 }
 export function contestDate(value: string) {
   return new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Tokyo' }).format(new Date(value))

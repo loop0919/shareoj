@@ -677,6 +677,9 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
   チェッカーの診断は返さず、サンプル検証は共有しない。
 - コンテストの問題の提出一覧は、`mine=team`で自分とチームメイトのこのコンテストへの提出を返す。
   認証が必要で、個人戦では`mine=1`と同じになり、ほかの経路では400 `invalid_request`とする。
+- [ADR 0030](../docs/adr/0030-list-own-contest-submissions.md)に従い、コンテストの提出一覧（`GET /my/contests/{id}/submissions`）も`mine=1`と`mine=team`を受け付ける。
+  問題ごとの同じ一覧を、コンテストの全問題分まとめて返す。開始前から終了後までいつでも返し、`total`も同じ条件で数え、`scope=onsite`では絞り込まない。
+  公開APIの`GET /contests/{id}/submissions`では、`mine`を付けると401 `authentication_required`とする。
 - コンテスト詳細の`problems[].solved`は、チーム戦ではメンバーの誰かが正解した問題に付く。
 - チーム戦の順位表は、チームごとの行と、個人で参加した人ごとの行を同じ表に並べる。
   チームの行は`handle`を空文字にして`team`（`id`、`name`、`members`、`onsite`）を返し、個人の行は`handle`を返して`team`をnullにする。

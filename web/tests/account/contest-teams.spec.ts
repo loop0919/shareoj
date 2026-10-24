@@ -94,7 +94,7 @@ test('a team forms by its join code, teammates see each other\'s submissions dur
   const source = '// rocket team\nint main(){}'
   await expect.poll(async () => (await bob.request.post('/api/my/submissions', { headers: { origin }, data: { problemId: problem, contestId: id, runtime: 'cpp17', source } })).status(), { timeout: 15000 }).toBe(202)
   await dave.goto(`/contests/${shortId(id)}/A?view=my-submissions`)
-  await expect(dave.getByRole('navigation', { name: '問題メニュー' }).getByRole('link')).toHaveText(['問題文', 'チームの提出', 'すべての提出'])
+  await expect(dave.getByRole('navigation', { name: '問題メニュー' }).getByRole('link')).toHaveText(['問題文', 'チームの提出'])
   const teamList = dave.getByRole('region', { name: 'チームの提出' })
   await expect(teamList.locator('tbody tr')).toHaveCount(1)
   await expect(teamList.locator('tbody tr').getByRole('cell').nth(1)).toHaveText('bob')
@@ -103,13 +103,13 @@ test('a team forms by its join code, teammates see each other\'s submissions dur
   await expect(dave.locator('#submitted-code')).toContainText('rocket team')
   await expect(dave.getByRole('link', { name: 'この問題のチームの提出' })).toBeVisible()
   const submission = dave.url().split('/submissions/')[1]!.split('?')[0]!
-  // The contest's list shows dave the team's submissions while it runs.
-  await dave.goto(`/contests/${shortId(id)}?view=submissions`)
-  await expect(dave.getByText('開催中は、チームの提出だけを表示しています。提出コードを閲覧できます。')).toBeVisible()
-  await expect(dave.locator('#submissions tbody tr')).toHaveCount(1)
+  // The contest's 「チームの提出」 shows dave the team's submissions to every problem while it runs (ADR 0030).
+  await dave.goto(`/contests/${shortId(id)}?view=my-submissions`)
+  await expect(dave.getByText('このコンテストの全問題への、チームの提出です。練習提出も掲載します。')).toBeVisible()
+  await expect(dave.locator('#my-submissions tbody tr')).toHaveCount(1)
   // erin's team sees none of it, and nobody outside the team opens it.
-  await erin.goto(`/contests/${shortId(id)}?view=submissions`)
-  await expect(erin.getByText('提出はまだありません。')).toBeVisible()
+  await erin.goto(`/contests/${shortId(id)}?view=my-submissions`)
+  await expect(erin.locator('#my-submissions').getByText('提出はまだありません。')).toBeVisible()
   await erin.goto(`/contests/${shortId(id)}/A?view=my-submissions`)
   await expect(erin.getByRole('region', { name: 'チームの提出' }).getByText('提出はまだありません。')).toBeVisible()
   for (const page of [erin, frank, guest]) expect((await page.request.get(`/api/contests/${id}/submissions/${fullId(submission)}`)).status()).toBe(404)
@@ -284,6 +284,6 @@ test('team contests take individuals beside teams, who switch to a team on the t
   expect((await locked.json()).data).toEqual({ code: 'contest_individual_locked' })
   // Her own submissions stay hers: the problem page says 自分の提出, not the team's.
   await erin.goto(`/contests/${shortId(id)}/A?view=my-submissions`)
-  await expect(erin.getByRole('navigation', { name: '問題メニュー' }).getByRole('link')).toHaveText(['問題文', '自分の提出', 'すべての提出'])
+  await expect(erin.getByRole('navigation', { name: '問題メニュー' }).getByRole('link')).toHaveText(['問題文', '自分の提出'])
   for (const page of [carol, bob, dave, erin, frank, guest]) await page.context().close()
 })

@@ -632,7 +632,7 @@ async function save() {
                   <template v-if="fields.teamSizeOn"><label for="contest-team-size">1チームの人数の上限（人）</label><input id="contest-team-size" v-model.number="fields.maxTeamSize" type="number" min="2" :max="maxTeamMembers" step="1" required></template>
                 </template>
               </section>
-              <section class="settings-section"><h3>オンサイト区分</h3><InlineSwitch :model-value="fields.onsiteOn" class="settings-switch" describedby="contest-onsite-note" @update:model-value="setOnsite">オンサイト区分を設ける</InlineSwitch><p id="contest-onsite-note" class="muted">会場の合言葉を入れて参加した人をオンサイト参加とし、順位表と提出一覧で絞り込めるようにします。</p>
+              <section class="settings-section"><h3>オンサイト区分</h3><InlineSwitch :model-value="fields.onsiteOn" class="settings-switch" describedby="contest-onsite-note" @update:model-value="setOnsite">オンサイト区分を設ける</InlineSwitch><p id="contest-onsite-note" class="muted">会場の合言葉を入れて参加した人をオンサイト参加とし、順位表と「すべての提出」で絞り込めるようにします。</p>
                 <!-- After the start the editor does not read the passphrase; it lives in the contest page's tools. -->
                 <p v-if="fields.onsiteOn && settersOnly" class="muted">会場の合言葉は、コンテストのページの「参加者の管理」で確認できます。</p>
                 <template v-else-if="fields.onsiteOn"><label for="contest-passphrase">会場の合言葉</label><VenuePassphraseInput id="contest-passphrase" v-model="fields.passphrase" required aria-describedby="contest-passphrase-note" /><p id="contest-passphrase-note" class="muted passphrase-note">{{ venuePassphraseRule }}で、大文字と小文字は区別します。作成者だけが見られます。会場の参加者に配ってください。</p></template>

@@ -1,8 +1,29 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
+import { shortId } from '../shared/utils/short-id'
 
 const id = '88888888-8888-4888-8888-888888888888'
 const pid = '11111111-1111-4111-8111-111111111111'
 const sid = '22222222-2222-4222-8222-222222222222'
+
+async function visit(page: Page, path: string) {
+  await page.evaluate(to => (window as unknown as { useNuxtApp: () => { $router: { push: (to: string) => Promise<unknown> } } }).useNuxtApp().$router.push(to), path)
+}
+// The menus offer the whole list only to those who may read it (ADR 0030); a link from elsewhere still reaches it.
+async function openWholeList(page: Page, offered: boolean) {
+  const menu = page.getByRole('navigation', { name: 'コンテストメニュー' })
+  if (!offered) {
+    await expect(menu.getByText('提出', { exact: true })).toHaveCount(0)
+    return visit(page, `/contests/${shortId(id)}?view=submissions`)
+  }
+  await menu.getByText('提出', { exact: true }).click()
+  await menu.getByRole('link', { name: 'すべての提出', exact: true }).click()
+}
+async function openProblemList(page: Page, offered: boolean) {
+  const tab = page.getByRole('navigation', { name: '問題メニュー' }).getByRole('link', { name: 'すべての提出', exact: true })
+  if (offered) return tab.click()
+  await expect(tab).toHaveCount(0)
+  await visit(page, `/contests/${shortId(id)}/A?view=submissions`)
+}
 
 for (const allowed of [true, false]) {
   test(`contest submission access follows the API permission: ${allowed}`, async ({ page }) => {
@@ -27,7 +48,7 @@ for (const allowed of [true, false]) {
     await page.goto(`/contests/${id}?view=standings`, { waitUntil: 'networkidle' })
     await page.getByRole('button', { name: '今すぐ更新' }).click()
     await expect(page.locator('.site-header')).toContainText(contest.title)
-    await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '提出一覧', exact: true }).click()
+    await openWholeList(page, allowed)
     if (allowed) {
       await expect(page.getByRole('cell', { name: 'participant', exact: true })).toBeVisible()
       await expect(page.getByRole('cell', { name: '42 ms・ 2.50 MB', exact: true })).toBeVisible()
@@ -36,12 +57,12 @@ for (const allowed of [true, false]) {
       await expect(page.getByRole('textbox', { name: 'ソースコード', exact: true })).toHaveText(item.source)
       await page.getByRole('navigation', { name: '提出メニュー' }).getByRole('link', { name: '問題', exact: true }).click()
     } else {
-      await expect(page.getByText('提出一覧と提出コードはコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。')).toBeVisible()
+      await expect(page.getByText('提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。')).toBeVisible()
       await expect(page.locator('tbody')).toHaveCount(0)
       await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '問題', exact: true }).click()
       await page.getByRole('link', { name: 'A + B', exact: true }).click()
     }
-    await page.getByRole('navigation', { name: '問題メニュー' }).getByRole('link', { name: 'すべての提出', exact: true }).click()
+    await openProblemList(page, allowed)
     if (allowed) {
       await expect(page.getByRole('cell', { name: 'participant', exact: true })).toBeVisible()
       await expect(page.getByRole('cell', { name: '42 ms・ 2.50 MB', exact: true })).toBeVisible()
@@ -75,14 +96,14 @@ for (const phase of ['running', 'ended', 'revealed'] as const) {
     await page.goto(`/contests/${id}?view=standings`, { waitUntil: 'networkidle' })
     await page.getByRole('button', { name: '今すぐ更新' }).click()
     await expect(page.locator('.site-header')).toContainText(contest.title)
-    await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '提出一覧', exact: true }).click()
+    await openWholeList(page, phase !== 'running')
     const note = '22:00以降の提出は、結果の公開まで本人とスタッフだけが見られます。'
     const section = page.locator('#submissions')
-    if (phase === 'running') await expect(section.locator('.notice')).toHaveText(`提出一覧と提出コードはコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。${note}`)
+    if (phase === 'running') await expect(section.locator('.notice')).toHaveText(`提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。${note}`)
     else await expect(section.locator('p.muted').first()).toHaveText(`提出コードを閲覧できます。練習提出も掲載します。${phase === 'ended' ? note : ''}`)
     await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '問題', exact: true }).click()
     await page.getByRole('link', { name: 'A + B', exact: true }).click()
-    await page.getByRole('navigation', { name: '問題メニュー' }).getByRole('link', { name: 'すべての提出', exact: true }).click()
+    await openProblemList(page, phase !== 'running')
     if (phase === 'running') await expect(page.locator('.submission-notice')).toHaveText(`提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。${note}`)
     else {
       await expect(page.getByRole('heading', { name: 'すべての提出' })).toBeVisible()
@@ -125,7 +146,7 @@ test('the submission list pages by number and size', async ({ page }) => {
     await page.goto(`/contests/${id}?view=standings`, { waitUntil: 'networkidle' })
     await page.getByRole('button', { name: '今すぐ更新' }).click()
     await expect(page.locator('.site-header')).toContainText(contest.title)
-    await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '提出一覧', exact: true }).click()
+    await openWholeList(page, true)
     await expect(page).toHaveURL(/view=submissions$/)
     requested.length = 0
     await page.evaluate(path => (window as unknown as { useNuxtApp: () => { $router: { push: (to: string) => Promise<unknown> } } }).useNuxtApp().$router.push(path), `/contests/${id}?view=submissions${query}`)

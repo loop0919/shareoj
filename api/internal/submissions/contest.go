@@ -78,6 +78,15 @@ var contestPublic = `NOT COALESCE((job->>'easyTest')::boolean,false)
  AND (NOT $4 OR (contest_id=$1 AND submissions.owner_id IN (` + onsiteParticipants("$1::uuid") + `)))
  AND (owner_id=$3 OR COALESCE(featured_reveal_at(problem_id),'-infinity')<=statement_timestamp())`
 
+// contestOwn gathers each problem's own list over the contest: the viewer's submissions, with $4='team' also those of
+// their current teammates (ADR 0024). They are open at any time, so the list never depends on the contest's state.
+var contestOwn = `NOT COALESCE((job->>'easyTest')::boolean,false)
+ AND NOT COALESCE((job->>'generate')::boolean,false)
+ AND NOT COALESCE((job->>'validate')::boolean,false)
+ AND (contest_id=$1::uuid OR (contest_id IS NULL AND (SELECT contest_staff($1::uuid,$3)) AND EXISTS(
+  SELECT 1 FROM contest_problems cp WHERE cp.contest_id=$1::uuid AND cp.problem_id=submissions.problem_id)))
+ AND (owner_id=$3 OR ($4='team' AND contest_id=$1::uuid AND owner_id IN (SELECT unnest(contest_teammates($1::uuid,$3)))))`
+
 func (s *Store) ContestGet(ctx context.Context, contestID, id, viewer string) (Submission, error) {
 	var shared bool
 	item, err := scan(s.Pool.QueryRow(ctx, `SELECT `+columns+`,`+teammate+` FROM submissions WHERE `+contestPublic+` AND id=$2`, contestID, id, viewer, false), &shared)
@@ -96,18 +105,23 @@ type CountedSubmissionList struct {
 }
 
 // ContestList lists the contest's submissions; onsite keeps those of participants who are onsite now.
-func (s *Store) ContestList(ctx context.Context, contestID, viewer string, offset, limit int, onsite bool) (CountedSubmissionList, error) {
+// ScopeMine and ScopeTeam list the viewer's or their team's own instead, and ignore onsite.
+func (s *Store) ContestList(ctx context.Context, contestID, viewer string, scope Scope, offset, limit int, onsite bool) (CountedSubmissionList, error) {
 	var allowed bool
 	// Members of a team may list from the start; contestPublic keeps only their team's submissions until the end.
-	err := s.Pool.QueryRow(ctx, `SELECT c.ends_at<=statement_timestamp() OR contest_staff(c.id,$2)
- OR (c.starts_at<=statement_timestamp() AND cardinality(contest_teammates(c.id,$2))>0) FROM contests c WHERE c.id=$1`, contestID, viewer).Scan(&allowed)
+	err := s.Pool.QueryRow(ctx, `SELECT $3 OR c.ends_at<=statement_timestamp() OR contest_staff(c.id,$2)
+ OR (c.starts_at<=statement_timestamp() AND cardinality(contest_teammates(c.id,$2))>0) FROM contests c WHERE c.id=$1`, contestID, viewer, scope != ScopeAll).Scan(&allowed)
 	if err != nil {
 		return CountedSubmissionList{}, err
 	}
-	if !allowed {
+	if !allowed || (scope != ScopeAll && viewer == "") {
 		return CountedSubmissionList{}, pgx.ErrNoRows
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT `+columns+` FROM submissions WHERE `+contestPublic+` ORDER BY created_at DESC,id DESC LIMIT $5 OFFSET $2`, contestID, offset, viewer, onsite, limit+1)
+	filter, narrow := contestPublic, any(onsite)
+	if scope != ScopeAll {
+		filter, narrow = contestOwn, string(scope)
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT `+columns+` FROM submissions WHERE `+filter+` ORDER BY created_at DESC,id DESC LIMIT $5 OFFSET $2`, contestID, offset, viewer, narrow, limit+1)
 	if err != nil {
 		return CountedSubmissionList{}, err
 	}
@@ -116,8 +130,8 @@ func (s *Store) ContestList(ctx context.Context, contestID, viewer string, offse
 		return CountedSubmissionList{}, err
 	}
 	result := CountedSubmissionList{ContestSubmissionList: page}
-	// contestPublic leaves $2 unused here, so PostgreSQL cannot type it unless the query refers to it.
-	err = s.Pool.QueryRow(ctx, `SELECT count(*) FROM submissions WHERE `+contestPublic+` AND $2::integer>=0`, contestID, offset, viewer, onsite).Scan(&result.Total)
+	// The filter leaves $2 unused here, so PostgreSQL cannot type it unless the query refers to it.
+	err = s.Pool.QueryRow(ctx, `SELECT count(*) FROM submissions WHERE `+filter+` AND $2::integer>=0`, contestID, offset, viewer, narrow).Scan(&result.Total)
 	return result, err
 }
 

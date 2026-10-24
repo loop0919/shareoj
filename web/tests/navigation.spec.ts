@@ -55,7 +55,7 @@ test('contest pages replace the site menu with the contest menu', async ({ page 
   const breadcrumb = page.getByRole('navigation', { name: 'パンくずリスト' })
   await expect(breadcrumb).toHaveText('共有コンテスト/順位表')
   await expect(breadcrumb.getByRole('link', { name: '共有コンテスト', exact: true })).toHaveAttribute('href', contest)
-  await expect(contestMenu.getByRole('link')).toHaveText(['概要', '問題', '順位表', '提出一覧', '解説一覧', '質問'])
+  await expect(contestMenu.getByRole('link')).toHaveText(['概要', '問題', '順位表', '自分の提出', '解説一覧', '質問'])
   await expect(contestMenu.getByRole('link', { name: '順位表', exact: true })).toHaveAttribute('aria-current', 'page')
   await contestMenu.getByRole('link', { name: '問題', exact: true }).click()
   await expect(page).toHaveURL(`${contest}?view=problems`)
@@ -76,7 +76,7 @@ test('contest pages replace the site menu with the contest menu', async ({ page 
   await expect(problemMenu.getByRole('link', { name: '問題文', exact: true })).toHaveAttribute('aria-current', 'page')
   expect(await page.locator('.problem-header, .problem-menu').evaluateAll(nodes => nodes.map(node => node.className))).toEqual(['problem-header', 'problem-menu'])
   await page.goto(`${contest}/submissions/22222222-2222-4222-8222-222222222222`)
-  await expect(contestMenu.getByRole('link', { name: '提出一覧', exact: true })).toHaveAttribute('aria-current', 'true')
+  await expect(contestMenu.getByRole('link', { name: '自分の提出', exact: true })).toHaveAttribute('aria-current', 'true')
   await expect(header).toContainText('共有コンテスト')
   for (const width of [320, 375, 768]) {
     await page.setViewportSize({ width, height: 900 })

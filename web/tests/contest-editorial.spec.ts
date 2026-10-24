@@ -2,7 +2,8 @@ import { expect, test } from '@playwright/test'
 import { shortId } from '../shared/utils/short-id'
 
 // The fixture contest is running. The server tells each viewer whether the editorial is readable before the end,
-// so co-setters get the tab as well as the problem's author and testers.
+// so co-setters get the tab as well as the problem's author and testers. The fixture keeps all submissions closed, so
+// 「すべての提出」 is not offered (ADR 0030).
 const path = `/contests/${shortId('88888888-8888-4888-8888-888888888888')}/A`
 
 for (const visible of [true, false]) {
@@ -19,10 +20,10 @@ for (const visible of [true, false]) {
     await refreshed
     const menu = page.getByRole('navigation', { name: '問題メニュー' })
     if (!visible) {
-      await expect(menu.getByRole('link')).toHaveText(['問題文', '自分の提出', 'すべての提出'])
+      await expect(menu.getByRole('link')).toHaveText(['問題文', '自分の提出'])
       return
     }
-    await expect(menu.getByRole('link')).toHaveText(['問題文', '解説', '自分の提出', 'すべての提出'])
+    await expect(menu.getByRole('link')).toHaveText(['問題文', '解説', '自分の提出'])
     await menu.getByRole('link', { name: '解説', exact: true }).click()
     await expect(page).toHaveURL(`${path}?view=editorial`)
     await expect(page.getByRole('heading', { name: '解説', exact: true })).toBeVisible()

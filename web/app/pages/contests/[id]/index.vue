@@ -4,7 +4,7 @@ import { formatScore } from '~/utils/score'
 import { clampPage, lastPage, pageOffset } from '~/utils/pagination'
 import { isOwnStanding, pinnedStanding } from '~/utils/standings-page'
 import type { PageSize } from '~/composables/usePageSize'
-import { contestAuthors, contestDate, contestFreezeTime, contestProblemPath, contestStatus, contestView, contestViews, frozenSubmissionsNote, problemLabel, type Standing, type StandingCell } from '~~/shared/types/contest'
+import { canViewAllSubmissions, contestAuthors, contestDate, contestFreezeTime, contestProblemPath, contestStatus, contestView, contestViews, frozenSubmissionsNote, ownSubmissionsLabel, problemLabel, type Standing, type StandingCell } from '~~/shared/types/contest'
 import { fullId, shortId } from '~~/shared/utils/short-id'
 import type { Submission } from '~~/shared/types/submission'
 import type { UserEditorial } from '~~/shared/types/post'
@@ -71,10 +71,16 @@ const showStandingsPages = computed(() => !standingsError.value && standingsTota
 const resizeStandings = (size: PageSize) => resizePage(standingsSize, standingsPage.value, size)
 // Like the onsite switch, choosing the frozen or the live table starts over at the first page.
 watch(liveChosen, () => { void goToPage(1) })
-const canViewSubmissions = computed(() => contest.value?.canViewSubmissions === true)
-// While the contest runs a team member sees only the team's submissions, so the onsite filter has nothing to narrow.
-const teamOnly = computed(() => !!contest.value?.team && contest.value.status === 'running')
-const filterSubmissions = computed(() => onsiteOnly.value && !teamOnly.value)
+const canViewAll = computed(() => !!contest.value && canViewAllSubmissions(contest.value))
+const ownLabel = computed(() => contest.value ? ownSubmissionsLabel(contest.value) : contestViews['my-submissions'])
+// The two submission views share one list: the whole contest's, or the viewer's own, which is their team's in a team
+// (ADR 0030). Empty means there is nothing to read. The onsite filter narrows only the whole list.
+const submissionList = computed(() => {
+  if (activeView.value === 'submissions') return canViewAll.value ? 'all' : ''
+  if (activeView.value === 'my-submissions' && user.value) return contest.value?.team ? 'team' : 'mine'
+  return ''
+})
+const filterSubmissions = computed(() => onsiteOnly.value && submissionList.value === 'all')
 const submissions = ref<{ items: Submission[], hasMore: boolean, total: number } | null>(null)
 const submissionsError = ref('')
 const submissionsSize = usePageSize('submissions')
@@ -85,8 +91,9 @@ const showSubmissionPages = computed(() => !!submissions.value?.items.length || 
 const resizeSubmissions = (size: PageSize) => resizePage(submissionsSize, submissionsPage.value, size)
 const { run: requestSubmissions, invalidate: invalidateSubmissions } = useLatestRequest()
 function loadSubmissions() {
-  if (activeView.value !== 'submissions' || !canViewSubmissions.value) { invalidateSubmissions(); submissions.value = null; return Promise.resolve() }
-  const query = { offset: submissionsOffset.value, limit: submissionsSize.value, ...filterSubmissions.value ? { scope: 'onsite' } : {} }
+  const list = submissionList.value
+  if (!list) { invalidateSubmissions(); submissions.value = null; return Promise.resolve() }
+  const query = { offset: submissionsOffset.value, limit: submissionsSize.value, ...list === 'all' ? {} : { mine: list === 'team' ? 'team' : '1' }, ...filterSubmissions.value ? { scope: 'onsite' } : {} }
   return requestSubmissions(JSON.stringify([query, user.value?.id]),
     () => $fetch<{ items: Submission[], hasMore: boolean, total: number }>(`${base}/submissions`, { query }),
     result => {
@@ -97,6 +104,14 @@ function loadSubmissions() {
       if (requestedPage.value > last) void goToPage(last)
     },
     () => { submissionsError.value = '提出一覧を取得できませんでした。' })
+}
+// The viewer's own submission opens on its own detail page, and a teammate's on the shared one. Either way the
+// breadcrumb leads back to this list.
+function submissionLink(item: Submission) {
+  const path = `/contests/${shortId(id)}`
+  if (submissionList.value === 'all') return `${path}/submissions/${shortId(item.id)}`
+  const from = submissionList.value === 'team' ? 'contest-team' : 'contest'
+  return submissionList.value === 'mine' || item.author === profile.value?.handle ? `${path}/my-submissions/${shortId(item.id)}?from=${from}` : `${path}/submissions/${shortId(item.id)}?from=${from}`
 }
 // User editorials exist only after the end, when the problems become public.
 const userEditorials = ref<UserEditorial[] | null>(null)
@@ -124,7 +139,9 @@ async function update() {
 }
 watch(() => user.value?.id, () => { invalidateSubmissions(); submissions.value = null; void update() })
 // Keyed on plain values, so the route catching up with a page that is already requested does not load it again.
-watch([submissionsOffset, submissionsSize, filterSubmissions, activeView, canViewSubmissions], () => { void loadSubmissions() })
+// Rows of one list never show under the other's heading.
+watch(submissionList, () => { invalidateSubmissions(); submissions.value = null }, { flush: 'sync' })
+watch([submissionsOffset, submissionsSize, filterSubmissions, submissionList], () => { void loadSubmissions() })
 watch([activeView, () => contest.value?.status], () => { void loadEditorials() })
 onMounted(() => { void loadSubmissions(); void loadEditorials() })
 usePolling(update, 15000)
@@ -190,7 +207,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 </script>
 <template>
   <div v-if="contest" class="problem-page contest-page">
-    <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><template v-if="activeView === 'overview'"><NuxtLink to="/contests">コンテスト</NuxtLink><span aria-hidden="true">/</span><span>{{ contest.title }}</span></template><template v-else><NuxtLink :to="`/contests/${shortId(contest.id)}`">{{ contest.title }}</NuxtLink><span aria-hidden="true">/</span><span>{{ contestViews[activeView] }}</span></template></nav><TweetButton :title="contest.title" :url="`/contests/${shortId(contest.id)}`" /></div>
+    <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><template v-if="activeView === 'overview'"><NuxtLink to="/contests">コンテスト</NuxtLink><span aria-hidden="true">/</span><span>{{ contest.title }}</span></template><template v-else><NuxtLink :to="`/contests/${shortId(contest.id)}`">{{ contest.title }}</NuxtLink><span aria-hidden="true">/</span><span>{{ activeView === 'my-submissions' ? ownLabel : contestViews[activeView] }}</span></template></nav><TweetButton :title="contest.title" :url="`/contests/${shortId(contest.id)}`" /></div>
     <header v-if="activeView === 'overview'" class="problem-header">
       <div class="contest-heading">
         <h1>{{ contest.title }}</h1>
@@ -270,14 +287,15 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       </div>
       <PageNav v-if="showStandingsPages" class="standings-pages" :page="standingsPage" :last="standingsLast" :link="pageLink" />
     </section>
-    <section v-if="activeView === 'submissions'" id="submissions" class="contest-section" aria-labelledby="submissions-title">
-      <h1 id="submissions-title">提出一覧</h1>
-      <p v-if="!canViewSubmissions" class="notice">提出一覧と提出コードはコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。<template v-if="contest.teamMode">チームのメンバーは、開催中もチームの提出を閲覧できます。</template>{{ frozenNote }}</p>
-      <template v-else><p class="muted">{{ teamOnly ? '開催中は、チームの提出だけを表示しています。提出コードを閲覧できます。' : '提出コードを閲覧できます。練習提出も掲載します。' }}{{ frozenNote }}</p>
-      <div v-if="contest.onsiteDivision && !teamOnly" class="submissions-scope"><InlineSwitch v-model="onsiteOnly">オンサイトのみ表示</InlineSwitch></div>
+    <section v-if="activeView === 'submissions' || activeView === 'my-submissions'" :id="activeView" class="contest-section" :aria-labelledby="`${activeView}-title`">
+      <h1 :id="`${activeView}-title`">{{ activeView === 'submissions' ? contestViews.submissions : ownLabel }}</h1>
+      <p v-if="activeView === 'submissions' && !canViewAll" class="notice">提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。<template v-if="contest.team">開催中のチームの提出は「チームの提出」で確認できます。</template>{{ frozenNote }}</p>
+      <p v-else-if="!submissionList" class="notice"><NuxtLink :to="{ path: '/login', query: { next: route.fullPath } }">ログイン</NuxtLink>すると、このコンテストへの自分の提出を確認できます。</p>
+      <template v-else><p class="muted">{{ submissionList === 'all' ? `提出コードを閲覧できます。練習提出も掲載します。${frozenNote}` : `このコンテストの全問題への、${submissionList === 'team' ? 'チーム' : '自分'}の提出です。練習提出も掲載します。` }}</p>
+      <div v-if="contest.onsiteDivision && submissionList === 'all'" class="submissions-scope"><InlineSwitch v-model="onsiteOnly">オンサイトのみ表示</InlineSwitch></div>
       <p v-if="submissionsError" class="notice notice-error" role="alert">{{ submissionsError }}</p>
       <LoadingSpinner v-if="!submissions && !submissionsError" label="提出一覧を読み込み中" />
-      <template v-if="submissions"><ListToolbar v-if="showSubmissionPages" :total="submissions.total" :page="submissionsPage" :size="submissionsSize" unit="件" :link="pageLink" @update:size="resizeSubmissions" /><p v-if="!submissions.items.length" class="contest-empty muted">提出はまだありません。</p><div v-else class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0"><table class="content-table"><thead><tr><th scope="col">問題</th><th scope="col">ユーザー</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th v-if="showSubmissionScore" scope="col">得点</th><th scope="col">結果</th><th scope="col">提出日時 (JST)</th></tr></thead><tbody><tr v-for="s in submissions.items" :key="s.id"><th scope="row"><NuxtLink :to="`/contests/${shortId(contest.id)}/submissions/${shortId(s.id)}`">{{ s.problemTitle }}</NuxtLink></th><td><UserLink :handle="s.author" /></td><td class="submission-usage">{{ s.sourceBytes == null ? '—' : `${s.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage">{{ submissionUsage(s.result) }}</td><td v-if="showSubmissionScore" class="submission-score" :data-full="(s.result?.scoring && s.result.scoring.score === s.result.scoring.maxScore) || undefined">{{ s.result?.scoring ? formatScore(s.result.scoring.score) : '—' }}</td><td><SubmissionStatus :item="s" /></td><td>{{ contestDate(s.createdAt) }}<span v-if="new Date(s.createdAt) >= new Date(contest.endsAt)"> · 練習</span></td></tr></tbody></table></div><PageNav v-if="showSubmissionPages" class="submissions-pages" :page="submissionsPage" :last="submissionsLast" :link="pageLink" /></template>
+      <template v-if="submissions"><ListToolbar v-if="showSubmissionPages" :total="submissions.total" :page="submissionsPage" :size="submissionsSize" unit="件" :link="pageLink" @update:size="resizeSubmissions" /><p v-if="!submissions.items.length" class="contest-empty muted">提出はまだありません。</p><div v-else class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0"><table class="content-table"><thead><tr><th scope="col">問題</th><th scope="col">ユーザー</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th v-if="showSubmissionScore" scope="col">得点</th><th scope="col">結果</th><th scope="col">提出日時 (JST)</th></tr></thead><tbody><tr v-for="s in submissions.items" :key="s.id"><th scope="row"><NuxtLink :to="submissionLink(s)">{{ s.problemTitle }}</NuxtLink></th><td><UserLink :handle="s.author" /></td><td class="submission-usage">{{ s.sourceBytes == null ? '—' : `${s.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage">{{ submissionUsage(s.result) }}</td><td v-if="showSubmissionScore" class="submission-score" :data-full="(s.result?.scoring && s.result.scoring.score === s.result.scoring.maxScore) || undefined">{{ s.result?.scoring ? formatScore(s.result.scoring.score) : '—' }}</td><td><SubmissionStatus :item="s" /></td><td>{{ contestDate(s.createdAt) }}<span v-if="new Date(s.createdAt) >= new Date(contest.endsAt)"> · 練習</span></td></tr></tbody></table></div><PageNav v-if="showSubmissionPages" class="submissions-pages" :page="submissionsPage" :last="submissionsLast" :link="pageLink" /></template>
       </template>
     </section>
     <section v-if="activeView === 'editorials'" id="editorials" class="contest-section" aria-labelledby="editorials-title">

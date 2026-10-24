@@ -1,13 +1,10 @@
 <script setup lang="ts">
-import { contestView, contestViews, type ContestView } from '~~/shared/types/contest'
 import { docPath, footerDocs } from '~~/shared/docs'
-import { fullId, shortId } from '~~/shared/utils/short-id'
+import { fullId } from '~~/shared/utils/short-id'
 const route = useRoute()
 const pageError = useError()
 // Contest pages swap the site menu for the contest's own menu. Error pages keep the site menu.
 const contestId = computed(() => !pageError.value && String(route.name ?? '').startsWith('contests-id') ? fullId(route.params.id) : '')
-// The team page belongs to the overview, where participation starts.
-const contestSection = computed<ContestView>(() => route.name === 'contests-id' ? contestView(route.query.view) : route.name === 'contests-id-team' ? 'overview' : String(route.name).startsWith('contests-id-submissions') ? 'submissions' : 'problems')
 const { data: judgeCatalog, error: judgeCatalogError, refresh: refreshJudge } = await useJudgeCatalog()
 function refreshVisibleJudge() { if (document.visibilityState === 'visible') void refreshJudge({ dedupe: 'defer' }) }
 // A refresh during hydration reuses Nuxt's server payload.
@@ -43,9 +40,7 @@ useNotificationPolling()
     <header v-if="!route.meta.editorLayout" class="site-header" :class="{ 'site-header--contest': contestId }">
       <NuxtLink class="wordmark" to="/" aria-label="ShareOJ ホーム">Share<span>OJ</span><span class="wordmark-beta">(β)</span></NuxtLink>
       <ContestHeaderTitle v-if="contestId" :id="contestId" class="contest-title" />
-      <nav v-if="contestId" class="contest-menu" aria-label="コンテストメニュー">
-        <NuxtLink v-for="(label, view) in contestViews" :key="view" :to="{ path: `/contests/${shortId(contestId)}`, query: view === 'overview' ? {} : { view } }" :aria-current="contestSection === view ? route.name === 'contests-id' ? 'page' : 'true' : undefined">{{ label }}</NuxtLink>
-      </nav>
+      <ContestMenu v-if="contestId" :id="contestId" />
       <nav v-else aria-label="メインナビゲーション">
         <NuxtLink to="/">ホーム</NuxtLink>
         <NuxtLink to="/problems">問題</NuxtLink>
@@ -122,14 +117,15 @@ useNotificationPolling()
 .site-header--contest .contest-title::before { content: ''; flex-shrink: 0; width: 1px; height: 24px; background: var(--color-line); }
 .site-header--contest .header-tools { grid-column: 3; grid-row: 1; }
 .site-header--contest .contest-menu { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; gap: 0 clamp(12px, 4vw, 28px); flex-wrap: nowrap; }
-.contest-menu a { min-height: 44px; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--color-muted); }
-.contest-menu a:hover { color: var(--color-accent); }
-.contest-menu a[aria-current] { border-bottom-color: var(--color-accent); color: var(--color-accent); font-weight: 600; }
 @media (max-width: 59.999rem) {
   .site-header--contest .contest-title { grid-column: 1 / -1; grid-row: 2; }
   .site-header--contest .contest-title::before { display: none; }
   .site-header--contest .header-tools { grid-column: 2; }
   .site-header--contest .contest-menu { grid-row: 3; }
+}
+/* The narrowest phones keep every item of the contest menu, 「チームの提出」 included, on the row (ADR 0030). */
+@media (max-width: 22.499rem) {
+  .site-header--contest .contest-menu { gap: 0 8px; }
 }
 .create-menu { font-size: .875rem; }
 .create-menu summary { display: flex; align-items: center; gap: 6px; min-height: 44px; cursor: pointer; list-style: none; color: var(--color-accent); }

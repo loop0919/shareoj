@@ -36,9 +36,16 @@ async function routeContest(page: Page, contest: Contest, extra: Partial<State> 
   })
   return state
 }
-const views = { overview: '概要', standings: '順位表', submissions: '提出一覧' }
+const views = { overview: '概要', standings: '順位表', submissions: 'すべての提出', 'my-submissions': 'チームの提出' }
 async function menu(page: Page, view: keyof typeof views) {
-  await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: views[view], exact: true }).click()
+  const nav = page.getByRole('navigation', { name: 'コンテストメニュー' })
+  // The whole list sits under 「提出」 (ADR 0030).
+  if (view === 'submissions') await nav.getByText('提出', { exact: true }).click()
+  await nav.getByRole('link', { name: views[view], exact: true }).click()
+}
+// Opens a view no menu offers, as a link from elsewhere would.
+async function visit(page: Page, path: string) {
+  await page.evaluate(to => (window as unknown as { useNuxtApp: () => { $router: { push: (to: string) => Promise<unknown> } } }).useNuxtApp().$router.push(to), path)
 }
 // The server render reads the fixture API, so the page refreshes in the browser to read the routed contest.
 async function open(page: Page, view: keyof typeof views = 'overview', query = '') {
@@ -915,7 +922,7 @@ test('individual standings keep handles and mark onsite rows; contests without a
   expect(state.standings.at(-1)!.get('scope')).toBeNull()
 })
 
-test('the contest submission list filters onsite participants in the URL, and team members see their team while it runs', async ({ page }) => {
+test('the contest submission list filters onsite participants in the URL, and team members see their team\'s while it runs', async ({ page }) => {
   const contest = { ...base, status: 'ended' as const, startsAt: '2026-09-15T12:00:00Z', endsAt: '2026-09-15T14:00:00Z', onsiteDivision: true, canViewSubmissions: true, resultsFinal: true }
   const state = await routeContest(page, contest, { items: [submission('aaaaaaaa-0000-4000-8000-000000000001', 'bob')] })
   await open(page, 'submissions')
@@ -928,21 +935,27 @@ test('the contest submission list filters onsite participants in the URL, and te
   await expect.poll(() => state.lists.at(-1)!.query.get('scope')).toBe('onsite')
   expect(state.lists.at(-1)!.query.get('offset')).toBe('0')
   await noHorizontalScroll(page)
-  // While the contest runs a team member's list is the team's, so there is nothing to filter.
-  state.contest = { ...contest, status: 'running', resultsFinal: false, endsAt: '2099-09-15T14:00:00Z', teamMode: true, participating: true, team: { id: alpha, name: 'Alpha', members: ['ui_test', 'bob'], onsite: false } }
-  await reread(page, 'submissions')
-  await expect(page.getByText('開催中は、チームの提出だけを表示しています。提出コードを閲覧できます。')).toBeVisible()
+  // While the contest runs a team member reads the team's list, which has nothing to filter, and the whole list stays
+  // closed (ADR 0030).
+  const team = { id: alpha, name: 'Alpha', members: ['ui_test', 'bob'], onsite: false }
+  state.contest = { ...contest, status: 'running', resultsFinal: false, endsAt: '2099-09-15T14:00:00Z', teamMode: true, participating: true, team }
+  await reread(page, 'my-submissions')
+  await expect(page.getByText('このコンテストの全問題への、チームの提出です。練習提出も掲載します。')).toBeVisible()
   await expect(page.getByRole('switch', { name: 'オンサイトのみ表示' })).toHaveCount(0)
-  await expect.poll(() => state.lists.at(-1)!.query.get('scope')).toBeNull()
-  await expect(page.locator('#submissions tbody tr a').first()).toHaveAttribute('href', `/contests/${shortId(id)}/submissions/${shortId('aaaaaaaa-0000-4000-8000-000000000001')}`)
+  await expect.poll(() => state.lists.at(-1)!.query.get('mine')).toBe('team')
+  expect(state.lists.at(-1)!.query.get('scope')).toBeNull()
+  await expect(page.locator('#my-submissions tbody tr a').first()).toHaveAttribute('href', `/contests/${shortId(id)}/submissions/${shortId('aaaaaaaa-0000-4000-8000-000000000001')}?from=contest-team`)
+  await visit(page, `/contests/${shortId(id)}?view=submissions`)
+  await expect(page.locator('#submissions .notice')).toHaveText('提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。開催中のチームの提出は「チームの提出」で確認できます。')
   // In a frozen team contest the note names teammates among those who see the frozen submissions.
-  state.contest = { ...state.contest, freezeMinutes: 30, freezeAt: '2099-09-15T13:30:00Z' }
+  state.contest = { ...state.contest, status: 'ended', endsAt: '2026-09-15T14:00:00Z', freezeMinutes: 30, freezeAt: '2026-09-15T13:30:00Z' }
   await reread(page, 'submissions')
   await expect(page.locator('#submissions > p.muted').first()).toContainText('以降の提出は、結果の公開まで本人とチームメイト、スタッフだけが見られます。')
-  // Outside the team the list stays closed during the contest, and the notice says members see their team's.
-  state.contest = { ...state.contest, participating: false, team: null, canViewSubmissions: false, freezeMinutes: null, freezeAt: null }
-  await reread(page, 'submissions')
-  await expect(page.locator('#submissions .notice')).toHaveText('提出一覧と提出コードはコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。チームのメンバーは、開催中もチームの提出を閲覧できます。')
+  // Outside the team the list stays closed during the contest.
+  state.contest = { ...state.contest, status: 'running', endsAt: '2099-09-15T14:00:00Z', participating: false, team: null, canViewSubmissions: false, freezeMinutes: null, freezeAt: null }
+  await reread(page, 'standings')
+  await visit(page, `/contests/${shortId(id)}?view=submissions`)
+  await expect(page.locator('#submissions .notice')).toHaveText('提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。')
 })
 
 test('the problem page lists the team\'s submissions with their submitters and filters all submissions by onsite', async ({ page }) => {
@@ -952,7 +965,7 @@ test('the problem page lists the team\'s submissions with their submitters and f
   const state = await routeContest(page, contest, { items: [submission(bobs, 'bob', '2026-09-15T12:40:00Z'), submission(own, 'ui_test')] })
   await page.goto(`/contests/${shortId(id)}/A?view=my-submissions`, { waitUntil: 'networkidle' })
   const menuBar = page.getByRole('navigation', { name: '問題メニュー' })
-  await expect(menuBar.getByRole('link')).toHaveText(['問題文', 'チームの提出', 'すべての提出'])
+  await expect(menuBar.getByRole('link')).toHaveText(['問題文', 'チームの提出'])
   const list = page.getByRole('region', { name: 'チームの提出' })
   await expect(list.getByRole('heading', { name: 'チームの提出' })).toBeVisible()
   await expect(list.locator('tbody tr')).toHaveCount(2)
@@ -970,8 +983,8 @@ test('the problem page lists the team\'s submissions with their submitters and f
   await expect(crumb).toHaveText('この問題のチームの提出')
   await expect(crumb).toHaveAttribute('href', `/contests/${shortId(id)}/problems/${shortId(problemId)}?view=my-submissions`)
   await page.goBack()
-  // While the contest runs, everyone else's submissions stay closed to a member.
-  await menuBar.getByRole('link', { name: 'すべての提出' }).click()
+  // While the contest runs, everyone else's submissions stay closed to a member, and a link to them says so.
+  await visit(page, `/contests/${shortId(id)}/A?view=submissions`)
   await expect(page.locator('.submission-notice')).toHaveText('提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。開催中のチームの提出は「チームの提出」で確認できます。')
   // After the end the list opens with the onsite filter in the URL.
   state.contest = { ...contest, status: 'ended', endsAt: '2026-09-15T14:00:00Z', resultsFinal: true }
@@ -1048,7 +1061,7 @@ test('the editor sets team mode, a team size and the onsite division with switch
   const passphrase = page.getByLabel('会場の合言葉', { exact: true })
   await expect(size).toHaveCount(0)
   await expect(onsite).not.toBeChecked()
-  await expect(onsite).toHaveAccessibleDescription('会場の合言葉を入れて参加した人をオンサイト参加とし、順位表と提出一覧で絞り込めるようにします。')
+  await expect(onsite).toHaveAccessibleDescription('会場の合言葉を入れて参加した人をオンサイト参加とし、順位表と「すべての提出」で絞り込めるようにします。')
   await expect(passphrase).toHaveCount(0)
   const section = page.locator('[data-section="participation"]')
   await section.screenshot({ path: testInfo.outputPath('participation-off.png') })

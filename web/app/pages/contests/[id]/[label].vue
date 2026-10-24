@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { contestAuthors, contestProblemPath, frozenSubmissionsNote, labelIndex, type ContestProblemDetail } from '~~/shared/types/contest'
+import { canViewAllSubmissions, contestAuthors, contestProblemPath, frozenSubmissionsNote, labelIndex, type ContestProblemDetail } from '~~/shared/types/contest'
 import { fullId, shortId } from '~~/shared/utils/short-id'
 definePageMeta({ key: route => route.path })
 useResponseHeader('Cache-Control').value = 'no-store'
@@ -27,10 +27,10 @@ const canSubmit = computed(() => {
 // The server decides who reads the editorial before the end: every setter, and this problem's author and testers.
 const canReadEditorial = computed(() => problem.value?.canReadEditorial === true)
 const frozenNote = computed(() => route.query.view === 'submissions' && contest.value ? frozenSubmissionsNote(contest.value) : '')
-// A team member's own list holds the team's submissions (ADR 0024). While the contest runs that is all a member may
-// see, so 「すべての提出」 stays closed to them as to everyone outside the staff.
+// A team member's own list holds the team's submissions (ADR 0024). 「すべての提出」 appears only to those who may read it
+// (ADR 0030); a link to it explains when it opens.
 const team = computed(() => !!contest.value?.team)
-const canViewAll = computed(() => contest.value?.canViewSubmissions === true && !(team.value && contest.value?.status === 'running'))
+const canViewAll = computed(() => !!contest.value && canViewAllSubmissions(contest.value))
 const { onsite } = useOnsiteScope(() => contest.value?.onsiteDivision === true && route.query.view === 'submissions')
 useSeoMeta({ title: () => `${problem.value?.title} | ${contest.value?.title} | ShareOJ` })
 // The viewer's roles decide the menu and the form, so both follow a login or logout.
@@ -42,7 +42,7 @@ useSharePreview({ title: () => problem.value!.title, path: problemPath, descript
   <div v-if="problem && contest" class="problem-page">
     <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink :to="`/contests/${shortId(id)}`">{{ contest.title }}</NuxtLink><span aria-hidden="true">/</span><NuxtLink :to="`/contests/${shortId(id)}?view=problems`">問題</NuxtLink><span aria-hidden="true">/</span><span>{{ problem.title }}</span></nav><TweetButton v-if="contest.status !== 'scheduled'" :title="problem.title" :url="problemPath" /></div>
     <header class="problem-header"><h1>{{ problem.title }}</h1><div class="problem-summary"><div class="problem-meta muted"><p>作成者 <template v-for="(author, index) in contestAuthors(problem)" :key="author"><span v-if="index">、</span><UserLink :handle="author" /></template></p><p v-if="problem.testers?.length">テスター <template v-for="(tester, index) in problem.testers" :key="tester"><span v-if="index">、</span><UserLink :handle="tester" /></template></p><p v-if="!problem.scoring">配点 {{ contest.problems.find(p => p.id === problem!.id)?.points }} 点</p></div></div><dl class="limits"><div><dt>実行時間制限</dt><dd>{{ Number(problem.timeLimitMs) / 1000 }} 秒</dd></div><div><dt>メモリ制限</dt><dd>{{ problem.memoryLimitMb }} MiB</dd></div></dl><ProblemScoring v-if="problem.scoring" :scoring="problem.scoring" /></header>
-    <nav class="problem-menu" aria-label="問題メニュー"><NuxtLink :to="problemPath" :aria-current="showingEditorial || submissionView ? undefined : 'page'">問題文</NuxtLink><NuxtLink v-if="canReadEditorial" :to="{ path: problemPath, query: { view: 'editorial' } }" :aria-current="showingEditorial ? 'page' : undefined">解説</NuxtLink><NuxtLink :to="{ path: problemPath, query: { view: 'my-submissions' } }" :aria-current="route.query.view === 'my-submissions' ? 'page' : undefined">{{ team ? 'チームの提出' : '自分の提出' }}</NuxtLink><NuxtLink :to="{ path: problemPath, query: { view: 'submissions' } }" :aria-current="route.query.view === 'submissions' ? 'page' : undefined">すべての提出</NuxtLink></nav>
+    <nav class="problem-menu" aria-label="問題メニュー"><NuxtLink :to="problemPath" :aria-current="showingEditorial || submissionView ? undefined : 'page'">問題文</NuxtLink><NuxtLink v-if="canReadEditorial" :to="{ path: problemPath, query: { view: 'editorial' } }" :aria-current="showingEditorial ? 'page' : undefined">解説</NuxtLink><NuxtLink :to="{ path: problemPath, query: { view: 'my-submissions' } }" :aria-current="route.query.view === 'my-submissions' ? 'page' : undefined">{{ team ? 'チームの提出' : '自分の提出' }}</NuxtLink><NuxtLink v-if="canViewAll" :to="{ path: problemPath, query: { view: 'submissions' } }" :aria-current="route.query.view === 'submissions' ? 'page' : undefined">すべての提出</NuxtLink></nav>
     <template v-if="submissionView">
       <p v-if="route.query.view === 'submissions' && !canViewAll" class="notice submission-notice">提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。<template v-if="team">開催中のチームの提出は「チームの提出」で確認できます。</template>{{ frozenNote }}</p>
       <template v-else><p v-if="frozenNote" class="muted submission-freeze">{{ frozenNote }}</p><div v-if="route.query.view === 'submissions' && contest.onsiteDivision" class="submission-scope"><InlineSwitch v-model="onsite">オンサイトのみ表示</InlineSwitch></div><ProblemSubmissionList :key="String(route.query.view)" :problem-id="problem.id" :contest-id="contest.id" :mine="route.query.view === 'my-submissions'" :team="team && route.query.view === 'my-submissions'" :onsite="onsite" :scored="!!problem.scoring" /></template>

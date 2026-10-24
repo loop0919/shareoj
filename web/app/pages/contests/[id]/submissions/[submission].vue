@@ -14,7 +14,7 @@ usePolling(refresh, 2000, () => !!item.value && item.value.status !== 'DONE')
 </script>
 <template>
   <div v-if="item" class="submission-page">
-    <nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink v-if="route.query.from === 'team'" :to="`${submissionProblemPath(item, id)}?view=my-submissions`">この問題のチームの提出</NuxtLink><NuxtLink v-else-if="route.query.from === 'problem'" :to="`${submissionProblemPath(item, id)}?view=submissions`">この問題のすべての提出</NuxtLink><NuxtLink v-else :to="`/contests/${shortId(id)}?view=submissions`">コンテストの提出一覧</NuxtLink><span aria-hidden="true">/</span><span>提出結果</span></nav>
+    <nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink v-if="route.query.from === 'contest-team'" :to="`/contests/${shortId(id)}?view=my-submissions`">コンテストのチームの提出</NuxtLink><NuxtLink v-else-if="route.query.from === 'team'" :to="`${submissionProblemPath(item, id)}?view=my-submissions`">この問題のチームの提出</NuxtLink><NuxtLink v-else-if="route.query.from === 'problem'" :to="`${submissionProblemPath(item, id)}?view=submissions`">この問題のすべての提出</NuxtLink><NuxtLink v-else :to="`/contests/${shortId(id)}?view=submissions`">コンテストのすべての提出</NuxtLink><span aria-hidden="true">/</span><span>提出結果</span></nav>
     <nav class="problem-menu" aria-label="提出メニュー"><NuxtLink :to="submissionProblemPath(item, id)">問題</NuxtLink><NuxtLink :to="`${submissionProblemPath(item, id)}?view=submissions`">すべての提出</NuxtLink></nav>
     <SubmissionDetail :item="item" @rejudged="refresh" />
   </div>
