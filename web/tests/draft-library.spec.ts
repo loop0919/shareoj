@@ -42,7 +42,7 @@ for (const width of [375, 1280]) {
     const draftId = '22222222-2222-4222-8222-222222222222'
     const updatedAt = '2026-09-10T00:00:00Z'
     await page.route('**/api/my/problems', route => route.fulfill({ json: { items: [
-      { id, title: 'A + B', publishedVersion: 1, updatedAt },
+      { id, title: 'A + B', difficulty: 7, publishedVersion: 1, updatedAt },
       { id: draftId, title: '未公開の問題', publishedVersion: 0, updatedAt },
     ], nextCursor: '' } }))
     await page.route('**/api/my/posts', route => route.fulfill({ json: { items: [
@@ -51,7 +51,11 @@ for (const width of [375, 1280]) {
     ], nextCursor: '' } }))
     await page.route('**/api/my/submissions', route => route.fulfill({ json: { items: [] } }))
     await page.goto('/my')
-    await expect(page.getByRole('table', { name: '自分の問題' })).toBeVisible()
+    const problems = page.getByRole('table', { name: '自分の問題' })
+    await expect(problems).toBeVisible()
+    await expect(problems.getByRole('columnheader')).toHaveText(['タイトル', '難易度', '状態', '更新日時', '操作'])
+    await expect(problems.locator('tbody tr').nth(0).getByRole('cell').first()).toHaveText('Lv.7')
+    await expect(problems.locator('tbody tr').nth(1).getByRole('cell').first()).toHaveText('未設定')
     await expect(page.getByRole('table', { name: '作成した記事' })).toBeHidden()
     await expect(page.getByRole('link', { name: 'A + Bを編集' })).toHaveAttribute('href', `/problems/new?problem=${id}`)
     await expect(page.getByRole('link', { name: '未公開の問題を閲覧' })).toHaveAttribute('href', `/problems/${shortId(draftId)}`)
@@ -95,7 +99,7 @@ test('problem states and SVG delivery preferences appear in the library', async 
   const table = page.getByRole('table', { name: '自分の問題', exact: true })
   const rows = table.locator('tbody tr')
   for (const [index, state] of ['準備中', '応募中（コンテスト）', '応募中（定期便）', '応募中（定期便）', '公開中', '準備中'].entries()) {
-    await expect(rows.nth(index).locator('td').first()).toContainText(state)
+    await expect(rows.nth(index).locator('td').nth(1)).toContainText(state)
   }
   for (const label of ['早めに出したい', 'ゆっくりで良い']) {
     const mark = table.getByRole('img', { name: label })
