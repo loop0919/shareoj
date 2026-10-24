@@ -37,6 +37,7 @@ test('participant asks a private question and sees an escaped answer', async ({ 
     return route.fulfill({ json: { items, hasMore: false } })
   })
   await open(page)
+  await expect(page.getByRole('button', { name: '回答を全体公開', exact: true })).toHaveCount(0)
   await page.getByLabel('対象問題').selectOption(problemId)
   await page.getByLabel('質問（4,000文字以内）', { exact: true }).fill(question.question)
   await page.getByRole('button', { name: '質問を送信' }).click()
@@ -97,6 +98,72 @@ test('manager keeps conflicted input, answers, and confirms publication', async 
   expect(sent[1]).toEqual({ answer: '制約は正しいです。', version: 2 })
   expect(sent[2]).toEqual({ publish: true, version: 3 })
   await expect(page.getByRole('button', { name: '全体公開する' })).toHaveCount(0)
+})
+
+test('staff publishes an answer without a question, keeps failed input, and edits it', async ({ page }) => {
+  let items: Clarification[] = []
+  let fail = true
+  const sent: unknown[] = []
+  await page.route(`**${base}**`, route => {
+    const method = route.request().method()
+    if (method === 'POST') {
+      const body = route.request().postDataJSON()
+      sent.push(body)
+      if (fail) {
+        fail = false
+        return route.fulfill({ status: 500 })
+      }
+      items = [{ ...question, author: '', question: '', problemId: body.problemId, answer: body.answer,
+        answeredBy: 'alice', answeredAt: question.createdAt, publishedAt: question.createdAt, canManage: true }]
+      return route.fulfill({ status: 204 })
+    }
+    if (method === 'PUT') {
+      const body = route.request().postDataJSON()
+      sent.push(body)
+      items = [{ ...items[0]!, answer: body.answer, version: 2 }]
+      return route.fulfill({ status: 204 })
+    }
+    return route.fulfill({ json: { items, hasMore: false } })
+  })
+  await open(page, true)
+  const input = page.getByLabel('全体公開する回答（4,000文字以内）', { exact: true })
+  const submit = page.getByRole('button', { name: '回答を全体公開', exact: true })
+  await expect(submit).toBeDisabled()
+  const text = '全体のお知らせ <script>alert(1)</script>'
+  await input.fill(text)
+  page.once('dialog', dialog => dialog.dismiss())
+  await submit.click()
+  expect(sent).toHaveLength(0)
+  page.once('dialog', dialog => dialog.accept())
+  await submit.click()
+  await expect(page.getByRole('alert')).toContainText('保存できませんでした')
+  await expect(input).toHaveValue(text)
+  page.once('dialog', dialog => dialog.accept())
+  await submit.click()
+  await expect(input).toHaveValue('')
+  expect(sent[1]).toEqual({ problemId: '', answer: text })
+  const article = page.getByRole('article')
+  await expect(article).toContainText('コンテスト全体')
+  await expect(article).toContainText('スタッフからのお知らせ')
+  await expect(article).toContainText('全体公開')
+  await expect(article).toContainText(text)
+  await expect(article.locator('script')).toHaveCount(0)
+  await expect(article.getByRole('link')).toHaveCount(1)
+  await expect(article.getByRole('link')).toHaveText('alice')
+  await article.getByRole('button', { name: '回答を編集' }).click()
+  await page.getByLabel('回答（4,000文字以内）', { exact: true }).fill('補足しました')
+  await page.getByRole('button', { name: '回答を保存' }).click()
+  await expect(article).toContainText('補足しました')
+  expect(sent[2]).toEqual({ answer: '補足しました', version: 1 })
+  await page.getByLabel('対象問題').selectOption(problemId)
+  await input.fill('問題のお知らせ')
+  page.once('dialog', dialog => dialog.accept())
+  await submit.click()
+  await expect(input).toHaveValue('')
+  expect(sent[3]).toEqual({ problemId, answer: '問題のお知らせ' })
+  await expect(article.getByRole('heading', { level: 3 })).toContainText('A - ')
+  await page.setViewportSize({ width: 375, height: 900 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
 
 test('anonymous page and proxy require login; writes enforce same origin and body size', async ({ page, request }) => {

@@ -11,10 +11,11 @@ const items = ref<ClarificationList | null>(null)
 const offset = ref(0)
 const loadError = ref('')
 const saveError = ref('')
-// The running action: 'ask', 'answer', or the id of the question being published.
+// The running action: 'ask', 'announce', 'answer', or the id of the question being published.
 const busy = ref('')
 const problemId = ref('')
 const question = ref('')
+const announcement = ref('')
 const edit = ref<{ id: string, answer: string, version: number, published: boolean } | null>(null)
 const canAsk = computed(() => props.contest.status === 'running' && props.contest.participating && props.contest.official)
 const { loading, run, invalidate } = useLatestRequest()
@@ -29,6 +30,7 @@ watch(offset, () => { items.value = null; void load() })
 onMounted(load)
 usePolling(load, 15000)
 function label(id: string) {
+  if (!id) return 'コンテスト全体'
   const index = props.contest.problems.findIndex(problem => problem.id === id)
   return index < 0 ? '問題' : `${problemLabel(index)} - ${props.contest.problems[index]!.title}`
 }
@@ -47,6 +49,18 @@ async function ask() {
     question.value = ''; offset.value = 0
     invalidate()
     showToast('質問を送信しました')
+    await load()
+  } catch (error) { saveError.value = failure(error) }
+  finally { busy.value = '' }
+}
+async function announce() {
+  if (busy.value || !window.confirm('回答と回答者名を、ログインしたすべての利用者に公開します。非公開には戻せません。公開しますか？')) return
+  busy.value = 'announce'; saveError.value = ''
+  try {
+    await $fetch(base, { method: 'POST', body: { problemId: problemId.value, answer: announcement.value } })
+    announcement.value = ''; offset.value = 0
+    invalidate()
+    showToast('回答を全体公開しました')
     await load()
   } catch (error) { saveError.value = failure(error) }
   finally { busy.value = '' }
@@ -108,20 +122,36 @@ async function publish(item: Clarification) {
         <button class="editor-button primary clarification-submit" :disabled="!!busy || !question.trim() || !problemId" :aria-busy="busy === 'ask' || undefined">{{ busy === 'ask' ? '送信中…' : '質問を送信' }}</button>
       </form>
       <p v-else-if="!contest.staff" class="muted clarification-intro">質問は開催中のコンテストに参加すると送信できます。</p>
-      <div class="clarification-heading"><h2>質問一覧</h2><RefreshButton label="質問を更新" :busy="loading" :disabled="loading" @click="load" /></div>
+      <form v-if="contest.staff" class="clarification-form clarification-ask" aria-labelledby="clarification-announce-title" @submit.prevent="announce">
+        <h2 id="clarification-announce-title">質問なしで回答を全体公開する</h2>
+        <div class="clarification-field">
+          <label for="clarification-announce-problem">対象問題</label>
+          <select id="clarification-announce-problem" v-model="problemId" :disabled="!!busy">
+            <option value="">コンテスト全体</option>
+            <option v-for="(problem, index) in contest.problems" :key="problem.id || index" :value="problem.id" :disabled="!problem.id">{{ problemLabel(index) }} - {{ problem.title }}</option>
+          </select>
+        </div>
+        <div class="clarification-field">
+          <label for="clarification-announcement">全体公開する回答（4,000文字以内）</label>
+          <textarea id="clarification-announcement" v-model="announcement" required maxlength="4000" rows="5" :disabled="!!busy" aria-describedby="clarification-announce-note" />
+          <p id="clarification-announce-note" class="muted">質問者なしで回答を公開します。ログインしたすべての利用者が閲覧でき、参加者に通知されます。</p>
+        </div>
+        <button class="editor-button primary clarification-submit" :disabled="!!busy || !announcement.trim()" :aria-busy="busy === 'announce' || undefined">{{ busy === 'announce' ? '公開中…' : '回答を全体公開' }}</button>
+      </form>
+      <div class="clarification-heading"><h2>質問・回答一覧</h2><RefreshButton label="質問を更新" :busy="loading" :disabled="loading" @click="load" /></div>
       <p v-if="loadError" role="alert" class="notice notice-error">{{ loadError }}</p>
       <p v-if="saveError" role="alert" class="notice notice-error">{{ saveError }}</p>
       <LoadingSpinner v-if="!items && loading" label="質問を読み込み中" />
-      <p v-else-if="items && !items.items.length" class="clarification-empty muted">閲覧できる質問はありません。</p>
+      <p v-else-if="items && !items.items.length" class="clarification-empty muted">閲覧できる質問・回答はありません。</p>
       <div v-if="items?.items.length" class="clarification-list">
         <article v-for="item in items.items" :key="item.id" class="clarification" :aria-labelledby="`clarification-${item.id}`">
           <div class="clarification-title">
             <h3 :id="`clarification-${item.id}`">{{ label(item.problemId) }}</h3>
-            <span class="clarification-tag" :data-answered="!!item.answer || undefined">{{ item.answer ? '回答済み' : '未回答' }}</span>
+            <span class="clarification-tag" :data-answered="!!item.answer || undefined">{{ !item.question ? 'スタッフからのお知らせ' : item.answer ? '回答済み' : '未回答' }}</span>
             <span class="clarification-tag">{{ item.publishedAt ? '全体公開' : '非公開' }}</span>
           </div>
-          <p class="clarification-meta muted"><UserLink :handle="item.author" /><span aria-hidden="true">·</span><time :datetime="item.createdAt">{{ contestDate(item.createdAt) }}</time></p>
-          <p class="clarification-text">{{ item.question }}</p>
+          <p v-if="item.question" class="clarification-meta muted"><UserLink :handle="item.author" /><span aria-hidden="true">·</span><time :datetime="item.createdAt">{{ contestDate(item.createdAt) }}</time></p>
+          <p v-if="item.question" class="clarification-text">{{ item.question }}</p>
           <div v-if="item.answer" class="clarification-answer">
             <h4>回答</h4>
             <p class="clarification-text">{{ item.answer }}</p>
@@ -132,7 +162,7 @@ async function publish(item: Clarification) {
               <label :for="`answer-${item.id}`">回答（4,000文字以内）</label>
               <textarea :id="`answer-${item.id}`" v-model="edit.answer" required maxlength="4000" rows="5" :disabled="!!busy" />
             </div>
-            <p v-if="edit.published || item.publishedAt" class="notice">この質問は全体公開されています。保存した回答も全体公開されます。</p>
+            <p v-if="edit.published || item.publishedAt" class="notice">この投稿は全体公開されています。保存した回答も全体公開されます。</p>
             <div v-if="edit.version !== item.version" class="notice clarification-conflict">
               <p>編集中に更新されました。上に表示された最新の回答と公開状態を確認してください。入力中の回答はそのまま残しています。</p>
               <button type="button" class="editor-button" :disabled="!!busy" @click="edit.version = item.version; saveError = ''">最新の内容を確認して編集を続ける</button>

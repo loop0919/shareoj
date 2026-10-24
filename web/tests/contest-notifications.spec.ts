@@ -5,7 +5,7 @@ const contestId = '88888888-8888-4888-8888-888888888888'
 const kinds = [
   ['clarification_question', 'bobが質問しました', 'clarifications'],
   ['clarification_answer', 'bobが質問に回答しました', 'clarifications'],
-  ['clarification_published', 'bobが質問と回答を全体公開しました', 'clarifications'],
+  ['clarification_published', 'bobが質問・回答を全体公開しました', 'clarifications'],
   ['contest_results', 'bobが結果を公開しました', 'standings'],
 ] as const
 const notifications = kinds.map(([kind], index) => ({

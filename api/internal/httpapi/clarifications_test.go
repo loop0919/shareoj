@@ -9,6 +9,82 @@ import (
 	"judge/api/internal/contests"
 )
 
+func TestClarificationAnnouncementsPostgres(t *testing.T) {
+	f := newTeamTest(t, "alice", "writer", "tester", "cos", "bob", "outsider")
+	const cid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+	const other = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+	const p1 = "11111111-1111-4111-8111-111111111111"
+	const p2 = "22222222-2222-4222-8222-222222222222"
+	f.problem(p1)
+	f.problem(p2)
+	f.create(cid, p1, nil)
+	f.create(other, p2, nil)
+	f.exec(`UPDATE problem_drafts SET owner_id='writer' WHERE id=$1`, p1)
+	f.exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'tester')`, p1)
+	f.exec(`INSERT INTO contest_setters(contest_id,owner_id) VALUES($1,'cos')`, cid)
+	f.join(cid, "bob", nil)
+	base := "/my/contests/" + cid + "/clarifications"
+	body := map[string]any{"answer": "スタッフからのお知らせ"}
+	f.request("POST", base, "", body, 401)
+	f.request("POST", base, "noprofile", body, 403)
+	for _, actor := range []string{"bob", "outsider"} {
+		f.request("POST", base, actor, body, 404)
+	}
+	for _, bad := range []map[string]any{
+		{"answer": ""}, {"answer": "　\n"}, {"answer": strings.Repeat("質", 4001)}, {"answer": "bad\x00text"},
+		{"answer": "回答", "question": "質問"}, {"answer": "回答", "problemId": "bad"},
+	} {
+		f.request("POST", base, "alice", bad, 400)
+	}
+	f.request("POST", base, "alice", map[string]any{"answer": "回答", "problemId": p2}, 404)
+	for i, actor := range []string{"alice", "cos", "writer", "tester"} {
+		problem := ""
+		if i%2 == 1 {
+			problem = p1
+		}
+		if i == 1 {
+			f.schedule(cid, "running")
+		} else if i == 3 {
+			f.schedule(cid, "ended")
+		}
+		f.request("POST", base, actor, map[string]any{"answer": "お知らせ", "problemId": problem}, 204)
+		for _, viewer := range []string{"alice", "cos", "writer", "tester", "bob", "outsider", "noprofile"} {
+			var page offsetResponse[contests.Clarification]
+			f.decode(f.request("GET", base, viewer, nil, 200), &page)
+			if len(page.Items) != i+1 {
+				t.Fatalf("%s: %+v", viewer, page)
+			}
+			q := page.Items[0]
+			staff := viewer != "bob" && viewer != "outsider" && viewer != "noprofile"
+			if q.Author != "" || q.Question != "" || q.ProblemID != problem || q.Answer != "お知らせ" || q.AnsweredBy != actor || q.AnsweredAt == nil || q.PublishedAt == nil || q.CanManage != staff {
+				t.Fatalf("%s: %+v", viewer, q)
+			}
+		}
+	}
+	var page offsetResponse[contests.Clarification]
+	f.decode(f.request("GET", base, "bob", nil, 200), &page)
+	path := base + "/" + page.Items[0].ID
+	f.request("PUT", path, "bob", map[string]any{"answer": "改変", "version": 1}, 404)
+	f.request("PUT", path, "cos", map[string]any{"answer": "補足", "version": 1}, 204)
+	f.fail("PUT", path, "writer", map[string]any{"answer": "競合", "version": 1}, 409, "clarification_conflict")
+	f.exec(`DELETE FROM problem_testers WHERE problem_id=$1 AND owner_id='tester'`, p1)
+	f.request("POST", base, "tester", body, 404)
+	f.request("PUT", path, "tester", map[string]any{"answer": "改変", "version": 2}, 404)
+	f.decode(f.request("GET", base, "outsider", nil, 200), &page)
+	if q := page.Items[0]; q.Answer != "補足" || q.AnsweredBy != "cos" || q.PublishedAt == nil || q.Version != 2 {
+		t.Fatal(q)
+	}
+	if n := f.count(`SELECT count(*) FROM contest_clarifications WHERE owner_id IS NULL`); n != 4 {
+		t.Fatalf("announcements: %d", n)
+	}
+	if n := f.count(`SELECT count(*) FROM notifications WHERE kind='clarification_published' AND owner_id='bob'`); n != 4 {
+		t.Fatalf("publication notifications: %d", n)
+	}
+	if n := f.count(`SELECT count(*) FROM notifications WHERE kind IN ('clarification_question','clarification_answer')`); n != 0 {
+		t.Fatalf("unexpected question/answer notifications: %d", n)
+	}
+}
+
 func TestClarificationsPostgres(t *testing.T) {
 	f := newTeamTest(t, "alice", "writer", "tester", "otherwriter", "othertester", "cos", "bob", "carol", "outsider")
 	const (

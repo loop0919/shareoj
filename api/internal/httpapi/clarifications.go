@@ -29,10 +29,23 @@ func (p contestHandler) clarifications(w http.ResponseWriter, r *http.Request, a
 		return
 	}
 	var in struct {
-		ProblemID string `json:"problemId"`
-		Question  string `json:"question"`
+		ProblemID string  `json:"problemId"`
+		Question  string  `json:"question"`
+		Answer    *string `json:"answer"`
 	}
 	if !contentJSON(w, r, &in) {
+		return
+	}
+	if in.Answer != nil {
+		if in.Question != "" || (in.ProblemID != "" && !problemID.MatchString(in.ProblemID)) || !contests.ValidClarificationText(*in.Answer) {
+			authError(w, 400, "invalid_clarification")
+			return
+		}
+		if err := p.Contests.AnnounceClarification(r.Context(), id, in.ProblemID, actor, *in.Answer); err != nil {
+			contestError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	if !problemID.MatchString(in.ProblemID) || !contests.ValidClarificationText(in.Question) {

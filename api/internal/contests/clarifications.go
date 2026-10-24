@@ -41,9 +41,10 @@ func (s *Store) Clarifications(ctx context.Context, contest, viewer string, offs
 	if !exists {
 		return nil, pgx.ErrNoRows
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT q.id,q.problem_id,q.question,u.handle,q.answer,COALESCE(a.handle,''),
- q.answered_at,q.published_at,q.created_at,q.version,contest_clarification_manager(q.contest_id,q.problem_id,$2)
- FROM contest_clarifications q JOIN user_profiles u ON u.owner_id=q.owner_id
+	rows, err := s.Pool.Query(ctx, `SELECT q.id,COALESCE(q.problem_id::text,''),q.question,COALESCE(u.handle,''),q.answer,COALESCE(a.handle,''),
+ q.answered_at,q.published_at,q.created_at,q.version,
+ CASE WHEN q.owner_id IS NULL THEN contest_staff(q.contest_id,$2) ELSE contest_clarification_manager(q.contest_id,q.problem_id,$2) END
+ FROM contest_clarifications q LEFT JOIN user_profiles u ON u.owner_id=q.owner_id
  LEFT JOIN user_profiles a ON a.owner_id=q.answered_by
  WHERE q.contest_id=$1 AND $2<>'' AND (q.published_at IS NOT NULL OR q.owner_id=$2
  OR contest_clarification_manager(q.contest_id,q.problem_id,$2))
@@ -87,6 +88,28 @@ func (s *Store) AskClarification(ctx context.Context, contest, problem, actor, q
 	return tx.Commit(ctx)
 }
 
+func (s *Store) AnnounceClarification(ctx context.Context, contest, problem, actor, answer string) error {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var id string
+	err = tx.QueryRow(ctx, `INSERT INTO contest_clarifications(contest_id,problem_id,question,answer,answered_by,answered_at,published_at)
+ SELECT c.id,NULLIF($2,'')::uuid,'',$4,$3,statement_timestamp(),statement_timestamp() FROM contests c
+ WHERE c.id=$1 AND contest_staff(c.id,$3)
+ AND ($2='' OR EXISTS(SELECT 1 FROM contest_problems WHERE contest_id=c.id AND problem_id=NULLIF($2,'')::uuid))
+ RETURNING id`, contest, problem, actor, answer).Scan(&id)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO notifications(owner_id,contest_id,actor_id,kind)
+ SELECT owner_id,contest_id,$2,'clarification_published' FROM contest_participants WHERE contest_id=$1 AND owner_id<>$2`, contest, actor); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // A version binds publication to the text the manager reviewed, and prevents lost answers.
 func (s *Store) UpdateClarification(ctx context.Context, contest, id, actor string, version int64, answer *string, publish bool) error {
 	tx, err := s.Pool.Begin(ctx)
@@ -97,8 +120,10 @@ func (s *Store) UpdateClarification(ctx context.Context, contest, id, actor stri
 	var current int64
 	var asker string
 	var published bool
-	err = tx.QueryRow(ctx, `SELECT version,owner_id,published_at IS NOT NULL FROM contest_clarifications
- WHERE contest_id=$1 AND id=$2 AND contest_clarification_manager(contest_id,problem_id,$3) FOR UPDATE`, contest, id, actor).Scan(&current, &asker, &published)
+	err = tx.QueryRow(ctx, `SELECT version,COALESCE(owner_id,''),published_at IS NOT NULL FROM contest_clarifications
+ WHERE contest_id=$1 AND id=$2 AND
+ CASE WHEN owner_id IS NULL THEN contest_staff(contest_id,$3) ELSE contest_clarification_manager(contest_id,problem_id,$3) END
+ FOR UPDATE`, contest, id, actor).Scan(&current, &asker, &published)
 	if err != nil {
 		return err
 	}
@@ -113,7 +138,7 @@ func (s *Store) UpdateClarification(ctx context.Context, contest, id, actor stri
 	if err != nil {
 		return err
 	}
-	if answer != nil {
+	if answer != nil && asker != "" {
 		if _, err = tx.Exec(ctx, `INSERT INTO notifications(owner_id,contest_id,actor_id,kind) VALUES($1,$2,$3,'clarification_answer')`, asker, contest, actor); err != nil {
 			return err
 		}

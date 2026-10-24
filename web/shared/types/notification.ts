@@ -17,7 +17,7 @@ export const notificationsSchema = z.object({ notifications: z.array(z.union([pr
 export type Notification = z.infer<typeof notificationsSchema>['notifications'][number]
 
 export const notificationMessages = { favorite: 'がお気に入りに追加しました', first_accept: 'が初めて正解しました', tester: 'がテスターに参加しました', user_editorial: 'がユーザー解説を書きました', contest_setter: 'が共同作成者に加わりました',
-  clarification_question: 'が質問しました', clarification_answer: 'が質問に回答しました', clarification_published: 'が質問と回答を全体公開しました', contest_results: 'が結果を公開しました',
+  clarification_question: 'が質問しました', clarification_answer: 'が質問に回答しました', clarification_published: 'が質問・回答を全体公開しました', contest_results: 'が結果を公開しました',
   rejudge: 'がリジャッジしました' }
 export const notificationTitle = (item: Notification) => item.title.trim() || ('problemId' in item ? '無題の問題' : '無題のコンテスト')
 // A user editorial opens the editorial tab, where the new post is listed. A new co-setter opens the contest's
