@@ -36,6 +36,6 @@ Architecture Decision Record（ADR）は、採用した設計だけでなく、�
 | [0024](0024-team-and-onsite-participation.md) | Accepted（個人参加、合言葉の文字、オンサイトの切り替えは2026-10-19に変更） | チーム戦を参加コードで組み、オンサイト参加を会場の合言葉で区別する |
 | [0025](0025-score-partially-with-test-groups.md) | Accepted | テストケースのグループごとに部分点を付ける |
 | [0026](0026-switch-problem-tags-on-problem-list.md) | Accepted（表示の保存と問題ページの切り替えは0029で変更） | 問題のタグを問題一覧で表示に切り替えられるようにする |
-| [0027](0027-notify-open-pages-and-bell.md) | Accepted | コンテストと定期便の出来事を、開いている画面のブラウザ通知とベルで知らせる |
+| [0027](0027-notify-open-pages-and-bell.md) | Accepted（質問の宛先は2026-10-24に共同作成者へ広げた） | コンテストと定期便の出来事を、開いている画面のブラウザ通知とベルで知らせる |
 | [0028](0028-paginate-lists-by-page-number.md) | Accepted | 一覧をページ番号で送り、表示件数を選べるようにし、順位表で自分の行を残す |
 | [0029](0029-switch-problem-tags-per-page.md) | Accepted | 問題のタグの表示をページごとに切り替え、設定の「表示」タブをなくす |

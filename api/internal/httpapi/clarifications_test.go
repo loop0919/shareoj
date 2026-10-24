@@ -130,7 +130,7 @@ func TestClarificationsPostgres(t *testing.T) {
 		f.decode(w.Body.String(), &page)
 		return page.Items
 	}
-	for _, actor := range []string{"alice", "writer", "tester", "bob"} {
+	for _, actor := range []string{"alice", "cos", "writer", "tester", "bob"} {
 		items := list(actor)
 		if len(items) != 1 || items[0].CanManage != (actor != "bob") {
 			t.Fatalf("%s: %+v", actor, items)
@@ -138,7 +138,7 @@ func TestClarificationsPostgres(t *testing.T) {
 	}
 	q := list("bob")[0]
 	path := base + "/" + q.ID
-	for _, actor := range []string{"carol", "otherwriter", "othertester", "cos", "outsider", "noprofile"} {
+	for _, actor := range []string{"carol", "otherwriter", "othertester", "outsider", "noprofile"} {
 		if items := list(actor); len(items) != 0 {
 			t.Fatalf("leaked to %s: %+v", actor, items)
 		}
@@ -156,6 +156,7 @@ func TestClarificationsPostgres(t *testing.T) {
 	}
 	f.request("PUT", path, "writer", map[string]any{"answer": "回答1", "version": 1}, 204)
 	f.fail("PUT", path, "tester", map[string]any{"publish": true, "version": 1}, 409, "clarification_conflict")
+	f.fail("PUT", path, "cos", map[string]any{"answer": "古い版", "version": 1}, 409, "clarification_conflict")
 	q = list("bob")[0]
 	if q.Answer != "回答1" || q.AnsweredBy != "writer" || q.AnsweredAt == nil || q.PublishedAt != nil || q.Version != 2 {
 		t.Fatal(q)
@@ -166,6 +167,11 @@ func TestClarificationsPostgres(t *testing.T) {
 		t.Fatal("former tester kept access")
 	}
 	f.request("PUT", path, "tester", map[string]any{"publish": true, "version": 3}, 404)
+	f.exec(`UPDATE contest_setters SET left_at=clock_timestamp() WHERE contest_id=$1 AND owner_id='cos'`, cid)
+	if len(list("cos")) != 0 {
+		t.Fatal("former co-setter kept access")
+	}
+	f.request("PUT", path, "cos", map[string]any{"publish": true, "version": 3}, 404)
 	f.request("PUT", path, "alice", map[string]any{"publish": true, "version": 3}, 204)
 	for _, actor := range []string{"carol", "otherwriter", "othertester", "cos", "outsider", "tester", "noprofile"} {
 		items := list(actor)

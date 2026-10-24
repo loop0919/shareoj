@@ -6,7 +6,7 @@ import (
 )
 
 func TestClarificationNotificationsPostgres(t *testing.T) {
-	f := newTeamTest(t, "alice", "writer", "tester", "otherwriter", "othertester", "cos", "bob", "carol")
+	f := newTeamTest(t, "alice", "writer", "tester", "otherwriter", "othertester", "cos", "gone", "bob", "carol")
 	const (
 		cid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 		p1  = "11111111-1111-4111-8111-111111111111"
@@ -20,6 +20,7 @@ func TestClarificationNotificationsPostgres(t *testing.T) {
 	f.exec(`UPDATE problem_drafts SET owner_id='otherwriter' WHERE id=$1`, p2)
 	f.exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'tester'),($2,'othertester')`, p1, p2)
 	f.exec(`INSERT INTO contest_setters(contest_id,owner_id) VALUES($1,'cos')`, cid)
+	f.exec(`INSERT INTO contest_setters(contest_id,owner_id,left_at) VALUES($1,'gone',clock_timestamp())`, cid)
 	f.join(cid, "bob", create("Team"))
 	f.join(cid, "carol", joinCode(f.team(cid, "bob").Code))
 	f.schedule(cid, "running")
@@ -51,7 +52,8 @@ func TestClarificationNotificationsPostgres(t *testing.T) {
 	want("alice", "clarification_question:bob")
 	want("writer", "clarification_question:bob")
 	want("tester", "clarification_question:bob")
-	for _, u := range []string{"cos", "otherwriter", "othertester", "carol", "bob"} {
+	want("cos", "clarification_question:bob")
+	for _, u := range []string{"gone", "otherwriter", "othertester", "carol", "bob"} {
 		want(u)
 	}
 	var page struct{ Items []struct{ ID string } }
@@ -70,4 +72,5 @@ func TestClarificationNotificationsPostgres(t *testing.T) {
 	want("otherwriter", "clarification_question:bob")
 	want("othertester", "clarification_question:bob")
 	want("writer", "clarification_question:bob")
+	want("cos", "clarification_question:bob", "clarification_question:bob")
 }

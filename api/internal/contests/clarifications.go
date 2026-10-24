@@ -81,6 +81,7 @@ func (s *Store) AskClarification(ctx context.Context, contest, problem, actor, q
 	if _, err = tx.Exec(ctx, `INSERT INTO notifications(owner_id,contest_id,actor_id,kind)
  SELECT m.owner_id,$1,$3,'clarification_question' FROM (
   SELECT owner_id FROM contests WHERE id=$1
+  UNION SELECT owner_id FROM contest_setters WHERE contest_id=$1 AND left_at IS NULL
   UNION SELECT owner_id FROM problem_drafts WHERE id=$2
   UNION SELECT owner_id FROM problem_testers WHERE problem_id=$2) m WHERE m.owner_id<>$3`, contest, problem, actor); err != nil {
 		return err
