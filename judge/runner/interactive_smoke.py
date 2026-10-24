@@ -100,8 +100,8 @@ int main(){std::cout<<INPUT<<std::flush;close(1);std::string data((std::istreamb
             check(name, source, fixture['source'], 'AC')
     private = '''import os,sys
 assert len(sys.argv)==5
-assert open(sys.argv[1]).read()=='10'
-assert open(sys.argv[2]).read()=='private expected'
+assert open(sys.argv[1]).read()=='10\\n'
+assert open(sys.argv[2]).read()=='private expected\\n'
 assert open(sys.argv[3]).read()
 with open(sys.argv[4],'w') as f: f.write('1')
 assert os.getuid()==60001
