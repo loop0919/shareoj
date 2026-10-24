@@ -219,7 +219,7 @@ func TestPushLifecycle(t *testing.T) {
 	}
 	// Five 64 KiB sides exceed the 256 KiB inline budget; exact boundaries stay inline.
 	for _, name := range []string{"sample1.in", "sample1.out", "second.in", "second.out", "third.in"} {
-		write(t, filepath.Join(dir, "tests", name), strings.Repeat("a", 64<<10))
+		write(t, filepath.Join(dir, "tests", name), strings.Repeat("a", 64<<10-1)+"\n")
 	}
 	write(t, filepath.Join(dir, "tests/third.out"), "")
 	beforeUploads := uploads
@@ -318,6 +318,23 @@ func TestPushMergeRules(t *testing.T) {
 	mustPush()
 	if string(remote.Draft["generators"]) != "null" {
 		t.Fatalf("omitted generators with a null remote value: %s", remote.Draft["generators"])
+	}
+}
+
+func TestLoadedCasesUseLFAndEndWithNewline(t *testing.T) {
+	dir := example(t)
+	write(t, filepath.Join(dir, "tests/sample1.in"), "3 5")
+	write(t, filepath.Join(dir, "tests/sample1.out"), "8\r\n\r\n")
+	write(t, filepath.Join(dir, "tests/empty.in"), "")
+	write(t, filepath.Join(dir, "tests/empty.out"), "")
+	d, err := loadProblem(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []testCase
+	_ = json.Unmarshal(d["testCases"], &cases)
+	if len(cases) != 2 || cases[0].Input != "" || cases[0].Output != "" || cases[1].Input != "3 5\n" || cases[1].Output != "8\n\n" {
+		t.Fatalf("cases: %+v", cases)
 	}
 }
 

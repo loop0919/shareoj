@@ -15,6 +15,12 @@ export type TestCase = {
   _inputDirty?: boolean
   _outputDirty?: boolean
 }
+// Saving turns CRLF and lone CR into LF and ends non-empty data with LF, as the server does. Authors may write cases
+// on Windows, and Python's input() on Linux keeps the CR.
+export function normalizeTestData(value: string) {
+  const text = value.replace(/\r\n?/g, '\n')
+  return text && !text.endsWith('\n') ? `${text}\n` : text
+}
 export function testCaseError(cases: TestCase[]) {
   if (cases.length > 100) return 'テストケースは100件まで登録できます。'
   const encoder = new TextEncoder()
@@ -29,7 +35,7 @@ export function testCaseError(cases: TestCase[]) {
       const file = item[`${key}File`]
       const dirty = item[`_${key}Dirty`]
       const value = item[key]
-      const size = file && !dirty ? file.size : encoder.encode(value).length
+      const size = file && !dirty ? file.size : encoder.encode(normalizeTestData(value)).length
       if (value.includes('\0')) return `ケース${index + 1}に使用できない文字が含まれています。`
       if (size > testFileLimit) return `ケース${index + 1}の入力と出力は、それぞれ16 MiB以内にしてください。`
       total += size

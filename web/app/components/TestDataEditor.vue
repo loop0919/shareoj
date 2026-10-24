@@ -74,8 +74,10 @@ watch(text, (value) => {
   if (!editor) return
   if (value === emittedText) { emittedText = undefined; return }
   bytes.value = value ? encoder.encode(value).length : (props.storedBytes ?? 0)
+  const current = editor.state.doc.toString()
   fromModel = true
-  editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: value } })
+  // Saving appends the final newline; inserting only that keeps the cursor before it while the author types.
+  editor.dispatch({ changes: value.startsWith(current) ? { from: current.length, insert: value.slice(current.length) } : { from: 0, to: current.length, insert: value } })
   fromModel = false
 }, { flush: 'sync' })
 watch(() => props.storedBytes, value => {

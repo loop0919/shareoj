@@ -43,7 +43,7 @@ test('difficulty picker shows grades and supports keyboard selection and persist
 
 test('large test data renders only visible lines and names are unique', async ({ page }) => {
   const { createHash } = await import('node:crypto')
-  const content = Array.from({ length: 200_000 }, (_, i) => String(i)).join('\n')
+  const content = Array.from({ length: 200_000 }, (_, i) => `${i}\n`).join('')
   const file = { id: '33333333-3333-4333-8333-333333333333', size: Buffer.byteLength(content), sha256: createHash('sha256').update(content).digest('hex') }
   await page.route('**/api/my/problems/*/test-files', route => {
     expect(route.request().postDataJSON()).toEqual({ size: file.size, sha256: file.sha256 })
@@ -355,6 +355,29 @@ test('imported files keep only LF line endings', async () => {
   const { importTestCaseFiles } = await import('../app/utils/import-test-cases')
   const [item] = await importTestCaseFiles([new File(['1 2\r\n3\r'], 'crlf.txt')], 'input', [])
   expect(item!.input).toBe('1 2\n3\n')
+})
+
+test('size limits count the final newline that saving adds', async () => {
+  const { testCaseError } = await import('../app/utils/problem-draft')
+  const { testFileLimit } = await import('../shared/types/problem-draft')
+  expect(testCaseError([{ input: `${'a'.repeat(testFileLimit - 1)}\n`, output: '' }])).toBe('')
+  expect(testCaseError([{ input: 'a'.repeat(testFileLimit), output: '' }])).toContain('16 MiB')
+})
+
+test('saving ends non-empty data with a newline on screen and keeps the cursor on its line', async ({ page }) => {
+  await page.goto('/problems/new')
+  await page.getByRole('button', { name: 'テストケース', exact: true }).click()
+  await page.getByRole('button', { name: 'テストケースを追加' }).click()
+  const input = page.getByLabel('入力', { exact: true })
+  const saved = page.waitForRequest(request => request.method() === 'PUT' && /^\/api\/my\/problems\/[^/]+$/.test(new URL(request.url()).pathname) &&
+    request.postDataJSON().draft.testCases?.[0]?.input !== '')
+  await input.fill('3 5')
+  const { draft } = (await saved).postDataJSON()
+  expect(draft.testCases[0]).toMatchObject({ input: '3 5\n', output: '' })
+  await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
+  await expect(input.locator('.cm-line')).toHaveText(['3 5', ''])
+  await page.keyboard.type('7')
+  await expect(input.locator('.cm-line')).toHaveText(['3 57', ''])
 })
 
 

@@ -110,9 +110,13 @@ func validText(value string, limit int) bool {
 	return utf8.ValidString(value) && !strings.ContainsRune(value, 0) && utf8.RuneCountInString(value) <= limit
 }
 
-// normalizeNewlines turns CRLF and lone CR into LF.
-func normalizeNewlines(s string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+// normalizeTestData turns CRLF and lone CR into LF and ends non-empty data with LF, as the server does.
+func normalizeTestData(s string) string {
+	s = strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+	if s != "" && !strings.HasSuffix(s, "\n") {
+		s += "\n"
+	}
+	return s
 }
 
 func readText(root *os.Root, name string, limit int) (string, error) {
@@ -397,7 +401,7 @@ func loadCases(root *os.Root, c problemConfig) ([]testCase, []string, error) {
 			return nil, nil, err
 		}
 		// Files written on Windows are CRLF, and Python's input() on Linux keeps the CR.
-		input, output = normalizeNewlines(input), normalizeNewlines(output)
+		input, output = normalizeTestData(input), normalizeTestData(output)
 		total += len(input) + len(output)
 		if total > 512<<20 {
 			return nil, nil, errors.New("test data exceeds 512 MiB")

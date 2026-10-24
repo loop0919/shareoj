@@ -111,7 +111,7 @@ func TestCPPDocker(t *testing.T) {
 	}
 }
 
-func TestCRLFCaseDocker(t *testing.T) {
+func TestCaseDataDocker(t *testing.T) {
 	image := os.Getenv("TEST_JUDGE_CPP_IMAGE")
 	if image == "" {
 		t.Skip("TEST_JUDGE_CPP_IMAGE is required for Docker integration")
@@ -122,12 +122,12 @@ func TestCRLFCaseDocker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// getline keeps a CR, so the lengths show whether the input reached the program as LF.
+	// The program prints the number of CRs and whether the input ends with LF (2 when it is empty).
 	job := Job{Image: strings.TrimSpace(string(data)), TimeLimitMS: 2000, MemoryLimitMB: 64,
-		Cases: []Case{{Input: "abc\r\nd\r", Output: "3 1\r\n"}, {InputFile: &problems.TestFile{ID: "crlf"}, Output: "3 1"}},
-		LoadFile: func(context.Context, *problems.TestFile) (string, error) { return "abc\r\nd\r", nil }}
-	source := "#include <iostream>\n#include <string>\nint main(){std::string a,b;std::getline(std::cin,a);std::getline(std::cin,b);std::cout<<a.size()<<' '<<b.size();}"
-	if result := Judge(ctx, source, job); result.Verdict != "AC" || result.Passed != 2 {
+		Cases: []Case{{Input: "abc\r\nd\r", Output: "0 1"}, {Input: "abc\r\nd", Output: "0 1"}, {InputFile: &problems.TestFile{ID: "crlf"}, Output: "0 1"}, {Output: "0 2"}},
+		LoadFile: func(context.Context, *problems.TestFile) (string, error) { return "abc\r\nd", nil }}
+	source := "#include <algorithm>\n#include <iostream>\n#include <iterator>\n#include <string>\nint main(){std::string s{std::istreambuf_iterator<char>(std::cin),{}};std::cout<<std::count(s.begin(),s.end(),'\\r')<<' '<<(s.empty()?2:s.back()=='\\n');}"
+	if result := Judge(ctx, source, job); result.Verdict != "AC" || result.Passed != 4 {
 		t.Fatalf("got %+v, want AC", result)
 	}
 }

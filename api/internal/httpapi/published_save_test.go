@@ -43,13 +43,13 @@ func TestPublishedProblemSavePostgres(t *testing.T) {
 	if err != nil || after.Title != p.Draft.Title || after.Markdown != p.Draft.Markdown || after.Editorial != p.Draft.Editorial || after.TimeLimitMS != "1500" || !after.PublishedAt.Equal(before.PublishedAt) {
 		t.Fatal("save did not update public content or changed publication time", after, err)
 	}
-	if !strings.Contains(f.request("GET", "/problems/"+p.ID+"/samples", "", nil, 200), `"output":"4"`) {
+	if !strings.Contains(f.request("GET", "/problems/"+p.ID+"/samples", "", nil, 200), `"output":"4\n"`) {
 		t.Fatal("sample not updated")
 	}
 	for _, want := range []struct {
 		id, output string
 		version    int64
-	}{{previousSubmission, "2", 2}, {submit(), "4", 3}} {
+	}{{previousSubmission, "2\n", 2}, {submit(), "4\n", 3}} {
 		var output string
 		var version int64
 		if err := f.store.Pool().QueryRow(context.Background(), `SELECT problem_version,job->'cases'->0->>'output' FROM submissions WHERE id=$1`, want.id).Scan(&version, &output); err != nil || version != want.version || output != want.output {

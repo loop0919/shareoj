@@ -219,8 +219,8 @@ func Judge(ctx context.Context, source string, job Job) Result {
 				return r
 			}
 		}
-		// Cases saved before normalization may still be CRLF.
-		c.Input, c.Output = problems.NormalizeNewlines(c.Input), problems.NormalizeNewlines(c.Output)
+		// Cases saved before normalization may still be CRLF or lack the final newline.
+		c.Input, c.Output = problems.NormalizeTestData(c.Input), problems.NormalizeTestData(c.Output)
 		limit := time.Duration(job.TimeLimitMS) * time.Millisecond
 		actual := container(ctx, job.Image, dir, c.Input, job.MemoryLimitMB, limit+10*time.Second, 16<<20,
 			"timeout", "--signal=TERM", "--kill-after=0.1s", fmt.Sprintf("%.3fs", limit.Seconds()), "/submission/main")

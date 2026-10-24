@@ -274,10 +274,10 @@ func TestPrivateProblemsPostgres(t *testing.T) {
 		t.Fatal("forged file metadata accepted", err)
 	}
 	crlfDraft := draft
-	crlfDraft.TestCases = []problems.TestCase{{Input: "1 2\r\n3\r", Output: "3\r\n"}}
-	if p, err := store.Save(ctx, "alice", fileProblem, 1, crlfDraft); err != nil ||
-		p.Draft.TestCases[0].Input != "1 2\n3\n" || p.Draft.TestCases[0].Output != "3\n" || crlfDraft.TestCases[0].Input != "1 2\r\n3\r" {
-		t.Fatalf("line endings not normalized only in the saved copy: %+v %v", p.Draft.TestCases, err)
+	crlfDraft.TestCases = []problems.TestCase{{Input: "1 2\r\n3\r", Output: "3"}, {}}
+	if p, err := store.Save(ctx, "alice", fileProblem, 1, crlfDraft); err != nil || p.Draft.TestCases[0].Input != "1 2\n3\n" ||
+		p.Draft.TestCases[0].Output != "3\n" || p.Draft.TestCases[1].Input != "" || p.Draft.TestCases[1].Output != "" || crlfDraft.TestCases[0].Input != "1 2\r\n3\r" {
+		t.Fatalf("test data not normalized only in the saved copy: %+v %v", p.Draft.TestCases, err)
 	}
 	// Seed pagination data directly; normal creation is limited to a burst of 20.
 	data, _ := json.Marshal(draft)

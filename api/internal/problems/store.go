@@ -363,7 +363,7 @@ func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft
 	draft.TestCases = slices.Clone(draft.TestCases)
 	for i := range draft.TestCases {
 		c := &draft.TestCases[i]
-		c.Input, c.Output = NormalizeNewlines(c.Input), NormalizeNewlines(c.Output)
+		c.Input, c.Output = NormalizeTestData(c.Input), NormalizeTestData(c.Output)
 	}
 	data, err := json.Marshal(draft)
 	if err != nil {

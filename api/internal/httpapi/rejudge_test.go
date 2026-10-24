@@ -134,7 +134,7 @@ func TestRejudgePostgres(t *testing.T) {
 		t.Fatalf("selected rejudge: %s dispatches=%d", got, dispatches)
 	}
 	status, attempt, verdict, rejudged, job, _, _ := state("wrong")
-	if status != "QUEUED" || verdict != "" || !rejudged || attempt == before || job.Image != image || len(job.Cases) != 2 || job.Cases[0].Output != "3" || job.EasyTest {
+	if status != "QUEUED" || verdict != "" || !rejudged || attempt == before || job.Image != image || len(job.Cases) != 2 || job.Cases[0].Output != "3\n" || job.EasyTest {
 		t.Fatalf("rejudged submission: %s %s %s %v %+v", status, attempt, verdict, rejudged, job)
 	}
 	if got := h.request("GET", path, "alice", "", 200); got != `{"pending":1}` {

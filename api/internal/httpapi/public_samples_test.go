@@ -74,7 +74,7 @@ func testPublicSamples(t *testing.T, store *problems.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := request(path, 200); !reflect.DeepEqual(got, []publicSample{{Name: "updated", Input: "updated"}}) {
+	if got := request(path, 200); !reflect.DeepEqual(got, []publicSample{{Name: "updated", Input: "updated\n"}}) {
 		t.Fatalf("saved sample not updated: %#v", got)
 	}
 	p, err = store.Publish(ctx, "alice", id, p.Version, false)

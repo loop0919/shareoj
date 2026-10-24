@@ -1,7 +1,7 @@
 import { accountProblemSchema, type AccountProblem, type Readiness } from '~~/shared/types/account-problems'
 import { accountError } from '~/utils/account-problems'
 import { problemDraftSchema, inlineTestDataLimit, inlineTestSetLimit } from '~~/shared/types/problem-draft'
-import { draftErrors, initialProblemDraft, persistedDraft, scoringError, testCaseError } from '~/utils/problem-draft'
+import { draftErrors, initialProblemDraft, normalizeTestData, persistedDraft, scoringError, testCaseError } from '~/utils/problem-draft'
 import { uploadTestFile } from '~/utils/test-files'
 import { readProblemCache, writeProblemCache, removeProblemCache } from '~/utils/problem-cache'
 
@@ -73,6 +73,17 @@ export function useProblemDraft() {
   let saveTimer: ReturnType<typeof setTimeout> | undefined
   const fingerprint = () => JSON.stringify(persistedDraft(draft))
 
+  // Normalizing the draft itself lets the editors show the data as it is saved. Unedited stored files stay as they are.
+  function normalizeTestCases() {
+    for (const item of draft.testCases) {
+      for (const key of ['input', 'output'] as const) {
+        if (item[`${key}File`] && !item[`_${key}Dirty`]) continue
+        const text = normalizeTestData(item[key])
+        if (text !== item[key]) item[key] = text
+      }
+    }
+  }
+
   async function prepareTestFiles(id: string) {
     const encoder = new TextEncoder()
     const values = draft.testCases.flatMap(item => (['input', 'output'] as const).map(key => ({ item, key, text: item[key], size: encoder.encode(item[key]).length })))
@@ -123,6 +134,7 @@ export function useProblemDraft() {
       try {
         const account = await refreshAccount()
         if (!account || account.id !== cloudOwner) throw { statusCode: 401 }
+        normalizeTestCases()
         if (!await prepareTestFiles(id)) return false
         const snapshot = fingerprint()
         let result

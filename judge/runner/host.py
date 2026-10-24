@@ -294,6 +294,15 @@ def case_result(reply, index, case, generate=False, validate=False):
     return item
 
 
+def normalize_test_data(text):
+    # Stored cases may still be CRLF or lack the final newline, and Python's input() on Linux keeps the CR. A stored
+    # 16 MiB file goes without the newline, which the sandbox's input limit would refuse.
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    if text and not text.endswith('\n') and len(text.encode()) < TEST_FILE_LIMIT:
+        text += '\n'
+    return text
+
+
 def sample_preview(data, limit):
     text = data.decode('utf-8', errors='replace').replace('\0', '�').encode('utf-8')
     return dict(text=text[:limit].decode('utf-8', errors='ignore'), truncated=len(text) > limit)
@@ -411,8 +420,7 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
                     if load_file is None:
                         raise ValueError('test file loader unavailable')
                     case[key] = load_file(case[key + 'File'])
-                # Stored cases may still be CRLF, and Python's input() on Linux keeps the CR.
-                case[key] = case[key].replace('\r\n', '\n').replace('\r', '\n')
+                case[key] = normalize_test_data(case[key])
             if job.get('interactor') is not None:
                 diagnostic(f"ケース{index + 1}:\n")
                 case_log = bytearray()

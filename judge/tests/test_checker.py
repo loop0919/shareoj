@@ -18,7 +18,7 @@ def reply(**changes):
 def job():
     return dict(runtime='cpp17-isolate', runtimeDigest='sha256:test', source='submitted source',
                 checker=dict(runtime='python314', source='assert True'), memoryLimitMb=512,
-                timeLimitMs=1000, cases=[dict(input='10', output='expected secret')] * 2)
+                timeLimitMs=1000, cases=[dict(input='10\n', output='expected secret\n')] * 2)
 
 
 class CheckerTests(unittest.TestCase):
@@ -57,7 +57,7 @@ class CheckerTests(unittest.TestCase):
                     if 'checker_files' in kwargs:
                         self.assertEqual(request['runtime'], runtime)
                         self.assertEqual(base64.b64decode(request['input']), b'7\r\n')
-                        self.assertEqual(kwargs['checker_files'], {'test-input': b'10', 'expected-output': b'expected secret', 'submission-source': b'submitted source'})
+                        self.assertEqual(kwargs['checker_files'], {'test-input': b'10\n', 'expected-output': b'expected secret\n', 'submission-source': b'submitted source'})
                     elif not compile:
                         self.assertNotIn('expected secret', str((request, kwargs)))
                         self.assertNotIn('assert True', str((request, kwargs)))
@@ -67,7 +67,7 @@ class CheckerTests(unittest.TestCase):
         self.assertEqual(result['verdict'], 'AC')
         for case in result['cases']:
             self.assertEqual(case['verdict'], 'AC')
-            self.assertEqual(case['sampleDetails']['expectedOutput']['text'], 'expected secret')
+            self.assertEqual(case['sampleDetails']['expectedOutput']['text'], 'expected secret\n')
             self.assertEqual(case['sampleDetails']['actualOutput']['text'], '7\r\n')
 
     def test_assert_and_nonzero_are_wa_but_resource_failures_are_je(self):

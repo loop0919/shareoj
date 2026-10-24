@@ -412,7 +412,7 @@ func TestSubmissionsPostgres(t *testing.T) {
 		t.Fatal("public API leaked tests")
 	}
 	claimed, job, err := queue.Claim(ctx)
-	if err != nil || claimed.ID != item.ID || job.Cases[0].Output != "3" || job.TimeLimitMS != 2000 {
+	if err != nil || claimed.ID != item.ID || job.Cases[0].Output != "3\n" || job.TimeLimitMS != 2000 {
 		t.Fatalf("claim: %+v %+v %v", claimed, job, err)
 	}
 	if _, _, err = queue.Claim(ctx); err != pgx.ErrNoRows {
@@ -441,7 +441,7 @@ func TestSubmissionsPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, savedJob, err := queue.Claim(ctx)
-	if err != nil || savedJob.Cases[0].Output != "999" {
+	if err != nil || savedJob.Cases[0].Output != "999\n" {
 		t.Fatalf("saved tests not used: %+v %v", savedJob, err)
 	}
 	if _, err := store.Publish(ctx, "alice", id, updated.Version, true); err != nil {
@@ -449,7 +449,7 @@ func TestSubmissionsPostgres(t *testing.T) {
 	}
 	request("POST", "/my/submissions", "alice", body, 202)
 	_, newJob, err := queue.Claim(ctx)
-	if err != nil || newJob.Cases[0].Output != "999" {
+	if err != nil || newJob.Cases[0].Output != "999\n" {
 		t.Fatalf("published tests not used: %+v %v", newJob, err)
 	}
 	current, err := store.Get(ctx, "alice", id)
@@ -608,7 +608,7 @@ func TestSubmissionsPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	var privateJob submissions.Job
-	if json.Unmarshal(privateRaw, &privateJob) != nil || privateJob.Cases[0].Output != "private-output" || privateJob.TimeLimitMS != 1000 {
+	if json.Unmarshal(privateRaw, &privateJob) != nil || privateJob.Cases[0].Output != "private-output\n" || privateJob.TimeLimitMS != 1000 {
 		t.Fatalf("private snapshot: %s", privateRaw)
 	}
 	currentPrivate, err := store.Get(ctx, "alice", privateID)

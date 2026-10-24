@@ -248,7 +248,7 @@ class InteractiveTests(unittest.TestCase):
         def execute(job, case, artifact, diagnostic, **kwargs):
             self.assertEqual(host.sandbox.ARTIFACT.read_text(), 'submitted source')
             self.assertEqual(artifact.read_text(), 'assert True')
-            self.assertEqual(case['output'], 'expected secret')
+            self.assertEqual(case['output'], 'expected secret\n')
             diagnostic('あ' * 20000)
             return dict(verdict='AC', cpuTimeMs=7, wallTimeMs=20, memoryBytes=512)
         with tempfile.TemporaryDirectory() as tmp, patch.object(host.sandbox, 'ARTIFACT', Path(tmp)/'main'), \
