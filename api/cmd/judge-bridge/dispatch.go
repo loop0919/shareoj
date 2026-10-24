@@ -86,8 +86,8 @@ func (b bridge) publishedRuntimes() []string {
 	return (submissions.Config{JudgeImage: b.runtime, JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: b.enabled}).RuntimeIDs()
 }
 
-// rejudgeInFlight limits judgements sent while rejudges wait. Rejudges use spare capacity only.
-const rejudgeInFlight = 2
+// spareInFlight limits judgements sent while authoring runs or rejudges wait. They use spare capacity only.
+const spareInFlight = 2
 
 func (b bridge) dispatchOne(ctx context.Context, tx pgx.Tx) (err error) {
 	var id, attempt, source, runtime string
@@ -98,13 +98,13 @@ func (b bridge) dispatchOne(ctx context.Context, tx pgx.Tx) (err error) {
 			observe("failure", "platform", stage+"_failed", id, attempt)
 		}
 	}()
-	// New submissions go first. A rejudge waits until fewer than rejudgeInFlight judgements
-	// are in SQS or running, so a new submission queues behind at most that many.
+	// New submissions go first, then authoring runs, then rejudges (ADR 0032). The last two wait until
+	// fewer than spareInFlight judgements are in SQS or running, so a new submission queues behind at most that many.
 	err = tx.QueryRow(ctx, `SELECT id::text,judge_attempt::text,source,job,runtime FROM submissions
   WHERE runtime=ANY($1::text[]) AND dispatched_at IS NULL AND status <> 'DONE'
-    AND (rejudged_at IS NULL OR (SELECT COUNT(*) FROM submissions f
+    AND ((rejudged_at IS NULL AND NOT `+submissions.AuthoringJob+`) OR (SELECT COUNT(*) FROM submissions f
       WHERE f.runtime=ANY($1::text[]) AND f.dispatched_at IS NOT NULL AND f.status <> 'DONE') < $2)
-  ORDER BY rejudged_at IS NOT NULL,COALESCE(rejudged_at,created_at),id FOR UPDATE SKIP LOCKED LIMIT 1`, submissions.IsolateRuntimeIDs(), rejudgeInFlight).Scan(&id, &attempt, &source, &raw, &runtime)
+  ORDER BY rejudged_at IS NOT NULL,`+submissions.AuthoringJob+`,COALESCE(rejudged_at,created_at),id FOR UPDATE SKIP LOCKED LIMIT 1`, submissions.IsolateRuntimeIDs(), spareInFlight).Scan(&id, &attempt, &source, &raw, &runtime)
 	if err != nil {
 		return err
 	}

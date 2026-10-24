@@ -228,7 +228,7 @@ test('generation frequency limit displays the wait time', async ({ page }) => {
   await page.getByLabel('入力生成のコード', { exact: true }).fill('int main(){}')
   await page.getByRole('button', { name: '生成する', exact: true }).click()
   const alert = page.locator('.generator [role=alert]')
-  await expect(alert).toHaveText('提出頻度制限に到達しました。75秒後に再度試してください。')
+  await expect(alert).toHaveText('生成と検証の頻度制限に到達しました。75秒後に再度試してください。')
   await expect(alert).toHaveCSS('background-color', 'rgb(255, 243, 242)')
 })
 

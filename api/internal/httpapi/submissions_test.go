@@ -213,19 +213,29 @@ func TestSubmissionsPostgres(t *testing.T) {
 		if _, err := queue.CreateRun(ctx, submissions.RunInput{Owner: "bob", ID: newSubmissionID(), ProblemID: id, Source: "source", Image: image, Runtime: "cpp17-local"}); err != nil {
 			t.Fatal(err)
 		}
-		// Only one slot expires: accept one more, then reject generation too.
+		// Only one slot expires: accept one more, filling the normal quota again.
 		if _, err := store.Pool().Exec(ctx, `UPDATE submissions SET created_at=clock_timestamp()-interval '61 seconds' WHERE id=(SELECT id FROM submissions WHERE owner_id='alice' ORDER BY created_at LIMIT 1)`); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: newSubmissionID(), ProblemID: id, Source: "source", Image: image, Runtime: "cpp17-local"}); err != nil {
 			t.Fatal(err)
 		}
-		_, err := queue.CreateGeneration(ctx, submissions.GenerationInput{RunInput: submissions.RunInput{Owner: "alice", ID: newSubmissionID(), ProblemID: id, Source: "source", Runtime: "cpp17-local"}, ProblemVersion: 1, Job: submissions.Job{Generate: true}})
 		var limitedErr *submissions.RateLimitError
-		if !errors.As(err, &limitedErr) {
-			t.Fatalf("generation bypassed shared limit: %v", err)
+		authoring := func(i int) error {
+			_, err := queue.CreateGeneration(ctx, submissions.GenerationInput{RunInput: submissions.RunInput{Owner: "alice", ID: newSubmissionID(), ProblemID: id, Source: "source", Runtime: "cpp17-local"}, ProblemVersion: published.Version, Job: submissions.Job{Generate: i%2 == 0, Validate: i%2 == 1}})
+			return err
 		}
-		// A full normal quota leaves all three sample slots available.
+		// A full normal quota leaves all three authoring slots, shared by generation and validation.
+		for i := 0; i < 4; i++ {
+			err := authoring(i)
+			if i < 3 && err != nil {
+				t.Fatal(i, err)
+			}
+			if i == 3 && !errors.As(err, &limitedErr) {
+				t.Fatalf("authoring quota: %v", err)
+			}
+		}
+		// Full normal and authoring quotas leave all three sample slots available.
 		for i := 0; i < 4; i++ {
 			_, err := queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: newSubmissionID(), ProblemID: id, Source: "source", Image: image, Runtime: "cpp17-local", EasyTest: true})
 			if i < 3 && err != nil {
@@ -235,15 +245,24 @@ func TestSubmissionsPostgres(t *testing.T) {
 				t.Fatalf("sample quota: %v", err)
 			}
 		}
-		// Both quotas last 60 seconds: still full at 50 seconds, open again at 61.
+		// All quotas last 60 seconds: still full at 50 seconds, open again at 61.
 		if _, err := store.Pool().Exec(ctx, `UPDATE submissions SET created_at=clock_timestamp()-interval '50 seconds' WHERE owner_id='alice'`); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: newSubmissionID(), ProblemID: id, Source: "source", Image: image, Runtime: "cpp17-local"}); !errors.As(err, &limitedErr) || limitedErr.RetryAfter < 1 || limitedErr.RetryAfter > 10 {
 			t.Fatalf("normal quota: %v", err)
 		}
+		if err := authoring(0); !errors.As(err, &limitedErr) || limitedErr.RetryAfter < 1 || limitedErr.RetryAfter > 10 {
+			t.Fatalf("authoring quota: %v", err)
+		}
 		if _, err := store.Pool().Exec(ctx, `UPDATE submissions SET created_at=clock_timestamp()-interval '61 seconds' WHERE owner_id='alice'`); err != nil {
 			t.Fatal(err)
+		}
+		// Authoring runs never take the slots of submissions or sample runs.
+		for i := 0; i < 3; i++ {
+			if err := authoring(i); err != nil {
+				t.Fatal(i, err)
+			}
 		}
 		for _, easyTest := range []bool{true, false} {
 			if _, err := queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: newSubmissionID(), ProblemID: id, Source: "source", Image: image, Runtime: "cpp17-local", EasyTest: easyTest}); err != nil {

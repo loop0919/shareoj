@@ -211,7 +211,7 @@ func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) 
 	if len(checkerRuntimes) == 0 {
 		checkerRuntimes = []string{"cpp17"}
 	}
-	tx, err := s.beginSubmission(ctx, owner, easyTest)
+	tx, err := s.beginSubmission(ctx, owner, easyTest, false)
 	if err != nil {
 		return Submission{}, err
 	}
@@ -385,7 +385,7 @@ func (s *Store) CreateGeneration(ctx context.Context, in GenerationInput) (Submi
 	if err != nil {
 		return Submission{}, err
 	}
-	tx, err := s.beginSubmission(ctx, owner, false)
+	tx, err := s.beginSubmission(ctx, owner, false, true)
 	if err != nil {
 		return Submission{}, err
 	}

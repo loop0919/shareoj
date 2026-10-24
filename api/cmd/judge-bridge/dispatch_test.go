@@ -201,3 +201,34 @@ CREATE TRIGGER refuse_done BEFORE UPDATE ON submissions FOR EACH ROW WHEN (NEW.s
 		})
 	}
 }
+
+func TestAuthoringRunsWaitBehindNewSubmissionsAheadOfRejudges(t *testing.T) {
+	ctx := context.Background()
+	authoring := func(generate bool) []byte {
+		raw, _ := json.Marshal(submissions.Job{Image: testDigest, TimeLimitMS: 5000, MemoryLimitMB: 512, Generate: generate, Validate: !generate, Cases: []submissions.Case{{Input: "1"}}})
+		return raw
+	}
+	// Oldest first: generation, validation, a rejudge requested before both, then a fresh submission.
+	f := newDispatchFixture(t, "", authoring(true), authoring(false), queuedJob(nil), queuedJob(nil))
+	generation, validation, rejudge, fresh := f.ids[0], f.ids[1], f.ids[2], f.ids[3]
+	if _, err := f.b.db.Exec(ctx, `UPDATE submissions SET created_at=clock_timestamp()-interval '7 hours',rejudged_at=clock_timestamp()-interval '1 minute' WHERE id=$1`, rejudge); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.b.dispatch(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// The fresh submission goes first; one authoring run fills the second in-flight slot.
+	if fmt.Sprint(f.sent) != fmt.Sprint([]string{fresh, generation}) {
+		t.Fatalf("dispatch order: %v", f.sent)
+	}
+	// A freed slot goes to the next authoring run, not to the earlier rejudge.
+	if _, err := f.b.db.Exec(ctx, `UPDATE submissions SET status='DONE' WHERE id=$1`, fresh); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.b.dispatch(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(f.sent) != fmt.Sprint([]string{fresh, generation, validation}) {
+		t.Fatalf("authoring must go before rejudges: %v", f.sent)
+	}
+}
