@@ -4,12 +4,12 @@ const problemId = '11111111-1111-4111-8111-111111111111'
 const postId = '77777777-7777-4777-8777-777777777777'
 const tagsLoaded = (page: import('@playwright/test').Page) => page.waitForResponse(response => new URL(response.url()).pathname === '/api/tags')
 
-// Problem tags are hidden by default; these tests turn them on as the settings do.
-const showProblemTags = (page: import('@playwright/test').Page) => page.context().addCookies([{ name: 'openoj-problem-tags', value: 'show', url: 'http://127.0.0.1:13000' }])
+// Problem tags are hidden on every visit; these tests turn them on for the page in view.
+const showProblemTags = (page: import('@playwright/test').Page) => page.getByRole('switch', { name: 'タグを表示' }).check()
 
 test('problem tags link to the problems that carry them', async ({ page }, testInfo) => {
-  await showProblemTags(page)
   await page.goto(`/problems/${problemId}`)
+  await showProblemTags(page)
   const tags = page.locator('.problem-meta').getByRole('list', { name: 'タグ' })
   await expect(tags.getByRole('link')).toHaveText(['DP', 'グラフ'])
   await tags.getByRole('link', { name: 'DP', exact: true }).click()
@@ -18,59 +18,62 @@ test('problem tags link to the problems that carry them', async ({ page }, testI
   // The search box shows the tag in use, with a button beside it to clear the filter.
   const search = page.getByRole('combobox', { name: 'タグで絞り込む' })
   await expect(search).toHaveValue('DP')
+  // The filtered list is another page, so its tags start hidden again.
   const table = page.getByRole('table')
   await expect(table.getByRole('link', { name: 'A + B', exact: true })).toBeVisible()
+  await expect(table.getByRole('list', { name: 'タグ' })).toHaveCount(0)
+  await showProblemTags(page)
   await expect(table.getByRole('list', { name: 'タグ' }).getByRole('link')).toHaveText(['DP', 'グラフ'])
   await page.screenshot({ path: testInfo.outputPath('problems-filtered.png') })
   await page.getByRole('link', { name: '絞り込みを解除' }).click()
   await expect(page).toHaveURL('/problems')
-  await expect(search).toHaveValue('')
-  await expect(page.getByRole('link', { name: '絞り込みを解除' })).toHaveCount(0)
+  await expect(page.getByRole('switch', { name: 'タグを表示' })).not.toBeChecked()
+  await expect(page.getByRole('search')).toHaveCount(0)
 })
 
-test('problem tags stay hidden until the viewer turns them on', async ({ page }, testInfo) => {
+test('problem tags stay hidden until the viewer turns them on for the page', async ({ page }, testInfo) => {
   await page.goto(`/problems/${problemId}`)
   await expect(page.getByRole('heading', { name: 'A + B', level: 1 })).toBeVisible()
   await expect(page.getByRole('list', { name: 'タグ' })).toHaveCount(0)
-  // The server reads the preference, so hidden tags never flash before hydration.
+  // The server renders them hidden too, so tags never flash before hydration.
   expect(await (await page.request.get(`/problems/${problemId}`)).text()).not.toContain('aria-label="タグ"')
+  const toggle = page.getByRole('switch', { name: 'タグを表示' })
+  await expect(toggle).not.toBeChecked()
+  await expect(toggle).toHaveAccessibleDescription('解法のヒントになることがあります。')
+  await page.screenshot({ path: testInfo.outputPath('problem-tags-off.png') })
+  await toggle.click()
+  await expect(page.locator('.problem-meta').getByRole('list', { name: 'タグ' }).getByRole('link')).toHaveText(['DP', 'グラフ'])
+  await expect(page.getByText('解法のヒントになることがあります。')).toHaveCount(0)
+  await page.screenshot({ path: testInfo.outputPath('problem-tags-on.png') })
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.screenshot({ path: testInfo.outputPath('problem-tags-on-dark.png') })
+  await page.emulateMedia({ colorScheme: 'light' })
+  // The choice lasts while the problem stays open, across its tabs.
+  await page.getByRole('navigation', { name: '問題メニュー' }).getByRole('link', { name: '解説' }).click()
+  await page.getByRole('navigation', { name: '問題メニュー' }).getByRole('link', { name: '問題文' }).click()
+  await expect(toggle).toBeChecked()
+  await expect(page.locator('.problem-meta').getByRole('list', { name: 'タグ' })).toBeVisible()
+
+  // Other pages, and the same page opened again, start with the tags hidden.
   await page.goto('/problems')
   await expect(page.getByRole('table').getByRole('link', { name: 'A + B', exact: true })).toBeVisible()
+  await expect(toggle).not.toBeChecked()
+  await expect(page.getByRole('list', { name: 'タグ' })).toHaveCount(0)
+  await page.goto(`/problems/${problemId}`)
+  await expect(toggle).not.toBeChecked()
   await expect(page.getByRole('list', { name: 'タグ' })).toHaveCount(0)
   // Post tags are not spoilers and are always shown.
   await page.goto(`/blog/${postId}`)
   await expect(page.getByRole('list', { name: 'タグ' }).getByRole('link')).toHaveText(['DP', 'Rust'])
-
-  await page.goto('/my/settings?tab=display')
-  const toggle = page.getByRole('switch', { name: '問題のタグを表示する' })
-  await expect(toggle).toHaveAttribute('aria-checked', 'false')
-  await toggle.click()
-  await expect(toggle).toHaveAttribute('aria-checked', 'true')
-  await page.screenshot({ path: testInfo.outputPath('display-settings.png') })
-  await page.reload()
-  await expect(toggle).toHaveAttribute('aria-checked', 'true')
-  await page.goto(`/problems/${problemId}`)
-  await expect(page.locator('.problem-meta').getByRole('list', { name: 'タグ' }).getByRole('link')).toHaveText(['DP', 'グラフ'])
-  expect(await (await page.request.get(`/problems/${problemId}`)).text()).toContain('aria-label="タグ"')
-
-  // The problem list switches the same preference.
-  await page.goto('/problems')
-  const listToggle = page.getByRole('switch', { name: 'タグを表示' })
-  await expect(listToggle).toBeChecked()
-  await listToggle.click()
-  await expect(page.getByRole('list', { name: 'タグ' })).toHaveCount(0)
-  await expect(page.getByRole('search')).toHaveCount(0)
-  await page.goto('/my/settings?tab=display')
-  await expect(toggle).toHaveAttribute('aria-checked', 'false')
+  // The settings no longer carry a display tab.
+  await page.goto('/my/settings')
+  await expect(page.getByRole('navigation', { name: '設定の項目' }).getByRole('button', { name: '表示' })).toHaveCount(0)
 })
 
 test('signed-out viewers can show problem tags from the problem list', async ({ page }, testInfo) => {
   await page.route('**/api/auth/me', route => route.fulfill({ json: { user: null } }))
-  await page.goto(`/problems/${problemId}`)
-  await expect(page.getByRole('link', { name: 'ログイン', exact: true }).first()).toBeVisible()
-  await expect(page.getByRole('list', { name: 'タグ' })).toHaveCount(0)
-
   await page.goto('/problems')
+  await expect(page.getByRole('link', { name: 'ログイン', exact: true }).first()).toBeVisible()
   const toggle = page.getByRole('switch', { name: 'タグを表示' })
   await expect(toggle).not.toBeChecked()
   await expect(toggle).toHaveAccessibleDescription('解法のヒントになることがあります。')
@@ -87,17 +90,20 @@ test('signed-out viewers can show problem tags from the problem list', async ({ 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.screenshot({ path: testInfo.outputPath('problems-tags-on-390.png') })
 
-  // The browser keeps the choice, so the server renders the tags on the next visit.
-  await page.goto(`/problems/${problemId}`)
+  // The problem page has a switch of its own.
+  await row.getByRole('link', { name: 'A + B', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'A + B', level: 1 })).toBeVisible()
+  await expect(page.getByRole('list', { name: 'タグ' })).toHaveCount(0)
+  await toggle.click()
   await expect(page.locator('.problem-meta').getByRole('list', { name: 'タグ' }).getByRole('link')).toHaveText(['DP', 'グラフ'])
-  expect(await (await page.request.get(`/problems/${problemId}`)).text()).toContain('aria-label="タグ"')
+  await page.screenshot({ path: testInfo.outputPath('problem-tags-on-390.png') })
 })
 
 test('contest problems never show tags', async ({ page }) => {
-  await showProblemTags(page)
   await page.goto(`/contests/88888888-8888-4888-8888-888888888888/problems/${problemId}`)
   await expect(page.getByRole('heading', { name: 'A + B', level: 1 })).toBeVisible()
   await expect(page.getByRole('list', { name: 'タグ' })).toHaveCount(0)
+  await expect(page.getByRole('switch', { name: 'タグを表示' })).toHaveCount(0)
 })
 
 test('post tags link to the posts that carry them', async ({ page }) => {
@@ -112,14 +118,14 @@ test('post tags link to the posts that carry them', async ({ page }) => {
 })
 
 test('the tag filter reuses the spelling in use', async ({ page }, testInfo) => {
-  await showProblemTags(page)
   // The filtered list answers late, so the old page is still shown when the URL changes.
   await page.route(url => url.pathname === '/api/problems' && url.searchParams.get('tag') === 'DP', async route => {
     await new Promise(resolve => setTimeout(resolve, 50))
     await route.continue()
   })
-  const loaded = tagsLoaded(page)
   await page.goto('/problems')
+  const loaded = tagsLoaded(page)
+  await showProblemTags(page)
   await loaded
   await expect(page.locator('#problem-tag-filter-options option')).toHaveCount(3)
   const search = page.getByRole('combobox', { name: 'タグで絞り込む' })

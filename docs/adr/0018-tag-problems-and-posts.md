@@ -1,6 +1,6 @@
 # ADR 0018: 問題と記事にタグを付け、使われている表記を候補に出す
 
-- 状態：Accepted（問題のタグの表示を切り替える場所と未ログインの扱いは[ADR 0026](0026-switch-problem-tags-on-problem-list.md)で一部変更）
+- 状態：Accepted（問題のタグの表示を切り替える場所と未ログインの扱いは[ADR 0026](0026-switch-problem-tags-on-problem-list.md)で、表示の保存と設定の「表示」タブは[ADR 0029](0029-switch-problem-tags-per-page.md)で一部変更）
 - 決定日：2026-10-11
 - 範囲：問題と記事のタグ、タグによる一覧の絞り込み、表記ゆれを減らす入力候補、問題のタグを隠す設定
 

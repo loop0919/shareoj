@@ -27,9 +27,10 @@ const route = useRoute()
 // Older links opened the posting modal here; posting now has its own page.
 if (route.query.post === '1') await navigateTo({ path: '/problems/post', query: typeof route.query.problem === 'string' ? { problem: route.query.problem } : {} }, { replace: true, redirectCode: 301 })
 const config = useRuntimeConfig()
-// Rendering depends on the tag preference and page size cookies.
+// Rendering depends on the page size cookie.
 useResponseHeader('Vary').value = 'Cookie'
-const showTags = useProblemTags()
+// Problem tags can give away the solution, so each visit starts with them hidden until the viewer turns them on.
+const showTags = ref(false)
 const tag = typeof route.query.tag === 'string' ? route.query.tag : ''
 // The page is in the URL and the page size in a cookie, so the server renders the rows the viewer sees (ADR 0028).
 const { requested, link, resize } = usePageQuery()

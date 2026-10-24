@@ -3,7 +3,7 @@ useSeoMeta({ title: '設定 | ShareOJ', robots: 'noindex, nofollow' })
 const { profile } = useAccount()
 const route = useRoute()
 const router = useRouter()
-const tabs = [['identity', 'プロフィール'], ['services', '外部サービス'], ['security', '認証設定'], ['display', '表示'], ['notifications', '通知'], ['deletion', 'アカウント削除']] as const
+const tabs = [['identity', 'プロフィール'], ['services', '外部サービス'], ['security', '認証設定'], ['notifications', '通知'], ['deletion', 'アカウント削除']] as const
 type Tab = typeof tabs[number][0]
 const tab = computed<Tab>({
   get: () => tabs.find(([key]) => key === route.query.tab)?.[0] ?? 'identity',
@@ -21,7 +21,6 @@ const tab = computed<Tab>({
       <ProfileForm v-if="tab === 'identity'" :initial="profile" part="identity" />
       <ProfileForm v-else-if="tab === 'services'" :initial="profile" part="services" />
       <AccountSecurity v-else-if="tab === 'security'" />
-      <DisplaySettings v-else-if="tab === 'display'" />
       <BrowserNotificationSettings v-else-if="tab === 'notifications'" />
       <AccountDeletion v-else />
     </div>
