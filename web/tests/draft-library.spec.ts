@@ -53,9 +53,9 @@ for (const width of [375, 1280]) {
     await page.goto('/my')
     const problems = page.getByRole('table', { name: '自分の問題' })
     await expect(problems).toBeVisible()
-    await expect(problems.getByRole('columnheader')).toHaveText(['タイトル', '難易度', '状態', '更新日時', '操作'])
-    await expect(problems.locator('tbody tr').nth(0).getByRole('cell').first()).toHaveText('Lv.7')
-    await expect(problems.locator('tbody tr').nth(1).getByRole('cell').first()).toHaveText('未設定')
+    await expect(problems.getByRole('columnheader')).toHaveText(['タイトル', '状態', '更新日時', '難易度', '操作'])
+    await expect(problems.locator('tbody tr').nth(0).getByRole('cell').nth(2)).toHaveText('Lv.7')
+    await expect(problems.locator('tbody tr').nth(1).getByRole('cell').nth(2)).toHaveText('未設定')
     await expect(page.getByRole('table', { name: '作成した記事' })).toBeHidden()
     await expect(page.getByRole('link', { name: 'A + Bを編集' })).toHaveAttribute('href', `/problems/new?problem=${id}`)
     await expect(page.getByRole('link', { name: '未公開の問題を閲覧' })).toHaveAttribute('href', `/problems/${shortId(draftId)}`)
@@ -99,7 +99,7 @@ test('problem states and SVG delivery preferences appear in the library', async 
   const table = page.getByRole('table', { name: '自分の問題', exact: true })
   const rows = table.locator('tbody tr')
   for (const [index, state] of ['準備中', '応募中（コンテスト）', '応募中（定期便）', '応募中（定期便）', '公開中', '準備中'].entries()) {
-    await expect(rows.nth(index).locator('td').nth(1)).toContainText(state)
+    await expect(rows.nth(index).locator('td').first()).toContainText(state)
   }
   for (const label of ['早めに出したい', 'ゆっくりで良い']) {
     const mark = table.getByRole('img', { name: label })

@@ -89,10 +89,9 @@ onMounted(() => { void loadAccount() })
       <EmptyState v-if="accountEntries.length && !visibleEntries.length && !nextCursor && !accountLoading" :kind="testing ? 'testing' : 'problem'" :title="`「${filterLabel}」の問題はありません。`"><button type="button" class="editor-button" @click="filter = ''">すべて表示</button></EmptyState>
       <div v-if="visibleEntries.length" class="content-table-scroll">
         <table class="content-table" :aria-label="heading">
-          <thead><tr><th scope="col">タイトル</th><th scope="col">難易度</th><th scope="col">状態</th><th scope="col">更新日時</th><th scope="col">操作</th></tr></thead>
+          <thead><tr><th scope="col">タイトル</th><th scope="col">状態</th><th scope="col">更新日時</th><th scope="col">難易度</th><th scope="col">操作</th></tr></thead>
           <tbody><tr v-for="entry in visibleEntries" :key="entry.id">
             <th scope="row">{{ entry.title.trim() || '無題の問題' }}<span v-if="entry.viaContest" class="via-contest">コンテスト「{{ entry.viaContest.title.trim() || '無題のコンテスト' }}」の作成者として</span></th>
-            <td><DifficultyBadge :level="entry.difficulty" /></td>
             <td>
               <span class="problem-state">
                 <ProblemStatus :problem="entry" />
@@ -104,6 +103,7 @@ onMounted(() => { void loadAccount() })
               </span>
             </td>
             <td><time :datetime="entry.updatedAt">{{ updatedLabel(entry.updatedAt) }}</time></td>
+            <td><DifficultyBadge :level="entry.difficulty" /></td>
             <td><div class="problem-actions"><ContentActions :title="entry.title.trim() || '無題の問題'" :edit-to="{ path: '/problems/new', query: { problem: entry.id } }" :view-to="`/problems/${shortId(entry.id)}`" :published="!!entry.publishedVersion" can-view />
               <NuxtLink v-if="!testing && entry.scheduledAt" class="editor-button" :to="{ path: '/problems/post', query: { problem: entry.id } }">予約を変更</NuxtLink>
               <button v-if="!testing && entry.featuredPreference" class="editor-button withdraw-featured" :disabled="!!withdrawing" :aria-label="`${entry.title.trim() || '無題の問題'}の定期便応募を取り下げる`" title="定期便応募を取り下げる" @click="confirmWithdraw(entry)">
