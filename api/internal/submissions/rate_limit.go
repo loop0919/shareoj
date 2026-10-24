@@ -21,7 +21,7 @@ func (s *Store) beginSubmission(ctx context.Context, owner string, easyTest bool
 		_ = tx.Rollback(ctx)
 		return nil, err
 	}
-	windowSeconds, limit := 90, 2
+	windowSeconds, limit := 60, 2
 	if easyTest {
 		windowSeconds, limit = 60, 3
 	}

@@ -159,7 +159,7 @@ func TestSubmissionsPostgres(t *testing.T) {
 		t.Helper()
 		// These fixture scenarios represent independent judging sessions.
 		if method == "POST" && path == "/my/submissions" {
-			if _, err := store.Pool().Exec(ctx, `UPDATE submissions SET created_at=clock_timestamp()-interval '91 seconds' WHERE created_at>clock_timestamp()-interval '90 seconds'`); err != nil {
+			if _, err := store.Pool().Exec(ctx, `UPDATE submissions SET created_at=clock_timestamp()-interval '61 seconds' WHERE created_at>clock_timestamp()-interval '60 seconds'`); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -214,7 +214,7 @@ func TestSubmissionsPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 		// Only one slot expires: accept one more, then reject generation too.
-		if _, err := store.Pool().Exec(ctx, `UPDATE submissions SET created_at=clock_timestamp()-interval '91 seconds' WHERE id=(SELECT id FROM submissions WHERE owner_id='alice' ORDER BY created_at LIMIT 1)`); err != nil {
+		if _, err := store.Pool().Exec(ctx, `UPDATE submissions SET created_at=clock_timestamp()-interval '61 seconds' WHERE id=(SELECT id FROM submissions WHERE owner_id='alice' ORDER BY created_at LIMIT 1)`); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: newSubmissionID(), ProblemID: id, Source: "source", Image: image, Runtime: "cpp17-local"}); err != nil {
@@ -235,15 +235,20 @@ func TestSubmissionsPostgres(t *testing.T) {
 				t.Fatalf("sample quota: %v", err)
 			}
 		}
-		// At 61 seconds sample slots reopen, but the normal quota remains full.
+		// Both quotas last 60 seconds: still full at 50 seconds, open again at 61.
+		if _, err := store.Pool().Exec(ctx, `UPDATE submissions SET created_at=clock_timestamp()-interval '50 seconds' WHERE owner_id='alice'`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: newSubmissionID(), ProblemID: id, Source: "source", Image: image, Runtime: "cpp17-local"}); !errors.As(err, &limitedErr) || limitedErr.RetryAfter < 1 || limitedErr.RetryAfter > 10 {
+			t.Fatalf("normal quota: %v", err)
+		}
 		if _, err := store.Pool().Exec(ctx, `UPDATE submissions SET created_at=clock_timestamp()-interval '61 seconds' WHERE owner_id='alice'`); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: newSubmissionID(), ProblemID: id, Source: "source", Image: image, Runtime: "cpp17-local", EasyTest: true}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: newSubmissionID(), ProblemID: id, Source: "source", Image: image, Runtime: "cpp17-local"}); !errors.As(err, &limitedErr) || limitedErr.RetryAfter < 1 || limitedErr.RetryAfter > 30 {
-			t.Fatalf("normal quota expired too early: %v", err)
+		for _, easyTest := range []bool{true, false} {
+			if _, err := queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: newSubmissionID(), ProblemID: id, Source: "source", Image: image, Runtime: "cpp17-local", EasyTest: easyTest}); err != nil {
+				t.Fatal(easyTest, err)
+			}
 		}
 		if _, err := store.Pool().Exec(ctx, `DELETE FROM submissions`); err != nil {
 			t.Fatal(err)
