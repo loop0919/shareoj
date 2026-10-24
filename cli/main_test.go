@@ -145,10 +145,11 @@ func TestPushLifecycle(t *testing.T) {
 	}
 	write(t, filepath.Join(dir, "problem.toml"), strings.Replace(template, "editorial = \"editorial.md\"\n", "", 1))
 	saved.Draft.set("editorial", "web editorial")
-	large := strings.Repeat("12345\r\n", 10000)
+	// CRLF files reach the server with LF line endings only.
+	large := strings.Repeat("12345\r\n", 12000)
 	write(t, filepath.Join(dir, "tests/sample1.in"), large)
 	s, err = push(ctx, dir, client, -1)
-	if err != nil || s.Version != 2 || uploads != 1 || uploaded != large {
+	if err != nil || s.Version != 2 || uploads != 1 || uploaded != strings.ReplaceAll(large, "\r\n", "\n") {
 		t.Fatalf("large upload: %+v %v uploads=%d", s, err, uploads)
 	}
 	_ = json.Unmarshal(saved.Draft["testCases"], &cases)

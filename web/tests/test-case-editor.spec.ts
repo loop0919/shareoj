@@ -351,6 +351,12 @@ test('single-side import preserves stored opposite files and validates before mu
   expect(JSON.stringify(existing)).toBe(snapshot)
 })
 
+test('imported files keep only LF line endings', async () => {
+  const { importTestCaseFiles } = await import('../app/utils/import-test-cases')
+  const [item] = await importTestCaseFiles([new File(['1 2\r\n3\r'], 'crlf.txt')], 'input', [])
+  expect(item!.input).toBe('1 2\n3\n')
+})
+
 
 test('sample checkbox controls the blue flag, survives rename and reload, and can be cleared', async ({ page }) => {
   await page.goto('/problems/new')

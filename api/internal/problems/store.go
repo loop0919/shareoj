@@ -360,6 +360,11 @@ func (s *Store) Save(ctx context.Context, owner, id string, version int64, draft
 	if err := validateTestFiles(ctx, s.pool.Query, owner, id, draft.TestCases); err != nil {
 		return Problem{}, err
 	}
+	draft.TestCases = slices.Clone(draft.TestCases)
+	for i := range draft.TestCases {
+		c := &draft.TestCases[i]
+		c.Input, c.Output = NormalizeNewlines(c.Input), NormalizeNewlines(c.Output)
+	}
 	data, err := json.Marshal(draft)
 	if err != nil {
 		return Problem{}, err

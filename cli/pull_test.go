@@ -96,10 +96,15 @@ func TestPullLifecycle(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// Pull keeps the remote bytes, and loading for push normalizes the line endings.
+			if raw, err := os.ReadFile(filepath.Join(dir, "tests", "case001.in")); err != nil || string(raw) != "3 5\r\n" {
+				t.Fatalf("pulled bytes changed: %q %v", raw, err)
+			}
 			var actual []testCase
 			_ = json.Unmarshal(got["testCases"], &actual)
 			expected := append([]testCase(nil), cases...)
-			expected[1].Input, expected[1].InputFile = large, nil
+			expected[0].Input, expected[0].Output = "3 5\n", "8\n"
+			expected[1].Input, expected[1].InputFile = strings.ReplaceAll(large, "\r\n", "\n"), nil
 			if !reflect.DeepEqual(actual, expected) {
 				t.Fatal("test content, names, ordering or samples changed")
 			}

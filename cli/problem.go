@@ -110,6 +110,11 @@ func validText(value string, limit int) bool {
 	return utf8.ValidString(value) && !strings.ContainsRune(value, 0) && utf8.RuneCountInString(value) <= limit
 }
 
+// normalizeNewlines turns CRLF and lone CR into LF.
+func normalizeNewlines(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+}
+
 func readText(root *os.Root, name string, limit int) (string, error) {
 	if !filepath.IsLocal(name) {
 		return "", fmt.Errorf("path must stay inside the problem directory: %q", name)
@@ -391,6 +396,8 @@ func loadCases(root *os.Root, c problemConfig) ([]testCase, []string, error) {
 		if err != nil {
 			return nil, nil, err
 		}
+		// Files written on Windows are CRLF, and Python's input() on Linux keeps the CR.
+		input, output = normalizeNewlines(input), normalizeNewlines(output)
 		total += len(input) + len(output)
 		if total > 512<<20 {
 			return nil, nil, errors.New("test data exceeds 512 MiB")

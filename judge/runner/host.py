@@ -411,6 +411,8 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
                     if load_file is None:
                         raise ValueError('test file loader unavailable')
                     case[key] = load_file(case[key + 'File'])
+                # Stored cases may still be CRLF, and Python's input() on Linux keeps the CR.
+                case[key] = case[key].replace('\r\n', '\n').replace('\r', '\n')
             if job.get('interactor') is not None:
                 diagnostic(f"ケース{index + 1}:\n")
                 case_log = bytearray()

@@ -339,6 +339,29 @@ class RunnerTests(unittest.TestCase):
             actualOutput=dict(text='partial��', truncated=False)))
         self.assertNotIn('output', result['cases'][0])
 
+    def test_case_line_endings_are_normalized_to_lf(self):
+        import tempfile
+        file = dict(id='33333333-3333-4333-8333-333333333333', size=5, sha256='a' * 64,
+                    key='test-files/' + 'a' * 32 + '/33333333-3333-4333-8333-333333333333/33333333-3333-4333-8333-333333333333',
+                    versionId='v')
+        job = dict(runtime='cpp17-isolate', runtimeDigest='sha256:test', source='int main(){}',
+                   easyTest=True, memoryLimitMb=512, timeLimitMs=1000,
+                   cases=[dict(input='abc\r\nd\re\r\n', output='3\r\n'),
+                          dict(input='', output='', inputFile=file, outputFile=file)])
+        inputs = []
+        def execute(request, compile_phase=False):
+            if compile_phase:
+                return dict(compiled=True)
+            inputs.append(base64.b64decode(request['input']))
+            return dict(status='', oom=False, overflow=False, exitCode=0, signal=0,
+                        cpuTimeMs=1, wallTimeMs=1, memoryBytes=1024, output='')
+        with tempfile.TemporaryDirectory() as tmp, patch.object(sandbox, 'execute', execute), \
+                patch.object(sandbox, 'ARTIFACT', Path(tmp) / 'main'), \
+                patch.object(sandbox, 'META', Path(tmp) / 'meta'):
+            result = host.judge(job, 'sha256:test', load_file=lambda _: 'x\r\ny\r')
+        self.assertEqual(inputs, [b'abc\nd\ne\n', b'x\ny\n'])
+        self.assertEqual([c['sampleDetails']['expectedOutput']['text'] for c in result['cases']], ['3\n', 'x\ny\n'])
+
     def test_sample_preview_is_utf8_safe_and_queue_bounded(self):
         import json
         self.assertEqual(host.sample_preview('あい'.encode(), 4), dict(text='あ', truncated=True))

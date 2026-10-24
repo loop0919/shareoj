@@ -64,7 +64,8 @@ func testPublicSamples(t *testing.T, store *problems.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []publicSample{{Name: "example", Input: " 3 5\r\n\n", Output: "8\n"}, {Name: "empty"}}
+	// Saving turns the CRLF into LF and keeps the other whitespace.
+	want := []publicSample{{Name: "example", Input: " 3 5\n\n", Output: "8\n"}, {Name: "empty"}}
 	if got := request(path, 200); !reflect.DeepEqual(got, want) {
 		t.Fatalf("samples = %#v", got)
 	}

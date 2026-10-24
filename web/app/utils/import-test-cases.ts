@@ -40,7 +40,8 @@ export async function importTestCaseFiles(files: File[], key: DataKey, existing:
   for (const [index, file] of files.entries()) {
     const bytes = await file.arrayBuffer()
     try {
-      imported[index]![key] = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+      // Files written on Windows are CRLF, and Python's input() on Linux keeps the CR.
+      imported[index]![key] = new TextDecoder('utf-8', { fatal: true }).decode(bytes).replace(/\r\n?/g, '\n')
     } catch {
       throw new Error(`「${file.name}」はUTF-8のテキストファイルにしてください。`)
     }

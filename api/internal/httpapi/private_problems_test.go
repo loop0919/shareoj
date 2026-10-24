@@ -273,6 +273,12 @@ func TestPrivateProblemsPostgres(t *testing.T) {
 	if _, err := store.Save(ctx, "alice", "55555555-5555-4555-8555-555555555555", 0, fileDraft); !errors.Is(err, problems.ErrTestFile) {
 		t.Fatal("forged file metadata accepted", err)
 	}
+	crlfDraft := draft
+	crlfDraft.TestCases = []problems.TestCase{{Input: "1 2\r\n3\r", Output: "3\r\n"}}
+	if p, err := store.Save(ctx, "alice", fileProblem, 1, crlfDraft); err != nil ||
+		p.Draft.TestCases[0].Input != "1 2\n3\n" || p.Draft.TestCases[0].Output != "3\n" || crlfDraft.TestCases[0].Input != "1 2\r\n3\r" {
+		t.Fatalf("line endings not normalized only in the saved copy: %+v %v", p.Draft.TestCases, err)
+	}
 	// Seed pagination data directly; normal creation is limited to a burst of 20.
 	data, _ := json.Marshal(draft)
 	if _, err := store.Pool().Exec(ctx, `INSERT INTO problem_drafts(id,owner_id,draft)

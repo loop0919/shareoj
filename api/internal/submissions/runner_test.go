@@ -111,6 +111,27 @@ func TestCPPDocker(t *testing.T) {
 	}
 }
 
+func TestCRLFCaseDocker(t *testing.T) {
+	image := os.Getenv("TEST_JUDGE_CPP_IMAGE")
+	if image == "" {
+		t.Skip("TEST_JUDGE_CPP_IMAGE is required for Docker integration")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	data, err := exec.CommandContext(ctx, "docker", "image", "inspect", "--format={{.Id}}", image).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// getline keeps a CR, so the lengths show whether the input reached the program as LF.
+	job := Job{Image: strings.TrimSpace(string(data)), TimeLimitMS: 2000, MemoryLimitMB: 64,
+		Cases: []Case{{Input: "abc\r\nd\r", Output: "3 1\r\n"}, {InputFile: &problems.TestFile{ID: "crlf"}, Output: "3 1"}},
+		LoadFile: func(context.Context, *problems.TestFile) (string, error) { return "abc\r\nd\r", nil }}
+	source := "#include <iostream>\n#include <string>\nint main(){std::string a,b;std::getline(std::cin,a);std::getline(std::cin,b);std::cout<<a.size()<<' '<<b.size();}"
+	if result := Judge(ctx, source, job); result.Verdict != "AC" || result.Passed != 2 {
+		t.Fatalf("got %+v, want AC", result)
+	}
+}
+
 func TestGeneratorDocker(t *testing.T) {
 	image := os.Getenv("TEST_JUDGE_CPP_IMAGE")
 	if image == "" {
