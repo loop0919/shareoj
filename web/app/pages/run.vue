@@ -4,7 +4,7 @@ useSeoMeta({ title: 'コード実行 | ShareOJ' })
 
 <template>
   <div>
-    <h1>コード実行</h1>
+    <header class="catalogue-heading"><h1>コード実行</h1></header>
     <CodeRunner />
   </div>
 </template>

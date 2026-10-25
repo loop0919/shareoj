@@ -124,6 +124,12 @@ test('two columns on wide screens and one on phones', async ({ page }) => {
   const wideSource = (await source.boundingBox())!
   const wideStdin = (await stdin.boundingBox())!
   expect(wideSource.x + wideSource.width).toBeLessThanOrEqual(wideStdin.x)
+  // The heading has the size of the other pages the header opens, and both framed boxes and their headings line up.
+  await expect(page.getByRole('heading', { level: 1 })).toHaveCSS('font-size', '28px')
+  const frames = await Promise.all(['.source-code-editor', '.stdin-box'].map(async selector => (await page.locator(selector).boundingBox())!))
+  expect(frames[1]!.y).toBeCloseTo(frames[0]!.y, 0)
+  const bodies = await Promise.all(['.code-surface', '#code-run-stdin'].map(async selector => (await page.locator(selector).boundingBox())!))
+  expect(bodies[1]!.y).toBeCloseTo(bodies[0]!.y, 0)
   await page.setViewportSize({ width: 375, height: 800 })
   await expect.poll(async () => (await stdin.boundingBox())!.y).toBeGreaterThanOrEqual((await source.boundingBox())!.y + (await source.boundingBox())!.height)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)

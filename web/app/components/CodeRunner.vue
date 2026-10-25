@@ -10,6 +10,7 @@ const source = ref('')
 const stdin = ref('')
 // The largest source the API accepts, in UTF-8 bytes.
 const sourceLimit = 131072
+const stdinBytes = computed(() => new TextEncoder().encode(stdin.value).length)
 const runtime = ref('cpp23-gcc')
 const { data: catalog, error: catalogError, refresh: refreshCatalog } = await useJudgeCatalog()
 const available = computed(() => usableRuntimes(catalog.value, catalogError.value))
@@ -132,19 +133,26 @@ const result = computed(() => run.value?.status === 'DONE' ? run.value.result : 
     <NuxtLink class="editor-button primary" :to="{ path: '/login', query: { next: route.fullPath } }">ログインする</NuxtLink>
   </section>
   <form v-else class="code-runner" @submit.prevent="execute">
-    <div class="code-runner-source">
+    <div class="code-runner-language">
       <label for="code-run-language">言語</label>
       <select id="code-run-language" v-model="runtime" :disabled="pending">
         <option value="">-- 未選択 --</option>
         <option v-for="item in available" :key="item.id" :value="item.id">{{ item.label }}</option>
       </select>
       <p><NuxtLink to="/docs/languages" target="_blank" rel="noopener noreferrer">使える言語と実行環境の仕様 ↗</NuxtLink></p>
+    </div>
+    <div class="code-runner-source">
       <SourceCodeEditor v-model="source" :runtime="runtime" :limit="sourceLimit" :disabled="sending" />
     </div>
     <div class="code-runner-side">
-      <label for="code-run-stdin">標準入力</label>
-      <p class="muted">1 MiBまで</p>
-      <textarea id="code-run-stdin" v-model="stdin" rows="8" spellcheck="false" :disabled="sending" />
+      <!-- Framed like the source editor, so the two boxes start on the same line. -->
+      <div class="stdin-box" :class="{ 'is-disabled': sending }">
+        <div class="stdin-heading">
+          <label for="code-run-stdin">標準入力</label>
+          <span class="byte-count">{{ stdinBytes.toLocaleString('en-US') }} / {{ codeRunInputLimit.toLocaleString('en-US') }} bytes</span>
+        </div>
+        <textarea id="code-run-stdin" v-model="stdin" rows="8" spellcheck="false" :disabled="sending" />
+      </div>
       <p v-if="catalogError || !available.length" class="notice" role="status">現在、コード実行の受付を停止しています。</p>
       <p v-if="message" class="notice notice-error" role="alert">{{ message }}</p>
       <div class="code-run-actions">
@@ -186,14 +194,22 @@ const result = computed(() => run.value?.status === 'DONE' ? run.value.result : 
 .code-runner { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 32px; margin-top: 24px; }
 /* Wide screens: language and source on the left, input, button and result on the right (ADR 0031). */
 @media (min-width: 60rem) { .code-runner { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; } }
-.code-runner-source, .code-runner-side { min-width: 0; }
-label { display: block; margin-block: 20px 8px; }
-.code-runner-source > label:first-child, .code-runner-side > label:first-child { margin-top: 0; }
-.code-runner-side > label + p { margin-top: -4px; }
+/* The language row spans both columns, so the source and input boxes below it start on the same line. */
+.code-runner-language { grid-column: 1 / -1; }
+.code-runner-language, .code-runner-source, .code-runner-side { min-width: 0; }
+.code-runner-language > label { display: block; margin-bottom: 8px; }
 select { width: 100%; max-width: 320px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-paper); color: var(--color-ink); font: inherit; cursor: pointer; }
-select:focus-visible, textarea:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 3px; }
+select:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 3px; }
 select:disabled, button:disabled { opacity: .5; cursor: not-allowed; }
-textarea { display: block; width: 100%; min-height: 160px; padding: 8px 12px; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-paper); color: var(--color-ink); font: .875rem/1.5 var(--font-mono, ui-monospace, monospace); resize: vertical; }
+/* The same frame and heading height as SourceCodeEditor, whose heading holds a 32px settings button. */
+.stdin-box { margin-top: 20px; border: 1px solid var(--color-line); border-radius: 4px; overflow: hidden; }
+.stdin-box.is-disabled { opacity: .6; }
+.stdin-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; min-height: 49px; padding: 8px 12px; border-bottom: 1px solid var(--color-line); font-size: .875rem; }
+.stdin-heading label { margin: 0; font-size: .6875rem; color: var(--color-muted); }
+.byte-count { font-size: .75rem; color: var(--color-muted); }
+textarea { display: block; width: 100%; min-height: 160px; padding: 8px 12px; border: 0; background: var(--color-paper); color: var(--color-ink); font: .875rem/1.5 var(--font-mono, ui-monospace, monospace); resize: vertical; }
+/* Inside the frame, so the ring is drawn inward like the source editor's. */
+textarea:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .code-run-actions { margin-top: 16px; }
 .code-run-actions .editor-button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 28px; font-weight: 600; }
 .code-run-actions button:disabled { transform: none; text-decoration: none; }
