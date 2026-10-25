@@ -53,6 +53,9 @@ def validate_job(job, runtime):
         raise telemetry.PlatformError('runtime_mismatch')
     if type(job.get('generate', False)) is not bool or type(job.get('validate', False)) is not bool or (job.get('generate') and job.get('validate')):
         raise ValueError('generation mode')
+    # Text only echoes its source, so it cannot produce or validate test data.
+    if job['runtime'] == 'text-isolate' and (job.get('generate') or job.get('validate')):
+        raise ValueError('generation mode')
     if job.get('checker') is not None and job.get('interactor') is not None:
         raise ValueError('conflicting judge modes')
     for field in ('checker', 'interactor'):
@@ -60,7 +63,7 @@ def validate_job(job, runtime):
         if code is None:
             continue
         if (not isinstance(code, dict) or not isinstance(code.get('runtime'), str)
-                or code['runtime'] + '-isolate' not in RUNTIMES
+                or code['runtime'] + '-isolate' not in RUNTIMES or code['runtime'] == 'text'
                 or job.get('generate') or job.get('validate')):
             raise ValueError('judge code runtime or mode')
         source = code.get('source')
@@ -116,7 +119,8 @@ def validate_job(job, runtime):
 
 def validate_judge_code(code):
     if (not isinstance(code, dict) or not isinstance(code.get('runtime'), str)
-            or code['runtime'] + '-isolate' not in RUNTIMES):
+            or code['runtime'] + '-isolate' not in RUNTIMES or code['runtime'] == 'text'):
+        # Text would make a checker accept every output.
         raise ValueError('judge code runtime or mode')
     source = code.get('source')
     if not isinstance(source, str) or not source or (code['runtime'] != 'whitespace13' and not source.strip()) or len(source.encode()) > 65536 or '\0' in source:

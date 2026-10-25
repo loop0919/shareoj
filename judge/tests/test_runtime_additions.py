@@ -85,6 +85,8 @@ with open(sys.argv[1], 'wb', buffering=0) as file:
 
     def test_every_registered_runtime_has_an_explicit_checker_failure(self):
         for name in RUNTIMES:
+            if name == 'text-isolate':
+                continue  # Text is not a judge-code language.
             self.assertTrue(failure_program(name))
         with self.assertRaises(KeyError):
             failure_program('unknown-isolate')

@@ -52,6 +52,21 @@ cLayのBoostとACL、各言語の逐次対話、時間制限と出力制限に�
 Python 155テスト、Goの関連テスト、Webの型検査、ビルドとブラウザ61テスト、Terraform 1.14のvalidateが成功した。
 これらは実機のisolate内での判定検証や公開判定を代替しない。
 
+## Textの追加
+
+`text`は、ソースをそのまま標準出力に出す言語である。
+output only問題の答えを提出するために加えた。
+
+イメージにあるcoreutilsの`cat` 9.4を使い、新しいバイナリは加えない。
+標準入力は読まず、`sh -c 'exec /usr/bin/cat /box/main.txt'`で実行する。
+checker、interactor、集計コードと、入力・出力の生成と検証には使えない。
+Textのcheckerはすべての出力を受理し、Textの生成コードは同じ文字列を繰り返すだけだからである。
+API、worker、Webの選択肢のいずれでも除外する。
+
+smokeのfixtureはACとWAだけを確かめる。
+Textは時間超過も実行時エラーも起こさないためである。
+checker、生成、対話のsmokeは行わない。
+
 ## 依存の固定
 
 対象一覧は[AtCoder 2025年10月一覧](https://img.atcoder.jp/file/language-update/2025-10/language-list.html)から抽出し、`judge/runtime/deps/additions/catalog.json`に保存する。

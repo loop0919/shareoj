@@ -117,6 +117,9 @@ RUNTIMES['brainfuck-tritium-isolate'] = dict(source='main.bf', program='main.bf'
 RUNTIMES['whitespace13-isolate'] = dict(source='main.ws', program='main.ws', artifact='source',
     compile=[ROOT + '/golf/wsc', '--dump', '/box/main.dump', '/box/main.ws'],
     run=['/usr/bin/sh', '-c', 'exec ' + ROOT + '/golf/wsc /box/main.ws'], env=NATIVE_ENV)
+# Text prints its source as-is and never reads stdin (for output-only problems).
+RUNTIMES['text-isolate'] = dict(source='main.txt', program='main.txt', artifact='source',
+    compile=['/usr/bin/true'], run=['/usr/bin/sh', '-c', 'exec /usr/bin/cat /box/main.txt'])
 
 ENVIRONMENT = ['LANG=C.UTF-8', 'LC_ALL=C.UTF-8', 'HOME=/box',
                'OPENBLAS_NUM_THREADS=1', 'OMP_NUM_THREADS=1', 'MKL_NUM_THREADS=1',

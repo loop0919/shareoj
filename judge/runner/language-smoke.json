@@ -1311,5 +1311,23 @@
       "input": "10\n11\n",
       "output": "20\n22\n"
     }
+  ],
+  "text-isolate": [
+    {
+      "name": "echo",
+      "source": "3\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "wrong",
+      "source": "4\n",
+      "verdict": "WA"
+    },
+    {
+      "name": "stdin ignored",
+      "source": "3\n",
+      "verdict": "AC",
+      "input": "99\n"
+    }
   ]
 }

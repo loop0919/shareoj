@@ -148,6 +148,9 @@ python3 judge/rollout.py finish --config judge/.build/rollout.json --run-dir "$J
    旧ワーカーはこれをJEとして返し、bridgeはそのコード実行をJEで終える。
    受け付けから10分を過ぎたものは「混雑」で打ち切る。
 
+Text（`text`）も同じ`run`で公開する。
+`rollout.json`の`runtimes`に`text`を加えると、ホストのsmoke、bridgeの設定、CIの変数`JUDGE_ENABLED_RUNTIMES`まで同期される。
+
 `rollout.py run`をpushより先に実行しない（新しいbridgeが`code_runs`を読めず、送り出しが止まる）。
 `rolling`は使わない（スキーマとbridgeとワーカーの互換性を変える配布のため）。
 手順1と2の間にコード実行をした人には、JEか「混雑」が表示される。

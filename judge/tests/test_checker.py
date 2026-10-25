@@ -47,6 +47,8 @@ class CheckerTests(unittest.TestCase):
 
     def test_independent_languages_artifacts_private_data_and_measurements(self):
         for runtime in RUNTIMES:
+            if runtime == 'text-isolate':
+                continue  # Text is not a judge-code language.
             with self.subTest(runtime=runtime):
                 result, calls = self.run_job(reply(cpuTimeMs=4000, checkerLog='diagnostic'), checker_runtime=runtime.removesuffix('-isolate'))
                 self.assertEqual(result['verdict'], 'AC')

@@ -119,6 +119,19 @@ func TestGenerationWithoutProblemStore(t *testing.T) {
 	expect(t, w, 503, "database_unavailable")
 }
 
+// Text only prints its source, so it cannot generate or validate test data.
+func TestGenerationRejectsTextRuntime(t *testing.T) {
+	h := newHandler(AuthConfig{}, handlerDependencies{Verifier: staticVerifier{}, Submissions: &submissions.Store{}, JudgeImage: "sha256:" + strings.Repeat("a", 64), JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: "text"})
+	for _, mode := range []string{"input", "output", "validation"} {
+		r := httptest.NewRequest("POST", "/my/submissions", strings.NewReader(`{"problemId":"11111111-1111-4111-8111-111111111111","runtime":"text","source":"x","generation":{"mode":"`+mode+`","start":1,"count":1}}`))
+		r.Header.Set("Authorization", "Bearer token")
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		expect(t, w, 400, "invalid_submission")
+	}
+}
+
 // A judge that is not ready refuses a submission before its content type is checked.
 func TestSubmissionReadinessBeforeContentType(t *testing.T) {
 	h := newHandler(AuthConfig{}, handlerDependencies{Verifier: staticVerifier{}, Submissions: &submissions.Store{}})

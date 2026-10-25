@@ -54,6 +54,9 @@ def run(runtime, requested, fixtures, judge):
         check('cpp23-gcc-isolate', solution, c, 'AC', memory=memory)
         check('cpp23-gcc-isolate', allocate.replace('MEMORY', str(memory + 16)), c, 'MLE', memory=memory)
     for name in requested:
+        # Text cannot answer an interactor, and it is excluded from judge code.
+        if name == 'text-isolate':
+            continue
         role_fixtures = {f['name']: f for f in fixtures[name] if f['name'] in ('interactive', 'response')}
         if 'interactive' in role_fixtures:
             code = role_fixtures['interactive']['source']

@@ -26,6 +26,12 @@ func HasSource(runtime, source string) bool {
 	return strings.TrimSpace(source) != ""
 }
 
+// JudgeCodeRuntime reports whether a runtime may run judge code or generate test data. Text only prints its source, so
+// as a checker it would accept every output and as a generator it would only repeat itself.
+func JudgeCodeRuntime(runtime string) bool {
+	return strings.TrimSuffix(strings.TrimSuffix(runtime, "-isolate"), "-local") != "text"
+}
+
 func ValidDraft(d Draft, knownRuntimes []string) bool {
 	if d.Difficulty != nil && (*d.Difficulty < 1 || *d.Difficulty > 10) {
 		return false
@@ -41,7 +47,7 @@ func ValidDraft(d Draft, knownRuntimes []string) bool {
 			continue
 		}
 
-		if !slices.Contains(knownRuntimes, code.Runtime) || !code.ValidJudgeProtocol() || len(code.Source) > 65536 || !utf8.ValidString(code.Source) || strings.ContainsRune(code.Source, 0) {
+		if !slices.Contains(knownRuntimes, code.Runtime) || !JudgeCodeRuntime(code.Runtime) || !code.ValidJudgeProtocol() || len(code.Source) > 65536 || !utf8.ValidString(code.Source) || strings.ContainsRune(code.Source, 0) {
 			return false
 		}
 	}
@@ -135,7 +141,7 @@ func validScoring(d Draft, knownRuntimes []string) bool {
 		}
 	}
 	// The aggregator is judge code: it runs in the judge's sandbox and has no protocol to choose.
-	if a := s.Aggregator; a != nil && (!slices.Contains(knownRuntimes, a.Runtime) || a.Protocol != "" || len(a.Source) > 65536 || !utf8.ValidString(a.Source) || strings.ContainsRune(a.Source, 0)) {
+	if a := s.Aggregator; a != nil && (!slices.Contains(knownRuntimes, a.Runtime) || !JudgeCodeRuntime(a.Runtime) || a.Protocol != "" || len(a.Source) > 65536 || !utf8.ValidString(a.Source) || strings.ContainsRune(a.Source, 0)) {
 		return false
 	}
 	return true

@@ -42,6 +42,7 @@ func (s Service) Create(ctx context.Context, owner, id string, input CreateInput
 	}
 	selected := s.storedRuntime(input.Runtime)
 	if ((input.EasyTest || input.ContestID != "") && input.Generation != nil) ||
+		(input.Generation != nil && !problems.JudgeCodeRuntime(selected)) ||
 		(input.ContestID != "" && !problems.ValidID(input.ContestID)) || !problems.ValidID(input.ProblemID) || selected == "" ||
 		!problems.HasSource(selected, input.Source) || len(input.Source) > 128<<10 || !utf8.ValidString(input.Source) || strings.ContainsRune(input.Source, 0) {
 		return Submission{}, ErrInvalid

@@ -835,6 +835,8 @@ func TestCheckerDraftValidation(t *testing.T) {
 		{"cpp17-isolate", "int main(){}", false},
 		{"cpp17", "\x00", false},
 		{"cpp17", strings.Repeat("あ", 22000), false},
+		// Text prints its source, so a Text checker or interactor would accept anything.
+		{"text", "x", false},
 	} {
 		draft := problems.Draft{TimeLimitMS: "1000", MemoryLimitMB: "512", Checker: &problems.Generator{Runtime: tc.runtime, Source: tc.source}}
 		for _, interactive := range []bool{false, true} {
@@ -844,6 +846,16 @@ func TestCheckerDraftValidation(t *testing.T) {
 			if validDraft(draft) != tc.valid {
 				t.Fatalf("runtime=%s interactive=%v valid=%v", tc.runtime, interactive, tc.valid)
 			}
+		}
+	}
+}
+
+func TestTextIsNotAnAggregatorRuntime(t *testing.T) {
+	groups := []problems.ScoringGroup{{Name: "g", Points: 100}}
+	for runtime, valid := range map[string]bool{"python314": true, "text": false} {
+		scoring := &problems.Scoring{Mode: "aggregate", Groups: groups, Aggregator: &problems.Generator{Runtime: runtime, Source: "x"}}
+		if validDraft(problems.Draft{TimeLimitMS: "1000", MemoryLimitMB: "512", Scoring: scoring}) != valid {
+			t.Fatalf("aggregator runtime=%s valid=%v", runtime, valid)
 		}
 	}
 }

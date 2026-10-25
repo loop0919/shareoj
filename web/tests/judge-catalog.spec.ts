@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures/account'
-import { preferredRuntime, usableRuntimes } from '../app/utils/judge-catalog'
+import { judgeCodeRuntimes, preferredRuntime, usableRuntimes } from '../app/utils/judge-catalog'
 
 // Opens new checker and aggregator code and checks the runtime each starts in, the runtimes offered and the protocol.
 async function expectNewCode(page: Page, runtime: string, options: string[], protocol: string) {
@@ -107,4 +107,23 @@ test('the generator keeps a saved runtime the judge no longer offers and names i
   await page.getByRole('button', { name: '入力生成', exact: true }).click()
   await language.selectOption('cpp23-gcc')
   await expect(language.locator('option')).toHaveText(['C++23'])
+})
+
+// Text only prints its source: a checker would accept every output and a generator would only repeat itself.
+test('Text is offered for submissions but not for checker, aggregator or generator code', async ({ page }) => {
+  const items = [{ id: 'cpp23-gcc', label: 'C++23' }, { id: 'python314', label: 'Python' }, { id: 'text', label: 'Text (cat 9.4)' }]
+  await page.route('**/api/runtimes', route => route.fulfill({ json: { items } }))
+  await Promise.all([page.waitForResponse('**/api/runtimes'), page.goto('/problems/11111111-1111-4111-8111-111111111111')])
+  await page.getByLabel('ソースコード', { exact: true }).fill('3')
+  await expect(page.getByRole('combobox', { name: '言語' }).locator('option')).toHaveText(['-- 未選択 --', 'C++23', 'Python', 'Text (cat 9.4)'])
+  await Promise.all([page.waitForResponse('**/api/runtimes'), page.goto('/problems/new?fresh=1')])
+  await page.getByRole('button', { name: '生成・検証・判定', exact: true }).click()
+  await expect(page.locator('.generator-options select option')).toHaveText(['C++23', 'Python'])
+  await expectNewCode(page, 'cpp23-gcc', ['C++23', 'Python'], 'testlib')
+})
+
+test('judge code runtimes drop Text and keep the order', () => {
+  const items = [{ id: 'text' }, { id: 'cpp17' }, { id: 'python314' }]
+  expect(judgeCodeRuntimes(items)).toEqual([{ id: 'cpp17' }, { id: 'python314' }])
+  expect(preferredRuntime(judgeCodeRuntimes([{ id: 'text' }]))).toBe('cpp23-gcc')
 })

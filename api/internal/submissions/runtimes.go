@@ -31,6 +31,7 @@ var Runtimes = []Runtime{
 	{"nibbles101", "Nibbles (1.01+)"},
 	{"brainfuck-tritium", "Brainfuck (Tritium)"},
 	{"whitespace13", "Whitespace (whitespacers 1.3)"},
+	{"text", "Text (cat 9.4)"},
 }
 
 func IsolateRuntimeIDs() []string {

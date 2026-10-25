@@ -110,6 +110,11 @@ with slot():
                 break
             print(name, fixture['name'], result['verdict'], 'OK', flush=True)
         else:
+            if name == 'text-isolate':
+                # Text is not a judge-code language: no checker, assertion or generation steps.
+                passed.append(name)
+                print(name, 'submission OK', flush=True)
+                continue
             # Compile and execute this runtime as a checker, independently of C++ submissions.
             fixture = next(f for f in fixtures[name] if f['verdict'] == 'AC')
             literal = json.dumps(fixture.get('input', ''))

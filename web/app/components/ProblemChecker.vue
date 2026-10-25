@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ProblemDraft } from '~~/shared/types/problem-draft'
 import { shortId } from '~~/shared/utils/short-id'
-import { preferredRuntime, usableRuntimes } from '~/utils/judge-catalog'
+import { judgeCodeRuntimes, preferredRuntime, usableRuntimes } from '~/utils/judge-catalog'
 import { hasSource } from '~/utils/has-source'
 
 const checker = defineModel<ProblemDraft['checker']>({ required: true })
@@ -10,7 +10,7 @@ const interactor = defineModel<ProblemDraft['interactor']>('interactor', { requi
 const props = defineProps<{ disabled: boolean, problemId: string, published: boolean, save: () => Promise<boolean>, scoringMode?: 'groups' | 'aggregate' }>()
 const aggregate = computed(() => props.scoringMode === 'aggregate')
 const { data: catalog, error: catalogError } = useJudgeCatalog()
-const available = computed(() => usableRuntimes(catalog.value, catalogError.value))
+const available = computed(() => judgeCodeRuntimes(usableRuntimes(catalog.value, catalogError.value)))
 let previousCode: ProblemDraft['checker'] = null
 const method = computed({
   get: () => interactor.value ? 'interactive' : checker.value ? 'special' : 'normal',

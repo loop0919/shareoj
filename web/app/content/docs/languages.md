@@ -33,6 +33,7 @@
 | Nibbles | 1.01+ / GHC 9.10.3 | テキスト形式をHaskellへ変換し、`ghc -O`でコンパイル |
 | Brainfuck | Tritium（固定リビジョン `525d346c006e`） | 8ビットセル、バイト入出力、EOFは-1 |
 | Whitespace | whitespacers 1.3.0 | 構文検査後に実行、整数は多倍長 |
+| Text | cat（GNU coreutils 9.4） | ソースをそのまま出力 |
 
 CとC++は`main`関数、Rustは`fn main()`を含めてください。
 
@@ -46,6 +47,10 @@ Whitespaceでは半角スペース、タブ、改行をそのまま保存しま�
 dcとBrainfuckには実行前の構文検査がなく、エラー時の判定は終了コードと出力に従います。
 Nibbles、dc、Brainfuck、Whitespaceは、判定コードや生成コードに渡されるファイル引数を無視します。
 これらの言語では標準入力を使ってください。
+
+Textは書いた内容をそのまま標準出力に出し、標準入力は読みません。
+output only問題の答えの提出に使います。
+検証コード、対話のジャッジ、集計コード、入力・出力の生成と検証には使えません。
 
 ## 追加ライブラリ {#libraries}
 

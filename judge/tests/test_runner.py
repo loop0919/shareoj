@@ -229,6 +229,9 @@ class RunnerTests(unittest.TestCase):
             self.assertTrue(runtime['compile'][0].startswith(('/opt/judge-runtimes/', '/usr/bin/')))
             self.assertTrue(runtime['run'][0] == '/usr/bin/sh' or runtime['run'][0].startswith(('/opt/judge-runtimes/', '/box/')))
             required = {'AC', 'WA', 'TLE'}
+            if name == 'text-isolate':
+                # Text only prints its source, so it can neither time out nor fail at runtime.
+                required = {'AC', 'WA'}
             if runtime['compile'] != ['/usr/bin/true']:
                 required.add('CE')
             self.assertTrue(required <= {case['verdict'] for case in fixtures[name]}, name)
@@ -549,6 +552,42 @@ class RunnerTests(unittest.TestCase):
             host.validate_job(job, 'sha256:test')
         with self.assertRaisesRegex(ValueError, 'invalid source'):
             sandbox.execute(job, compile_phase=True)
+
+    def test_text_runs_cat_once_per_case_and_never_reads_stdin(self):
+        import tempfile
+        calls = []
+        def execute(request, compile_phase=False):
+            calls.append((request['runtime'], compile_phase))
+            if compile_phase:
+                return {'compiled': True, 'compileLog': ''}
+            return dict(status='', oom=False, overflow=False, exitCode=0, signal=0,
+                        cpuTimeMs=0, wallTimeMs=1, memoryBytes=1024,
+                        output=base64.b64encode(b'3\n').decode())
+        job = dict(runtime='text-isolate', runtimeDigest='sha256:test', source='3\n',
+                   memoryLimitMb=64, timeLimitMs=1000,
+                   cases=[dict(name='a', input='9', output='3'), dict(name='b', input='8', output='3')])
+        with tempfile.TemporaryDirectory() as tmp, patch.object(sandbox, 'execute', execute), \
+                patch.object(sandbox, 'ARTIFACT', Path(tmp) / 'main'), \
+                patch.object(sandbox, 'META', Path(tmp) / 'meta'):
+            result = host.judge(job, 'sha256:test')
+        self.assertEqual(result['verdict'], 'AC')
+        self.assertEqual(calls, [('text-isolate', True), ('text-isolate', False), ('text-isolate', False)])
+        self.assertTrue(RUNTIMES['text-isolate']['run'][-1].endswith('exec /usr/bin/cat /box/main.txt'))
+
+    def test_text_is_rejected_as_judge_code_and_for_generation(self):
+        job = dict(runtime='cpp23-gcc-isolate', runtimeDigest='sha256:test', source='int main(){}',
+                   memoryLimitMb=64, timeLimitMs=1000, cases=[dict(name='a', input='', output='')])
+        for field in ('checker', 'interactor'):
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'judge code runtime or mode'):
+                host.validate_job(dict(job, **{field: dict(runtime='text', source='x')}), 'sha256:test')
+        with self.assertRaisesRegex(ValueError, 'judge code runtime or mode'):
+            host.validate_judge_code(dict(runtime='text', source='x'))
+        text = dict(job, runtime='text-isolate', source='3\n')
+        host.validate_job(text, 'sha256:test')
+        prefix = 'test-files/' + 'a' * 32 + '/11111111-1111-4111-8111-111111111111/generated/'
+        for extra in (dict(generate=True, generationPrefix=prefix), dict(validate=True)):
+            with self.subTest(extra=extra), self.assertRaisesRegex(ValueError, 'generation mode'):
+                host.validate_job(dict(text, **extra), 'sha256:test')
 
     def test_whitespace_judge_source_survives_validation_and_artifact_copy(self):
         import tempfile

@@ -361,6 +361,7 @@ test('history labels cover all runtimes, historical aliases and unknown IDs', as
     ['python314-isolate', 'Python (CPython 3.14)'], ['python314', 'Python (CPython 3.14)'],
     ['pypy311-isolate', 'Python (PyPy 3.11)'], ['codon020-isolate', 'Python (Codon 0.20)'],
     ['rust2024-isolate', 'Rust (Edition 2024)'], ['java24-isolate', 'Java (OpenJDK 24)'],
+    ['text-isolate', 'Text (cat 9.4)'],
     ['future-runtime-isolate', 'future-runtime-isolate'],
   ]
   // Labels must not depend on which languages currently accept submissions.
