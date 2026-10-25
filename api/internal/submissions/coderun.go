@@ -151,3 +151,22 @@ func (s Service) CreateCodeRun(ctx context.Context, owner, id string, input Code
 	}
 	return item, nil
 }
+
+// ExpireCodeRuns ends runs the judge never took within 10 minutes (the user may run again) and runs it never
+// finished within an hour, then deletes rows a day after they were accepted. Only the first two are counted.
+func (s *Store) ExpireCodeRuns(ctx context.Context, runtimes []string) (int64, error) {
+	unsent, err := s.Pool.Exec(ctx, `UPDATE code_runs SET status='DONE',finished_at=clock_timestamp(),result='{"verdict":"JE","expired":true}'
+		WHERE runtime=ANY($1::text[]) AND dispatched_at IS NULL AND status <> 'DONE' AND created_at < clock_timestamp()-interval '10 minutes'`, runtimes)
+	if err != nil {
+		return 0, err
+	}
+	stuck, err := s.Pool.Exec(ctx, `UPDATE code_runs SET status='DONE',finished_at=clock_timestamp(),result='{"verdict":"JE"}'
+		WHERE runtime=ANY($1::text[]) AND dispatched_at < clock_timestamp()-interval '1 hour' AND status <> 'DONE'`, runtimes)
+	if err != nil {
+		return 0, err
+	}
+	if _, err = s.Pool.Exec(ctx, `DELETE FROM code_runs WHERE created_at < clock_timestamp()-interval '1 day'`); err != nil {
+		return 0, err
+	}
+	return unsent.RowsAffected() + stuck.RowsAffected(), nil
+}

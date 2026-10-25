@@ -531,6 +531,11 @@ func TestRollingUpdateHoldsAndRebindsUndispatchedSubmissions(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// A code run waiting on the previous digest is rebound like a submission.
+	const codeRunID = "99999999-2222-4222-8222-222222222222"
+	if _, err := db.Exec(ctx, `INSERT INTO code_runs(id,owner_id,runtime,image,source,stdin,judge_attempt) VALUES ($1,'alice','python314-isolate',$2,'print(1)','',$1)`, codeRunID, old); err != nil {
+		t.Fatal(err)
+	}
 	// Only a contest with participants blocks a rollout; a finished one never does.
 	contest := func(id string, starts, ends time.Duration, participant bool) {
 		t.Helper()
@@ -583,7 +588,7 @@ func TestRollingUpdateHoldsAndRebindsUndispatchedSubmissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := status()
-	if sent != 0 || got["undispatched"] != 4.0 || got["dispatchPaused"] != true || got["previousRuntimeDigest"] != old {
+	if sent != 0 || got["undispatched"] != 5.0 || got["dispatchPaused"] != true || got["previousRuntimeDigest"] != old {
 		t.Fatalf("paused dispatch sent requests: sent=%d status=%v", sent, got)
 	}
 	window, err := time.Parse(time.RFC3339Nano, got["nextContestWindowAt"].(string))
@@ -597,12 +602,26 @@ func TestRollingUpdateHoldsAndRebindsUndispatchedSubmissions(t *testing.T) {
 	if sent != 2 || len(jobs) != 2 {
 		t.Fatalf("expected the rebound and current submissions only: sent=%d", sent)
 	}
+	// Both slots are taken, so the code run waits until they are done.
+	if _, err := db.Exec(ctx, `UPDATE submissions SET status='DONE' WHERE dispatched_at IS NOT NULL`); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.dispatch(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if sent != 3 || len(jobs) != 3 || !bytes.Contains(jobs[2], []byte(`"codeRun":true`)) {
+		t.Fatalf("expected the code run next: sent=%d", sent)
+	}
+	var runImage string
+	if err := db.QueryRow(ctx, `SELECT image FROM code_runs WHERE id=$1`, codeRunID).Scan(&runImage); err != nil || runImage != current {
+		t.Fatalf("code run image: %s %v", runImage, err)
+	}
 	for _, job := range jobs {
 		if !bytes.Contains(job, []byte(`"runtimeDigest":"`+current+`"`)) {
 			t.Fatalf("dispatched with a stale digest: %s", job)
 		}
 	}
-	for name, want := range map[string]string{"rebound": "QUEUED/" + current, "unpublished": "DONE/" + old, "unknown": "DONE/" + other, "current": "QUEUED/" + current} {
+	for name, want := range map[string]string{"rebound": "DONE/" + current, "unpublished": "DONE/" + old, "unknown": "DONE/" + other, "current": "DONE/" + current} {
 		var state, image string
 		if err := db.QueryRow(ctx, `SELECT status, job->>'image' FROM submissions WHERE id=$1`, submissionsByName[name]).Scan(&state, &image); err != nil {
 			t.Fatal(err)
