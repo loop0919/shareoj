@@ -20,7 +20,7 @@ Architecture Decision Record（ADR）は、採用した設計だけでなく、�
 | [0008](0008-support-special-judge.md) | Accepted（スコアファイルの扱いは0025で一部変更） | 作問者の検証コードによるスペシャルジャッジを提供する |
 | [0009](0009-support-interactive-judge.md) | Accepted | 提出と同じ言語群で対話用ジャッジを実行する |
 | [0010](0010-extend-judge-languages-and-libraries.md) | Accepted（testlibの部分点の扱いは0025で一部変更） | testlib形式の判定とC#、Java 25、Nim、Goを追加する |
-| [0011](0011-schedule-featured-problems.md) | Accepted（応募条件は0013、応募一覧は0020、順位表の正解は0025で一部変更） | 月曜と木曜に難易度別の問題を出す |
+| [0011](0011-schedule-featured-problems.md) | Accepted（応募条件は0013、応募一覧は0020、順位表の正解は0025で一部変更。出題時刻は2026-10-25に22時へ変更） | 月曜と木曜に難易度別の問題を出す |
 | [0012](0012-run-judge-on-ec2-pool.md) | Accepted（配布は0014、採点時間の見積もりは0025で一部変更） | EC2の常時稼働1台とコンテスト時の増設で採点する |
 | [0013](0013-assess-problem-readiness.md) | Accepted（内容の条件は0021で統一） | 問題の準備状況をサーバーで判定し、公開とコンテストにも難易度を求める |
 | [0014](0014-roll-out-os-updates-without-stopping-judging.md) | Accepted（未実装） | 採点を止めずにOS更新を配布する |

@@ -30,7 +30,7 @@ type FeaturedStandings struct {
 }
 
 func (s *Store) FeaturedStandings(ctx context.Context, at time.Time, offset int) (FeaturedStandings, error) {
-	page := FeaturedStandings{Round: FeaturedRound{ScheduledAt: at, Slots: []FeaturedSlot{}}, ClosesAt: at.Add(23 * time.Hour), Items: []FeaturedStanding{}}
+	page := FeaturedStandings{Round: FeaturedRound{ScheduledAt: at, Slots: []FeaturedSlot{}}, Items: []FeaturedStanding{}}
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return page, err
@@ -44,7 +44,7 @@ func (s *Store) FeaturedStandings(ctx context.Context, at time.Time, offset int)
  COALESCE(d.published_draft->>'title',''),f.difficulty,f.reveal_at,
  f.kind='new' AND statement_timestamp()<f.reveal_at,COALESCE(u.handle,''),
  ARRAY(SELECT u.handle FROM problem_testers t JOIN user_profiles u ON u.owner_id=t.owner_id WHERE t.problem_id=d.id AND d.published_draft IS NOT NULL ORDER BY u.handle),
- statement_timestamp()>=f.scheduled_at+interval '23 hours'
+ statement_timestamp()>=f.reveal_at
  FROM featured_slots f LEFT JOIN problem_drafts d ON d.id=f.problem_id
  LEFT JOIN user_profiles u ON u.owner_id=d.owner_id AND d.published_draft IS NOT NULL
  WHERE f.scheduled_at=$1 AND f.scheduled_at<=statement_timestamp() ORDER BY f.slot`, at)
@@ -67,6 +67,8 @@ func (s *Store) FeaturedStandings(ctx context.Context, at time.Time, offset int)
 	if len(page.Round.Slots) == 0 {
 		return page, ErrNotFound
 	}
+	// The window ends at the round's saved reveal: 22:00 the next day, 23 hours for rounds started at 23:00 before 2026-10-25.
+	page.ClosesAt = page.Round.Slots[0].RevealAt
 	// Participation needs an ordinary public submission in this edition's window.
 	// Rank only by the solved set: both > Hard > Easy > neither. Completion time,
 	// wrong answers and repeat ACs never change the rank. Within a tied rank,
@@ -80,7 +82,7 @@ func (s *Store) FeaturedStandings(ctx context.Context, at time.Time, offset int)
  FROM featured_slots f JOIN submissions s ON s.problem_id=f.problem_id
  JOIN user_profiles u ON u.owner_id=s.owner_id
  WHERE f.scheduled_at=$1 AND f.kind<>'missing'
- AND s.created_at>=$1 AND s.created_at<$1::timestamptz+interval '23 hours' AND s.created_at<=statement_timestamp()
+ AND s.created_at>=$1 AND s.created_at<f.reveal_at AND s.created_at<=statement_timestamp()
  AND s.contest_id IS NULL AND NOT COALESCE((s.job->>'privateDraft')::boolean,true)
  AND NOT COALESCE((s.job->>'easyTest')::boolean,false)
  AND NOT COALESCE((s.job->>'generate')::boolean,false)

@@ -11,7 +11,7 @@ const reason = (destination: 'publish' | 'featured') => {
 }
 const options = computed(() => [
   { key: 'publish', to: { path: '/problems/post', query: { problem: props.problemId } }, title: props.scheduled ? '公開予約を変更' : '問題を投稿', detail: 'すぐに、または日時を決めて公開する', reason: reason('publish') },
-  { key: 'featured', to: { path: '/featured/apply', query: { problem: props.problemId } }, title: props.applied ? '定期便の希望を変更' : '定期便に応募', detail: '月曜・木曜 23時の出題候補に入れる', reason: reason('featured') },
+  { key: 'featured', to: { path: '/featured/apply', query: { problem: props.problemId } }, title: props.applied ? '定期便の希望を変更' : '定期便に応募', detail: '月曜・木曜 22時の出題候補に入れる', reason: reason('featured') },
 ])
 </script>
 

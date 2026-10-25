@@ -24,5 +24,5 @@ export const choosableFirst = (choices: ProblemChoice[]) => [...choices.filter(c
 
 export const preferenceLabels = { soon: '早めに出したい', later: 'ゆっくりで良い' } as const
 
-// Rounds are always 23:00 in Japan, so the day carries the date.
+// Rounds are always 22:00 in Japan, so the day carries the date.
 export const featuredDay = (value: string) => new Intl.DateTimeFormat('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short', timeZone: 'Asia/Tokyo' }).format(new Date(value))

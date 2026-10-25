@@ -16,7 +16,7 @@ usePolling(() => refresh(), 60000)
     <template v-else-if="data">
       <p class="schedule-waiting"><span>出題待ちの新作</span><strong>Easy <b>{{ data.waiting.easy }}</b>問</strong><strong>Hard <b>{{ data.waiting.hard }}</b>問</strong></p>
       <div :aria-busy="status === 'pending'"><FeaturedSchedule :plan="data" /></div>
-      <p class="schedule-note">毎週月曜・木曜の23:00 (JST)に出題します。次回は予告と同じで確定、2回目以降は今の応募をもとにした見込みです。取り下げや新しい応募で入れ替わります。</p>
+      <p class="schedule-note">毎週月曜・木曜の22:00 (JST)に出題します。次回は予告と同じで確定、2回目以降は今の応募をもとにした見込みです。取り下げや新しい応募で入れ替わります。</p>
     </template>
   </div>
 </template>

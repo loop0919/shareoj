@@ -18,8 +18,8 @@ func TestFeaturedStandingsPostgres(t *testing.T) {
 	for _, p := range []problems.Problem{easy, hard} {
 		f.request("PUT", "/my/problems/"+p.ID+"/publication", p.Author, map[string]any{"version": p.Version, "publish": true}, 200)
 	}
-	at := time.Now().UTC().Add(-24 * time.Hour).Truncate(time.Second)
-	f.exec(`INSERT INTO featured_slots(scheduled_at,slot,kind,problem_id,difficulty,reveal_at) VALUES($1,'easy','revival',$2,4,$1::timestamptz+interval '23 hours'),($1,'hard','new',$3,9,$1::timestamptz+interval '23 hours')`, at, easy.ID, hard.ID)
+	at := time.Now().UTC().Add(-25 * time.Hour).Truncate(time.Second)
+	f.exec(`INSERT INTO featured_slots(scheduled_at,slot,kind,problem_id,difficulty,reveal_at) VALUES($1,'easy','revival',$2,4,$1::timestamptz+interval '24 hours'),($1,'hard','new',$3,9,$1::timestamptz+interval '24 hours')`, at, easy.ID, hard.ID)
 	f.exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'tester')`, easy.ID)
 	for _, owner := range []string{"z_fast", "a_slow", "hard_only", "easy_only", "z_zero", "a_zero", "excluded"} {
 		f.exec(`INSERT INTO user_profiles(owner_id,handle) VALUES($1,$1)`, owner)
@@ -43,12 +43,12 @@ func TestFeaturedStandingsPostgres(t *testing.T) {
 	submit("a_slow", hard.ID, "AC", 180*time.Second, public, "DONE")
 	submit("hard_only", hard.ID, "AC", 5*time.Minute, public, "DONE")
 	submit("hard_only", easy.ID, "RE", time.Minute, public, "DONE")
-	submit("easy_only", easy.ID, "AC", 0, public, "DONE")                      // The start boundary is inclusive.
-	pending := submit("z_zero", easy.ID, "AC", time.Second, public, "RUNNING") // A stale result must not count before DONE.
-	submit("a_zero", hard.ID, "WA", 2*time.Second, public, "DONE")
-	submit("a_zero", easy.ID, "AC", 23*time.Hour, public, "DONE") // Deadline is exclusive.
+	submit("easy_only", easy.ID, "AC", 0, public, "DONE")                        // The start boundary is inclusive.
+	pending := submit("z_zero", easy.ID, "AC", time.Second, public, "RUNNING")   // A stale result must not count before DONE.
+	submit("a_zero", hard.ID, "WA", 23*time.Hour+30*time.Minute, public, "DONE") // The window follows the saved reveal.
+	submit("a_zero", easy.ID, "AC", 24*time.Hour, public, "DONE")                // Deadline is exclusive.
 	submit("excluded", easy.ID, "AC", -time.Microsecond, public, "DONE")
-	submit("excluded", hard.ID, "AC", 23*time.Hour, public, "DONE")
+	submit("excluded", hard.ID, "AC", 24*time.Hour, public, "DONE")
 	for _, job := range []string{`{}`, `{"privateDraft":true}`, `{"privateDraft":false,"easyTest":true}`, `{"privateDraft":false,"generate":true}`, `{"privateDraft":false,"validate":true}`} {
 		submit("excluded", easy.ID, "AC", time.Minute, job, "DONE")
 	}
@@ -84,7 +84,7 @@ func TestFeaturedStandingsPostgres(t *testing.T) {
 	if !reflect.DeepEqual(handles, []string{"z_fast", "a_slow", "hard_only", "easy_only", "z_zero", "a_zero"}) || !reflect.DeepEqual(ranks, []int64{1, 1, 3, 4, 5, 5}) {
 		t.Fatal(page.Items)
 	}
-	if !page.Closed || !page.ClosesAt.Equal(at.Add(23*time.Hour)) || page.HasMore {
+	if !page.Closed || !page.ClosesAt.Equal(at.Add(24*time.Hour)) || page.HasMore {
 		t.Fatal(page)
 	}
 	fast := page.Items[0]
@@ -125,7 +125,7 @@ func TestFeaturedStandingsMissingAndFuturePostgres(t *testing.T) {
 	f := newFeaturedTest(t)
 	at := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
 	future := at.Add(48 * time.Hour)
-	f.exec(`INSERT INTO featured_slots(scheduled_at,slot,kind,reveal_at) VALUES($1,'easy','missing',$1::timestamptz+interval '23 hours'),($1,'hard','missing',$1::timestamptz+interval '23 hours'),($2,'easy','missing',$2::timestamptz+interval '23 hours')`, at, future)
+	f.exec(`INSERT INTO featured_slots(scheduled_at,slot,kind,reveal_at) VALUES($1,'easy','missing',$1::timestamptz+interval '24 hours'),($1,'hard','missing',$1::timestamptz+interval '24 hours'),($2,'easy','missing',$2::timestamptz+interval '24 hours')`, at, future)
 	raw := f.request("GET", "/featured/standings?at="+url.QueryEscape(at.Format(time.RFC3339)), "", nil, 200)
 	var page problems.FeaturedStandings
 	if err := json.Unmarshal([]byte(raw), &page); err != nil || page.Closed || len(page.Round.Slots) != 2 || page.Items == nil || len(page.Items) != 0 {

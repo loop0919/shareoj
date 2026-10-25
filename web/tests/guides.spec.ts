@@ -133,5 +133,5 @@ test('the contest guide says start times are typed in JST', async ({ page }) => 
 
 test('the featured guide gives the delivery time in JST', async ({ page }) => {
   await page.goto('/docs/featured')
-  await expect(page.locator('article .markdown-body')).toContainText('定期便は、毎週月曜と木曜の23:00 (JST)に、Easy（Lv.1〜4）とHard（Lv.5〜10）を1問ずつ出題します。')
+  await expect(page.locator('article .markdown-body')).toContainText('定期便は、毎週月曜と木曜の22:00 (JST)に、Easy（Lv.1〜4）とHard（Lv.5〜10）を1問ずつ出題します。')
 })

@@ -97,11 +97,15 @@ func featuredBefore(a, b featuredCandidate, reserved, preference string) bool {
 	return a.entered.Before(b.entered)
 }
 
-// NextFeatured returns the first Monday/Thursday 23:00 JST strictly after now.
+// featuredWindow runs from a round's 22:00 JST start to 22:00 the next day, when its editorials and others' submissions open.
+// Rounds released before 2026-10-25 started at 23:00 and kept 23 hours, so readers use the saved reveal_at, not this.
+const featuredWindow = 24 * time.Hour
+
+// NextFeatured returns the first Monday/Thursday 22:00 JST strictly after now.
 func NextFeatured(now time.Time) time.Time {
 	jst := time.FixedZone("JST", 9*60*60)
 	local := now.In(jst)
-	day := time.Date(local.Year(), local.Month(), local.Day(), 23, 0, 0, 0, jst)
+	day := time.Date(local.Year(), local.Month(), local.Day(), 22, 0, 0, 0, jst)
 	for !day.After(now) || (day.Weekday() != time.Monday && day.Weekday() != time.Thursday) {
 		day = day.AddDate(0, 0, 1)
 	}
@@ -193,7 +197,7 @@ func (s *Store) ReleaseFeatured(ctx context.Context, known, enabled []string) er
 	// Bound recovery work after a long outage; subsequent ticks continue the cursor.
 	for n := 0; n < 32 && !at.After(now); n++ {
 		for _, slot := range []string{"easy", "hard"} {
-			pick := FeaturedSlot{Slot: slot, Kind: "missing", RevealAt: at.Add(23 * time.Hour)}
+			pick := FeaturedSlot{Slot: slot, Kind: "missing", RevealAt: at.Add(featuredWindow)}
 			if now.Before(pick.RevealAt) {
 				pick, _, err = s.selectFeatured(ctx, tx, at, now, slot, known, enabled)
 				if err != nil {
@@ -221,7 +225,7 @@ func (s *Store) ReleaseFeatured(ctx context.Context, known, enabled []string) er
 }
 
 func (s *Store) selectFeatured(ctx context.Context, tx pgx.Tx, at, now time.Time, slot string, known, enabled []string) (FeaturedSlot, int, error) {
-	pick := FeaturedSlot{Slot: slot, Kind: "missing", RevealAt: at.Add(23 * time.Hour)}
+	pick := FeaturedSlot{Slot: slot, Kind: "missing", RevealAt: at.Add(featuredWindow)}
 	waiting := 0
 	var reserved string
 	if err := tx.QueryRow(ctx, `SELECT COALESCE((SELECT problem_id::text FROM featured_previews WHERE scheduled_at=$1 AND slot=$2),'')`, at, slot).Scan(&reserved); err != nil {
@@ -382,7 +386,7 @@ func (s *Store) FeaturedList(ctx context.Context, offset int, known, enabled []s
 	}
 	if len(page.Items) > 0 {
 		latest := page.Items[0]
-		if now.Before(latest.ScheduledAt.Add(23 * time.Hour)) {
+		if now.Before(latest.Slots[0].RevealAt) {
 			for _, slot := range latest.Slots {
 				if slot.ProblemID != "" {
 					page.Current = &latest

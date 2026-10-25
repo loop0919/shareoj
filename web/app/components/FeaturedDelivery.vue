@@ -14,7 +14,7 @@ const volume = computed(() => props.page.current?.number || props.page.nextNumbe
   <section class="featured-delivery" aria-label="ShareOJ定期便">
     <header class="delivery-heading">
       <div>
-        <p class="delivery-kicker">毎週 月・木 23:00 <span>(JST)</span></p>
+        <p class="delivery-kicker">毎週 月・木 22:00 <span>(JST)</span></p>
         <h2>定期便 vol.{{ volume }}</h2>
       </div>
       <div class="delivery-date">

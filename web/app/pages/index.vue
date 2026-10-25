@@ -60,7 +60,7 @@ useSharePreview({ type: 'website', title: 'Share Online Judge', path: '/', descr
     <FeaturedDelivery v-if="featured" :page="featured" home />
     <section v-else class="delivery-fallback" aria-label="ShareOJ定期便">
       <h2>ShareOJ定期便</h2>
-      <p>毎週 月・木23時に、Easy と Hard を一問ずつ。</p>
+      <p>毎週 月・木22時に、Easy と Hard を一問ずつ。</p>
       <p v-if="featuredError" role="alert">定期便を取得できませんでした。<button class="editor-button" @click="refreshFeatured()">再試行</button></p>
       <p v-else role="status">次の定期便を確認しています…</p>
       <NuxtLink to="/featured">定期便・新作の応募 →</NuxtLink>

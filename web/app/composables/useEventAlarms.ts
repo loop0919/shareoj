@@ -9,7 +9,7 @@ const late = 5 * minute
 // Timers cover the coming day only, well within what setTimeout can wait; later events get theirs on a later read.
 const horizon = 24 * 60 * minute
 const every = 10 * minute
-// The read after a ring waits a random moment up to this, so the browsers ringing at a contest's start or at 23:00 do
+// The read after a ring waits a random moment up to this, so the browsers ringing at a contest's start or at 22:00 do
 // not all read in the same second.
 const spread = 30_000
 // A beat later than its minute by more than this means the computer slept. Hidden tabs may hold a beat to the next

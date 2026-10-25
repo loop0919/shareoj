@@ -753,7 +753,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 
 ## 定期便
 
-[ADR 0011](../docs/adr/0011-schedule-featured-problems.md)に従い、日本時間の月曜と木曜23時にEasyとHardを各一問出題する。
+[ADR 0011](../docs/adr/0011-schedule-featured-problems.md)に従い、日本時間の月曜と木曜22時にEasyとHardを各一問出題する。
 `GET /featured?offset=0`は最新と過去の出題を20回ずつ返す。
 応募は`PUT /my/problems/{id}/featured`へ`{"version":1,"preference":"soon"}`を送り、`later`なら後日の公開を希望し、空文字なら取り下げる。
 応募一覧は`GET /my/featured`で取得する。

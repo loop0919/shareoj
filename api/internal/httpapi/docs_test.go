@@ -77,7 +77,7 @@ func TestPublicDocumentation(t *testing.T) {
 				t.Fatalf("undocumented/mismatched route: %s = %s", path, pattern)
 			}
 		}
-		if d := doc.Paths["/featured"]["get"].Description; !strings.HasPrefix(d, "毎週月・木23:00 (JST)のEasy/Hard各一問。") {
+		if d := doc.Paths["/featured"]["get"].Description; !strings.HasPrefix(d, "毎週月・木22:00 (JST)のEasy/Hard各一問。") {
 			t.Fatal("featured description", d)
 		}
 		for _, name := range []string{"PublicSample", "PublicProblem", "Download", "Submission", "Editorial", "ProblemRef", "Tag"} {

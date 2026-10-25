@@ -192,7 +192,7 @@ func TestFeaturedReleaseAndEmbargoPostgres(t *testing.T) {
 	if len(list.Items) != 1 || len(list.Items[0].Slots) != 2 || list.Items[0].Slots[0].ProblemID != a.ID || list.Items[0].Slots[1].Difficulty == nil || *list.Items[0].Slots[1].Difficulty != 9 {
 		t.Fatal(page)
 	}
-	if !list.Items[0].Slots[0].RevealAt.Equal(at.Add(23 * time.Hour)) {
+	if !list.Items[0].Slots[0].RevealAt.Equal(at.Add(24 * time.Hour)) {
 		t.Fatal("wrong reveal boundary", page)
 	}
 	if again := f.request("GET", "/featured", "", nil, 200); again != page {
@@ -305,7 +305,7 @@ func TestFeaturedFallbackAndFairnessPostgres(t *testing.T) {
 		t.Fatal("revival hid editorial")
 	}
 	// An outage past the reveal deadline records missing slots without consuming inventory.
-	// A regular slot from the last 23 hours is still inside its own deadline and may be filled late.
+	// A regular slot from the last 24 hours is still inside its own deadline and may be filled late.
 	f.exec(`DELETE FROM featured_slots`)
 	var late time.Time
 	if err := f.store.Pool().QueryRow(context.Background(), `UPDATE featured_schedule SET next_at=clock_timestamp()-interval '24 hours' RETURNING next_at`).Scan(&late); err != nil {
@@ -363,14 +363,38 @@ func TestFeaturedPreviewPrivacyAndReleasePostgres(t *testing.T) {
 	if len(older.Items) != 0 || !reflect.DeepEqual(current.Current, older.Current) || !reflect.DeepEqual(current.NextSlots, older.NextSlots) {
 		t.Fatal(older)
 	}
-	// Immediately before the 23-hour boundary the published edition is still primary.
-	f.exec(`UPDATE featured_slots SET scheduled_at=clock_timestamp()-interval '23 hours'+interval '10 seconds'`)
+	// The edition stays primary until its saved reveal, which is 23 hours for rounds started at 23:00 before 2026-10-25.
+	f.exec(`UPDATE featured_slots SET reveal_at=clock_timestamp()+interval '10 seconds'`)
 	if f.page("/featured").Current == nil {
 		t.Fatal("current edition ended early")
 	}
-	f.exec(`UPDATE featured_slots SET scheduled_at=clock_timestamp()-interval '23 hours'`)
+	f.exec(`UPDATE featured_slots SET reveal_at=clock_timestamp()`)
 	if f.page("/featured").Current != nil {
 		t.Fatal("current edition remained after the reveal boundary")
+	}
+}
+
+func TestFeaturedStartMovesToTwentyTwoPostgres(t *testing.T) {
+	f := newFeaturedTest(t)
+	a := f.draft("alice", 4)
+	next := time.Date(2099, 9, 28, 14, 0, 0, 0, time.UTC) // 23:00 JST, the hour rounds started before 2026-10-25
+	released := time.Date(2026, 10, 22, 14, 0, 0, 0, time.UTC)
+	f.exec(`UPDATE featured_schedule SET next_at=$1`, next)
+	f.exec(`INSERT INTO featured_previews(scheduled_at,slot,problem_id) VALUES($1,'easy',$2)`, next, a.ID)
+	f.exec(`INSERT INTO featured_slots(scheduled_at,slot,kind,reveal_at) VALUES($1,'easy','missing',$2)`, released, released.Add(23*time.Hour))
+	// The second run finds no 23:00 round and changes nothing.
+	for range 2 {
+		f.exec(`DELETE FROM schema_migrations WHERE version=47`)
+		if err := f.store.Migrate(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var at, preview, reveal time.Time
+	if err := f.store.Pool().QueryRow(context.Background(), `SELECT (SELECT next_at FROM featured_schedule),(SELECT scheduled_at FROM featured_previews),(SELECT reveal_at FROM featured_slots)`).Scan(&at, &preview, &reveal); err != nil {
+		t.Fatal(err)
+	}
+	if want := next.Add(-time.Hour); !at.Equal(want) || !preview.Equal(want) || !reveal.Equal(released.Add(23*time.Hour)) {
+		t.Fatal(at, preview, reveal)
 	}
 }
 
