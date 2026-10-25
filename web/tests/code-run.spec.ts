@@ -130,6 +130,12 @@ test('two columns on wide screens and one on phones', async ({ page }) => {
   expect(frames[1]!.y).toBeCloseTo(frames[0]!.y, 0)
   const bodies = await Promise.all(['.code-surface', '#code-run-stdin'].map(async selector => (await page.locator(selector).boundingBox())!))
   expect(bodies[1]!.y).toBeCloseTo(bodies[0]!.y, 0)
+  // A source editor stretched taller than the right column still leaves room above the footer.
+  await page.locator('.code-surface').evaluate(element => { (element as HTMLElement).style.height = '1600px' })
+  const editorBottom = await page.locator('.source-code-editor').evaluate(element => element.getBoundingClientRect().bottom)
+  const footerTop = await page.locator('.site-footer').evaluate(element => element.getBoundingClientRect().top)
+  expect(footerTop - editorBottom).toBeGreaterThanOrEqual(48)
+  await page.locator('.code-surface').evaluate(element => { (element as HTMLElement).style.height = '' })
   await page.setViewportSize({ width: 375, height: 800 })
   await expect.poll(async () => (await stdin.boundingBox())!.y).toBeGreaterThanOrEqual((await source.boundingBox())!.y + (await source.boundingBox())!.height)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
