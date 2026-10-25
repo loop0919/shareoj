@@ -116,6 +116,7 @@ useNotificationPolling()
   /* Only the links scroll sideways: 「作成」 stays outside the scroll box, whose edge would cut off its absolute panel. */
   .nav-links { display: flex; flex: 1; justify-content: space-between; gap: 0 8px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
   .nav-links::-webkit-scrollbar { display: none; }
+  .nav-links a:focus-visible { outline-offset: -3px; }
   .nav-links a, .create-menu { flex-shrink: 0; }
 }
 @media (min-width: 60rem) { .nav-links { display: contents; } }

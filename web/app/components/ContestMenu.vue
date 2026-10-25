@@ -69,6 +69,8 @@ watch(() => route.fullPath, close)
 <style scoped>
 .contest-menu { margin-bottom: -1px; overflow-x: auto; scrollbar-width: none; }
 .contest-menu::-webkit-scrollbar { display: none; }
+/* The scroll box clips outlines, so the focus ring is drawn inside the item. */
+.contest-menu > a:focus-visible, .submissions-menu summary:focus-visible { outline-offset: -3px; }
 .contest-menu > a, .submissions-menu summary { flex-shrink: 0; min-height: 44px; border-bottom: 2px solid transparent; color: var(--color-muted); }
 .contest-menu > a:hover, .submissions-menu summary:hover { color: var(--color-accent); }
 .contest-menu > a[aria-current], .submissions-menu[data-current] summary { border-bottom-color: var(--color-accent); color: var(--color-accent); font-weight: 600; }

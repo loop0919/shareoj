@@ -243,6 +243,8 @@ test('the current menu item keeps its underline without a vertical scroll', asyn
   expect(await menu.evaluate(el => el.scrollHeight <= el.clientHeight)).toBe(true)
   const current = menu.getByRole('link', { name: 'コード実行', exact: true })
   await expect(current).toHaveCSS('border-bottom-width', '2px')
+  await expect(current).toHaveAttribute('aria-current', 'page')
+  await expect(current).not.toHaveCSS('border-bottom-color', 'rgba(0, 0, 0, 0)')
   const [link, box] = [(await current.boundingBox())!, (await menu.boundingBox())!]
   expect(link.y + link.height).toBeLessThanOrEqual(box.y + box.height)
 })
@@ -259,3 +261,38 @@ test('the contest menu opens code runs in the contest', async ({ page }) => {
   await expect(page.getByRole('button', { name: /実行$/ })).toBeVisible()
   await expect(page.locator('.site-header')).toContainText(contestFixture.title)
 })
+
+test('the header nav stays on one row from 60rem', async ({ page }) => {
+  await mockLatest(page, [null])
+  for (const width of [960, 1024]) {
+    await page.setViewportSize({ width, height: 800 })
+    await page.goto('/')
+    const nav = page.getByRole('navigation', { name: 'メインナビゲーション' })
+    await expect(nav.getByRole('link', { name: 'コード実行', exact: true })).toBeVisible()
+    const tops = await nav.evaluate(el => [...el.querySelectorAll(':scope > .nav-links > a, :scope > details > summary')].map(node => Math.round(node.getBoundingClientRect().top)))
+    expect(new Set(tops).size).toBe(1)
+  }
+})
+
+for (const width of [320, 1280]) {
+  test(`focus rings stay inside the contest menu at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 })
+    await openContest(page, 'standings')
+    const menu = page.getByRole('navigation', { name: 'コンテストメニュー' })
+    const link = menu.getByRole('link', { name: '概要', exact: true })
+    await link.focus()
+    await page.keyboard.press('Shift+Tab')
+    await page.keyboard.press('Tab')
+    await expect(link).toBeFocused()
+    const ring = await link.evaluate(el => {
+      const style = getComputedStyle(el)
+      const box = el.getBoundingClientRect()
+      const scroller = el.parentElement!.getBoundingClientRect()
+      const grow = Math.max(0, parseFloat(style.outlineOffset) + parseFloat(style.outlineWidth))
+      return { top: box.top - grow - scroller.top, bottom: scroller.bottom - (box.bottom + grow), left: box.left - grow - scroller.left }
+    })
+    expect(ring.top).toBeGreaterThanOrEqual(0)
+    expect(ring.bottom).toBeGreaterThanOrEqual(0)
+    expect(ring.left).toBeGreaterThanOrEqual(0)
+  })
+}
