@@ -42,6 +42,16 @@ def main():
     with tempfile.TemporaryDirectory(prefix='shareoj-local-') as directory:
         sandbox.ARTIFACT = Path(directory) / 'main'
         sandbox.META = Path(directory) / 'meta'
+        if job.get('codeRun') is True:
+            result = host.run_code(job, job['runtimeDigest'])
+            # The local sandbox reports 0 for these, which would read as a real measurement.
+            result.pop('cpuTimeMs', None)
+            result.pop('memoryBytes', None)
+            # Docker timing is a float; the result schema holds whole milliseconds.
+            if 'wallTimeMs' in result:
+                result['wallTimeMs'] = round(result['wallTimeMs'])
+            print(json.dumps(dict(action='result', value=result)), flush=True)
+            return
         result = host.judge(job, job['runtimeDigest'],
                             lambda file: rpc('load', file=file),
                             save_output=lambda data: rpc('save', data=base64.b64encode(data).decode()))

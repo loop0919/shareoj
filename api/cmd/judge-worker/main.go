@@ -78,6 +78,21 @@ func main() {
 			saveCancel()
 			continue
 		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			run, claimErr := store.ClaimCodeRun(ctx)
+			if claimErr == nil {
+				jobCtx, cancel := context.WithTimeout(ctx, submissions.JudgeTimeout)
+				result := submissions.RunCodeLocally(jobCtx, run)
+				cancel()
+				saveCtx, saveCancel := context.WithTimeout(context.Background(), 10*time.Second)
+				if err := store.FinishCodeRun(saveCtx, run.ID, "", result); err != nil {
+					log.Print("Could not persist code run result")
+				}
+				saveCancel()
+				continue
+			}
+			err = claimErr
+		}
 		if !errors.Is(err, pgx.ErrNoRows) && ctx.Err() == nil {
 			log.Print("Judge queue unavailable")
 		}

@@ -382,3 +382,49 @@ func TestLocalScoringDocker(t *testing.T) {
 		t.Fatal(r)
 	}
 }
+
+func TestCodeRunDocker(t *testing.T) {
+	image := os.Getenv("TEST_JUDGE_CPP_IMAGE")
+	if image == "" {
+		t.Skip("TEST_JUDGE_CPP_IMAGE is required for Docker integration")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	data, err := exec.CommandContext(ctx, "docker", "image", "inspect", "--format={{.Id}}", image).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := strings.TrimSpace(string(data))
+	// Reads two numbers, prints the sum, and writes to stderr.
+	r := RunCodeLocally(ctx, CodeRunJob{Runtime: "cpp23-gcc-local", Image: id, Stdin: "1 2\n", Source: `#include <iostream>
+int main(){int a,b;std::cin>>a>>b;std::cout<<a+b<<"\n";std::cerr<<"debug\n";}`})
+	if r.Verdict != "AC" || r.ExitCode == nil || *r.ExitCode != 0 || r.Stdout == nil || r.Stdout.Text != "3\n" ||
+		r.Stderr == nil || r.Stderr.Text != "debug\n" || r.WallTimeMS == nil || r.CPUTimeMS != nil || r.MemoryBytes != nil {
+		t.Fatalf("%+v", r)
+	}
+	r = RunCodeLocally(ctx, CodeRunJob{Runtime: "cpp23-gcc-local", Image: id, Source: `int main(){return 3;}`})
+	if r.Verdict != "RE" || r.ExitCode == nil || *r.ExitCode != 3 {
+		t.Fatalf("%+v", r)
+	}
+	r = RunCodeLocally(ctx, CodeRunJob{Runtime: "cpp23-gcc-local", Image: id, Source: `int main(){`})
+	if r.Verdict != "CE" || r.CompileLog == "" || r.Stdout != nil {
+		t.Fatalf("%+v", r)
+	}
+	r = RunCodeLocally(ctx, CodeRunJob{Runtime: "cpp23-gcc-local", Image: id, Source: `#include <cstdio>
+int main(){for(int i=0;i<70000;i++)putchar('x');}`})
+	if r.Verdict != "AC" || r.Stdout == nil || len(r.Stdout.Text) != 65536 || !r.Stdout.Truncated {
+		t.Fatalf("%+v", r)
+	}
+	r = RunCodeLocally(ctx, CodeRunJob{Runtime: "python314-local", Image: id, Stdin: "hello\n", Source: "print(input())"})
+	if r.Verdict != "AC" || r.Stdout == nil || r.Stdout.Text != "hello\n" {
+		t.Fatalf("%+v", r)
+	}
+}
+
+func TestCodeRunLocallyRejectsUnknownRuntime(t *testing.T) {
+	for _, image := range []string{"sha256:invalid", "sha256:" + strings.Repeat("a", 64)} {
+		if r := RunCodeLocally(context.Background(), CodeRunJob{Runtime: "brainfuck-local", Image: image, Source: "+"}); r.Verdict != "JE" {
+			t.Fatal(image, r)
+		}
+	}
+}
