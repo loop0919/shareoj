@@ -28,18 +28,22 @@ test('a signed-in user runs code, sees WJ with a spinner, then the output', asyn
   await page.getByLabel('ソースコード', { exact: true }).fill(source)
   await page.getByLabel('標準入力', { exact: true }).fill('1 2')
   const run = page.getByRole('button', { name: /実行$/ })
+  // The output sits right under the input, and says where the output will appear before the first run.
+  const output = page.getByRole('region', { name: '標準出力' })
+  await expect(output).toContainText('実行すると、ここに出力が表示されます。')
+  await expect(page.getByRole('heading', { name: '実行結果' })).toHaveCount(0)
   await run.click()
   expect((await post).postDataJSON()).toEqual({ runtime: 'cpp23-gcc', source, stdin: '1 2' })
-  const result = page.getByRole('region', { name: '実行結果' })
   await expect(run).toHaveAttribute('aria-busy', 'true')
   await expect(run).toBeDisabled()
   await expect(run.locator('.loading-spinner')).toBeVisible()
-  await expect(result.locator('.verdict-badge')).toHaveText('WJ')
-  await expect(result.locator('.verdict-badge')).toHaveText('AC')
-  await expect(result.getByText('終了コード 0')).toBeVisible()
-  await expect(result.getByText('12 ms')).toBeVisible()
-  await expect(result.getByText('3.60 MB')).toBeVisible()
-  await expect(result.getByRole('region', { name: '標準出力' }).locator('pre')).toHaveText('3')
+  // The verdict and the measurements form one line in the output box's heading.
+  const status = output.locator('.io-heading')
+  await expect(status.locator('.verdict-badge')).toHaveText('WJ')
+  await expect(status.locator('.verdict-badge')).toHaveText('AC')
+  await expect(status).toContainText('終了コード 0 ・ 12 ms ・ 3.60 MB')
+  await expect(output.locator('pre')).toHaveText('3')
+  await expect(page.getByRole('region', { name: '標準エラー' })).toContainText('（出力なし）')
   await expect(run).toBeEnabled()
   await expect(run).not.toHaveAttribute('aria-busy', 'true')
 })
@@ -76,7 +80,7 @@ test('errors, limits and special results', async ({ page }) => {
   await page.goto('/run')
   await page.getByLabel('ソースコード', { exact: true }).fill('int main(){}')
   const run = page.getByRole('button', { name: /実行$/ })
-  const result = page.getByRole('region', { name: '実行結果' })
+  const output = page.getByRole('region', { name: '標準出力' })
 
   answer = route => route.fulfill({ status: 429, headers: { 'Retry-After': '30' }, json: { data: { code: 'code_run_rate_limited', retryAfter: 30 } } })
   await run.click()
@@ -91,27 +95,30 @@ test('errors, limits and special results', async ({ page }) => {
   await page.getByLabel('標準入力', { exact: true }).fill('')
   answer = route => route.fulfill({ status: 202, json: done({ verdict: 'JE', expired: true }) })
   await run.click()
-  await expect(result.getByText('混雑のため実行できませんでした。時間をおいてもう一度実行してください。')).toBeVisible()
-  await expect(result.locator('.verdict-badge')).toHaveCount(0)
+  await expect(output.getByText('混雑のため実行できませんでした。時間をおいてもう一度実行してください。')).toBeVisible()
+  await expect(output.locator('.verdict-badge')).toHaveCount(0)
 
+  // A compile error runs nothing; the third box turns into the compiler's message.
   answer = route => route.fulfill({ status: 202, json: done({ verdict: 'CE', compileLog: 'error: expected ;' }) })
   await run.click()
-  await expect(result.locator('.verdict-badge')).toHaveText('CE')
-  await expect(result.getByRole('region', { name: 'コンパイルのメッセージ' }).locator('pre')).toHaveText('error: expected ;')
+  await expect(output.locator('.io-heading .verdict-badge')).toHaveText('CE')
+  await expect(output.getByText('コンパイルエラーのため実行していません。')).toBeVisible()
+  await expect(page.getByRole('region', { name: '標準エラー' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'コンパイルのメッセージ' }).locator('pre')).toHaveText('error: expected ;')
 
   answer = route => route.fulfill({ status: 202, json: done({ verdict: 'CE', compileLog: '' }) })
   await run.click()
-  await expect(result.getByRole('region', { name: 'コンパイルのメッセージ' }).getByText('コンパイルのメッセージはありません。')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'コンパイルのメッセージ' }).getByText('コンパイルのメッセージはありません。')).toBeVisible()
 
   answer = route => route.fulfill({ status: 202, json: done({ verdict: 'JE' }) })
   await run.click()
-  await expect(result.getByText('ジャッジで問題が起きたため、実行できませんでした。時間をおいてもう一度実行してください。')).toBeVisible()
-  await expect(result.getByRole('heading', { name: '標準出力' })).toHaveCount(0)
+  await expect(output.getByText('ジャッジで問題が起きたため、実行できませんでした。時間をおいてもう一度実行してください。')).toBeVisible()
+  await expect(output.locator('pre')).toHaveCount(0)
 
   answer = route => route.fulfill({ status: 202, json: done({ verdict: 'AC', exitCode: 0, cpuTimeMs: 1, memoryBytes: 1000000, stdout: { text: 'x'.repeat(100), truncated: true }, stderr: { text: '', truncated: false } }) })
   await run.click()
-  await expect(result.getByText('長いため、先頭の64 KiBだけを表示しています。')).toHaveCount(1)
-  await expect(result.getByRole('region', { name: '標準エラー' }).getByText('（出力なし）')).toBeVisible()
+  await expect(page.getByText('長いため、先頭の64 KiBだけを表示しています。')).toHaveCount(1)
+  await expect(page.getByRole('region', { name: '標準エラー' }).getByText('（出力なし）')).toBeVisible()
 })
 
 test('two columns on wide screens and one on phones', async ({ page }) => {
@@ -130,6 +137,20 @@ test('two columns on wide screens and one on phones', async ({ page }) => {
   expect(frames[1]!.y).toBeCloseTo(frames[0]!.y, 0)
   const bodies = await Promise.all(['.code-surface', '#code-run-stdin'].map(async selector => (await page.locator(selector).boundingBox())!))
   expect(bodies[1]!.y).toBeCloseTo(bodies[0]!.y, 0)
+  // The run button shares the top row with the language, at its right end; the right column stacks input, output and error.
+  const button = (await page.getByRole('button', { name: /実行$/ }).boundingBox())!
+  const language = (await page.getByRole('combobox', { name: '言語' }).boundingBox())!
+  expect(button.y + button.height).toBeLessThanOrEqual(frames[0]!.y)
+  expect(button.x).toBeGreaterThan(language.x + language.width)
+  expect(button.x + button.width).toBeCloseTo(frames[1]!.x + frames[1]!.width, 0)
+  const boxes = await Promise.all(['.stdin-box', '[aria-labelledby="code-run-stdout-title"]', '[aria-labelledby="code-run-stderr-title"]'].map(async selector => (await page.locator(selector).boundingBox())!))
+  expect(boxes[1]!.y).toBeGreaterThan(boxes[0]!.y + boxes[0]!.height)
+  expect(boxes[2]!.y).toBeGreaterThan(boxes[1]!.y + boxes[1]!.height)
+  expect(boxes.every(box => Math.abs(box.x - boxes[0]!.x) < 1)).toBe(true)
+  // The three boxes' titles look alike: small and muted, like the source editor's.
+  for (const title of [page.getByText('標準入力', { exact: true }), page.getByRole('heading', { name: '標準出力' }), page.getByRole('heading', { name: '標準エラー' })]) {
+    await expect(title).toHaveCSS('font-size', '11px')
+  }
   // A source editor stretched taller than the right column still leaves room above the footer.
   await page.locator('.code-surface').evaluate(element => { (element as HTMLElement).style.height = '1600px' })
   const editorBottom = await page.locator('.source-code-editor').evaluate(element => element.getBoundingClientRect().bottom)

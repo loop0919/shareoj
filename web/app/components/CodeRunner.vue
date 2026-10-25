@@ -124,6 +124,8 @@ async function execute() {
 const failedMessage = '実行結果を確認できませんでした。時間をおいてもう一度実行してください。'
 const ran = ['AC', 'RE', 'TLE', 'MLE', 'OLE']
 const result = computed(() => run.value?.status === 'DONE' ? run.value.result : null)
+const executed = computed(() => !!result.value && !result.value.expired && ran.includes(result.value.verdict))
+const compileError = computed(() => result.value?.verdict === 'CE')
 </script>
 
 <template>
@@ -133,55 +135,72 @@ const result = computed(() => run.value?.status === 'DONE' ? run.value.result : 
     <NuxtLink class="editor-button primary" :to="{ path: '/login', query: { next: route.fullPath } }">ログインする</NuxtLink>
   </section>
   <form v-else class="code-runner" @submit.prevent="execute">
-    <div class="code-runner-language">
-      <label for="code-run-language">言語</label>
-      <select id="code-run-language" v-model="runtime" :disabled="pending">
-        <option value="">-- 未選択 --</option>
-        <option v-for="item in available" :key="item.id" :value="item.id">{{ item.label }}</option>
-      </select>
-      <p><NuxtLink to="/docs/languages" target="_blank" rel="noopener noreferrer">使える言語と実行環境の仕様 ↗</NuxtLink></p>
+    <!-- The language and the run button share the top row, so input and output can stay together below (as on Codeforces). -->
+    <div class="code-runner-toolbar">
+      <div class="code-runner-language">
+        <label for="code-run-language">言語</label>
+        <div class="code-runner-language-row">
+          <select id="code-run-language" v-model="runtime" :disabled="pending">
+            <option value="">-- 未選択 --</option>
+            <option v-for="item in available" :key="item.id" :value="item.id">{{ item.label }}</option>
+          </select>
+          <NuxtLink to="/docs/languages" target="_blank" rel="noopener noreferrer">使える言語と実行環境の仕様 ↗</NuxtLink>
+        </div>
+      </div>
+      <button class="editor-button primary code-run-button" type="submit" :disabled="pending || !hasSource(runtime, source) || !runtime || !available.length" :aria-busy="pending"><LoadingSpinner v-if="pending" inline label="実行中" />実行</button>
+    </div>
+    <div v-if="catalogError || !available.length || message" class="code-runner-notices">
+      <p v-if="catalogError || !available.length" class="notice" role="status">現在、コード実行の受付を停止しています。</p>
+      <p v-if="message" class="notice notice-error" role="alert">{{ message }}</p>
     </div>
     <div class="code-runner-source">
       <SourceCodeEditor v-model="source" :runtime="runtime" :limit="sourceLimit" :disabled="sending" />
     </div>
     <div class="code-runner-side">
       <!-- Framed like the source editor, so the two boxes start on the same line. -->
-      <div class="stdin-box" :class="{ 'is-disabled': sending }">
-        <div class="stdin-heading">
+      <div class="io-box stdin-box" :class="{ 'is-disabled': sending }">
+        <div class="io-heading">
           <label for="code-run-stdin">標準入力</label>
           <span class="byte-count">{{ stdinBytes.toLocaleString('en-US') }} / {{ codeRunInputLimit.toLocaleString('en-US') }} bytes</span>
         </div>
         <textarea id="code-run-stdin" v-model="stdin" rows="8" spellcheck="false" :disabled="sending" />
       </div>
-      <p v-if="catalogError || !available.length" class="notice" role="status">現在、コード実行の受付を停止しています。</p>
-      <p v-if="message" class="notice notice-error" role="alert">{{ message }}</p>
-      <div class="code-run-actions">
-        <button class="editor-button primary" type="submit" :disabled="pending || !hasSource(runtime, source) || !runtime || !available.length" :aria-busy="pending"><LoadingSpinner v-if="pending" inline label="実行中" />実行</button>
-      </div>
-      <section v-if="run" class="code-run-result" aria-labelledby="code-run-result-title">
-        <h2 id="code-run-result-title">実行結果</h2>
-        <p v-if="result?.expired" role="status">混雑のため実行できませんでした。時間をおいてもう一度実行してください。</p>
-        <template v-else>
-          <p role="status"><SubmissionStatus :item="run" /></p>
-          <template v-if="result">
-            <p v-if="ran.includes(result.verdict)" class="muted">終了コード {{ result.exitCode ?? '—' }} ・ {{ executionTime(result.cpuTimeMs) }} ・ {{ memoryUsage(result.memoryBytes) }}</p>
-            <section v-if="result.verdict === 'CE'" aria-labelledby="code-run-compile-title">
-              <h3 id="code-run-compile-title">コンパイルのメッセージ</h3>
-              <pre v-if="result.compileLog">{{ result.compileLog }}</pre>
-              <p v-else class="muted">コンパイルのメッセージはありません。</p>
-            </section>
-            <p v-else-if="result.verdict === 'JE'">ジャッジで問題が起きたため、実行できませんでした。時間をおいてもう一度実行してください。</p>
-            <template v-else>
-              <section v-for="[name, key, preview] in ([['標準出力', 'stdout', result.stdout], ['標準エラー', 'stderr', result.stderr]] as const)" :key="key" :aria-labelledby="`code-run-${key}-title`">
-                <h3 :id="`code-run-${key}-title`">{{ name }}</h3>
-                <pre v-if="preview?.text">{{ preview.text }}</pre>
-                <p v-else class="muted">（出力なし）</p>
-                <p v-if="preview?.truncated" class="muted">長いため、先頭の64 KiBだけを表示しています。</p>
-              </section>
-            </template>
+      <section class="io-box" aria-labelledby="code-run-stdout-title">
+        <div class="io-heading">
+          <h2 id="code-run-stdout-title">標準出力</h2>
+          <!-- The verdict and the measurements stay one line, in the heading of the output they describe. -->
+          <span v-if="run && !result?.expired" class="run-status" role="status">
+            <SubmissionStatus :item="run" />
+            <span v-if="executed">終了コード {{ result!.exitCode ?? '—' }} ・ {{ executionTime(result!.cpuTimeMs) }} ・ {{ memoryUsage(result!.memoryBytes) }}</span>
+          </span>
+        </div>
+        <div class="io-body">
+          <p v-if="!run" class="muted">実行すると、ここに出力が表示されます。</p>
+          <p v-else-if="result?.expired" role="status">混雑のため実行できませんでした。時間をおいてもう一度実行してください。</p>
+          <p v-else-if="result?.verdict === 'JE'">ジャッジで問題が起きたため、実行できませんでした。時間をおいてもう一度実行してください。</p>
+          <p v-else-if="compileError" class="muted">コンパイルエラーのため実行していません。</p>
+          <template v-else-if="executed">
+            <pre v-if="result!.stdout?.text">{{ result!.stdout.text }}</pre>
+            <p v-else class="muted">（出力なし）</p>
           </template>
-        </template>
+        </div>
       </section>
+      <p v-if="executed && result!.stdout?.truncated" class="muted io-note">長いため、先頭の64 KiBだけを表示しています。</p>
+      <!-- A compile error runs nothing, so this box shows the compiler's message instead of the program's errors. -->
+      <section class="io-box" aria-labelledby="code-run-stderr-title">
+        <div class="io-heading"><h2 id="code-run-stderr-title">{{ compileError ? 'コンパイルのメッセージ' : '標準エラー' }}</h2></div>
+        <div class="io-body">
+          <template v-if="compileError">
+            <pre v-if="result!.compileLog">{{ result!.compileLog }}</pre>
+            <p v-else class="muted">コンパイルのメッセージはありません。</p>
+          </template>
+          <template v-else-if="executed">
+            <pre v-if="result!.stderr?.text">{{ result!.stderr.text }}</pre>
+            <p v-else class="muted">（出力なし）</p>
+          </template>
+        </div>
+      </section>
+      <p v-if="executed && result!.stderr?.truncated" class="muted io-note">長いため、先頭の64 KiBだけを表示しています。</p>
     </div>
   </form>
 </template>
@@ -192,27 +211,34 @@ const result = computed(() => run.value?.status === 'DONE' ? run.value.result : 
 .code-run-login p { color: var(--color-muted); font-size: .875rem; }
 .code-run-login a { display: inline-flex; align-items: center; min-height: 44px; padding: 10px 24px; font-weight: 600; text-decoration: none; }
 .code-runner { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 32px; margin-top: 24px; }
-/* Wide screens: language and source on the left, input, button and result on the right (ADR 0031). */
+/* Wide screens: the source on the left; input, output and errors on the right (ADR 0031). */
 @media (min-width: 60rem) { .code-runner { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; } }
-/* The language row spans both columns, so the source and input boxes below it start on the same line. */
-.code-runner-language { grid-column: 1 / -1; }
-.code-runner-language, .code-runner-source, .code-runner-side { min-width: 0; }
+/* The top row spans both columns, so the source and input boxes below it start on the same line. */
+.code-runner-toolbar, .code-runner-notices { grid-column: 1 / -1; }
+.code-runner-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+.code-runner-toolbar, .code-runner-language, .code-runner-source, .code-runner-side { min-width: 0; }
 .code-runner-language > label { display: block; margin-bottom: 8px; }
-select { width: 100%; max-width: 320px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-paper); color: var(--color-ink); font: inherit; cursor: pointer; }
+.code-runner-language-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.code-runner-notices { margin-top: 16px; }
+select { width: 320px; max-width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-paper); color: var(--color-ink); font: inherit; cursor: pointer; }
 select:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 3px; }
 select:disabled, button:disabled { opacity: .5; cursor: not-allowed; }
+.code-run-button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin-left: auto; padding: 10px 28px; font-weight: 600; }
+.code-run-button:disabled { transform: none; text-decoration: none; }
 /* The same frame and heading height as SourceCodeEditor, whose heading holds a 32px settings button. */
-.stdin-box { margin-top: 20px; border: 1px solid var(--color-line); border-radius: 4px; overflow: hidden; }
+.io-box { margin-top: 20px; border: 1px solid var(--color-line); border-radius: 4px; overflow: hidden; }
+.io-box + .io-box, .io-note + .io-box { margin-top: 12px; }
 .stdin-box.is-disabled { opacity: .6; }
-.stdin-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; min-height: 49px; padding: 8px 12px; border-bottom: 1px solid var(--color-line); font-size: .875rem; }
-.stdin-heading label { margin: 0; font-size: .6875rem; color: var(--color-muted); }
-.byte-count { font-size: .75rem; color: var(--color-muted); }
+.io-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; min-height: 49px; padding: 8px 12px; border-bottom: 1px solid var(--color-line); font-size: .875rem; }
+.io-heading label, .io-heading h2 { margin: 0; font-family: inherit; font-size: .6875rem; font-weight: 400; line-height: 1.5; letter-spacing: normal; color: var(--color-muted); }
+.byte-count, .run-status { font-size: .75rem; color: var(--color-muted); }
+.run-status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 textarea { display: block; width: 100%; min-height: 160px; padding: 8px 12px; border: 0; background: var(--color-paper); color: var(--color-ink); font: .875rem/1.5 var(--font-mono, ui-monospace, monospace); resize: vertical; }
 /* Inside the frame, so the ring is drawn inward like the source editor's. */
 textarea:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
-.code-run-actions { margin-top: 16px; }
-.code-run-actions .editor-button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 28px; font-weight: 600; }
-.code-run-actions button:disabled { transform: none; text-decoration: none; }
-.code-run-result { margin-top: 24px; }
-.code-run-result pre { max-height: 20rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.io-body { min-height: 64px; }
+.io-body > p { margin: 0; padding: 8px 12px; font-size: .875rem; }
+/* The frame already draws the box, so the output itself needs no second border. */
+.io-body pre { max-height: 20rem; overflow: auto; padding: 8px 12px; border: 0; border-radius: 0; background: none; font-size: .875rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.io-note { margin: 4px 0 0; font-size: .75rem; }
 </style>
