@@ -42,11 +42,14 @@ useNotificationPolling()
       <ContestHeaderTitle v-if="contestId" :id="contestId" class="contest-title" />
       <ContestMenu v-if="contestId" :id="contestId" />
       <nav v-else aria-label="メインナビゲーション">
-        <NuxtLink to="/">ホーム</NuxtLink>
-        <NuxtLink to="/problems">問題</NuxtLink>
-        <NuxtLink to="/featured">定期便</NuxtLink>
-        <NuxtLink to="/contests">コンテスト</NuxtLink>
-        <NuxtLink to="/blog">記事</NuxtLink>
+        <div class="nav-links">
+          <NuxtLink to="/">ホーム</NuxtLink>
+          <NuxtLink to="/problems">問題</NuxtLink>
+          <NuxtLink to="/featured">定期便</NuxtLink>
+          <NuxtLink to="/contests">コンテスト</NuxtLink>
+          <NuxtLink to="/blog">記事</NuxtLink>
+          <NuxtLink to="/run">コード実行</NuxtLink>
+        </div>
         <details ref="createMenu" class="create-menu" @keydown.esc.prevent="closeCreateMenu(); createMenu?.querySelector('summary')?.focus()">
           <summary>作成</summary>
           <div class="create-menu-links" @click="closeCreateMenu">
@@ -110,7 +113,12 @@ useNotificationPolling()
   .site-header { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }
   .header-tools { grid-column: 2; grid-row: 1; gap: 0; }
   .site-header nav { grid-column: 1 / -1; grid-row: 2; justify-content: space-between; gap: 0 8px; flex-wrap: nowrap; }
+  /* Only the links scroll sideways: 「作成」 stays outside the scroll box, whose edge would cut off its absolute panel. */
+  .nav-links { display: flex; flex: 1; justify-content: space-between; gap: 0 8px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .nav-links::-webkit-scrollbar { display: none; }
+  .nav-links a, .create-menu { flex-shrink: 0; }
 }
+@media (min-width: 60rem) { .nav-links { display: contents; } }
 /* Contest pages: the contest title sits beside the wordmark and its menu becomes a tab row on the header line. */
 .site-header--contest { row-gap: 4px; padding-bottom: 0; }
 .site-header--contest .contest-title { grid-column: 2; grid-row: 1; justify-self: start; max-width: 100%; }
@@ -123,7 +131,7 @@ useNotificationPolling()
   .site-header--contest .header-tools { grid-column: 2; }
   .site-header--contest .contest-menu { grid-row: 3; }
 }
-/* The narrowest phones keep every item of the contest menu, 「チームの提出」 included, on the row (ADR 0030). */
+/* The narrowest phones tighten the spacing; what still does not fit scrolls sideways in the menu row (ADR 0031). */
 @media (max-width: 22.499rem) {
   .site-header--contest .contest-menu { gap: 0 8px; }
 }

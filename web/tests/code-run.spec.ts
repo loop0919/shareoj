@@ -1,5 +1,6 @@
 import type { Page, Route } from '@playwright/test'
 import { expect, test } from './fixtures/account'
+import { shortId } from '../shared/utils/short-id'
 
 type Run = { id: string, status: 'QUEUED' | 'RUNNING' | 'DONE', result: Record<string, unknown> | null, createdAt: string }
 const createdAt = '2026-10-25T00:00:00Z'
@@ -155,4 +156,106 @@ test('an unavailable draft language falls back to the submission form language',
   })
   await page.goto('/run')
   await expect(page.getByRole('combobox', { name: '言語' })).toHaveValue('python314')
+})
+
+const contestId = '88888888-8888-4888-8888-888888888888'
+const contestPath = `/contests/${shortId(contestId)}`
+const contestFixture = {
+  id: contestId, title: 'コード実行テスト', author: 'setter', description: '', status: 'running',
+  startsAt: '2026-09-15T12:00:00Z', endsAt: '2026-09-15T14:00:00Z', penaltyMinutes: 5, version: 1,
+  official: true, participating: true, canEdit: false, canViewSubmissions: false, problems: [],
+}
+
+// The server renders from the real API, so the mocked contest comes in with the first refresh.
+async function openContest(page: Page, view: string, contest: Record<string, unknown> = contestFixture) {
+  await mockLatest(page, [null])
+  await page.route(`**/api/contests/${contestId}**`, route => {
+    const url = new URL(route.request().url())
+    if (url.pathname.endsWith('/standings')) return route.fulfill({ json: [] })
+    if (url.pathname.endsWith('/submissions')) return route.fulfill({ json: { items: [], hasMore: false, total: 0 } })
+    return route.fulfill({ json: contest })
+  })
+  await page.goto(`${contestPath}?view=standings`, { waitUntil: 'networkidle' })
+  await page.getByRole('button', { name: '今すぐ更新' }).click()
+  await expect(page.locator('.site-header')).toContainText(String(contest.title))
+  if (view === 'standings') return
+  await page.evaluate(to => (window as unknown as { useNuxtApp: () => { $router: { push: (to: string) => Promise<unknown> } } }).useNuxtApp().$router.push(to), `${contestPath}?view=${view}`)
+  await expect(page).toHaveURL(`${contestPath}?view=${view}`)
+}
+
+test('the site menu offers code runs between posts and creation', async ({ page }) => {
+  await mockLatest(page, [null])
+  await page.goto('/')
+  const nav = page.getByRole('navigation', { name: 'メインナビゲーション' })
+  const order = await nav.evaluate(el => [...el.querySelectorAll(':scope > a, :scope > div > a, :scope > details > summary')].map(node => node.textContent?.trim()))
+  expect(order).toEqual(['ホーム', '問題', '定期便', 'コンテスト', '記事', 'コード実行', '作成'])
+  await nav.getByRole('link', { name: 'コード実行', exact: true }).click()
+  await expect(page).toHaveURL(/\/run$/)
+})
+
+test('narrow screens scroll the menus instead of the page', async ({ page }) => {
+  await mockLatest(page, [null])
+  for (const width of [320, 375]) {
+    await page.setViewportSize({ width, height: 800 })
+    await page.goto('/')
+    const nav = page.getByRole('navigation', { name: 'メインナビゲーション' })
+    await nav.getByRole('link', { name: 'コード実行', exact: true }).scrollIntoViewIfNeeded()
+    await expect(nav.getByRole('link', { name: 'コード実行', exact: true })).toBeInViewport()
+    await expect(nav.locator('summary')).toBeInViewport()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await openContest(page, 'standings')
+    const menu = page.getByRole('navigation', { name: 'コンテストメニュー' })
+    await menu.getByRole('link', { name: 'コード実行', exact: true }).scrollIntoViewIfNeeded()
+    await expect(menu.getByRole('link', { name: 'コード実行', exact: true })).toBeInViewport()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.unrouteAll()
+  }
+})
+
+test('dropdowns stay whole on a narrow screen', async ({ page }) => {
+  await mockLatest(page, [null])
+  await page.setViewportSize({ width: 320, height: 800 })
+  await page.goto('/')
+  const nav = page.getByRole('navigation', { name: 'メインナビゲーション' })
+  await nav.locator('summary').click()
+  const links = nav.locator('.create-menu-links a')
+  await expect(links).toHaveCount(3)
+  for (const link of await links.all()) await expect(link).toBeInViewport({ ratio: 1 })
+  await page.unrouteAll()
+  await openContest(page, 'standings', { ...contestFixture, status: 'ended', canViewSubmissions: true })
+  const menu = page.getByRole('navigation', { name: 'コンテストメニュー' })
+  await menu.evaluate(el => { el.scrollLeft = el.scrollWidth })
+  await menu.locator('summary').click()
+  const own = menu.getByRole('link', { name: '自分の提出', exact: true })
+  const all = menu.getByRole('link', { name: 'すべての提出', exact: true })
+  await expect(own).toBeInViewport({ ratio: 1 })
+  await expect(all).toBeInViewport({ ratio: 1 })
+  await all.click({ trial: true })
+  await own.click({ trial: true })
+  await menu.evaluate(el => { el.scrollLeft = 0 })
+  await expect(own).toBeHidden()
+})
+
+test('the current menu item keeps its underline without a vertical scroll', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 })
+  await openContest(page, 'run')
+  const menu = page.getByRole('navigation', { name: 'コンテストメニュー' })
+  expect(await menu.evaluate(el => el.scrollHeight <= el.clientHeight)).toBe(true)
+  const current = menu.getByRole('link', { name: 'コード実行', exact: true })
+  await expect(current).toHaveCSS('border-bottom-width', '2px')
+  const [link, box] = [(await current.boundingBox())!, (await menu.boundingBox())!]
+  expect(link.y + link.height).toBeLessThanOrEqual(box.y + box.height)
+})
+
+test('the contest menu opens code runs in the contest', async ({ page }) => {
+  await openContest(page, 'standings')
+  const menu = page.getByRole('navigation', { name: 'コンテストメニュー' })
+  await expect(menu.getByRole('link')).toHaveText(['概要', '問題', '順位表', '自分の提出', '解説一覧', '質問', 'コード実行'])
+  await menu.getByRole('link', { name: 'コード実行', exact: true }).click()
+  await expect(page).toHaveURL(`${contestPath}?view=run`)
+  await expect(menu.getByRole('link', { name: 'コード実行', exact: true })).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('コード実行')
+  await expect(page.getByRole('navigation', { name: 'パンくずリスト' })).toHaveText(`${contestFixture.title}/コード実行`)
+  await expect(page.getByRole('button', { name: /実行$/ })).toBeVisible()
+  await expect(page.locator('.site-header')).toContainText(contestFixture.title)
 })

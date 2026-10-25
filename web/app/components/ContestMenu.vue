@@ -24,40 +24,64 @@ const current = (view: ContestView) => section.value === view ? route.name === '
 const submissionsMenu = ref<HTMLDetailsElement>()
 function close() { if (submissionsMenu.value) submissionsMenu.value.open = false }
 function outside(event: MouseEvent) { if (event.target instanceof Node && !submissionsMenu.value?.contains(event.target)) close() }
-onMounted(() => document.addEventListener('click', outside))
-onBeforeUnmount(() => document.removeEventListener('click', outside))
+// The menu row scrolls sideways on narrow screens and clips what is absolutely positioned inside it, so the panel is
+// fixed to the viewport at the summary's position instead, and closes whenever that position could go stale.
+const panel = ref<HTMLElement>()
+const panelStyle = ref<Record<string, string>>({})
+async function place() {
+  const summary = submissionsMenu.value?.querySelector('summary')
+  if (!submissionsMenu.value?.open || !summary) return
+  const rect = summary.getBoundingClientRect()
+  panelStyle.value = { left: `${rect.left}px`, top: `${rect.bottom}px` }
+  await nextTick()
+  const width = panel.value?.offsetWidth ?? 0
+  panelStyle.value = { left: `${Math.max(0, Math.min(rect.left, innerWidth - width - 8))}px`, top: `${rect.bottom}px` }
+}
+onMounted(() => {
+  document.addEventListener('click', outside)
+  window.addEventListener('scroll', close)
+  window.addEventListener('resize', close)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('click', outside)
+  window.removeEventListener('scroll', close)
+  window.removeEventListener('resize', close)
+})
 watch(() => route.fullPath, close)
 </script>
 
 <template>
-  <nav class="contest-menu" aria-label="コンテストメニュー">
+  <nav class="contest-menu" aria-label="コンテストメニュー" @scroll.passive="close">
     <NuxtLink v-for="view in (['overview', 'problems', 'standings'] as const)" :key="view" :to="link(view)" :aria-current="current(view)">{{ contestViews[view] }}</NuxtLink>
-    <details v-if="canViewAll" ref="submissionsMenu" class="submissions-menu" :data-current="inSubmissions || undefined" @keydown.esc.prevent="close(); submissionsMenu?.querySelector('summary')?.focus()">
+    <details v-if="canViewAll" ref="submissionsMenu" class="submissions-menu" :data-current="inSubmissions || undefined" @toggle="place" @keydown.esc.prevent="close(); submissionsMenu?.querySelector('summary')?.focus()">
       <summary>提出</summary>
-      <div class="submissions-menu-links">
+      <div ref="panel" class="submissions-menu-links" :style="panelStyle">
         <NuxtLink :to="link('my-submissions')" :aria-current="current('my-submissions')">{{ own }}</NuxtLink>
         <NuxtLink :to="link('submissions')" :aria-current="current('submissions')">{{ contestViews.submissions }}</NuxtLink>
       </div>
     </details>
     <!-- A link to the whole list still lands in this place, so it stays marked there too. -->
     <NuxtLink v-else :to="link('my-submissions')" :aria-current="current('my-submissions') ?? (inSubmissions ? 'true' : undefined)">{{ own }}</NuxtLink>
-    <NuxtLink v-for="view in (['editorials', 'clarifications'] as const)" :key="view" :to="link(view)" :aria-current="current(view)">{{ contestViews[view] }}</NuxtLink>
+    <NuxtLink v-for="view in (['editorials', 'clarifications', 'run'] as const)" :key="view" :to="link(view)" :aria-current="current(view)">{{ contestViews[view] }}</NuxtLink>
   </nav>
 </template>
 
 <style scoped>
-.contest-menu > a, .submissions-menu summary { min-height: 44px; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--color-muted); }
+.contest-menu { margin-bottom: -1px; overflow-x: auto; scrollbar-width: none; }
+.contest-menu::-webkit-scrollbar { display: none; }
+.contest-menu > a, .submissions-menu summary { flex-shrink: 0; min-height: 44px; border-bottom: 2px solid transparent; color: var(--color-muted); }
 .contest-menu > a:hover, .submissions-menu summary:hover { color: var(--color-accent); }
 .contest-menu > a[aria-current], .submissions-menu[data-current] summary { border-bottom-color: var(--color-accent); color: var(--color-accent); font-weight: 600; }
 .submissions-menu { position: relative; }
 .submissions-menu summary { display: flex; align-items: center; gap: 6px; font-size: .875rem; white-space: nowrap; cursor: pointer; list-style: none; }
 .submissions-menu summary::-webkit-details-marker { display: none; }
 .submissions-menu summary::after { content: '▾'; font-size: .75rem; }
-.submissions-menu-links { position: absolute; left: 0; top: 100%; z-index: 20; display: grid; min-width: max-content; padding: 6px; background: var(--color-paper); border: 1px solid var(--color-line); border-radius: 6px; box-shadow: 0 4px 12px #0001; }
+.submissions-menu-links { position: fixed; z-index: 20; display: grid; min-width: max-content; padding: 6px; background: var(--color-paper); border: 1px solid var(--color-line); border-radius: 6px; box-shadow: 0 4px 12px #0001; }
 .submissions-menu-links a { padding: 0 12px; color: var(--color-ink); }
 .submissions-menu-links a:hover, .submissions-menu-links a:focus-visible { background: var(--color-surface); }
 .submissions-menu-links a[aria-current] { color: var(--color-accent); font-weight: 600; }
-/* With the layout's narrower gap, this keeps the row within the narrowest phones. */
+/* The row's own box overlaps the header's rule by 1px, so the current item's underline sits on the rule without the
+ * scroll box clipping it. With the layout's narrower gap, this keeps the row within the narrowest phones. */
 @media (max-width: 22.499rem) {
   .contest-menu > a, .submissions-menu summary { font-size: .8125rem; }
 }
