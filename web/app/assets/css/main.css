@@ -79,7 +79,9 @@ pre { margin: 0; background: var(--color-surface); border: 1px solid var(--color
 .hljs-number, .hljs-literal { color: light-dark(#0550ae, #85baff); }
 .hljs-title, .hljs-built_in { color: light-dark(#953800, #ffba85); }
 .hljs-meta { color: light-dark(#57606a, #a8b6c5); }
-.input-format { background: var(--color-surface); border: 1px solid var(--color-line); border-radius: 4px; padding: 16px 20px; white-space: pre-wrap; overflow-x: auto; }
+/* Spaces between values in an input format show about an em wide, just under \quad; math keeps its own spacing. */
+.input-format { background: var(--color-surface); border: 1px solid var(--color-line); border-radius: 4px; padding: 16px 20px; white-space: pre-wrap; overflow-x: auto; word-spacing: .75em; }
+.input-format .math-expression { word-spacing: normal; }
 code { font-family: var(--font-code); }
 .sample { margin-top: 28px; }
 .sample-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; margin-bottom: 16px; }

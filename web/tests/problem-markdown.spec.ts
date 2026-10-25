@@ -53,6 +53,27 @@ test('copy buttons copy only code text and report clipboard failures', async ({ 
   await expect(page.locator('.guide-result [role="status"]').filter({ hasText: 'コピーできませんでした' })).toBeVisible()
 })
 
+test('spaces between values in an input format show nearly as wide as \\quad', async ({ page }) => {
+  await page.goto('/docs/markdown')
+  const gaps = await page.evaluate((blocks) => blocks.map((html) => {
+    const box = document.createElement('div')
+    box.className = 'markdown-body'
+    box.innerHTML = html
+    document.querySelector('main')!.prepend(box)
+    const block = box.querySelector('.input-format')!
+    const [a, b] = [...block.querySelectorAll('.katex-html .mord.mathnormal')].map(glyph => glyph.getBoundingClientRect())
+    const gap = (b!.left - a!.right) / parseFloat(getComputedStyle(block).fontSize)
+    const mathSpacing = getComputedStyle(block.querySelector('.katex')!).wordSpacing
+    box.remove()
+    return { gap, mathSpacing }
+  }), ['```input\n$A$ $B$\n```', '```input\n$A \\quad B$\n```'].map(source => renderProblemMarkdown(source)))
+  const [space, quad] = gaps
+  // About an em space, which is a little narrower than \quad in KaTeX's larger font.
+  expect(space!.gap).toBeGreaterThan(.9)
+  expect(space!.gap).toBeLessThan(quad!.gap)
+  expect(gaps.map(gap => gap.mathSpacing)).toEqual(['0px', '0px'])
+})
+
 test('explicit heading anchors preserve formatting and reject attribute injection', () => {
   expect(renderProblemMarkdown('## **判定**の例 {#testlib}\n\n本文'))
     .toBe('<h2 id="testlib"><strong>判定</strong>の例</h2>\n<p>本文</p>\n')
