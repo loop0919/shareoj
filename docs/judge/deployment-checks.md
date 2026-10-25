@@ -152,8 +152,8 @@ Text（`text`）も同じ`run`で公開する。
 `rollout.json`の`runtimes`に`text`を加えると、ホストのsmoke、bridgeの設定、CIの変数`JUDGE_ENABLED_RUNTIMES`まで同期される。
 
 同じコミットで、定期便の出題が23時から22時に変わる（ADR 0011）。
-bridgeも毎分のdispatchで定期便を出題するので、手順1から2の完了までを月曜・木曜の22時にまたがらせない。
-またぐと旧bridgeが22時の回を出題し、解禁を翌21時に、次回を23時にしてしまう。
+bridgeも毎分のdispatchで定期便を出題するので、手順1から2の完了までを月曜・木曜の22時から23時（JST）に重ねない。
+重ねると、移行で22時に移った回を旧bridgeが出題し、解禁を翌21時に、次回を23時にしてしまう。
 
 `rollout.py run`をpushより先に実行しない（新しいbridgeが`code_runs`を読めず、送り出しが止まる）。
 `rolling`は使わない（スキーマとbridgeとワーカーの互換性を変える配布のため）。
