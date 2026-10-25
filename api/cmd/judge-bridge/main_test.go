@@ -725,6 +725,7 @@ func TestCodeRunResultsFinishTheCurrentAttemptOnly(t *testing.T) {
 	if fmt.Sprint(f.sent) != fmt.Sprint([]string{waiting}) {
 		t.Fatalf("a received result must let the waiting code run go out: %v", f.sent)
 	}
+	f.assertCodeRunCleared(codeRunA)
 	done := f.codeRunState(codeRunA)
 	if response := send(codeRunA, codeRunA, submissions.CodeRunResult{Verdict: "JE"}); len(response.BatchItemFailures) != 0 || f.codeRunState(codeRunA) != done {
 		t.Fatalf("resend: %v %s", response, f.codeRunState(codeRunA))
@@ -753,4 +754,35 @@ func TestCodeRunResultsFinishTheCurrentAttemptOnly(t *testing.T) {
 	if processed < 1 || invalid != 3 {
 		t.Fatalf("logs: processed=%d invalid=%d", processed, invalid)
 	}
+}
+
+func TestOldWorkerJEFinishesTheCodeRun(t *testing.T) {
+	ctx := context.Background()
+	f := newDispatchFixture(t, "")
+	const submissionID = "eeeeeeee-2222-4222-8222-222222222222"
+	f.codeRun(codeRunA, time.Minute)
+	f.exec(`UPDATE code_runs SET dispatched_at=clock_timestamp(),status='RUNNING' WHERE id=$1`, codeRunA)
+	f.exec(`INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,judge_attempt,status)
+ VALUES ($1,'alice',$1,1,'test','python314-isolate','source',$2,$1,'RUNNING')`, submissionID, queuedJob(nil))
+	// A worker older than ADR 0031 cannot parse a code-run job and answers it as a submission JE.
+	send := func(id, attempt string) events.SQSEventResponse {
+		body, _ := json.Marshal(map[string]any{"submissionId": id, "attemptId": attempt, "result": map[string]any{"verdict": "JE", "passed": 0, "total": 0}})
+		return f.b.results(ctx, events.SQSEvent{Records: []events.SQSMessage{{MessageId: "old", Body: string(body)}}})
+	}
+	if response := send(codeRunA, "stale-attempt"); len(response.BatchItemFailures) != 0 || !strings.HasPrefix(f.codeRunState(codeRunA), "RUNNING/") {
+		t.Fatalf("stale attempt: %v %s", response, f.codeRunState(codeRunA))
+	}
+	if response := send(submissionID, submissionID); len(response.BatchItemFailures) != 0 || !strings.HasPrefix(f.codeRunState(codeRunA), "RUNNING/") {
+		t.Fatalf("submission JE touched the code run: %v %s", response, f.codeRunState(codeRunA))
+	}
+	if !strings.HasPrefix(f.state(submissionID), "DONE") {
+		t.Fatalf("submission: %s", f.state(submissionID))
+	}
+	if response := send(codeRunA, codeRunA); len(response.BatchItemFailures) != 0 {
+		t.Fatal(response)
+	}
+	if got := f.codeRunState(codeRunA); !strings.HasPrefix(got, `DONE/{"verdict": "JE"}/`) {
+		t.Fatalf("code run: %s", got)
+	}
+	f.assertCodeRunCleared(codeRunA)
 }

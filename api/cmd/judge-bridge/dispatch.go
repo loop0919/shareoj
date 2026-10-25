@@ -263,7 +263,7 @@ func (b bridge) sendCodeRun(ctx context.Context, tx pgx.Tx, id, attempt, runtime
 	}
 	if image != b.runtime {
 		stage = "finish_je"
-		if _, err = tx.Exec(ctx, `UPDATE code_runs SET status='DONE',finished_at=clock_timestamp(),result='{"verdict":"JE"}' WHERE id=$1`, id); err != nil {
+		if _, err = tx.Exec(ctx, `UPDATE code_runs SET status='DONE',finished_at=clock_timestamp(),source='',stdin='',result='{"verdict":"JE"}' WHERE id=$1`, id); err != nil {
 			return err
 		}
 		observe("failure", "platform", "runtime_mismatch", id, attempt)

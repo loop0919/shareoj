@@ -656,6 +656,17 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(result['verdict'], verdict)
                 self.assertEqual(result['exitCode'], reply.get('exitCode', 0))
 
+    def test_code_run_reports_a_signal_as_a_shell_style_exit_code(self):
+        # isolate omits the exit code when a signal kills the program, so it would otherwise show as 0.
+        result, _ = self.run_code(dict(status='SG', signal=11, exitCode=0))
+        self.assertEqual((result['verdict'], result['exitCode']), ('RE', 139))
+
+    def test_code_run_replaces_nul_bytes_in_the_previews(self):
+        b64 = lambda data: base64.b64encode(data).decode()
+        result, _ = self.run_code(dict(output=b64(b'a\0b'), checkerLog='c\0d'))
+        self.assertEqual(result['stdout']['text'], 'a�b')
+        self.assertEqual(result['stderr']['text'], 'c�d')
+
     def test_code_run_compile_error_has_only_the_log(self):
         result, execute = self.run_code(compiled={'compiled': False, 'compileLog': 'error'})
         self.assertEqual(result, {'verdict': 'CE', 'compileLog': 'error'})

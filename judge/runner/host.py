@@ -578,7 +578,9 @@ def run_code(job, runtime):
         reply = sandbox.execute(dict(runtime=job['runtime'], input=job['stdin'], timeLimitMs=job['timeLimitMs'],
                                      memoryLimitMb=job['memoryLimitMb']), stderr_log=True)
         stdout, stderr = base64.b64decode(reply['output']), reply['checkerLog'].encode()
-        result = dict(verdict=sandbox.failure_verdict(reply) or 'AC', exitCode=reply['exitCode'], cpuTimeMs=reply['cpuTimeMs'],
+        # isolate omits the exit code when a signal kills the program; report it like a shell does.
+        exit_code = reply['exitCode'] or (128 + reply['signal'] if reply['signal'] else 0)
+        result = dict(verdict=sandbox.failure_verdict(reply) or 'AC', exitCode=exit_code, cpuTimeMs=reply['cpuTimeMs'],
                       wallTimeMs=reply['wallTimeMs'], memoryBytes=reply['memoryBytes'])
         for limit in (CODE_RUN_PREVIEW_LIMIT, CODE_RUN_SHRUNK_PREVIEW):
             result.update(stdout=sample_preview(stdout, limit), stderr=sample_preview(stderr, limit))

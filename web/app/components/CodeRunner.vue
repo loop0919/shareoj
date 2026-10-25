@@ -74,9 +74,11 @@ async function follow() {
 }
 // Shows the last run when the screen opens, e.g. after coming back while it was still running.
 async function restoreLatest() {
+  const seen = following
   try {
     const latest = await $fetch<CodeRun>('/api/my/code-runs/latest')
-    if (disposed || sending.value) return
+    // A run started meanwhile is newer than this answer, and its polling must not be stopped.
+    if (disposed || sending.value || seen !== following) return
     run.value = latest
   } catch { return /* No run yet, or it could not be read; running again still works. */ }
   try { await follow() }
@@ -157,8 +159,10 @@ const result = computed(() => run.value?.status === 'DONE' ? run.value.result : 
             <p v-if="ran.includes(result.verdict)" class="muted">終了コード {{ result.exitCode ?? '—' }} ・ {{ executionTime(result.cpuTimeMs) }} ・ {{ memoryUsage(result.memoryBytes) }}</p>
             <section v-if="result.verdict === 'CE'" aria-labelledby="code-run-compile-title">
               <h3 id="code-run-compile-title">コンパイルのメッセージ</h3>
-              <pre>{{ result.compileLog }}</pre>
+              <pre v-if="result.compileLog">{{ result.compileLog }}</pre>
+              <p v-else class="muted">コンパイルのメッセージはありません。</p>
             </section>
+            <p v-else-if="result.verdict === 'JE'">ジャッジで問題が起きたため、実行できませんでした。時間をおいてもう一度実行してください。</p>
             <template v-else>
               <section v-for="[name, key, preview] in ([['標準出力', 'stdout', result.stdout], ['標準エラー', 'stderr', result.stderr]] as const)" :key="key" :aria-labelledby="`code-run-${key}-title`">
                 <h3 :id="`code-run-${key}-title`">{{ name }}</h3>

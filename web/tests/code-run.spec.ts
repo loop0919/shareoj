@@ -99,6 +99,15 @@ test('errors, limits and special results', async ({ page }) => {
   await expect(result.locator('.verdict-badge')).toHaveText('CE')
   await expect(result.getByRole('region', { name: 'コンパイルのメッセージ' }).locator('pre')).toHaveText('error: expected ;')
 
+  answer = route => route.fulfill({ status: 202, json: done({ verdict: 'CE', compileLog: '' }) })
+  await run.click()
+  await expect(result.getByRole('region', { name: 'コンパイルのメッセージ' }).getByText('コンパイルのメッセージはありません。')).toBeVisible()
+
+  answer = route => route.fulfill({ status: 202, json: done({ verdict: 'JE' }) })
+  await run.click()
+  await expect(result.getByText('ジャッジで問題が起きたため、実行できませんでした。時間をおいてもう一度実行してください。')).toBeVisible()
+  await expect(result.getByRole('heading', { name: '標準出力' })).toHaveCount(0)
+
   answer = route => route.fulfill({ status: 202, json: done({ verdict: 'AC', exitCode: 0, cpuTimeMs: 1, memoryBytes: 1000000, stdout: { text: 'x'.repeat(100), truncated: true }, stderr: { text: '', truncated: false } }) })
   await run.click()
   await expect(result.getByText('長いため、先頭の64 KiBだけを表示しています。')).toHaveCount(1)

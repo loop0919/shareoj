@@ -258,6 +258,18 @@ func (f *dispatchFixture) codeRunState(id string) string {
 	return s
 }
 
+// assertCodeRunCleared checks that a finished code run no longer keeps its source and input.
+func (f *dispatchFixture) assertCodeRunCleared(id string) {
+	f.t.Helper()
+	var source, stdin string
+	if err := f.b.db.QueryRow(context.Background(), `SELECT source,stdin FROM code_runs WHERE id=$1`, id).Scan(&source, &stdin); err != nil {
+		f.t.Fatal(err)
+	}
+	if source != "" || stdin != "" {
+		f.t.Fatalf("code run %s keeps source=%q stdin=%q", id, source, stdin)
+	}
+}
+
 func (f *dispatchFixture) exec(sql string, args ...any) {
 	f.t.Helper()
 	if _, err := f.b.db.Exec(context.Background(), sql, args...); err != nil {
@@ -378,6 +390,8 @@ func TestCodeRunsExpireAndAreDeleted(t *testing.T) {
 	if got := f.codeRunState(stuck); !strings.HasPrefix(got, `DONE/{"verdict": "JE"}/`) {
 		t.Fatalf("stuck: %s", got)
 	}
+	f.assertCodeRunCleared(unsent)
+	f.assertCodeRunCleared(stuck)
 	var n int
 	if err := f.b.db.QueryRow(context.Background(), `SELECT COUNT(*) FROM code_runs WHERE id=$1`, old).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("old row: %d %v", n, err)
