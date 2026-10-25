@@ -62,7 +62,7 @@ func serveLocal(ctx context.Context, image string, initial map[string]any,
 	if err != nil {
 		return nil, ""
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 	// Docker runs as nobody and must traverse the controller-owned staging directory.
 	if os.Chmod(dir, 0755) != nil {
 		return nil, ""
@@ -80,7 +80,7 @@ func serveLocal(ctx context.Context, image string, initial map[string]any,
 	if err = cmd.Start(); err != nil {
 		return nil, err.Error()
 	}
-	defer func() { input.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+	defer func() { _ = input.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
 	encoder, decoder := json.NewEncoder(input), json.NewDecoder(output)
 	if err = encoder.Encode(initial); err != nil {
 		return nil, ""
@@ -106,7 +106,7 @@ func serveLocal(ctx context.Context, image string, initial map[string]any,
 		var value any
 		switch call.Action {
 		case "result":
-			input.Close()
+			_ = input.Close()
 			if err = cmd.Wait(); err != nil || call.Value == nil {
 				return nil, ""
 			}

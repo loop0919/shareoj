@@ -142,7 +142,7 @@ func NormalizePassphrase(passphrase string) string {
 func ValidPassphrase(passphrase string) bool {
 	p := NormalizePassphrase(passphrase)
 	return len(p) >= minPassphrase && len(p) <= maxPassphrase && strings.IndexFunc(p, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_')
+		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_'
 	}) < 0
 }
 

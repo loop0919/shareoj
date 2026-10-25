@@ -42,9 +42,10 @@ func TestClarificationAnnouncementsPostgres(t *testing.T) {
 		if i%2 == 1 {
 			problem = p1
 		}
-		if i == 1 {
+		switch i {
+		case 1:
 			f.schedule(cid, "running")
-		} else if i == 3 {
+		case 3:
 			f.schedule(cid, "ended")
 		}
 		f.request("POST", base, actor, map[string]any{"answer": "お知らせ", "problemId": problem}, 204)
@@ -203,7 +204,7 @@ func TestClarificationsPostgres(t *testing.T) {
 	go func() { defer wg.Done(); f.handler.ServeHTTP(requests[0], r1) }()
 	go func() { defer wg.Done(); f.handler.ServeHTTP(requests[1], r2) }()
 	wg.Wait()
-	if !((requests[0].Code == 204 && requests[1].Code == 409) || (requests[0].Code == 409 && requests[1].Code == 204)) {
+	if (requests[0].Code != 204 || requests[1].Code != 409) && (requests[0].Code != 409 || requests[1].Code != 204) {
 		t.Fatalf("concurrent: %d %d", requests[0].Code, requests[1].Code)
 	}
 	// Filtering happens before pagination, and the count never includes hidden questions.

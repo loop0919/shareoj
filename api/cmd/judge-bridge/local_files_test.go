@@ -97,7 +97,7 @@ func TestLocalGenerationAndScoring(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, err := io.ReadAll(response.Body)
-	response.Body.Close()
+	_ = response.Body.Close()
 	if err != nil || response.StatusCode != 200 || string(data) != strings.Repeat("x", 70000)+"\n" {
 		t.Fatal("generated download", err)
 	}
