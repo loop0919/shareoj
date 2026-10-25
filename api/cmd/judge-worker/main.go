@@ -40,7 +40,7 @@ func main() {
 		}
 		objects = s3.NewFromConfig(sdk)
 	}
-	log.Print("Local C++ judge worker started")
+	log.Print("Local Docker judge worker started")
 	for ctx.Err() == nil {
 		item, job, err := store.Claim(ctx)
 		if err == nil {

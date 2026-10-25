@@ -50,7 +50,7 @@ test('frozen standings hide runs from the public, staff switch to the live table
   await guest.goto(`/contests/${shortId(pending)}`)
   await expect(guest.getByText('終了1分前から順位表を凍結します。', { exact: true })).toBeVisible()
   // bob's run during the freeze stays queued, since this fixture has no judge.
-  await expect.poll(async () => (await bob.request.post('/api/my/submissions', { headers: { origin }, data: { problemId: problems[pending], contestId: pending, runtime: 'cpp17', source: 'int main(){}' } })).status(), { timeout: 15000 }).toBe(202)
+  await expect.poll(async () => (await bob.request.post('/api/my/submissions', { headers: { origin }, data: { problemId: problems[pending], contestId: pending, runtime: 'cpp23-gcc', source: 'int main(){}' } })).status(), { timeout: 15000 }).toBe(202)
   // The public table counts it as ?1 and says since when results are hidden.
   await guest.goto(`/contests/${shortId(pending)}?view=standings`)
   await expect(guest.getByText(freezeText(contest), { exact: true })).toBeVisible()

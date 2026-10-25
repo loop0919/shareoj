@@ -106,6 +106,19 @@ func container(ctx context.Context, image, dir, input string, memory int, deadli
 	return result
 }
 
+// localCommands keeps saved C++17 submissions on their original command.
+func localCommands(runtime string) (filename, compile string, run []string) {
+	switch runtime {
+	case "cpp17-local":
+		return "main.cpp", "g++ -std=c++17 -O2 -pipe /submission/main.cpp -o /tmp/main && cat /tmp/main", []string{"/submission/main"}
+	case "cpp23-gcc-local":
+		return "main.cpp", "g++ -std=c++23 -O2 -pipe /submission/main.cpp -o /tmp/main && cat /tmp/main", []string{"/submission/main"}
+	case "python314-local":
+		return "main.py", `python3 -I -c 'import py_compile; py_compile.compile("/submission/main.py", cfile="/tmp/main", doraise=True)' && cat /tmp/main`, []string{"python3", "-I", "-B", "/submission/main"}
+	}
+	return "", "", nil
+}
+
 // Judge is a local Docker adapter. It never runs submitted code on the worker host.
 func Judge(ctx context.Context, source string, job Job) Result {
 	r := Result{Verdict: "JE", Total: len(job.Cases)}
@@ -117,7 +130,18 @@ func Judge(ctx context.Context, source string, job Job) Result {
 	if job.Scoring != nil {
 		return Result{Verdict: "JE", Total: len(job.Cases), CheckerLog: "部分点の問題はisolateワーカーで実行してください。"}
 	}
-	if job.Checker != nil && (job.Checker.Runtime != "cpp17" || !job.Checker.ValidJudgeProtocol() || strings.TrimSpace(job.Checker.Source) == "" || len(job.Checker.Source) > 65536 || !utf8.ValidString(job.Checker.Source) || strings.ContainsRune(job.Checker.Source, 0) || job.Generate || job.Validate) {
+	filename, compile, run := localCommands(job.Runtime)
+	if filename == "" {
+		return r
+	}
+	checkerFilename, checkerCompile, checkerRun := "", "", []string(nil)
+	if job.Checker != nil {
+		checkerFilename, checkerCompile, checkerRun = localCommands(job.Checker.Runtime + "-local")
+		if (job.Runtime == "cpp17-local") != (job.Checker.Runtime == "cpp17") {
+			return r
+		}
+	}
+	if job.Checker != nil && (checkerFilename == "" || !job.Checker.ValidJudgeProtocol() || strings.TrimSpace(job.Checker.Source) == "" || len(job.Checker.Source) > 65536 || !utf8.ValidString(job.Checker.Source) || strings.ContainsRune(job.Checker.Source, 0) || job.Generate || job.Validate) {
 		return r
 	}
 	if len(job.Cases) == 0 || job.TimeLimitMS < 100 || job.TimeLimitMS > 5000 || job.TimeLimitMS%100 != 0 || len(job.Cases) > 100 || job.MemoryLimitMB < 64 || job.MemoryLimitMB > 1024 || !strings.HasPrefix(job.Image, "sha256:") {
@@ -135,11 +159,11 @@ func Judge(ctx context.Context, source string, job Job) Result {
 		return r
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	if os.Chmod(dir, 0755) != nil || os.WriteFile(filepath.Join(dir, "main.cpp"), []byte(source), 0644) != nil {
+	if os.Chmod(dir, 0755) != nil || os.WriteFile(filepath.Join(dir, filename), []byte(source), 0644) != nil {
 		return r
 	}
 	compiled := container(ctx, job.Image, dir, "", 1536, 30*time.Second, 32<<20,
-		"sh", "-c", "g++ -std=c++17 -O2 -pipe /submission/main.cpp -o /tmp/main && cat /tmp/main")
+		"sh", "-c", compile)
 	if compiled.err != nil {
 		return r
 	}
@@ -160,7 +184,7 @@ func Judge(ctx context.Context, source string, job Job) Result {
 	if len(compiled.output) == 0 {
 		return r
 	}
-	if os.Remove(filepath.Join(dir, "main.cpp")) != nil || os.WriteFile(filepath.Join(dir, "main"), compiled.output, 0555) != nil {
+	if os.Remove(filepath.Join(dir, filename)) != nil || os.WriteFile(filepath.Join(dir, "main"), compiled.output, 0555) != nil {
 		return r
 	}
 	checkerDir := ""
@@ -173,11 +197,11 @@ func Judge(ctx context.Context, source string, job Job) Result {
 			return r
 		}
 		defer func() { _ = os.RemoveAll(checkerDir) }()
-		if os.Chmod(checkerDir, 0755) != nil || os.WriteFile(filepath.Join(checkerDir, "main.cpp"), []byte(job.Checker.Source), 0644) != nil {
+		if os.Chmod(checkerDir, 0755) != nil || os.WriteFile(filepath.Join(checkerDir, checkerFilename), []byte(job.Checker.Source), 0644) != nil {
 			return r
 		}
 		checked := container(ctx, job.Image, checkerDir, "", 1536, 30*time.Second, 32<<20,
-			"sh", "-c", "g++ -std=c++17 -O2 -pipe /submission/main.cpp -o /tmp/main && cat /tmp/main")
+			"sh", "-c", checkerCompile)
 		if checked.err != nil || checked.code != 0 || checked.timedOut || checked.oom || checked.overflow || len(checked.output) == 0 {
 			return checkerError("検証コードのコンパイル失敗\n" + string(checked.diagnostic))
 		}
@@ -222,8 +246,8 @@ func Judge(ctx context.Context, source string, job Job) Result {
 		// Cases saved before normalization may still be CRLF or lack the final newline.
 		c.Input, c.Output = problems.NormalizeTestData(c.Input), problems.NormalizeTestData(c.Output)
 		limit := time.Duration(job.TimeLimitMS) * time.Millisecond
-		actual := container(ctx, job.Image, dir, c.Input, job.MemoryLimitMB, limit+10*time.Second, 16<<20,
-			"timeout", "--signal=TERM", "--kill-after=0.1s", fmt.Sprintf("%.3fs", limit.Seconds()), "/submission/main")
+		command := append([]string{"timeout", "--signal=TERM", "--kill-after=0.1s", fmt.Sprintf("%.3fs", limit.Seconds())}, run...)
+		actual := container(ctx, job.Image, dir, c.Input, job.MemoryLimitMB, limit+10*time.Second, 16<<20, command...)
 		verdict := "AC"
 		switch {
 		case actual.err != nil || actual.timedOut:
@@ -248,7 +272,7 @@ func Judge(ctx context.Context, source string, job Job) Result {
 				return checkerError("検証データの準備失敗")
 			}
 			checked := container(ctx, job.Image, checkerDir, string(actual.output), 512, 15*time.Second, 16<<20,
-				"sh", "-c", "touch /tmp/score && exec timeout --signal=TERM --kill-after=0.1s 5s /submission/main /submission/test-input /submission/expected-output /submission/submission-source /tmp/score")
+				"sh", "-c", "touch /tmp/score && exec timeout --signal=TERM --kill-after=0.1s 5s "+strings.Join(checkerRun, " ")+" /submission/test-input /submission/expected-output /submission/submission-source /tmp/score")
 			r.CheckerLog = checkerLog(r.CheckerLog, fmt.Sprintf("ケース%d: exit=%d\n%s\n", i+1, checked.code, checked.diagnostic))
 			if checked.err != nil || checked.timedOut || checked.oom || checked.overflow || ((checked.code == 124 || checked.code == 137) && checked.elapsed >= 5*time.Second) {
 				return checkerError("検証コードの実行失敗・制限超過")

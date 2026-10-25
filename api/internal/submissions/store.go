@@ -1,4 +1,4 @@
-// Package submissions stores local-development C++ submissions and their immutable inputs.
+// Package submissions stores submissions and their immutable inputs.
 package submissions
 
 import (
@@ -26,6 +26,7 @@ type Case = problems.TestCase
 const GenerationOutputLimit = 512 << 20
 
 type Job struct {
+	Runtime             string                                                    `json:"-"` // Set from the immutable submission row by the local worker.
 	EasyTest            bool                                                      `json:"easyTest,omitempty"`
 	Interactor          *problems.Generator                                       `json:"interactor,omitempty"`
 	Checker             *problems.Generator                                       `json:"checker,omitempty"`
@@ -180,8 +181,8 @@ type RunInput struct {
 // rejudge never queues a draft that a new submission refuses. The case-count bounds (1 to 100) stay with each caller,
 // written two ways there, and the callers must keep them equivalent. They are ANDed for a WHERE clause, placed after an AND.
 // draft, runtime and checkerRuntimes are SQL expressions for the draft, the submission runtime and the text[] of judge
-// code runtimes. The runtime applies the limits of the local Docker judge (Judge): cpp17-local takes only a cpp17
-// checker, no interactor and no scoring. sampleCheck is a boolean SQL expression that waives the scoring conditions,
+// code runtimes. The local Docker judge takes no interactor or scoring; the legacy cpp17-local takes only a cpp17
+// checker. sampleCheck is a boolean SQL expression that waives the scoring conditions,
 // as a sample never scores.
 // Scoring without groups, or an aggregate one without its aggregator, waits like missing judge code, since the judge
 // would turn every run into JE. Publication follows problems.ContentIssues, a separate rule.
@@ -191,12 +192,15 @@ func judgeReady(draft, runtime, checkerRuntimes, sampleCheck string) string {
     (` + draft + `->'checker'->>'runtime'=ANY(` + checkerRuntimes + `) AND
      length(btrim(` + draft + `->'checker'->>'source', E' \t\r\n'))>0 AND
      (` + runtime + ` <> 'cpp17-local' OR ` + draft + `->'checker'->>'runtime'='cpp17')))
+  AND (` + runtime + ` NOT IN ('cpp23-gcc-local','python314-local') OR
+    COALESCE(` + draft + `->'checker','null'::jsonb) = 'null'::jsonb OR
+    ` + draft + `->'checker'->>'runtime' IN ('cpp23-gcc','python314'))
   AND (COALESCE(` + draft + `->'interactor','null'::jsonb) = 'null'::jsonb OR
-    (` + runtime + ` <> 'cpp17-local' AND COALESCE(` + draft + `->'checker','null'::jsonb) = 'null'::jsonb AND
+    (` + runtime + ` NOT IN ('cpp17-local','cpp23-gcc-local','python314-local') AND COALESCE(` + draft + `->'checker','null'::jsonb) = 'null'::jsonb AND
      ` + draft + `->'interactor'->>'runtime'=ANY(` + checkerRuntimes + `) AND
      length(btrim(` + draft + `->'interactor'->>'source', E' \t\r\n'))>0))
   AND (` + sampleCheck + ` OR COALESCE(` + draft + `->'scoring','null'::jsonb) = 'null'::jsonb OR
-    (` + runtime + ` <> 'cpp17-local' AND CASE WHEN jsonb_typeof(` + draft + `->'scoring'->'groups')='array' THEN jsonb_array_length(` + draft + `->'scoring'->'groups') ELSE 0 END > 0 AND
+    (` + runtime + ` NOT IN ('cpp17-local','cpp23-gcc-local','python314-local') AND CASE WHEN jsonb_typeof(` + draft + `->'scoring'->'groups')='array' THEN jsonb_array_length(` + draft + `->'scoring'->'groups') ELSE 0 END > 0 AND
      (` + draft + `->'scoring'->>'mode' <> 'aggregate' OR
      (` + draft + `->'scoring'->'aggregator'->>'runtime'=ANY(` + checkerRuntimes + `) AND
       length(btrim(` + draft + `->'scoring'->'aggregator'->>'source', E' \t\r\n'))>0))))`
@@ -307,14 +311,14 @@ func (s *Store) List(ctx context.Context, owner string) ([]Submission, error) {
 
 func (s *Store) Claim(ctx context.Context) (Submission, Job, error) {
 	// ponytail: one attempt; interrupted jobs become JE after the judge deadline. Add retry attempts for production.
-	_, err := s.Pool.Exec(ctx, `UPDATE submissions SET status='DONE',finished_at=clock_timestamp(),result='{"verdict":"JE","passed":0,"total":0}' WHERE runtime='cpp17-local' AND status='RUNNING' AND started_at < clock_timestamp()-$1::int * interval '1 second'`, int((JudgeTimeout+time.Minute)/time.Second))
+	_, err := s.Pool.Exec(ctx, `UPDATE submissions SET status='DONE',finished_at=clock_timestamp(),result='{"verdict":"JE","passed":0,"total":0}' WHERE runtime IN ('cpp17-local','cpp23-gcc-local','python314-local') AND status='RUNNING' AND started_at < clock_timestamp()-$1::int * interval '1 second'`, int((JudgeTimeout+time.Minute)/time.Second))
 	if err != nil {
 		return Submission{}, Job{}, err
 	}
 	var id string
 	var raw []byte
 	err = s.Pool.QueryRow(ctx, `UPDATE submissions SET status='RUNNING',started_at=clock_timestamp()
-		WHERE id=(SELECT id FROM submissions WHERE runtime='cpp17-local' AND status='QUEUED' ORDER BY rejudged_at IS NOT NULL,COALESCE(rejudged_at,created_at),id FOR UPDATE SKIP LOCKED LIMIT 1)
+		WHERE id=(SELECT id FROM submissions WHERE runtime IN ('cpp17-local','cpp23-gcc-local','python314-local') AND status='QUEUED' ORDER BY rejudged_at IS NOT NULL,COALESCE(rejudged_at,created_at),id FOR UPDATE SKIP LOCKED LIMIT 1)
 		RETURNING id,job`).Scan(&id, &raw)
 	if err != nil {
 		return Submission{}, Job{}, err
@@ -323,6 +327,7 @@ func (s *Store) Claim(ctx context.Context) (Submission, Job, error) {
 	var job Job
 	if err == nil {
 		err = json.Unmarshal(raw, &job)
+		job.Runtime = item.Runtime
 	}
 	return item, job, err
 }

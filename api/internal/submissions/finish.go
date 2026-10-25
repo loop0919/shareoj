@@ -25,7 +25,7 @@ func (s *Store) FinishAttempt(ctx context.Context, id, attempt string, result Re
 	var raw []byte
 	err = tx.QueryRow(ctx, `SELECT owner_id,problem_id::text,job FROM submissions
  WHERE id::text=$1 AND status<>'DONE' AND
- (($2='' AND runtime='cpp17-local' AND status='RUNNING') OR (judge_attempt::text=$2 AND runtime=ANY($3::text[]))) FOR UPDATE`, id, attempt, IsolateRuntimeIDs()).Scan(&owner, &problem, &raw)
+ (($2='' AND runtime IN ('cpp17-local','cpp23-gcc-local','python314-local') AND status='RUNNING') OR (judge_attempt::text=$2 AND runtime=ANY($3::text[]))) FOR UPDATE`, id, attempt, IsolateRuntimeIDs()).Scan(&owner, &problem, &raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}

@@ -75,7 +75,7 @@ func TestTesterInvitationsPostgres(t *testing.T) {
 	}
 	f := newSigningFixture(t)
 	queue := &submissions.Store{Pool: store.Pool()}
-	h := newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Profiles: profiles.New(store.Pool()), Submissions: queue, JudgeImage: "sha256:" + strings.Repeat("a", 64), Verifier: newCognitoVerifier(f.server.URL, "client")})
+	h := newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Profiles: profiles.New(store.Pool()), Submissions: queue, JudgeImage: "sha256:" + strings.Repeat("a", 64), JudgeRuntime: "cpp17-local", Verifier: newCognitoVerifier(f.server.URL, "client")})
 	request := func(method, path, owner string, body any, want int) string {
 		t.Helper()
 		raw := ""

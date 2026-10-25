@@ -92,7 +92,7 @@ test('a team forms by its join code, teammates see each other\'s submissions dur
   // Once it starts, bob submits and dave sees it as the team's.
   await expect.poll(async () => (await (await guest.request.get(`/api/contests/${id}`)).json()).status, { timeout: 60000, intervals: [1000] }).toBe('running')
   const source = '// rocket team\nint main(){}'
-  await expect.poll(async () => (await bob.request.post('/api/my/submissions', { headers: { origin }, data: { problemId: problem, contestId: id, runtime: 'cpp17', source } })).status(), { timeout: 15000 }).toBe(202)
+  await expect.poll(async () => (await bob.request.post('/api/my/submissions', { headers: { origin }, data: { problemId: problem, contestId: id, runtime: 'cpp23-gcc', source } })).status(), { timeout: 15000 }).toBe(202)
   await dave.goto(`/contests/${shortId(id)}/A?view=my-submissions`)
   await expect(dave.getByRole('navigation', { name: '問題メニュー' }).getByRole('link')).toHaveText(['問題文', 'チームの提出'])
   const teamList = dave.getByRole('region', { name: 'チームの提出' })

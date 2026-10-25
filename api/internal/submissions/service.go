@@ -40,17 +40,14 @@ func (s Service) Create(ctx context.Context, owner, id string, input CreateInput
 	if err := s.Ready(); err != nil {
 		return Submission{}, err
 	}
-	runtime := s.JudgeRuntime
-	if runtime == "" {
-		runtime = "cpp17-local"
+	suffix := "-isolate"
+	if s.local() {
+		suffix = "-local"
 	}
 	selected := ""
 	for _, available := range s.AvailableRuntimes() {
-		if input.Runtime == available.ID || input.Runtime == available.ID+"-isolate" || (runtime == "cpp17-local" && input.Runtime == runtime) {
-			selected = available.ID + "-isolate"
-			if runtime == "cpp17-local" {
-				selected = runtime
-			}
+		if input.Runtime == available.ID || input.Runtime == available.ID+suffix {
+			selected = available.ID + suffix
 			break
 		}
 	}
@@ -87,7 +84,7 @@ func (s Service) Create(ctx context.Context, owner, id string, input CreateInput
 	if err != nil {
 		return Submission{}, err
 	}
-	if selected != "cpp17-local" && s.DispatchJudge != nil {
+	if !s.local() && s.DispatchJudge != nil {
 		// The committed outbox and periodic dispatcher recover a failed wake-up.
 		wakeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		err := s.DispatchJudge(wakeCtx)
@@ -101,12 +98,13 @@ func (s Service) Create(ctx context.Context, owner, id string, input CreateInput
 
 // submissionRuntimes lists the stored runtime IDs that new submissions may use now.
 func (s Service) submissionRuntimes() []string {
-	if s.JudgeRuntime == "" || s.JudgeRuntime == "cpp17-local" {
-		return []string{"cpp17-local"}
+	suffix := "-isolate"
+	if s.local() {
+		suffix = "-local"
 	}
 	ids := []string{}
 	for _, rt := range s.AvailableRuntimes() {
-		ids = append(ids, rt.ID+"-isolate")
+		ids = append(ids, rt.ID+suffix)
 	}
 	return ids
 }
@@ -131,7 +129,7 @@ func (s Service) Rejudge(ctx context.Context, actor, problemID string, submissio
 		Actor: actor, Operator: operator, ProblemID: problemID, SubmissionIDs: submissionIDs,
 		Image: s.JudgeImage, Runtimes: s.submissionRuntimes(), CheckerRuntimes: s.RuntimeIDs(),
 	})
-	if err == nil && queued > 0 && s.JudgeRuntime != "" && s.JudgeRuntime != "cpp17-local" && s.DispatchJudge != nil {
+	if err == nil && queued > 0 && !s.local() && s.DispatchJudge != nil {
 		wakeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		if s.DispatchJudge(wakeCtx) != nil {
 			slog.Warn("immediate judge dispatch unavailable for rejudge; periodic recovery retained", "problemId", problemID)

@@ -154,7 +154,7 @@ func TestSubmissionsPostgres(t *testing.T) {
 		}
 		image = strings.TrimSpace(string(data))
 	}
-	h := newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Profiles: profiles.New(store.Pool()), Submissions: queue, JudgeImage: image, Verifier: newCognitoVerifier(f.server.URL, "client")})
+	h := newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Profiles: profiles.New(store.Pool()), Submissions: queue, JudgeImage: image, JudgeRuntime: "cpp17-local", Verifier: newCognitoVerifier(f.server.URL, "client")})
 	request := func(method, path, owner, body string, want int) string {
 		t.Helper()
 		// These fixture scenarios represent independent judging sessions.

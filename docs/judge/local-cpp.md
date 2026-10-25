@@ -1,6 +1,6 @@
-# ローカルでC++を提出する
+# ローカルでC++23とPythonを提出する
 
-公開問題のページからC++17のソースコードを提出し、`/my/submissions`で自分の結果を確認できる。
+公開問題のページからC++23またはCPython 3.14のソースコードを提出し、`/my/submissions`で自分の結果を確認できる。
 ログインとプロフィール登録が必要になる。
 ソースコードは128 KiBまでとし、提出後のコードと結果は本人だけが閲覧できる。
 
@@ -15,15 +15,22 @@ Docker Engineが起動しているLinux環境で、リポジトリのルート�
 Dockerを操作できるユーザーで`make dev`を起動する。
 
 ```console
-docker pull gcc:14.2.0
-export JUDGE_CPP_IMAGE="$(docker image inspect --format '{{.Id}}' gcc:14.2.0)"
+docker pull python:3.14.7-trixie
+export JUDGE_RUNTIME=docker-local
+export JUDGE_CPP_IMAGE="$(docker image inspect --format '{{.Id}}' python:3.14.7-trixie)"
 make dev
 ```
 
 `JUDGE_CPP_IMAGE`にはタグではなく、取得したイメージの`sha256:`から始まるIDを設定する。
 提出時にイメージIDを保存するため、後でタグが変わっても既存提出の環境は変わらない。
-コンパイル引数は`g++ -std=c++17 -O2 -pipe`で固定している。
-このコマンドや実行条件を変更する場合は、`cpp17-local`とは別のランタイム識別子を追加する。
+[公式Pythonイメージ](https://github.com/docker-library/python/blob/master/3.14/trixie/Dockerfile)に含まれるGCC 14.2とCPython 3.14.7を使う。
+C++23は`g++ -std=c++23 -O2 -pipe`でコンパイルし、Pythonは構文チェックして生成したバイトコードを`python3 -I -B`で実行する。
+`JUDGE_RUNTIME`が未設定または`docker-local`なら、この2言語を公開する。
+保存するランタイムIDは`cpp23-gcc-local`と`python314-local`である。
+検証コードにもこの2言語を使える。
+旧`cpp17-local`の受付済み提出は、保存されたイメージとC++17のコンパイル引数で処理する。
+既存の提出を残す場合は、旧イメージも削除せず保持する。
+旧環境での開発を続ける場合だけ、`JUDGE_RUNTIME=cpp17-local`と旧イメージIDを指定する。
 
 `JUDGE_CPP_IMAGE`を設定すると、`make dev`がAPIとフロントエンドに加えてワーカーも起動する。
 Ctrl+Cでまとめて停止できる。
@@ -116,7 +123,7 @@ Nix開発シェルの`api/`で実行する。
 DBテストは一時スキーマを作成し、終了時に削除する。
 
 ```console
-TEST_JUDGE_CPP_IMAGE=gcc:14.2.0 go test ./internal/submissions -v
+TEST_JUDGE_CPP_IMAGE=python:3.14.7-trixie go test ./internal/submissions -v
 TEST_DATABASE_URL='postgresql://openoj:openoj-local@127.0.0.1:15432/openoj?sslmode=disable' go test -race ./...
 ```
 

@@ -50,9 +50,9 @@ func TestCPPDocker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	job := Job{Image: strings.TrimSpace(string(data)), TimeLimitMS: 300, MemoryLimitMB: 64, Cases: []Case{{Name: "sample", Input: "3 5\n", Output: "8\n"}, {Name: "large", Input: "1000000000 1000000000\n", Output: "2000000000\n"}}}
+	job := Job{Runtime: "cpp23-gcc-local", Image: strings.TrimSpace(string(data)), TimeLimitMS: 300, MemoryLimitMB: 64, Cases: []Case{{Name: "sample", Input: "3 5\n", Output: "8\n"}, {Name: "large", Input: "1000000000 1000000000\n", Output: "2000000000\n"}}}
 	for _, tc := range []struct{ name, source, verdict string }{
-		{"AC", "#include <iostream>\nint main(){long long a,b;std::cin>>a>>b;std::cout<<a+b;}", "AC"},
+		{"AC", "#include <expected>\nstatic_assert(__cplusplus > 202002L);\nstd::expected<int,int> value;\n#include <iostream>\nint main(){long long a,b;std::cin>>a>>b;std::cout<<a+b;}", "AC"},
 		{"partial", "#include <iostream>\nint main(){long long a,b;std::cin>>a>>b;std::cout<<(a==3?a+b:0);}", "WA"},
 		{"wrong then accepted", "#include <iostream>\nint main(){long long a,b;std::cin>>a>>b;std::cout<<(a==3?0:a+b);}", "WA"},
 		{"mixed failures", "#include <iostream>\nint main(){long long a,b;std::cin>>a>>b;if(a==3){std::cout<<0;return 0;}return 1;}", "WA"},
@@ -123,8 +123,8 @@ func TestCaseDataDocker(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The program prints the number of CRs and whether the input ends with LF (2 when it is empty).
-	job := Job{Image: strings.TrimSpace(string(data)), TimeLimitMS: 2000, MemoryLimitMB: 64,
-		Cases: []Case{{Input: "abc\r\nd\r", Output: "0 1"}, {Input: "abc\r\nd", Output: "0 1"}, {InputFile: &problems.TestFile{ID: "crlf"}, Output: "0 1"}, {Output: "0 2"}},
+	job := Job{Runtime: "cpp23-gcc-local", Image: strings.TrimSpace(string(data)), TimeLimitMS: 2000, MemoryLimitMB: 64,
+		Cases:    []Case{{Input: "abc\r\nd\r", Output: "0 1"}, {Input: "abc\r\nd", Output: "0 1"}, {InputFile: &problems.TestFile{ID: "crlf"}, Output: "0 1"}, {Output: "0 2"}},
 		LoadFile: func(context.Context, *problems.TestFile) (string, error) { return "abc\r\nd", nil }}
 	source := "#include <algorithm>\n#include <iostream>\n#include <iterator>\n#include <string>\nint main(){std::string s{std::istreambuf_iterator<char>(std::cin),{}};std::cout<<std::count(s.begin(),s.end(),'\\r')<<' '<<(s.empty()?2:s.back()=='\\n');}"
 	if result := Judge(ctx, source, job); result.Verdict != "AC" || result.Passed != 4 {
@@ -143,7 +143,7 @@ func TestGeneratorDocker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	job := Job{Generate: true, Image: strings.TrimSpace(string(raw)), TimeLimitMS: 1000, MemoryLimitMB: 512, Cases: []Case{{Input: "7\n"}, {Input: "8\n"}}}
+	job := Job{Runtime: "cpp23-gcc-local", Generate: true, Image: strings.TrimSpace(string(raw)), TimeLimitMS: 1000, MemoryLimitMB: 512, Cases: []Case{{Input: "7\n"}, {Input: "8\n"}}}
 	var stored []string
 	job.SaveOutput = func(_ context.Context, data []byte) (*problems.TestFile, error) {
 		stored = append(stored, string(data))
@@ -199,7 +199,7 @@ func TestKnockoutDocker(t *testing.T) {
 	source := "#include <iostream>\nint main(){int n;std::cin>>n;if(n==1||n==3)for(;;){};}"
 	for _, mode := range []string{"normal", "sample", "validation", "generation"} {
 		t.Run(mode, func(t *testing.T) {
-			job := Job{Image: strings.TrimSpace(string(data)), TimeLimitMS: 100, MemoryLimitMB: 64,
+			job := Job{Runtime: "cpp23-gcc-local", Image: strings.TrimSpace(string(data)), TimeLimitMS: 100, MemoryLimitMB: 64,
 				EasyTest: mode == "sample", Validate: mode == "validation", Generate: mode == "generation",
 				Cases: []Case{{Input: "1"}, {Input: "2"}, {Input: "3"}, {Input: "4"}}}
 			r := Judge(ctx, source, job)
@@ -255,8 +255,8 @@ int main(int argc,char** argv){
 int main(){return access("/submission/expected-output",F_OK)==-1 && access("/submission/test-input",F_OK)==-1 ? 0:1;}`, "int main(){return 0;}", "AC"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			job := Job{Image: strings.TrimSpace(string(raw)), TimeLimitMS: 1000, MemoryLimitMB: 512,
-				Checker: &problems.Generator{Runtime: "cpp17", Source: tc.checker}, Cases: []Case{{Input: "10", Output: "secret"}, {Input: "10", Output: "secret"}}}
+			job := Job{Runtime: "cpp23-gcc-local", Image: strings.TrimSpace(string(raw)), TimeLimitMS: 1000, MemoryLimitMB: 512,
+				Checker: &problems.Generator{Runtime: "cpp23-gcc", Source: tc.checker}, Cases: []Case{{Input: "10", Output: "secret"}, {Input: "10", Output: "secret"}}}
 			r := Judge(ctx, tc.source, job)
 			if r.Verdict != tc.verdict {
 				t.Fatalf("got %+v want %s", r, tc.verdict)
@@ -284,7 +284,7 @@ func TestSamplePreview(t *testing.T) {
 }
 
 func TestLocalJudgeRefusesPartialScoring(t *testing.T) {
-	job := Job{Image: "sha256:local", TimeLimitMS: 1000, MemoryLimitMB: 256, Cases: []Case{{Input: "1", Output: "1", Groups: []string{"a"}}},
+	job := Job{Runtime: "cpp23-gcc-local", Image: "sha256:local", TimeLimitMS: 1000, MemoryLimitMB: 256, Cases: []Case{{Input: "1", Output: "1", Groups: []string{"a"}}},
 		Scoring: &problems.Scoring{Mode: "groups", Groups: []problems.ScoringGroup{{Name: "a", Points: 100}}}}
 	result := Judge(context.Background(), "int main(){}", job)
 	if result.Verdict != "JE" || result.Scoring != nil || len(result.Cases) != 0 || !strings.Contains(result.CheckerLog, "isolate") {
@@ -293,5 +293,71 @@ func TestLocalJudgeRefusesPartialScoring(t *testing.T) {
 	// FinishAttempt stores this JE for a partial-scoring job.
 	if err := scoreResult(job, &result); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPythonDocker(t *testing.T) {
+	image := os.Getenv("TEST_JUDGE_CPP_IMAGE")
+	if image == "" {
+		t.Skip("TEST_JUDGE_CPP_IMAGE required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	raw, err := exec.CommandContext(ctx, "docker", "image", "inspect", "--format={{.Id}}", image).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := Job{Runtime: "python314-local", Image: strings.TrimSpace(string(raw)), TimeLimitMS: 1000, MemoryLimitMB: 64,
+		Cases: []Case{{Input: "3 5\r", Output: "8"}, {Input: "10 11", Output: "21"}}}
+	for _, tc := range []struct{ name, source, verdict string }{
+		{"AC", "import sys\nassert sys.version_info[:2] == (3,14)\nprint(sum(map(int,input().split())))", "AC"},
+		{"CE", "if :", "CE"},
+		{"WA", "print(0)", "WA"},
+		{"RE", "raise RuntimeError('failure')", "RE"},
+		{"TLE", "while True: pass", "TLE"},
+		{"OLE", "import sys\nwhile True: sys.stdout.write('x'*65536)", "OLE"},
+		{"isolated cases", "from pathlib import Path\np=Path('/tmp/previous')\nassert not p.exists()\np.write_text('1')\nprint(sum(map(int,input().split())))", "AC"},
+		{"read-only artifact", "import os\nassert not os.access('/submission/main',os.W_OK)\nprint(sum(map(int,input().split())))", "AC"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := Judge(ctx, tc.source, job)
+			if result.Verdict != tc.verdict {
+				t.Fatalf("got %+v want %s", result, tc.verdict)
+			}
+		})
+	}
+	job.Generate = true
+	var saved []string
+	job.SaveOutput = func(_ context.Context, data []byte) (*problems.TestFile, error) {
+		saved = append(saved, string(data))
+		return &problems.TestFile{Size: int64(len(data))}, nil
+	}
+	if r := Judge(ctx, "print(sum(map(int,input().split())))", job); r.Verdict != "AC" || len(saved) != 2 || saved[0] != "8\n" || saved[1] != "21\n" {
+		t.Fatal(r, saved)
+	}
+	job.Generate, job.Validate = false, true
+	if r := Judge(ctx, "assert sum(map(int,input().split())) == 8", job); r.Verdict != "RE" || r.Passed != 1 {
+		t.Fatal(r)
+	}
+	job.Validate = false
+	job.Checker = &problems.Generator{Runtime: "python314", Source: "import sys\nfrom pathlib import Path\nassert len(sys.argv)==5\nassert int(input())==int(Path(sys.argv[2]).read_text())\nassert Path(sys.argv[3]).read_text()\nPath(sys.argv[4]).write_text('0')"}
+	for _, runtime := range []string{"cpp23-gcc-local", "python314-local"} {
+		job.Runtime = runtime
+		source := "print(sum(map(int,input().split())))"
+		if runtime == "cpp23-gcc-local" {
+			source = "#include <iostream>\nint main(){int a,b;std::cin>>a>>b;std::cout<<a+b;}"
+		}
+		if r := Judge(ctx, source, job); r.Verdict != "AC" || r.Passed != 2 {
+			t.Fatal(r)
+		}
+	}
+}
+
+func TestLocalJudgeRejectsUnknownRuntime(t *testing.T) {
+	for _, runtime := range []string{"", "python314-isolate", "java24-local"} {
+		job := Job{Runtime: runtime, Image: "sha256:invalid", TimeLimitMS: 1000, MemoryLimitMB: 64, Cases: []Case{{Input: "1", Output: "1"}}}
+		if r := Judge(context.Background(), "print(1)", job); r.Verdict != "JE" || len(r.Cases) != 0 {
+			t.Fatal(runtime, r)
+		}
 	}
 }

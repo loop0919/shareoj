@@ -111,7 +111,7 @@ func TestProblemRoutesWithoutDatabase(t *testing.T) {
 func TestGenerationWithoutProblemStore(t *testing.T) {
 	// The submission store is never used: the generation stops before it.
 	h := newHandler(AuthConfig{}, handlerDependencies{Verifier: staticVerifier{}, Submissions: &submissions.Store{}, JudgeImage: "sha256:" + strings.Repeat("a", 64)})
-	r := httptest.NewRequest("POST", "/my/submissions", strings.NewReader(`{"problemId":"11111111-1111-4111-8111-111111111111","runtime":"cpp17-local","source":"x","generation":{"mode":"input","start":1,"count":1}}`))
+	r := httptest.NewRequest("POST", "/my/submissions", strings.NewReader(`{"problemId":"11111111-1111-4111-8111-111111111111","runtime":"cpp23-gcc-local","source":"x","generation":{"mode":"input","start":1,"count":1}}`))
 	r.Header.Set("Authorization", "Bearer token")
 	r.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()

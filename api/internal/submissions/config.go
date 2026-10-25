@@ -17,8 +17,11 @@ func (p Config) AvailableRuntimes() []Runtime {
 	if !strings.HasPrefix(p.JudgeImage, "sha256:") || len(p.JudgeImage) != 71 {
 		return []Runtime{}
 	}
-	if p.JudgeRuntime == "" || p.JudgeRuntime == "cpp17-local" {
+	if p.JudgeRuntime == "cpp17-local" {
 		return PublishedRuntimes("cpp17")
+	}
+	if p.local() {
+		return PublishedRuntimes("cpp23-gcc,python314")
 	}
 	if p.JudgeRuntime != "cpp17-isolate" {
 		return []Runtime{}
@@ -34,10 +37,14 @@ func (p Config) Ready() error {
 	if p.Maintenance() {
 		return ErrMaintenance
 	}
-	if !strings.HasPrefix(p.JudgeImage, "sha256:") || len(p.JudgeImage) != 71 || (p.JudgeRuntime != "" && p.JudgeRuntime != "cpp17-local" && p.JudgeRuntime != "cpp17-isolate") {
+	if !strings.HasPrefix(p.JudgeImage, "sha256:") || len(p.JudgeImage) != 71 || (!p.local() && p.JudgeRuntime != "cpp17-isolate") {
 		return ErrUnavailable
 	}
 	return nil
+}
+
+func (p Config) local() bool {
+	return p.JudgeRuntime == "" || p.JudgeRuntime == "docker-local" || p.JudgeRuntime == "cpp17-local"
 }
 
 func (p Config) RuntimeIDs() []string {

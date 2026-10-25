@@ -311,7 +311,7 @@ test('scheduled problems open for submission, then publish with editorial and so
   await expect(bob.getByRole('navigation', { name: 'コンテストメニュー' })).toBeVisible()
   await expect(bob.locator('.contest-clock')).toBeVisible()
   const sid = fullId(bob.url().split('/').pop())
-  const setterSubmission = await page.request.post('/api/my/submissions', { headers: { origin }, data: { problemId: pid, contestId: id, runtime: 'cpp17', source: 'int main(){return 0;}' } })
+  const setterSubmission = await page.request.post('/api/my/submissions', { headers: { origin }, data: { problemId: pid, contestId: id, runtime: 'cpp23-gcc', source: 'int main(){return 0;}' } })
   expect(setterSubmission.status()).toBe(202)
   await expect(bob.getByRole('link', { name: '時間で公開する問題', exact: true })).toHaveAttribute('href', `/contests/${shortId(id)}/A`)
   expect((await guest.request.get(`/api/contests/${id}/submissions/${sid}`)).status()).toBe(404)
