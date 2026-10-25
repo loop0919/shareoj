@@ -12,10 +12,20 @@ from runtimes import RUNTIMES
 
 
 class RunnerTests(unittest.TestCase):
+    def test_retired_runtimes_are_rejected_for_submissions_and_judges(self):
+        for runtime in ('cpp17-isolate', 'java24-isolate'):
+            for role in ('runtime', 'checker', 'interactor'):
+                job = dict(runtime='cpp23-gcc-isolate', runtimeDigest='sha256:test', source='int main(){}',
+                           memoryLimitMb=512, timeLimitMs=1000, cases=[dict(input='', output='')])
+                job[role] = runtime if role == 'runtime' else dict(runtime=runtime.removesuffix('-isolate'), source='x')
+                error = host.telemetry.PlatformError if role == 'runtime' else ValueError
+                with self.subTest(runtime=runtime, role=role), self.assertRaises(error):
+                    host.validate_job(job, 'sha256:test')
+
     def test_memory_limits_reach_isolate_and_reject_invalid_jobs(self):
         import tempfile
         from subprocess import CompletedProcess
-        job = dict(runtime='cpp17-isolate', runtimeDigest='sha256:test', source='int main(){}',
+        job = dict(runtime='cpp23-gcc-isolate', runtimeDigest='sha256:test', source='int main(){}',
                    timeLimitMs=1000, cases=[dict(input='', output='')])
         for memory in (None, True, '315', 315.5, 512.0, 63, 513):
             with self.subTest(invalid=memory), patch.object(sandbox, 'invoke') as invoke:
@@ -49,7 +59,7 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(limits, ['--cg-mem=1048576', f'--cg-mem={memory * 1024}'])
 
     def test_invalid_time_limits_are_rejected(self):
-        job = dict(runtime='cpp17-isolate', runtimeDigest='sha256:test', source='int main(){}',
+        job = dict(runtime='cpp23-gcc-isolate', runtimeDigest='sha256:test', source='int main(){}',
                    memoryLimitMb=512, cases=[dict(input='', output='')])
         for ms in (None, True, '1000', 1000.0, 0, 99, 5001, 5100, 150, 1050):
             with self.subTest(invalid=ms):
@@ -83,7 +93,7 @@ class RunnerTests(unittest.TestCase):
             for name, (prefix, values) in environment.items():
                 with self.subTest(memory=memory, runtime=name):
                     self.assertEqual(flags(sandbox.run_args(name, 1, 4, memory), prefix), [prefix + value for value in values])
-            for name in ('java24-isolate', 'java25-isolate'):
+            for name in ('java25-isolate',):
                 with self.subTest(memory=memory, runtime=name), tempfile.TemporaryDirectory() as tmp:
                     root = Path(tmp)
                     (root / 'box').mkdir()
@@ -120,11 +130,11 @@ class RunnerTests(unittest.TestCase):
             for verdicts in (['TLE', 'AC', 'TLE', 'AC'], ['TLE', 'TLE', 'AC', 'AC'],
                              ['RE', 'TLE', 'TLE', 'AC'], ['TLE', 'AC', 'AC', 'AC']):
                 with self.subTest(mode=mode, verdicts=verdicts):
-                    job = dict(runtime='cpp17-isolate', runtimeDigest='sha256:test', source='int main(){}',
+                    job = dict(runtime='cpp23-gcc-isolate', runtimeDigest='sha256:test', source='int main(){}',
                                memoryLimitMb=512, timeLimitMs=1000,
                                cases=[dict(input=str(i), output='') for i in range(4)])
                     if mode == 'interactive':
-                        job['interactor'] = dict(runtime='cpp17', source='int main(){}')
+                        job['interactor'] = dict(runtime='cpp23-gcc', source='int main(){}')
                     elif mode:
                         job[mode] = True
                     if mode == 'generate':
@@ -230,7 +240,7 @@ class RunnerTests(unittest.TestCase):
             (box / 'classes').mkdir()
             (box / 'classes' / 'escape').symlink_to('/etc', target_is_directory=True)
             with self.assertRaisesRegex(ValueError, 'class directory'):
-                sandbox.collect_artifact(box, RUNTIMES['java24-isolate'])
+                sandbox.collect_artifact(box, RUNTIMES['java25-isolate'])
 
     def test_java_artifact_preserves_nested_classes(self):
         import tempfile
@@ -241,7 +251,7 @@ class RunnerTests(unittest.TestCase):
             (box / 'classes' / 'nested').mkdir(parents=True)
             (box / 'classes' / 'Main.class').write_bytes(b'main')
             (box / 'classes' / 'nested' / 'Helper.class').write_bytes(b'helper')
-            with zipfile.ZipFile(io.BytesIO(sandbox.collect_artifact(box, RUNTIMES['java24-isolate']))) as jar:
+            with zipfile.ZipFile(io.BytesIO(sandbox.collect_artifact(box, RUNTIMES['java25-isolate']))) as jar:
                 self.assertEqual(set(jar.namelist()), {'Main.class', 'nested/Helper.class'})
 
     def test_missing_and_nonfinite_measurements_fail_closed(self):
@@ -297,7 +307,7 @@ class RunnerTests(unittest.TestCase):
             return dict(status='', oom=False, overflow=False, exitCode=0, signal=0,
                         cpuTimeMs=0, wallTimeMs=1, memoryBytes=1024,
                         output=base64.b64encode(b'3\n').decode())
-        job = dict(runtime='cpp17-isolate', runtimeDigest='sha256:test', source='int main(){}',
+        job = dict(runtime='cpp23-gcc-isolate', runtimeDigest='sha256:test', source='int main(){}',
                    memoryLimitMb=315, timeLimitMs=1000,
                    cases=[dict(name='a', input='1', output='secret'), dict(name='b', input='2', output='3')])
         import tempfile
@@ -316,7 +326,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_sample_details_include_file_inputs_and_actual_output_on_failure(self):
         import tempfile
-        job = dict(runtime='cpp17-isolate', runtimeDigest='sha256:test', source='int main(){}',
+        job = dict(runtime='cpp23-gcc-isolate', runtimeDigest='sha256:test', source='int main(){}',
                    easyTest=True, memoryLimitMb=512, timeLimitMs=1000,
                    cases=[dict(name='sample_1', input='', output='', inputFile=dict(
                        id='33333333-3333-4333-8333-333333333333', size=4, sha256='a' * 64,
@@ -344,7 +354,7 @@ class RunnerTests(unittest.TestCase):
         file = dict(id='33333333-3333-4333-8333-333333333333', size=5, sha256='a' * 64,
                     key='test-files/' + 'a' * 32 + '/33333333-3333-4333-8333-333333333333/33333333-3333-4333-8333-333333333333',
                     versionId='v')
-        job = dict(runtime='cpp17-isolate', runtimeDigest='sha256:test', source='int main(){}',
+        job = dict(runtime='cpp23-gcc-isolate', runtimeDigest='sha256:test', source='int main(){}',
                    easyTest=True, memoryLimitMb=512, timeLimitMs=1000,
                    cases=[dict(input='abc\r\nd\re', output='3'),
                           dict(input='', output='', inputFile=file, outputFile=file),
@@ -374,7 +384,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_validation_uses_exit_status_and_does_not_save_output(self):
         import tempfile
-        job = dict(runtime='cpp17-isolate', runtimeDigest='sha256:test', source='int main(){}',
+        job = dict(runtime='cpp23-gcc-isolate', runtimeDigest='sha256:test', source='int main(){}',
                    validate=True, memoryLimitMb=512, timeLimitMs=1000,
                    cases=[dict(input=str(i), output='secret') for i in range(3)])
         calls = []
@@ -402,7 +412,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_generation_preserves_stdout_and_enforces_file_and_total_limits(self):
         import tempfile
-        job = dict(runtime='cpp17-isolate', runtimeDigest='sha256:test', source='int main(){}',
+        job = dict(runtime='cpp23-gcc-isolate', runtimeDigest='sha256:test', source='int main(){}',
                    generate=True, memoryLimitMb=512, timeLimitMs=1000,
                    generationPrefix='test-files/' + 'a' * 32 + '/11111111-1111-4111-8111-111111111111/generated/',
                    cases=[dict(input='7\n', output=''), dict(input='8\n', output='')])
@@ -480,7 +490,7 @@ class RunnerTests(unittest.TestCase):
         file = dict(id='11111111-1111-4111-8111-111111111111', size=3, sha256='a' * 64,
                     key='test-files/' + 'b' * 32 + '/22222222-2222-4222-8222-222222222222/11111111-1111-4111-8111-111111111111',
                     versionId='version')
-        job = dict(runtime='cpp17-isolate', runtimeDigest='sha256:test', source='int main(){}',
+        job = dict(runtime='cpp23-gcc-isolate', runtimeDigest='sha256:test', source='int main(){}',
                    memoryLimitMb=512, timeLimitMs=1000,
                    cases=[dict(name='large', input='', output='', inputFile=file, outputFile=file)])
         import tempfile
@@ -497,7 +507,7 @@ class RunnerTests(unittest.TestCase):
         file = dict(id='11111111-1111-4111-8111-111111111111', size=len(data), sha256='a' * 64,
                     key='test-files/' + 'b' * 32 + '/22222222-2222-4222-8222-222222222222/11111111-1111-4111-8111-111111111111',
                     versionId='version')
-        job = dict(runtime='cpp17-isolate', runtimeDigest='sha256:test', source='int main(){}',
+        job = dict(runtime='cpp23-gcc-isolate', runtimeDigest='sha256:test', source='int main(){}',
                    validate=True, memoryLimitMb=512, timeLimitMs=5000,
                    cases=[dict(input='', output='', inputFile=file)])
         def execute(request, compile_phase=False):
@@ -523,7 +533,7 @@ class RunnerTests(unittest.TestCase):
                     key='test-files/' + 'b' * 32 + '/22222222-2222-4222-8222-222222222222/11111111-1111-4111-8111-111111111111',
                     versionId='version')
         cases = [dict(input='', output='', inputFile=file, outputFile=file) for _ in range(16)]
-        job = dict(runtime='cpp17-isolate', runtimeDigest='sha256:test', source='int main(){}',
+        job = dict(runtime='cpp23-gcc-isolate', runtimeDigest='sha256:test', source='int main(){}',
                    memoryLimitMb=512, timeLimitMs=1000, cases=cases)
         host.validate_job(job, 'sha256:test')
         job['cases'] = cases + [dict(input='x', output='')]

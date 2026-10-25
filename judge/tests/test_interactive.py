@@ -47,7 +47,7 @@ class InteractiveTests(unittest.TestCase):
     def test_interactor_heap_caps_stay_fixed_while_the_submission_scales(self):
         from test_checker import job
         v8 = '--max-old-space-size='
-        expected = {'java24-isolate': ('-Xmx', {64: '32m', 256: '128m', 512: '256m'}, '128m'),
+        expected = {'java25-isolate': ('-Xmx', {64: '32m', 256: '128m', 512: '256m'}, '128m'),
                     'csharp14-isolate': ('--env=DOTNET_GCHeapHardLimit=', {64: '0x1800000', 256: '0x6000000', 512: '0xc000000'}, '0x8000000'),
                     'go127-isolate': ('--env=GOMEMLIMIT=', {64: '48MiB', 256: '192MiB', 512: '384MiB'}, '160MiB'),
                     'ruby-truffle40-isolate': ('--env=RUBYOPT=', {64: '--vm.Xmx32m', 256: '--vm.Xmx128m', 512: '--vm.Xmx256m'}, '--vm.Xmx96m'),
@@ -67,7 +67,7 @@ class InteractiveTests(unittest.TestCase):
 
     def test_java_interactor_heap_comes_from_the_flag_not_the_memory_value(self):
         # Like run_args, java_heap tells the interactor apart by its flag, so its cap ignores the memory value.
-        command = list(interactive.RUNTIMES['java24-isolate']['run'])
+        command = list(interactive.RUNTIMES['java25-isolate']['run'])
         for memory in (64, 256, 512):
             with self.subTest(memory=memory):
                 self.assertEqual([arg for arg in interactive.sandbox.java_heap(command, memory, interactor=True)
@@ -256,7 +256,7 @@ class InteractiveTests(unittest.TestCase):
                 patch.object(host.sandbox, 'execute', compile), patch.object(interactive, 'execute', execute):
             result = host.judge(request, 'sha256:test')
             self.assertEqual(list(Path(tmp).iterdir()), [])
-        self.assertEqual(compiled, ['cpp17-isolate', 'python314-isolate'])
+        self.assertEqual(compiled, ['cpp23-gcc-isolate', 'python314-isolate'])
         self.assertEqual(result['passed'], 2)
         for case in result['cases']:
             self.assertNotIn('sampleDetails', case)

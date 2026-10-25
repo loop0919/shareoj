@@ -26,12 +26,10 @@ def sources():
         'pypy.tar.bz2': 'https://downloads.python.org/pypy/pypy3.11-v7.3.23-linux64.tar.bz2',
         'codon.tar.gz': 'https://github.com/exaloop/codon/releases/download/v0.20.0/codon-linux-x86_64.tar.gz',
         'rust.tar.xz': 'https://static.rust-lang.org/dist/rust-1.98.1-x86_64-unknown-linux-gnu.tar.xz',
-        'java.tar.gz': 'https://download.java.net/java/GA/jdk24.0.2/fdc5d0102fe0414db21410ad5834341f/12/GPL/openjdk-24.0.2_linux-x64_bin.tar.gz',
         'boost.tar.bz2': 'https://archives.boost.io/release/1.92.0/source/boost_1_92_0.tar.bz2',
         'acl.tar.gz': 'https://codeload.github.com/atcoder/ac-library/tar.gz/refs/tags/v1.6',
         'acl-python.tar.gz': 'https://codeload.github.com/not522/ac-library-python/tar.gz/27fdbb71cd0d566bdeb12746db59c9d908c6b5d5',
         'ac_library.jar': 'https://github.com/ocha98/ac-library-java/releases/download/v2.0.0/ac_library23.jar',
-        'bifurcan.jar': 'https://repo.maven.apache.org/maven2/io/lacuna/bifurcan/0.2.0-rc1/bifurcan-0.2.0-rc1.jar',
     }
     packages = {}
     for name in ('numpy', 'scipy', 'more-itertools', 'sortedcontainers'):

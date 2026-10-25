@@ -1,32 +1,4 @@
 {
-  "cpp17-isolate": [
-    {
-      "name": "AC",
-      "source": "#include <cstdio>\nint main(){puts(\"3\");}",
-      "input": "",
-      "output": "3",
-      "verdict": "AC",
-      "timeLimitMs": 5000
-    },
-    {
-      "name": "WA",
-      "source": "#include <cstdio>\nint main(){puts(\"3\");}",
-      "input": "",
-      "output": "4",
-      "verdict": "WA",
-      "timeLimitMs": 5000
-    },
-    {
-      "name": "CE",
-      "source": "not c++",
-      "verdict": "CE"
-    },
-    {
-      "name": "TLE",
-      "source": "int main(){for(;;){}}",
-      "verdict": "TLE"
-    }
-  ],
   "c23-gcc-isolate": [
     {
       "name": "AC",
@@ -239,40 +211,6 @@
     {
       "name": "TLE",
       "source": "fn main(){loop{std::hint::black_box(0);}}",
-      "verdict": "TLE"
-    }
-  ],
-  "java24-isolate": [
-    {
-      "name": "libraries-and-nested-class",
-      "source": "import ac_library.DSU; import io.lacuna.bifurcan.Set; public class Main { static class Helper { static int value(){return 3;} } public static void main(String[] args){ DSU d=new DSU(3); d.merge(0,1); Set<Integer> s=new Set<Integer>().add(1).add(2); if(d.size(0)!=2 || s.size()!=2)throw new AssertionError(); System.out.println(Helper.value()); } }",
-      "verdict": "AC",
-      "timeLimitMs": 5000
-    },
-    {
-      "name": "AC",
-      "source": "public class Main { public static void main(String[] args){System.out.println(3);} }",
-      "input": "",
-      "output": "3",
-      "verdict": "AC",
-      "timeLimitMs": 5000
-    },
-    {
-      "name": "WA",
-      "source": "public class Main { public static void main(String[] args){System.out.println(3);} }",
-      "input": "",
-      "output": "4",
-      "verdict": "WA",
-      "timeLimitMs": 5000
-    },
-    {
-      "name": "CE",
-      "source": "not java",
-      "verdict": "CE"
-    },
-    {
-      "name": "TLE",
-      "source": "public class Main { public static void main(String[] args){for(;;){}} }",
       "verdict": "TLE"
     }
   ],

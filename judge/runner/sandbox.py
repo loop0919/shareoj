@@ -76,7 +76,7 @@ def read_judge_file(box, protocol):
 
 def execute(request, compile_phase=False, *, artifact=None, checker_files=None, score_file=False, stderr_log=False):
     artifact = ARTIFACT if artifact is None else artifact
-    runtime = RUNTIMES[request.get('runtime', 'cpp17-isolate')]
+    runtime = RUNTIMES[request.get('runtime', 'cpp23-gcc-isolate')]
     if compile_phase:
         source = request.get('source')
         if not isinstance(source, str) or not 0 < len(source.encode()) <= SOURCE_LIMIT or '\0' in source:
@@ -115,7 +115,7 @@ def execute(request, compile_phase=False, *, artifact=None, checker_files=None, 
             if runtime['artifact'] == 'java':
                 command = java_heap(command, memory)
             (box / 'input').write_bytes(data)
-        args = run_args(request.get('runtime', 'cpp17-isolate'), cpu, wall, memory,
+        args = run_args(request.get('runtime', 'cpp23-gcc-isolate'), cpu, wall, memory,
                         compile_phase=compile_phase)
         if not compile_phase:
             args.insert(-1, '--stdin=input')
@@ -181,7 +181,7 @@ def run_args(runtime, cpu, wall, memory, *, compile_phase=False, meta=None, inte
             '--fsize=32768' if compile_phase else f'--fsize={OUTPUT_LIMIT // 1024 + 1}',
             *([] if interactive else ['--stdout=stdout']), '--stderr=stderr',
             '--env=PATH=/usr/bin:/bin', '--dir=/etc=/opt/judge/sandbox-etc',
-            *(['--dir=' + ROOT] if runtime != 'cpp17-isolate' else []),
+            '--dir=' + ROOT,
             # isolate removes symlinks from /box before running the compiler.
             *(['--dir=/box/vendor=' + ROOT + '/go-deps/vendor']
               if compile_phase and runtime == 'go127-isolate' else []),

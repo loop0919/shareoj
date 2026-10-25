@@ -21,14 +21,13 @@ make install
 cd /build/src
 unpack pypy.tar.bz2 "$runtime_root/pypy"
 unpack codon.tar.gz "$runtime_root/codon"
-unpack java.tar.gz "$runtime_root/java"
 unpack rust.tar.xz rust
 bash rust/install.sh --prefix="$runtime_root/rust" --components=rustc,cargo,rust-std-x86_64-unknown-linux-gnu --disable-ldconfig
 unpack boost.tar.bz2 boost
 unpack acl.tar.gz acl
 mkdir -p "$runtime_root/include" "$runtime_root/java-libs" "$runtime_root/build-manifest"
 cp -a boost/boost acl/atcoder "$runtime_root/include/"
-cp /inputs/ac_library.jar /inputs/bifurcan.jar "$runtime_root/java-libs/"
+cp /inputs/ac_library.jar "$runtime_root/java-libs/"
 unpack acl-python.tar.gz acl-python
 "$runtime_root/python/bin/python3.14" -m pip install --only-binary=:all: -r /inputs/requirements.txt
 "$runtime_root/python/bin/python3.14" -m pip freeze --all > "$runtime_root/build-manifest/cpython.txt"

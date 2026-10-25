@@ -63,7 +63,7 @@ class TelemetryTests(unittest.TestCase):
     def test_isolate_init_failure_is_platform(self):
         with patch.object(sandbox, 'invoke', return_value=Mock(returncode=2)):
             with self.assertRaisesRegex(telemetry.PlatformError, 'isolate_init_failed'):
-                sandbox.execute({'runtime': 'cpp17-isolate', 'source': 'test'}, True)
+                sandbox.execute({'runtime': 'cpp23-gcc-isolate', 'source': 'test'}, True)
 
     def process(self, judge_result=None, judge_error=None, s3_error=None, progress=None, digest='runtime'):
         data = json.dumps(dict(submissionId='id', attemptId='attempt', runtimeDigest=digest)).encode()

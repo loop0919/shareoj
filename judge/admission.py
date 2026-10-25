@@ -41,7 +41,7 @@ if __name__ == '__main__':
     parser.add_argument('--function', required=True)
     parser.add_argument('--pause', action='store_true')
     parser.add_argument('--smoke-report', type=Path)
-    parser.add_argument('--runtimes', default='cpp17')
+    parser.add_argument('--runtimes', default='cpp23-gcc')
     args = parser.parse_args()
     digest, published = '', 'none'
     if not args.pause:

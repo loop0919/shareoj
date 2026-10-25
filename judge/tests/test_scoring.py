@@ -18,14 +18,14 @@ def testlib_result(outcome, message=b'', points=None, pctype=None):
 
 
 def scoring_job(mode='groups', groups=(('a', 40), ('b', 60)), members=(['a'], ['b']), **changes):
-    job = dict(runtime='cpp17-isolate', runtimeDigest='sha256:test', source='submitted source',
+    job = dict(runtime='cpp23-gcc-isolate', runtimeDigest='sha256:test', source='submitted source',
                memoryLimitMb=512, timeLimitMs=1000,
                cases=[dict(name=f'c{i}', input=str(i), output='', isSample=False,
                            groups=list(member) if isinstance(member, list) else member)
                       for i, member in enumerate(members)],
                scoring=dict(mode=mode, groups=[dict(name=name, points=points) for name, points in groups]))
     if mode == 'aggregate':
-        job['scoring']['aggregator'] = dict(runtime='cpp17', source='aggregator source')
+        job['scoring']['aggregator'] = dict(runtime='cpp23-gcc', source='aggregator source')
     job.update(changes)
     return job
 
@@ -123,13 +123,13 @@ class ValidationTests(unittest.TestCase):
             invalid(groups=((None, 40),), members=([],)), invalid(scoring_groups=[dict(points=40)]),
             invalid(members=(['c'],)), invalid(members=(['a', 'a'],)), invalid(members=('a',)),
             invalid(members=(0,)), invalid(members=([0],)), invalid(members=({'a': 1},)),
-            invalid(scoring_aggregator=dict(runtime='cpp17', source='x')),
+            invalid(scoring_aggregator=dict(runtime='cpp23-gcc', source='x')),
             invalid(mode='aggregate', scoring_aggregator=None),
             invalid(mode='aggregate', scoring_aggregator=dict(runtime='sh', source='x')),
-            invalid(mode='aggregate', scoring_aggregator=dict(runtime='cpp17', source=' ')),
-            invalid(mode='aggregate', scoring_aggregator=dict(runtime='cpp17', source='a\0')),
-            invalid(mode='aggregate', scoring_aggregator=dict(runtime='cpp17', source='あ' * 22000)),
-            invalid(mode='aggregate', scoring_aggregator='cpp17'),
+            invalid(mode='aggregate', scoring_aggregator=dict(runtime='cpp23-gcc', source=' ')),
+            invalid(mode='aggregate', scoring_aggregator=dict(runtime='cpp23-gcc', source='a\0')),
+            invalid(mode='aggregate', scoring_aggregator=dict(runtime='cpp23-gcc', source='あ' * 22000)),
+            invalid(mode='aggregate', scoring_aggregator='cpp23-gcc'),
         ]
         sample = scoring_job()
         sample['cases'][0]['isSample'] = 'true'
@@ -149,7 +149,7 @@ class CutoffTests(unittest.TestCase):
             with self.subTest(interactive=interactive_mode):
                 job = scoring_job(groups=(('a', 10), ('b', 20), ('c', 30)), members=[m for m, _ in self.PLAN])
                 if interactive_mode:
-                    job['interactor'] = dict(runtime='cpp17', source='interactor')
+                    job['interactor'] = dict(runtime='cpp23-gcc', source='interactor')
                 verdicts = [v for _, v in self.PLAN]
                 progress = []
                 judge = Judge(self, submission=lambda i: finished(verdicts[i]),
@@ -172,7 +172,7 @@ class CutoffTests(unittest.TestCase):
                           members=(['all', 'wrong'], ['all'], ['wrong'], [], ['sample']))
         job['cases'][3]['isSample'] = True
         verdicts = ['AC', 'AC', 'WA', 'WA', 'AC']
-        job['checker'] = dict(runtime='cpp17', source='checker')
+        job['checker'] = dict(runtime='cpp23-gcc', source='checker')
         judge = Judge(self, checker=lambda i: finished(exitCode=0 if verdicts[i] == 'AC' else 1, status='' if verdicts[i] == 'AC' else 'RE'))
         result = judge(job)
         self.assertEqual(result['verdict'], 'WA')
@@ -229,7 +229,7 @@ class BudgetTests(unittest.TestCase):
             with self.subTest(interactive=interactive_mode):
                 job = scoring_job('aggregate', members=(['a'], ['a'], ['b'], ['b'], []))
                 job['cases'][4]['isSample'] = True
-                job['interactor' if interactive_mode else 'checker'] = dict(runtime='cpp17', source='judge')
+                job['interactor' if interactive_mode else 'checker'] = dict(runtime='cpp23-gcc', source='judge')
                 now = [0]
                 def tick(reply):
                     now[0] += 500
@@ -335,7 +335,7 @@ class AggregatorTests(unittest.TestCase):
     def legacy_job(self, **changes):
         job = scoring_job('aggregate', groups=(('a', 10), ('b', 20)), members=(['a'], ['a', 'b'], ['b'], []))
         job['cases'][3]['isSample'] = True
-        job['checker'] = dict(runtime='cpp17', source='checker')
+        job['checker'] = dict(runtime='cpp23-gcc', source='checker')
         job.update(changes)
         return job
 
@@ -464,7 +464,7 @@ def sample_job(protocol='testlib', interactive_mode=False, **changes):
     del job['scoring']
     for case in job['cases']:
         case['isSample'] = True
-    job['interactor' if interactive_mode else 'checker'] = dict(runtime='cpp23-gcc' if protocol == 'testlib' else 'cpp17',
+    job['interactor' if interactive_mode else 'checker'] = dict(runtime='cpp23-gcc',
                                                                 protocol=protocol, source='judge')
     job.update(dict(easyTest=True, acceptPoints=True), **changes)
     return job
@@ -547,7 +547,7 @@ class SandboxContractTests(unittest.TestCase):
                 self.assertFalse((box / 'score').exists())
             box = root / 'legacy'
             box.mkdir()
-            command = sandbox.prepare_program(box, RUNTIMES['cpp17-isolate'], artifact, files, result_file=True)
+            command = sandbox.prepare_program(box, RUNTIMES['cpp23-gcc-isolate'], artifact, files, result_file=True)
             self.assertEqual(command[1:], ['/box/test-input', '/box/expected-output', '/box/submission-source', '/box/score'])
             self.assertFalse((box / 'result').exists())
 
@@ -570,7 +570,7 @@ class SandboxContractTests(unittest.TestCase):
                     return subprocess.CompletedProcess(args, 0, stdout=str(root).encode())
                 checker_files = None if 'stderr_log' in kwargs or not kwargs else {
                     'test-input': b'in', 'expected-output': b'ans', 'submission-source': b'src'}
-                runtime = 'cpp23-gcc-isolate' if protocol == 'testlib' else 'cpp17-isolate'
+                runtime = 'cpp23-gcc-isolate'
                 with patch.object(sandbox, 'invoke', invoke), patch.object(sandbox, 'META', meta):
                     result = sandbox.execute(dict(runtime=runtime, input='', protocol=protocol, timeLimitMs=5000, memoryLimitMb=512),
                                              artifact=artifact, checker_files=checker_files, **kwargs)

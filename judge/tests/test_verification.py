@@ -17,11 +17,11 @@ class VerificationTests(unittest.TestCase):
         self.receipt = dict(phase='smoke', region='ap-northeast-1', runId='a' * 32,
                             instances=['mi-a', 'mi-b'], commands={'mi-a': 'cmd-a', 'mi-b': 'cmd-b'})
         self.report = dict(runId='a' * 32, runtimeDigest='sha256:' + 'b' * 64,
-                           passedRuntimes=['cpp17-isolate'], failedRuntimes=[])
+                           passedRuntimes=['cpp23-gcc-isolate'], failedRuntimes=[])
 
     def test_missing_failed_stale_or_different_host_blocks_publication(self):
         cases = [dict(runtimeDigest='sha256:' + 'c' * 64), dict(runId='c' * 32),
-                 dict(failedRuntimes=['cpp17-isolate']), dict(passedRuntimes=[])]
+                 dict(failedRuntimes=['cpp23-gcc-isolate']), dict(passedRuntimes=[])]
         for change in cases:
             with self.subTest(change=change), self.assertRaises(ValueError):
                 verify.merge_reports(self.receipt, {'mi-a': self.report, 'mi-b': {**self.report, **change}})
@@ -29,16 +29,16 @@ class VerificationTests(unittest.TestCase):
             verify.merge_reports(self.receipt, {'mi-a': self.report})
         combined = verify.merge_reports(self.receipt, dict.fromkeys(self.receipt['instances'], self.report))
         with self.assertRaises(ValueError):
-            publication(combined, 'cpp17')
+            publication(combined, 'cpp23-gcc')
 
     def test_only_all_ready_hosts_can_be_published(self):
         self.receipt['phase'] = 'start'
         reports = {node: {**self.report, 'ready': True} for node in self.receipt['instances']}
         result = verify.merge_reports(self.receipt, reports)
-        self.assertEqual(publication(result, 'cpp17')[0], self.report['runtimeDigest'])
+        self.assertEqual(publication(result, 'cpp23-gcc')[0], self.report['runtimeDigest'])
         result['hosts']['mi-b']['ready'] = False
         with self.assertRaises(ValueError):
-            publication(result, 'cpp17')
+            publication(result, 'cpp23-gcc')
         with self.assertRaises(ValueError):
             verify.merge_reports(self.receipt, reports)
 

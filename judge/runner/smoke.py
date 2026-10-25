@@ -10,12 +10,12 @@ from interactive_smoke import failure_program
 
 def scoring_smoke(digest, passed):
     """Group cutoff, legacy score files and aggregator I/O in the real sandbox (ADR 0025)."""
-    if 'cpp17-isolate' not in passed:
+    if 'cpp23-gcc-isolate' not in passed:
         return
     from testlib_smoke import exact_aggregator
     echo = '#include <cstdio>\nint main(){int n;if(scanf("%d",&n)!=1)return 1;if(n>=5)for(;;){}printf("%d\\n",n);fflush(stdout);}'
     def job(cases, groups, **changes):
-        item = dict(runtime='cpp17-isolate', runtimeDigest=digest, source=echo, timeLimitMs=1000, memoryLimitMb=512,
+        item = dict(runtime='cpp23-gcc-isolate', runtimeDigest=digest, source=echo, timeLimitMs=1000, memoryLimitMb=512,
                     cases=[dict(name=f'case{i}', input=str(n), output=str(n), isSample=sample, groups=member)
                            for i, (n, sample, member) in enumerate(cases)],
                     scoring=dict(mode='groups', groups=[dict(name=name, points=points) for name, points in groups]))
@@ -35,8 +35,8 @@ int main(int argc,char** argv){int n,x;std::ifstream(argv[1])>>n;if(!(std::cin>>
  std::ofstream(argv[4])<<" SCORE\n";return n==4;}'''
     cases = [(3, False, ['g']), (4, False, ['g']), (2, True, [])]
     aggregator = exact_aggregator('3 1\n10\nAC 30 0 1 0\nWA 40 0 1 0\nAC 20 1 0\n', '2.339\n')
-    scored = job(cases, [('g', 10)], checker=dict(runtime='cpp17', source=checker.replace('SCORE', '"<<x*10<<"')))
-    scored['scoring'].update(mode='aggregate', aggregator=dict(runtime='cpp17', source=aggregator))
+    scored = job(cases, [('g', 10)], checker=dict(runtime='cpp23-gcc', source=checker.replace('SCORE', '"<<x*10<<"')))
+    scored['scoring'].update(mode='aggregate', aggregator=dict(runtime='cpp23-gcc', source=aggregator))
     result = judge(scored, digest)
     assert result['verdict'] == 'WA' and [c.get('score') for c in result['cases']] == [30, 40, 20], result
     assert result['scoring'] == dict(score=233, maxScore=1000, groups=[dict(score=233, maxScore=1000)]), result
@@ -49,8 +49,8 @@ int main(int argc,char** argv){int n,x;std::ifstream(argv[1])>>n;if(!(std::cin>>
 int main(int argc,char** argv){int n,y;std::ifstream(argv[1])>>n;printf("%d\n",n);fflush(stdout);
  if(scanf("%d",&y)!=1)return 1;std::ofstream(argv[4])<<y;return y==2*n?0:1;}'''
     solution = '#include <cstdio>\nint main(){int n;if(scanf("%d",&n)!=1)return 1;printf("%d\\n",2*n);fflush(stdout);}'
-    scored = job([(3, False, ['g'])], [('g', 10)], source=solution, interactor=dict(runtime='cpp17', source=interactor))
-    scored['scoring'].update(mode='aggregate', aggregator=dict(runtime='cpp17', source=exact_aggregator('1 1\n10\nAC 6 0 1 0\n', '6')))
+    scored = job([(3, False, ['g'])], [('g', 10)], source=solution, interactor=dict(runtime='cpp23-gcc', source=interactor))
+    scored['scoring'].update(mode='aggregate', aggregator=dict(runtime='cpp23-gcc', source=exact_aggregator('1 1\n10\nAC 6 0 1 0\n', '6')))
     result = judge(scored, digest)
     assert result['verdict'] == 'AC' and result['cases'][0]['score'] == 6 and result['scoring']['score'] == 600, result
     print('scoring aggregate OK', flush=True)
@@ -76,7 +76,7 @@ with slot():
         ('AC', '#include <cstdio>\nint main(){FILE* f=fopen("marker","r");puts(f?"4":"3");if(f)fclose(f);f=fopen("marker","w");if(f)fclose(f);}'),
     ]
     for expected, source in programs:
-        job = dict(runtime='cpp17-isolate', runtimeDigest=runtime, source=source,
+        job = dict(runtime='cpp23-gcc-isolate', runtimeDigest=runtime, source=source,
                    timeLimitMs=1000, memoryLimitMb=512, cases=[dict(name='first', input='', output='3'), dict(name='fresh', input='', output='3')])
         result = judge(job, runtime)
         assert result['verdict'] == expected, (expected, result)
@@ -87,7 +87,7 @@ with slot():
     for memory in (64, 315, 512):
         for size, expected in ((memory // 2, 'AC'), (memory + 16, 'MLE')):
             source = allocate.replace('MEMORY', str(size))
-            job = dict(runtime='cpp17-isolate', runtimeDigest=runtime, source=source,
+            job = dict(runtime='cpp23-gcc-isolate', runtimeDigest=runtime, source=source,
                        timeLimitMs=1000, memoryLimitMb=memory, cases=[dict(input='', output='3')])
             result = judge(job, runtime)
             assert result['verdict'] == expected, (memory, expected, result)
@@ -115,7 +115,7 @@ with slot():
             literal = json.dumps(fixture.get('input', ''))
             source = '#include <cstdio>\nint main(){fputs(' + literal + ',stdout);}'
             checker = dict(runtime=name.removesuffix('-isolate'), source=fixture['source'])
-            job = dict(runtime='cpp17-isolate', runtimeDigest=runtime, source=source, checker=checker,
+            job = dict(runtime='cpp23-gcc-isolate', runtimeDigest=runtime, source=source, checker=checker,
                        timeLimitMs=1000, memoryLimitMb=512,
                        cases=[dict(input='', output='different expected output')] * 2)
             result = judge(job, runtime)
@@ -142,7 +142,7 @@ with slot():
                 failed.append(name)
                 continue
             print(name, 'generation OK', flush=True)
-            if name == 'cpp17-isolate':
+            if name == 'cpp23-gcc-isolate':
                 checker_source = r'''#include <cassert>
 #include <fstream>
 #include <iostream>
@@ -157,7 +157,7 @@ int main(int argc,char** argv){
                 for want, code, output in [('AC', checker_source, '7'), ('WA', checker_source, '99'),
                                            ('JE', 'invalid checker', '7'), ('JE', 'int main(){for(;;){}}', '7')]:
                     job.update(source='#include <cstdio>\nint main(){puts("' + output + '");}',
-                               checker=dict(runtime='cpp17', source=code), cases=[dict(input='10', output='')] * 2)
+                               checker=dict(runtime='cpp23-gcc', source=code), cases=[dict(input='10', output='')] * 2)
                     result = judge(job, runtime)
                     if result['verdict'] != want:
                         print(name, 'checker', want, 'FAILED', result, flush=True)

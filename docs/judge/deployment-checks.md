@@ -15,6 +15,7 @@ EC2の台では停止中の増設の台も起動してから配布し、配布�
 SSMへの登録成功だけでは配布完了にしない。
 
 実行前に更新したランタイムの配布物をビルドし、AWS CLI、GitHub CLI、Terraformを使える状態にする。
+C++17とJava 24を外す最初の配布では、[旧JDKを除く手順](runtime-rollout.md#c17とjava-24を外す配布)で保存済みランタイムアーカイブも作り直す。
 `rollout.py`は`nix develop`のシェルの中で起動する。
 PATHに古いTerraform（1.9未満）があると、`infra/api`の変数の検証で失敗する。
 AWSのprofileは明示し、GitHub CLIは対象リポジトリのEnvironment変数を書き込める権限を使う。

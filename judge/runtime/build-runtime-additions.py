@@ -50,6 +50,9 @@ def toolchains():
         with (INPUT / name).open('rb') as f:
             assert hashlib.file_digest(f, 'sha256').hexdigest() == item['sha256'], name
     run('tar', '-xf', '/inputs/base.tar.gz', '-C', '/opt')
+    if (ROOT / 'java').exists():
+        shutil.rmtree(ROOT / 'java')
+    (ROOT / 'java-libs/bifurcan.jar').unlink(missing_ok=True)
     unpack('node.tar.xz', ROOT / 'node')
     with zipfile.ZipFile(INPUT / 'bun.zip') as z:
         name = next(n for n in z.namelist() if n.endswith('/bun'))
@@ -267,7 +270,7 @@ def golf():
 def finish():
     save_lock(INPUT / 'sources.json')
     save_lock(DEPS / 'catalog.json')
-    # Keep only runtime data from the newly built gems; preserve the base tree verbatim.
+    # Keep only runtime data from the newly built gems.
     for deps in ('ruby-deps', 'truffleruby-deps'):
         for temporary in (ROOT / deps).glob('bundle/*/*/gems/numo-openblas-*/vendor/tmp'):
             shutil.rmtree(temporary)

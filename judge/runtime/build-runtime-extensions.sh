@@ -9,6 +9,8 @@ unpack() { mkdir -p "$2"; tar -xf "/extension-inputs/$1" -C "$2" --strip-compone
 
 case "${1:?toolchains, native, or packages}" in
 toolchains)
+  # Older pinned base archives still contain the retired JDK and its library.
+  rm -rf "$runtime_root/java" "$runtime_root/java-libs/bifurcan.jar"
   unpack go.tar.gz "$runtime_root/go"
   mkdir -p "$runtime_root/dotnet"
   tar -xf /extension-inputs/dotnet.tar.gz -C "$runtime_root/dotnet"

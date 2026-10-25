@@ -24,7 +24,7 @@ class SmokeReportTests(unittest.TestCase):
                 patch.object(host, 'verify_assets', return_value='sha256:' + 'a' * 64), \
                 patch.object(interactive_smoke, 'run', side_effect=role_error), \
                 patch.object(Path, 'read_text', return_value=fixtures), \
-                patch.dict(os.environ, JUDGE_SMOKE_RUNTIMES='cpp17-isolate,c23-gcc-isolate'), \
+                patch.dict(os.environ, JUDGE_SMOKE_RUNTIMES='cpp23-gcc-isolate,c23-gcc-isolate'), \
                 contextlib.redirect_stdout(output):
             try:
                 runpy.run_path(str(ROOT / 'smoke.py'))
@@ -46,7 +46,7 @@ class SmokeReportTests(unittest.TestCase):
                 return {'verdict': first}
             if job.get('checker'):
                 return {'verdict': 'WA' if 'assert(0)' in job['checker']['source'] or job['checker']['runtime'] != 'c23-gcc' else 'AC'}
-            if job['runtime'] == 'cpp17-isolate':
+            if job['runtime'] == 'cpp23-gcc-isolate':
                 return {'verdict': 'WA'}
             if job.get('generate'):
                 for _ in job['cases']:
@@ -58,11 +58,11 @@ class SmokeReportTests(unittest.TestCase):
         self.assertIsInstance(error, SystemExit)
         report = json.loads(output.splitlines()[-1])
         self.assertEqual(report['passedRuntimes'], ['c23-gcc-isolate'])
-        self.assertEqual(report['failedRuntimes'], ['cpp17-isolate'])
+        self.assertEqual(report['failedRuntimes'], ['cpp23-gcc-isolate'])
         baseline = iter(['AC', 'WA', 'CE', 'TLE', 'TLE', 'MLE', 'MLE', 'AC', 'OLE', 'AC', 'AC', 'AC', 'AC', 'AC',
                          'AC', 'MLE', 'AC', 'MLE', 'AC', 'MLE'])
         output, error = self.run_smoke(judge, AssertionError('interactor exceeded 256 MiB'))
         self.assertIsInstance(error, SystemExit)
         report = json.loads(output.splitlines()[-1])
         self.assertEqual(report['passedRuntimes'], [])
-        self.assertEqual(set(report['failedRuntimes']), {'cpp17-isolate', 'c23-gcc-isolate'})
+        self.assertEqual(set(report['failedRuntimes']), {'cpp23-gcc-isolate', 'c23-gcc-isolate'})

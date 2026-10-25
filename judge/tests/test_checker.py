@@ -16,7 +16,7 @@ def reply(**changes):
 
 
 def job():
-    return dict(runtime='cpp17-isolate', runtimeDigest='sha256:test', source='submitted source',
+    return dict(runtime='cpp23-gcc-isolate', runtimeDigest='sha256:test', source='submitted source',
                 checker=dict(runtime='python314', source='assert True'), memoryLimitMb=512,
                 timeLimitMs=1000, cases=[dict(input='10\n', output='expected secret\n')] * 2)
 
@@ -133,9 +133,9 @@ class CheckerTests(unittest.TestCase):
         result, _ = self.run_job(reply(checkerLog='あ' * 65536))
         self.assertLessEqual(len(result['checkerLog'].encode()), 16384)
         for checker in [False, {}, {'runtime': 'sh', 'source': 'echo x'},
-                        {'runtime': 'cpp17', 'source': ' '},
-                        {'runtime': 'cpp17', 'source': 'a\0'},
-                        {'runtime': 'cpp17', 'source': 'あ' * 22000}]:
+                        {'runtime': 'cpp23-gcc', 'source': ' '},
+                        {'runtime': 'cpp23-gcc', 'source': 'a\0'},
+                        {'runtime': 'cpp23-gcc', 'source': 'あ' * 22000}]:
             request = job()
             request['checker'] = checker
             with self.assertRaises(ValueError):

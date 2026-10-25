@@ -5,6 +5,36 @@
 以下のコマンドはリポジトリのルートから実行する。
 AWS CLIには操作対象のprofileとリージョンを設定しておく。
 
+## C++17とJava 24を外す配布
+
+workerの実行対象から`cpp17-isolate`と`java24-isolate`を外し、共通隔離テスト、対話テスト、部分点テストは`cpp23-gcc-isolate`で実行する。
+Java 25のコンパイルと実行の設定は維持する。
+全言語smokeの対象は28言語から26言語になる。
+公開済みの26言語は変わらず、APIの過去の提出表示と開発用DockerのC++17は残す。
+`JUDGE_RUNTIME=cpp17-isolate`もAPIのバックエンド種別として使っているため、今回の削除では変更しない。
+
+次回の通常配布では、workerの更新に加えてランタイムアーカイブから旧JDKを除く。
+新しくビルドする場合はビルド手順がJava 24と専用のBifurcanを除くが、保存済みアーカイブを再利用する場合は次の手順で作り直す。
+`JUDGE_RUNTIME_SOURCE`には、現在公開中の全言語を含む配布済みアーカイブのパスを指定する。
+元のアーカイブは復旧用に保存する。
+
+```sh
+test -f "$JUDGE_RUNTIME_SOURCE"
+runtime_stage=$(mktemp -d)
+tar -xzf "$JUDGE_RUNTIME_SOURCE" -C "$runtime_stage" \
+  --exclude='judge-runtimes/java' --exclude='judge-runtimes/java-libs/bifurcan.jar'
+test ! -e "$runtime_stage/judge-runtimes/java"
+test -x "$runtime_stage/judge-runtimes/java25/bin/java"
+test -f "$runtime_stage/judge-runtimes/java-libs/ac_library.jar"
+tar -C "$runtime_stage" -I 'gzip -1' -cf judge/.build/runtime-current.tar.gz judge-runtimes
+rm -rf "$runtime_stage"
+sha256sum judge/.build/runtime-current.tar.gz
+RUNTIME_ARCHIVE=.build/runtime-current.tar.gz bash judge/build-assets.sh
+```
+
+OSのGCCはisolateのビルドとRustのリンクにも必要なため、アンインストールしない。
+配布は[統合コマンドの手順](deployment-checks.md#通常は統合コマンドを使う)で全台へ行い、26言語の実機検証と本番APIテストの合格を確認する。
+
 ## 受付停止と退避
 
 最初にAPIの受付を停止し、キューに残った提出を旧workerで処理する。

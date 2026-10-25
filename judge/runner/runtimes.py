@@ -4,7 +4,7 @@ GCC = ROOT + '/gcc/bin/'
 CLANG = ROOT + '/llvm/bin/'
 INCLUDES = ['-I' + ROOT + '/include']
 LIBS = ['-Wl,-rpath,' + ROOT + '/gcc/lib64']
-JAVA_CP = ROOT + '/java-libs/*'
+JAVA_CP = ROOT + '/java-libs/ac_library.jar'
 
 
 def native(compiler, standard, source, extra=()):
@@ -19,7 +19,6 @@ def python(executable):
 
 
 RUNTIMES = {
-    'cpp17-isolate': native('/usr/bin/g++', 'c++17', 'main.cpp'),
     'c23-gcc-isolate': native(GCC + 'gcc', 'c23', 'main.c', ['-lm', *LIBS]),
     'c23-clang-isolate': native(CLANG + 'clang', 'c23', 'main.c', ['--gcc-toolchain=' + ROOT + '/gcc', '-lm', *LIBS]),
     'cpp23-gcc-isolate': native(GCC + 'g++', 'c++23', 'main.cpp', [*INCLUDES, *LIBS]),
@@ -28,15 +27,10 @@ RUNTIMES = {
     'pypy311-isolate': python(ROOT + '/pypy/bin/pypy3'),
     'codon020-isolate': dict(source='main.py', compile=[ROOT + '/codon/bin/codon', 'build', '-release', '/box/main.py', '-o', '/box/main'], run=['/box/main'], artifact='native'),
     'rust2024-isolate': dict(source='main.rs', compile=[ROOT + '/rust/bin/rustc', '--edition=2024', '-C', 'opt-level=2', '-C', 'linker=/usr/bin/gcc', '@/opt/judge-runtimes/rust/extern.args', '/box/main.rs', '-o', '/box/main'], run=['/box/main'], artifact='native'),
-    'java24-isolate': dict(source='Main.java', compile=[ROOT + '/java/bin/javac', '-J-Xmx512m', '-J-XX:ActiveProcessorCount=1', '-J-XX:-UsePerfData', '--release', '24', '-encoding', 'UTF-8', '-cp', JAVA_CP, '-d', '/box/classes', '/box/Main.java'],
-        run=[ROOT + '/java/bin/java', '-Xms16m', '-Xmx256m', '-Xss1m', '-XX:MaxMetaspaceSize=96m', '-XX:ReservedCodeCacheSize=32m', '-XX:MaxDirectMemorySize=32m', '-XX:+UseSerialGC', '-XX:ActiveProcessorCount=1', '-XX:+ExitOnOutOfMemoryError', '-XX:-UsePerfData', '-cp', '/box/main:' + JAVA_CP, 'Main'], artifact='java'),
+    'java25-isolate': dict(source='Main.java', compile=[ROOT + '/java25/bin/javac', '-J-Xmx512m', '-J-XX:ActiveProcessorCount=1', '-J-XX:-UsePerfData', '--release', '25', '-encoding', 'UTF-8', '-cp', JAVA_CP, '-d', '/box/classes', '/box/Main.java'],
+        run=[ROOT + '/java25/bin/java', '-Xms16m', '-Xmx256m', '-Xss1m', '-XX:MaxMetaspaceSize=96m', '-XX:ReservedCodeCacheSize=32m', '-XX:MaxDirectMemorySize=32m', '-XX:+UseSerialGC', '-XX:ActiveProcessorCount=1', '-XX:+ExitOnOutOfMemoryError', '-XX:-UsePerfData', '-cp', '/box/main:' + JAVA_CP, 'Main'], artifact='java'),
 }
 
-RUNTIMES['java25-isolate'] = dict(RUNTIMES['java24-isolate'],
-    compile=[arg.replace(ROOT + '/java/', ROOT + '/java25/').replace(JAVA_CP, ROOT + '/java-libs/ac_library.jar')
-             if arg != '24' else '25' for arg in RUNTIMES['java24-isolate']['compile']],
-    run=[arg.replace(ROOT + '/java/', ROOT + '/java25/').replace(JAVA_CP, ROOT + '/java-libs/ac_library.jar')
-         for arg in RUNTIMES['java24-isolate']['run']])
 RUNTIMES['csharp14-isolate'] = dict(source='main.cs',
     compile=[ROOT + '/dotnet/dotnet', ROOT + '/csharp-tools/csc.dll', '@' + ROOT + '/csharp-tools/compile.args'],
     run=[ROOT + '/dotnet/dotnet', '/box/main.dll'], artifact='dotnet',

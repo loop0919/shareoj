@@ -15,7 +15,6 @@ def failure_program(name):
         'brainfuck-tritium-isolate': '+[]',
         'whitespace13-isolate': ' \n\n\n\n\n',
         'rust2024-isolate': 'fn main(){assert!(false);}',
-        'java24-isolate': 'public class Main { public static void main(String[] args){assert false;} }',
         'java25-isolate': 'public class Main { public static void main(String[] args){assert false;} }',
         'csharp14-isolate': 'class Program { static void Main(){throw new System.Exception();} }',
         'go127-isolate': 'package main\nfunc main(){panic("rejected")}',
@@ -41,7 +40,7 @@ def run(runtime, requested, fixtures, judge):
     js = 'import {readSync,writeSync} from "node:fs"; const b=new Uint8Array(1); for(let n=10;n<12;n++){writeSync(1,n+"\\n");let s="";while(readSync(0,b,0,1,null)&&b[0]!==10)s+=String.fromCharCode(b[0]);if(Number(s)!==2*n)throw new Error("answer");}'
     deno = 'const b=new Uint8Array(1);for(let n=10;n<12;n++){Deno.stdout.writeSync(new TextEncoder().encode(n+"\\n"));let s="";while(Deno.stdin.readSync(b)&&b[0]!==10)s+=String.fromCharCode(b[0]);if(Number(s)!==2*n)throw new Error("answer");}'
     solution = '#include <cstdio>\nint main(){int n;while(scanf("%d",&n)==1){printf("%d\\n",2*n);fflush(stdout);}}'
-    def check(name, source, code, want, *, submitted='cpp17-isolate', cases=None, memory=512):
+    def check(name, source, code, want, *, submitted='cpp23-gcc-isolate', cases=None, memory=512):
         job = dict(runtime=submitted, runtimeDigest=runtime, source=source,
                    interactor=dict(runtime=name.removesuffix('-isolate'), source=code),
                    timeLimitMs=1000, memoryLimitMb=memory,
@@ -52,8 +51,8 @@ def run(runtime, requested, fixtures, judge):
         return result
     allocate = solution.replace('int n;', 'volatile char* p=new char[MEMORY<<20];for(int i=0;i<(MEMORY<<20);i+=4096)p[i]=1;int n;')
     for memory in (64, 315, 512):
-        check('cpp17-isolate', solution, c, 'AC', memory=memory)
-        check('cpp17-isolate', allocate.replace('MEMORY', str(memory + 16)), c, 'MLE', memory=memory)
+        check('cpp23-gcc-isolate', solution, c, 'AC', memory=memory)
+        check('cpp23-gcc-isolate', allocate.replace('MEMORY', str(memory + 16)), c, 'MLE', memory=memory)
     for name in requested:
         role_fixtures = {f['name']: f for f in fixtures[name] if f['name'] in ('interactive', 'response')}
         if 'interactive' in role_fixtures:
@@ -63,7 +62,7 @@ def run(runtime, requested, fixtures, judge):
         elif name.startswith(('javascript-', 'typescript-')):
             code = deno if '-deno' in name else js
         else:
-            code = {'rust2024-isolate': rust, 'java24-isolate': java, 'java25-isolate': java,
+            code = {'rust2024-isolate': rust, 'java25-isolate': java,
                     'csharp14-isolate': csharp, 'go127-isolate': go, 'nim22-isolate': nim,
                     'haskell-ghc910-isolate': haskell, 'ruby40-isolate': ruby, 'ruby-truffle40-isolate': ruby,
                     'python314-isolate': python, 'pypy311-isolate': python, 'codon020-isolate': python}[name]
@@ -81,7 +80,7 @@ def run(runtime, requested, fixtures, judge):
         elif name.startswith('haskell-'):
             response = 'import System.IO\nimport Control.Monad\nmain = replicateM_ 2 $ do { n <- readLn :: IO Int; print (2*n); hFlush stdout }'
         if response is not None:
-            check('cpp17-isolate', response, c, 'AC', submitted=name)
+            check('cpp23-gcc-isolate', response, c, 'AC', submitted=name)
         # Library fixtures also execute under the interactor's 256 MiB limit.
         for fixture in fixtures[name]:
             if fixture['verdict'] != 'AC':
@@ -144,11 +143,11 @@ with open('working-file','wb') as f: f.write(b'x'*(16*1024*1024))
         (solution, '#include <cstdio>\nint main(){for(;;)putchar(65);}', 'JE'),
         (solution, '#include <cstdio>\nint main(){for(;;)fputc(65,stderr);}', 'JE'),
     ]:
-        check('cpp17-isolate', source, code, want, cases=[dict(input='', output='')])
+        check('cpp23-gcc-isolate', source, code, want, cases=[dict(input='', output='')])
     allocate = '#include <cstdlib>\nint main(){for(;;){volatile char* p=(char*)malloc(16<<20);if(p)for(int i=0;i<(16<<20);i+=4096)p[i]=1;}}'
-    check('cpp17-isolate', allocate, c, 'MLE', cases=[dict(input='', output='')])
-    check('cpp17-isolate', solution, allocate, 'JE', cases=[dict(input='', output='')])
+    check('cpp23-gcc-isolate', allocate, c, 'MLE', cases=[dict(input='', output='')])
+    check('cpp23-gcc-isolate', solution, allocate, 'JE', cases=[dict(input='', output='')])
     # Descendants cannot survive a completed case or prevent later submissions.
     fork = '#include <unistd.h>\n#include <cstdio>\nint main(){if(fork()==0){sleep(60);return 0;}puts("10");fflush(stdout);int x;return scanf("%d",&x)==1 && x==20 ? 0 : 1;}'
-    check('cpp17-isolate', solution, fork, 'AC')
+    check('cpp23-gcc-isolate', solution, fork, 'AC')
     check('python314-isolate', private_solution, private, 'AC', submitted='python314-isolate')
