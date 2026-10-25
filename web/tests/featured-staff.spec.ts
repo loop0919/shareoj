@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { shortId } from '../shared/utils/short-id'
 
 const id = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
 const base = 'http://127.0.0.1:13000'
@@ -27,10 +28,10 @@ test('the writer and testers reveal announced problems with the eye button, hidd
   expect(asked).toHaveLength(0)
   await easy.getByRole('button', { name: '問題名を表示' }).click()
   await expect(easy.getByRole('button', { name: '問題名を表示' })).toHaveAttribute('aria-pressed', 'true')
-  await expect(easy.getByRole('link', { name: '予告の新作' })).toHaveAttribute('href', '/problems/new?problem=f1f1f1f1-f1f1-4f1f-8f1f-f1f1f1f1f1f1')
+  await expect(easy.getByRole('link', { name: '予告の新作' })).toHaveAttribute('href', `/problems/${shortId('f1f1f1f1-f1f1-4f1f-8f1f-f1f1f1f1f1f1')}`)
   await expect(hard.locator('.delivery-problem-title')).toHaveText('???')
   await hard.getByRole('button', { name: '問題名を表示' }).click()
-  await expect(hard.getByRole('link', { name: 'テスト中の新作' })).toHaveAttribute('href', '/problems/new?problem=f2f2f2f2-f2f2-4f2f-8f2f-f2f2f2f2f2f2')
+  await expect(hard.getByRole('link', { name: 'テスト中の新作' })).toHaveAttribute('href', `/problems/${shortId('f2f2f2f2-f2f2-4f2f-8f2f-f2f2f2f2f2f2')}`)
   await easy.getByRole('button', { name: '問題名を表示' }).click()
   await expect(easy.locator('.delivery-problem-title')).toHaveText('???')
   await expect(easy.getByRole('button', { name: '問題名を表示' })).toHaveAttribute('aria-pressed', 'false')

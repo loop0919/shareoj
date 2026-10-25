@@ -51,7 +51,7 @@ watch(() => props.page, () => { if (shown.easy || shown.hard) loadNames().catch(
             <h3 class="delivery-problem-title">
               <NuxtLink v-if="page.current && slot.problemId" :to="`/problems/${shortId(slot.problemId)}`">{{ slot.title }}</NuxtLink>
               <template v-else-if="slot.kind === 'missing'">{{ page.current ? '出題なし' : '募集中' }}</template>
-              <NuxtLink v-else-if="staffed(slot) && shown[slot.slot] && named[slot.slot]" :to="{ path: '/problems/new', query: { problem: named[slot.slot]!.problemId } }">{{ named[slot.slot]!.title.trim() || '無題の問題' }}</NuxtLink>
+              <NuxtLink v-else-if="staffed(slot) && shown[slot.slot] && named[slot.slot]" :to="`/problems/${shortId(named[slot.slot]!.problemId)}`">{{ named[slot.slot]!.title.trim() || '無題の問題' }}</NuxtLink>
               <template v-else>{{ page.current ? '非公開' : '???' }}</template>
             </h3>
             <button v-if="staffed(slot)" type="button" class="delivery-reveal" :aria-pressed="shown[slot.slot]" aria-label="問題名を表示" :title="shown[slot.slot] ? '問題名を隠す' : '問題名を表示（writer・testerだけに表示）'" @click="toggleName(slot.slot)">
