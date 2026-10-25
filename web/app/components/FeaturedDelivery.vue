@@ -1,13 +1,33 @@
 <script setup lang="ts">
-import { featuredSlotLabel, type FeaturedPage } from '~~/shared/types/featured'
+import { featuredPreviewProblemsSchema, featuredSlotLabel, type FeaturedPage } from '~~/shared/types/featured'
 import { contestDate } from '~~/shared/types/contest'
 import { shortId } from '~~/shared/utils/short-id'
 
+type Slot = 'easy' | 'hard'
 const props = defineProps<{ page: FeaturedPage; home?: boolean }>()
 const slots = computed(() => props.page.current?.slots ?? props.page.nextSlots.map(slot => ({ ...slot, problemId: '', title: '', editorialHidden: false, revealAt: '' })))
 const standingsRound = computed(() => props.page.current ?? props.page.items[0])
 const date = computed(() => props.page.current?.scheduledAt ?? props.page.nextAt)
 const volume = computed(() => props.page.current?.number || props.page.nextNumber)
+
+// The writer and testers may reveal an announced problem. Each visit starts hidden, and names are fetched only
+// on request, so a screenshot taken for an announcement shows ??? (ADR 0011).
+const { profile } = useAccount()
+const shown = reactive<Record<Slot, boolean>>({ easy: false, hard: false })
+const named = ref<Partial<Record<Slot, { problemId: string, title: string }>>>({})
+const staffed = (slot: { kind: string, writer: string, testers: string[] }) => !props.page.current && slot.kind !== 'missing' && !!profile.value
+  && (slot.writer === profile.value.handle || slot.testers.includes(profile.value.handle))
+async function loadNames() {
+  const result = featuredPreviewProblemsSchema.parse(await $fetch('/api/my/featured/next'))
+  named.value = Object.fromEntries(result.items.map(item => [item.slot, item]))
+}
+async function toggleName(slot: Slot) {
+  shown[slot] = !shown[slot]
+  if (!shown[slot] || named.value[slot]) return
+  try { await loadNames() } catch { shown[slot] = false }
+}
+// A refreshed preview may have picked another problem.
+watch(() => props.page, () => { if (shown.easy || shown.hard) loadNames().catch(() => {}) })
 </script>
 
 <template>
@@ -27,11 +47,17 @@ const volume = computed(() => props.page.current?.number || props.page.nextNumbe
       <article v-for="slot in slots" :key="slot.slot" class="delivery-problem">
         <header class="delivery-level">
           <span class="delivery-slot-label">{{ featuredSlotLabel(slot.slot, slot.difficulty) }}</span>
-          <h3 class="delivery-problem-title">
-            <NuxtLink v-if="page.current && slot.problemId" :to="`/problems/${shortId(slot.problemId)}`">{{ slot.title }}</NuxtLink>
-            <template v-else-if="slot.kind === 'missing'">{{ page.current ? '出題なし' : '募集中' }}</template>
-            <template v-else>{{ page.current ? '非公開' : '???' }}</template>
-          </h3>
+          <div class="delivery-title-row">
+            <h3 class="delivery-problem-title">
+              <NuxtLink v-if="page.current && slot.problemId" :to="`/problems/${shortId(slot.problemId)}`">{{ slot.title }}</NuxtLink>
+              <template v-else-if="slot.kind === 'missing'">{{ page.current ? '出題なし' : '募集中' }}</template>
+              <NuxtLink v-else-if="staffed(slot) && shown[slot.slot] && named[slot.slot]" :to="{ path: '/problems/new', query: { problem: named[slot.slot]!.problemId } }">{{ named[slot.slot]!.title.trim() || '無題の問題' }}</NuxtLink>
+              <template v-else>{{ page.current ? '非公開' : '???' }}</template>
+            </h3>
+            <button v-if="staffed(slot)" type="button" class="delivery-reveal" :aria-pressed="shown[slot.slot]" aria-label="問題名を表示" :title="shown[slot.slot] ? '問題名を隠す' : '問題名を表示（writer・testerだけに表示）'" @click="toggleName(slot.slot)">
+              <svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /><path v-if="shown[slot.slot]" d="m4 4 16 16" /></svg>
+            </button>
+          </div>
           <DifficultyBadge v-if="slot.difficulty" :level="slot.difficulty" />
           <span v-else class="muted">{{ slot.slot === 'easy' ? 'Lv.1〜4' : 'Lv.5〜10' }}</span>
           <span v-if="slot.kind !== 'missing'" class="delivery-kind">{{ slot.kind === 'new' ? '新作' : '復刻' }}</span>
@@ -87,9 +113,14 @@ const volume = computed(() => props.page.current?.number || props.page.nextNumbe
 .delivery-level { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 8px 12px; align-items: baseline; margin-bottom: 24px; font-size: .8125rem; }
 .delivery-slot-label { color: var(--color-muted); font-family: var(--font-code); font-size: .75rem; }
 .delivery-kind { padding: 0 6px; border: 1px solid var(--color-line); border-radius: 3px; font-size: .6875rem; }
-.delivery-problem-title { margin: 0; font-size: 1.25rem; font-weight: 650; line-height: 1.7; overflow-wrap: anywhere; }
-.delivery-problem-title a { color: var(--color-ink); text-decoration: none; }
-.delivery-problem-title a:hover { color: var(--color-accent); text-decoration: underline; }
+.delivery-title-row { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
+.delivery-problem-title { min-width: 0; margin: 0; font-size: 1.25rem; font-weight: 650; line-height: 1.7; overflow-wrap: anywhere; }
+.delivery-problem-title a { color: var(--color-ink); }
+.delivery-problem-title a:hover { color: var(--color-accent); }
+.delivery-reveal { display: inline-grid; flex-shrink: 0; place-items: center; width: 32px; height: 32px; padding: 0; align-self: center; border: 0; border-radius: 4px; background: none; color: var(--color-muted); cursor: pointer; }
+.delivery-reveal:hover, .delivery-reveal[aria-pressed="true"] { color: var(--color-accent); }
+.delivery-reveal:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+@media (pointer: coarse) { .delivery-reveal { width: 44px; height: 44px; } }
 .delivery-credits { display: grid; gap: 8px; margin: 0; font-size: .8125rem; }
 .delivery-credits > div { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; }
 .delivery-credits dt { font-family: var(--font-code); font-size: .75rem; }

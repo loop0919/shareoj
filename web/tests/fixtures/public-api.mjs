@@ -109,6 +109,11 @@ createServer(async (req, res) => {
     // The fixture session is alice, the author of the featured problem whose editorial is still hidden.
     if (path === `/my/problems/${featuredProblem.id}/publication`) return res.end(JSON.stringify({ ...featuredProblem, editorial: '定期便の解説本文' }))
     if (path === `/my/problems/${featuredProblem.id}/submissions`) return res.end(JSON.stringify({ items: [{ ...submission, id: '33333333-3333-4333-8333-333333333333', problemId: featuredProblem.id, problemTitle: featuredProblem.title, author: 'carol' }], hasMore: false }))
+    // alice writes the announced Easy problem and tests the Hard one.
+    if (path === '/my/featured/next') return res.end(JSON.stringify({ items: [
+      { slot: 'easy', problemId: 'f1f1f1f1-f1f1-4f1f-8f1f-f1f1f1f1f1f1', title: '予告の新作' },
+      { slot: 'hard', problemId: 'f2f2f2f2-f2f2-4f2f-8f2f-f2f2f2f2f2f2', title: 'テスト中の新作' },
+    ] }))
     // This problem, an ID the web server must refuse, and the paths a dot segment in an ID leads to echo what the web server forwarded.
     if (['/my/problems/12121212-1212-4212-8212-121212121212/', '/my/problems/not-a-problem/', '/my/test-files'].some(prefix => path.startsWith(prefix))) {
       let body = ''

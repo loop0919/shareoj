@@ -51,6 +51,13 @@ type FeaturedPreview struct {
 	Testers    []string `json:"testers"`
 }
 
+// FeaturedPreviewProblem names a previewed problem for its writer or a tester, who may reveal it on the announcement.
+type FeaturedPreviewProblem struct {
+	Slot      string `json:"slot"`
+	ProblemID string `json:"problemId"`
+	Title     string `json:"title"`
+}
+
 type FeaturedWaiting struct {
 	Easy int `json:"easy"`
 	Hard int `json:"hard"`
@@ -330,6 +337,45 @@ func (s *Store) previewFeatured(ctx context.Context, tx pgx.Tx, at, now time.Tim
 		ids = append(ids, pick.ProblemID)
 	}
 	return previews, ids, waiting, nil
+}
+
+// FeaturedPreviewProblems returns the previewed problems the viewer writes or tests. They already read the drafts,
+// so naming them leaks nothing; the public preview still never carries them. A revival keeps its public title.
+func (s *Store) FeaturedPreviewProblems(ctx context.Context, viewer string, known, enabled []string) ([]FeaturedPreviewProblem, error) {
+	items := []FeaturedPreviewProblem{}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return items, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	// Serialize with release and previews, as FeaturedList does.
+	var at, now time.Time
+	if err = tx.QueryRow(ctx, `SELECT next_at FROM featured_schedule FOR UPDATE`).Scan(&at); err != nil {
+		return items, err
+	}
+	if err = tx.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&now); err != nil {
+		return items, err
+	}
+	previews, ids, _, err := s.previewFeatured(ctx, tx, at, now, known, enabled)
+	if err != nil {
+		return items, err
+	}
+	for i, id := range ids {
+		if id == "" {
+			continue
+		}
+		item := FeaturedPreviewProblem{Slot: previews[i].Slot, ProblemID: id}
+		err = tx.QueryRow(ctx, `SELECT COALESCE(d.published_draft->>'title',d.draft->>'title','') FROM problem_drafts d
+ WHERE d.id=$1 AND (d.owner_id=$2 OR EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=d.id AND t.owner_id=$2))`, id, viewer).Scan(&item.Title)
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return items, err
+		}
+		items = append(items, item)
+	}
+	return items, tx.Commit(ctx)
 }
 
 func (s *Store) FeaturedList(ctx context.Context, offset int, known, enabled []string) (FeaturedPage, error) {

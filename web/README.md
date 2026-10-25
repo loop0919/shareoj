@@ -341,6 +341,8 @@ a public URL with the [Discord Embed Debugger](https://discord.com/developers/em
 ## 定期便
 
 `/featured`に次回予告または公開中の問題、Easy／Hard別の待ち件数、過去の出題を表示する。
+次回予告のwriterとtesterには担当する枠に目のアイコンを出し、押したときだけ`GET /api/my/featured/next`から問題名を取得して、テスト用ページへのリンクで表示する。
+表示は覚えず、ページを開くたびに隠した状態から始める。
 応募状態と取り下げはマイページの「自分の問題」にまとめる。
 問題の状態（×準備中、✅準備中、応募中（コンテスト）、応募中（定期便）、公開中）と足りない項目は、APIが返す`readiness`をそのまま表示する。
 公開、コンテスト、定期便の条件は画面側に持たず、`app/utils/problem-readiness.ts`は理由のコードを文言と編集画面のセクションに対応づけるだけにする。

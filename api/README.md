@@ -757,6 +757,8 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 `GET /featured?offset=0`は最新と過去の出題を20回ずつ返す。
 応募は`PUT /my/problems/{id}/featured`へ`{"version":1,"preference":"soon"}`を送り、`later`なら後日の公開を希望し、空文字なら取り下げる。
 応募一覧は`GET /my/featured`で取得する。
+`GET /my/featured/next`は、次回予告のうち自分が作問者かテスターの枠について、`slot`・`problemId`・`title`を`items`で返す。
+復刻の`title`は公開版の題とする。
 
 [ADR 0020](../docs/adr/0020-post-and-apply-on-dedicated-pages.md)に従い、`GET /featured/schedule`は次回から8回分の予定を返す。
 各回の`slots`はEasyとHardの難易度・`kind`（`new`、`revival`、`missing`）で、問題名・問題ID・作者名は含めない。

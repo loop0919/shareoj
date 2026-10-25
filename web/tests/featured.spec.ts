@@ -290,6 +290,8 @@ test('home and featured share upcoming credits and waiting counts without previe
   await expect(delivery.locator('.delivery-problem').first()).toContainText('testerbob')
   await expect(delivery.locator('a[href^="/problems/"]')).toHaveCount(0)
   await expect(delivery).not.toContainText('定期便の新作')
+  // The fixture viewer neither writes nor tests the announced problems.
+  await expect(delivery.getByRole('button', { name: '問題名を表示' })).toHaveCount(0)
   for (const width of [320, 375, 414, 768, 1280]) {
     await page.setViewportSize({ width, height: 1000 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
@@ -315,6 +317,8 @@ test('published edition shows both titles and credits, then switches back to pre
   const delivery = page.getByRole('region', { name: 'ShareOJ定期便' })
   await expect(delivery).toContainText('公開中の問題')
   await expect(delivery.getByRole('link', { name: 'A + B' })).toBeVisible()
+  // Underlined like every other problem link.
+  await expect(delivery.getByRole('link', { name: 'A + B' })).toHaveCSS('text-decoration-line', 'underline')
   await expect(delivery.getByRole('link', { name: '定期便の新作' })).toHaveAttribute('href', `/problems/${shortId(hidden)}`)
   await expect(delivery).toContainText('Ultimate')
   await expect(delivery).toContainText('解説・他者の提出')

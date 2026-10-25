@@ -379,6 +379,52 @@ func TestFeaturedPreviewPrivacyAndReleasePostgres(t *testing.T) {
 	}
 }
 
+// The writer and testers of an announced problem can name it, though the public announcement hides it.
+func TestFeaturedPreviewForStaffPostgres(t *testing.T) {
+	f := newFeaturedTest(t)
+	a, b, c := f.draft("alice", 4), f.draft("bob", 9), f.draft("carol", 2)
+	f.exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'tester')`, a.ID)
+	f.exec(`UPDATE problem_drafts SET draft=jsonb_set(draft,'{title}','"Announced"') WHERE id=$1`, a.ID)
+	f.apply(a, "soon", 204)
+	f.apply(b, "soon", 204)
+	named := func(viewer string) string {
+		t.Helper()
+		var out itemsResponse[problems.FeaturedPreviewProblem]
+		if err := json.Unmarshal([]byte(f.request("GET", "/my/featured/next", viewer, nil, 200)), &out); err != nil {
+			t.Fatal(err)
+		}
+		got := []string{}
+		for _, item := range out.Items {
+			got = append(got, item.Slot+":"+item.ProblemID+":"+item.Title)
+		}
+		return strings.Join(got, ",")
+	}
+	for viewer, want := range map[string]string{
+		"alice":  "easy:" + a.ID + ":Announced",
+		"tester": "easy:" + a.ID + ":Announced",
+		"bob":    "hard:" + b.ID + ":Featured problem",
+		"carol":  "",
+	} {
+		if got := named(viewer); got != want {
+			t.Fatalf("%s: got %q want %q", viewer, got, want)
+		}
+	}
+	f.request("GET", "/my/featured/next", "", nil, 401)
+	// A revival is named by its public title, not unpublished edits.
+	f.apply(a, "", 204)
+	f.request("PUT", "/my/problems/"+c.ID+"/publication", "carol", map[string]any{"version": 1, "publish": true}, 200)
+	f.exec(`UPDATE problem_drafts SET draft=jsonb_set(draft,'{title}','"Edited"') WHERE id=$1`, c.ID)
+	if f.page("/featured").NextSlots[0].Kind != "revival" {
+		t.Fatal("expected a revival")
+	}
+	if got := named("carol"); got != "easy:"+c.ID+":Featured problem" {
+		t.Fatal("revival", got)
+	}
+	if got := named("alice"); got != "" {
+		t.Fatal("withdrawn problem still named", got)
+	}
+}
+
 func TestFeaturedStartMovesToTwentyTwoPostgres(t *testing.T) {
 	f := newFeaturedTest(t)
 	a := f.draft("alice", 4)

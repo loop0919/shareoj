@@ -43,6 +43,10 @@ export const featuredPlanSchema = z.object({
   })),
 })
 export type FeaturedPlan = z.infer<typeof featuredPlanSchema>
+// The announced problems the viewer writes or tests; the public preview never names them.
+export const featuredPreviewProblemsSchema = z.object({ items: z.array(z.object({
+  slot: z.enum(['easy', 'hard']), problemId: z.string().uuid(), title: z.string(),
+})) })
 export const featuredApplicationsSchema = z.object({ items: z.array(z.object({
   problemId: z.string().uuid(), title: z.string(), preference: z.enum(['soon', 'later']),
   enteredAt: z.string().datetime({ offset: true }),

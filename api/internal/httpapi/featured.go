@@ -73,6 +73,20 @@ func (p problemHandler) featuredApplication(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// myFeaturedPreview names the announced problems the viewer writes or tests, which the public announcement hides.
+func (p problemHandler) myFeaturedPreview(w http.ResponseWriter, r *http.Request, owner string) {
+	if p.Store == nil {
+		authError(w, 503, "database_unavailable")
+		return
+	}
+	items, err := p.Store.FeaturedPreviewProblems(r.Context(), owner, submissions.RuntimeIDs(), p.Judging.ContentRuntimeIDs())
+	if err != nil {
+		problemError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, itemsResponse[problems.FeaturedPreviewProblem]{Items: items})
+}
+
 type featuredPlanResponse = problems.FeaturedPlan
 
 func (p problemHandler) featuredSchedule(w http.ResponseWriter, r *http.Request) {

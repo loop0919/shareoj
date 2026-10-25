@@ -85,6 +85,7 @@ func TestProblemRoutesWithoutDatabase(t *testing.T) {
 		{"GET", "/my/featured/schedule?problem=bad", 404, "problem_not_found"},
 		{"GET", "/my/featured/schedule?preference=x", 400, "invalid_request"},
 		{"GET", "/my/featured/schedule", 503, "database_unavailable"},
+		{"GET", "/my/featured/next", 503, "database_unavailable"},
 		{"GET", "/my/tester-invitations/bad", 503, "database_unavailable"},
 		{"POST", "/my/problems/bad/tester-invitation", 503, "database_unavailable"},
 		{"GET", "/my/problems?role=tester", 503, "database_unavailable"},
