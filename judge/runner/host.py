@@ -24,6 +24,11 @@ JOB_DEADLINE = 1800
 # Scoring jobs stop starting cases here; the rest of the deadline runs the aggregator (ADR 0025).
 SCORING_BUDGET = 1500
 MAX_GROUPS = 100
+CODE_RUN_INPUT_LIMIT = 1024 * 1024
+CODE_RUN_PREVIEW_LIMIT = 64 * 1024
+CODE_RUN_SHRUNK_PREVIEW = 16 * 1024
+# The result queue takes 256 KiB; control characters grow to 6 bytes each in JSON.
+CODE_RUN_RESULT_BUDGET = 240 * 1024
 MAX_POINTS = 1000000
 MAX_CASE_SCORE = 10**18
 
@@ -542,6 +547,46 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
         aggregator_artifact.unlink(missing_ok=True)
         sandbox.META.unlink(missing_ok=True)
     return result
+
+
+def validate_code_run(job, runtime):
+    if job.get('runtimeDigest') != runtime or job.get('runtime') not in RUNTIMES:
+        raise telemetry.PlatformError('runtime_mismatch')
+    if job.get('codeRun') is not True or any(key in job for key in ('cases', 'checker', 'interactor', 'scoring', 'generate', 'validate')):
+        raise ValueError('code run mode')
+    source = job.get('source')
+    if not isinstance(source, str) or not 0 < len(source.encode()) <= sandbox.SOURCE_LIMIT or '\0' in source:
+        raise ValueError('source')
+    if job.get('timeLimitMs') != 5000 or job.get('memoryLimitMb') != 512 or type(job['timeLimitMs']) is not int:
+        raise ValueError('code run limits')
+    try:
+        stdin = base64.b64decode(job.get('stdin'), validate=True)
+        stdin.decode('utf-8')
+    except (TypeError, ValueError):
+        raise ValueError('stdin') from None
+    if len(stdin) > CODE_RUN_INPUT_LIMIT or b'\0' in stdin:
+        raise ValueError('stdin')
+
+
+def run_code(job, runtime):
+    """Compile once and run once on the given stdin; nothing is compared with an expected output."""
+    validate_code_run(job, runtime)
+    try:
+        compiled = sandbox.execute(dict(source=job['source'], runtime=job['runtime']), True)
+        if not compiled['compiled']:
+            return dict(verdict='CE', compileLog=compiled['compileLog'])
+        reply = sandbox.execute(dict(runtime=job['runtime'], input=job['stdin'], timeLimitMs=job['timeLimitMs'],
+                                     memoryLimitMb=job['memoryLimitMb']), stderr_log=True)
+        stdout, stderr = base64.b64decode(reply['output']), reply['checkerLog'].encode()
+        result = dict(verdict=sandbox.failure_verdict(reply) or 'AC', exitCode=reply['exitCode'], cpuTimeMs=reply['cpuTimeMs'],
+                      wallTimeMs=reply['wallTimeMs'], memoryBytes=reply['memoryBytes'])
+        for limit in (CODE_RUN_PREVIEW_LIMIT, CODE_RUN_SHRUNK_PREVIEW):
+            result.update(stdout=sample_preview(stdout, limit), stderr=sample_preview(stderr, limit))
+            if len(json.dumps(result, ensure_ascii=False, allow_nan=False).encode()) <= CODE_RUN_RESULT_BUDGET:
+                break
+        return result
+    finally:
+        sandbox.ARTIFACT.unlink(missing_ok=True)
 
 
 def platform_fingerprint():

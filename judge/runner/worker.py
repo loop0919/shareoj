@@ -9,11 +9,12 @@ import os
 import signal
 import time
 
-from host import judge, prepare_cgroup, verify_assets, pointer, slot
+from host import judge, run_code, prepare_cgroup, verify_assets, pointer, slot
 import pool
 
 # judge-worker.service does not restart this status; the operator must switch the digest.
 MISMATCH_STATUS = 78
+JOB_LIMIT = 4 * 1024 * 1024
 
 
 def read_test_file(s3, bucket, item):
@@ -85,8 +86,8 @@ def process_message(message, sqs, s3, progress_client, runtime, cgroup, bucket, 
             with telemetry.operation('job_fetch_failed'):
                 response = s3.get_object(Bucket=bucket, Key=item['key'], VersionId=item['versionId'])
                 with response['Body'] as stream:
-                    data = stream.read(2 * 1024 * 1024 + 1)
-                if len(data) > 2 * 1024 * 1024 or hashlib.sha256(data).hexdigest() != item['sha256']:
+                    data = stream.read(JOB_LIMIT + 1)
+                if len(data) > JOB_LIMIT or hashlib.sha256(data).hexdigest() != item['sha256']:
                     raise ValueError('job integrity')
                 job = json.loads(data)
                 if any(job[name] != item[name] for name in ('submissionId', 'attemptId')):
@@ -103,20 +104,26 @@ def process_message(message, sqs, s3, progress_client, runtime, cgroup, bucket, 
                 with telemetry.operation('generated_file_write_failed'):
                     return write_generated_file(s3, test_bucket, job['generationPrefix'], data)
             telemetry.emit('judge_started', phase='PREPARING')
+            code_run = job.get('codeRun') is True
             try:
-                result = judge(job, runtime, load_file, progress_reporter(progress_client, results, item), save_file)
+                if code_run:
+                    result = run_code(job, runtime)
+                else:
+                    result = judge(job, runtime, load_file, progress_reporter(progress_client, results, item), save_file)
             except Exception as error:
                 # Cleanup errors override any earlier checker failure.
                 for child in cgroup.iterdir():
                     if child.is_dir() and child.name != 'controller' and (child / 'cgroup.procs').read_text().strip():
                         raise telemetry.FatalPlatformError('isolate_cleanup_failed')
                 telemetry.failure(error, verdict='JE')
-                result = {'verdict': 'JE', 'passed': 0, 'total': 0}
+                result = {'verdict': 'JE'} if code_run else {'verdict': 'JE', 'passed': 0, 'total': 0}
             else:
                 if result['verdict'] == 'JE':
                     telemetry.failure(verdict='JE')
             telemetry.emit('judge_finished', phase='JUDGING', verdict=result['verdict'])
             payload = {'submissionId': item['submissionId'], 'attemptId': item['attemptId'], 'result': result}
+            if code_run:
+                payload = {'submissionId': item['submissionId'], 'attemptId': item['attemptId'], 'codeRun': True, 'result': result}
             with telemetry.operation('result_send_failed'):
                 sqs.send_message(QueueUrl=results, MessageBody=json.dumps(payload, allow_nan=False, ensure_ascii=False))
             settled = True
