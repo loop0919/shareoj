@@ -234,6 +234,11 @@ func (b bridge) results(ctx context.Context, event events.SQSEvent) events.SQSEv
 				err = store.FinishAttempt(ctx, e.ID, e.Attempt, *e.Result)
 			}
 		}
+		if err == nil && e.Result != nil && e.Result.Verdict == "JE" {
+			// A worker older than ADR 0031 answers a code-run job with a submission JE. This matches only a
+			// pending isolate code run with this ID and attempt, so it does nothing for a real submission.
+			err = (&submissions.Store{Pool: b.db}).FinishCodeRun(ctx, e.ID, e.Attempt, submissions.CodeRunResult{Verdict: "JE"})
+		}
 		if err != nil {
 			observe("failure", "platform", "result_apply_failed", e.ID, e.Attempt)
 			response.BatchItemFailures = append(response.BatchItemFailures, events.SQSBatchItemFailure{ItemIdentifier: record.MessageId})
