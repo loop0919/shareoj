@@ -40,17 +40,7 @@ func (s Service) Create(ctx context.Context, owner, id string, input CreateInput
 	if err := s.Ready(); err != nil {
 		return Submission{}, err
 	}
-	suffix := "-isolate"
-	if s.local() {
-		suffix = "-local"
-	}
-	selected := ""
-	for _, available := range s.AvailableRuntimes() {
-		if input.Runtime == available.ID || input.Runtime == available.ID+suffix {
-			selected = available.ID + suffix
-			break
-		}
-	}
+	selected := s.storedRuntime(input.Runtime)
 	if ((input.EasyTest || input.ContestID != "") && input.Generation != nil) ||
 		(input.ContestID != "" && !problems.ValidID(input.ContestID)) || !problems.ValidID(input.ProblemID) || selected == "" ||
 		!problems.HasSource(selected, input.Source) || len(input.Source) > 128<<10 || !utf8.ValidString(input.Source) || strings.ContainsRune(input.Source, 0) {
@@ -94,6 +84,20 @@ func (s Service) Create(ctx context.Context, owner, id string, input CreateInput
 		}
 	}
 	return item, nil
+}
+
+// storedRuntime maps a requested runtime ID to the runtime stored with a run, or "" when it is not available now.
+func (s Service) storedRuntime(id string) string {
+	suffix := "-isolate"
+	if s.local() {
+		suffix = "-local"
+	}
+	for _, available := range s.AvailableRuntimes() {
+		if id == available.ID || id == available.ID+suffix {
+			return available.ID + suffix
+		}
+	}
+	return ""
 }
 
 // submissionRuntimes lists the stored runtime IDs that new submissions may use now.

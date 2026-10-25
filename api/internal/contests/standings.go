@@ -259,7 +259,7 @@ func (s *Store) Standings(ctx context.Context, id, viewer string, live, onsite b
 		return nil, err
 	}
 	var freezeAt time.Time
-	if c.FreezeAt != nil && !c.ResultsFinal && !(live && c.Staff) {
+	if c.FreezeAt != nil && !c.ResultsFinal && (!live || !c.Staff) {
 		freezeAt = *c.FreezeAt
 	}
 	// Staff and former staff are left out. A participant who became a tester after the results were final keeps the final rank.

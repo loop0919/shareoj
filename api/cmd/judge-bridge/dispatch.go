@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -52,6 +53,13 @@ func (b bridge) dispatch(ctx context.Context) (err error) {
 	if expired.RowsAffected() > 0 {
 		observe("failure", "platform", "submission_expired", "", "", "count", expired.RowsAffected())
 	}
+	n, err := (&submissions.Store{Pool: b.db}).ExpireCodeRuns(ctx, submissions.IsolateRuntimeIDs())
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		observe("code_runs_expired", "", "", "", "", "count", n)
+	}
 	return b.send(ctx)
 }
 
@@ -89,25 +97,81 @@ func (b bridge) publishedRuntimes() []string {
 // spareInFlight limits judgements sent while authoring runs or rejudges wait. They use spare capacity only.
 const spareInFlight = 2
 
+// dispatchOne sends one queued item in this order (ADR 0031, ADR 0032). Each step takes its row FOR UPDATE SKIP LOCKED.
+//  1. a new submission;
+//  2. nothing else while spareInFlight or more judgements (submissions and code runs) are in SQS or running;
+//  3. an authoring run that has waited 5 minutes, so code runs cannot starve it;
+//  4. a code run;
+//  5. an authoring run, then a rejudge.
+//
+// Steps 3 to 5 use spare capacity only, so a new submission queues behind at most spareInFlight judgements.
 func (b bridge) dispatchOne(ctx context.Context, tx pgx.Tx) (err error) {
-	var id, attempt, source, runtime string
+	isolate := submissions.IsolateRuntimeIDs()
+	var id, attempt, runtime, source string
 	var raw []byte
+	// read selects one submission; false means none matched.
+	read := func(query string) (found bool, err error) {
+		err = tx.QueryRow(ctx, query, isolate).Scan(&id, &attempt, &source, &raw, &runtime)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		if err != nil {
+			observe("failure", "platform", "outbox_read_failed", "", "")
+		}
+		return err == nil, err
+	}
+	const waiting = `SELECT id::text,judge_attempt::text,source,job,runtime FROM submissions
+  WHERE runtime=ANY($1::text[]) AND dispatched_at IS NULL AND status <> 'DONE'`
+	found, err := read(waiting + ` AND rejudged_at IS NULL AND NOT ` + submissions.AuthoringJob + ` ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1`)
+	if err != nil {
+		return err
+	}
+	if found {
+		return b.sendSubmission(ctx, tx, id, attempt, source, raw, runtime)
+	}
+	var inFlight int
+	if err = tx.QueryRow(ctx, `SELECT (SELECT COUNT(*) FROM submissions WHERE runtime=ANY($1::text[]) AND dispatched_at IS NOT NULL AND status <> 'DONE')
+  + (SELECT COUNT(*) FROM code_runs WHERE runtime=ANY($1::text[]) AND dispatched_at IS NOT NULL AND status <> 'DONE')`, isolate).Scan(&inFlight); err != nil {
+		observe("failure", "platform", "outbox_read_failed", "", "")
+		return err
+	}
+	if inFlight >= spareInFlight {
+		return pgx.ErrNoRows
+	}
+	if found, err = read(waiting + ` AND ` + submissions.AuthoringJob + ` AND created_at <= clock_timestamp() - interval '5 minutes'
+  ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1`); err != nil {
+		return err
+	}
+	if !found {
+		var image, stdin string
+		err = tx.QueryRow(ctx, `SELECT id::text,judge_attempt::text,runtime,image,source,stdin FROM code_runs
+  WHERE runtime=ANY($1::text[]) AND dispatched_at IS NULL AND status <> 'DONE'
+  ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT 1`, isolate).Scan(&id, &attempt, &runtime, &image, &source, &stdin)
+		if err == nil {
+			return b.sendCodeRun(ctx, tx, id, attempt, runtime, image, source, stdin)
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			observe("failure", "platform", "outbox_read_failed", "", "")
+			return err
+		}
+		if found, err = read(waiting + ` ORDER BY ` + submissions.AuthoringJob + ` DESC,COALESCE(rejudged_at,created_at),id FOR UPDATE SKIP LOCKED LIMIT 1`); err != nil {
+			return err
+		}
+		if !found {
+			return pgx.ErrNoRows
+		}
+	}
+	return b.sendSubmission(ctx, tx, id, attempt, source, raw, runtime)
+}
+
+// sendSubmission sends the submission row the caller locked in tx.
+func (b bridge) sendSubmission(ctx context.Context, tx pgx.Tx, id, attempt, source string, raw []byte, runtime string) (err error) {
 	stage := "outbox_read"
 	defer func() {
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			observe("failure", "platform", stage+"_failed", id, attempt)
 		}
 	}()
-	// New submissions go first, then authoring runs, then rejudges (ADR 0032). The last two wait until
-	// fewer than spareInFlight judgements are in SQS or running, so a new submission queues behind at most that many.
-	err = tx.QueryRow(ctx, `SELECT id::text,judge_attempt::text,source,job,runtime FROM submissions
-  WHERE runtime=ANY($1::text[]) AND dispatched_at IS NULL AND status <> 'DONE'
-    AND ((rejudged_at IS NULL AND NOT `+submissions.AuthoringJob+`) OR (SELECT COUNT(*) FROM submissions f
-      WHERE f.runtime=ANY($1::text[]) AND f.dispatched_at IS NOT NULL AND f.status <> 'DONE') < $2)
-  ORDER BY rejudged_at IS NOT NULL,`+submissions.AuthoringJob+`,COALESCE(rejudged_at,created_at),id FOR UPDATE SKIP LOCKED LIMIT 1`, submissions.IsolateRuntimeIDs(), spareInFlight).Scan(&id, &attempt, &source, &raw, &runtime)
-	if err != nil {
-		return err
-	}
 	var job submissions.Job
 	if json.Unmarshal(raw, &job) != nil {
 		stage = "finish_je"
@@ -145,13 +209,24 @@ func (b bridge) dispatchOne(ctx context.Context, tx pgx.Tx) (err error) {
 	if job.AcceptPoints {
 		request["acceptPoints"] = true
 	}
+	if err = b.upload(ctx, id, attempt, request, &stage); err != nil {
+		return err
+	}
+	stage = "outbox_update"
+	// If commit fails after SendMessage, the same stable attempt is sent again.
+	_, err = tx.Exec(ctx, `UPDATE submissions SET dispatched_at=clock_timestamp() WHERE id=$1`, id)
+	return err
+}
+
+// upload puts the job in S3 and sends its pointer to SQS. It sets stage so the caller logs which step failed.
+func (b bridge) upload(ctx context.Context, id, attempt string, request map[string]any, stage *string) error {
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return err
 	}
 	sum := sha256.Sum256(payload)
 	key := "jobs/" + id + "/" + attempt + ".json"
-	stage = "job_upload"
+	*stage = "job_upload"
 	obj, err := b.objects.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(b.bucket), Key: aws.String(key), Body: bytes.NewReader(payload), ContentType: aws.String("application/json")})
 	if err != nil {
 		return err
@@ -160,15 +235,47 @@ func (b bridge) dispatchOne(ctx context.Context, tx pgx.Tx) (err error) {
 		return errors.New("versioned job bucket required")
 	}
 	pointer, _ := json.Marshal(map[string]string{"submissionId": id, "attemptId": attempt, "key": key, "versionId": *obj.VersionId, "sha256": hex.EncodeToString(sum[:])})
-	stage = "request_send"
-	_, err = b.queue.SendMessage(ctx, &sqs.SendMessageInput{QueueUrl: aws.String(b.queueURL), MessageBody: aws.String(string(pointer))})
-	if err != nil {
+	*stage = "request_send"
+	if _, err = b.queue.SendMessage(ctx, &sqs.SendMessageInput{QueueUrl: aws.String(b.queueURL), MessageBody: aws.String(string(pointer))}); err != nil {
 		return err
 	}
 	observe("request_sent", "", "", id, attempt)
+	return nil
+}
+
+// sendCodeRun sends the code run row the caller locked in tx, the same way as sendSubmission.
+func (b bridge) sendCodeRun(ctx context.Context, tx pgx.Tx, id, attempt, runtime, image, source, stdin string) (err error) {
+	stage := "outbox_read"
+	defer func() {
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			observe("failure", "platform", stage+"_failed", id, attempt)
+		}
+	}()
+	if image != b.runtime && b.previous != "" && image == b.previous &&
+		slices.Contains(b.publishedRuntimes(), strings.TrimSuffix(runtime, "-isolate")) {
+		// Never executed, so it can move to the environment that replaced its own.
+		stage = "runtime_rebind"
+		if _, err = tx.Exec(ctx, `UPDATE code_runs SET image=$2 WHERE id=$1`, id, b.runtime); err != nil {
+			return err
+		}
+		image = b.runtime
+		observe("runtime_rebound", "", "", id, attempt)
+	}
+	if image != b.runtime {
+		stage = "finish_je"
+		if _, err = tx.Exec(ctx, `UPDATE code_runs SET status='DONE',finished_at=clock_timestamp(),source='',stdin='',result='{"verdict":"JE"}' WHERE id=$1`, id); err != nil {
+			return err
+		}
+		observe("failure", "platform", "runtime_mismatch", id, attempt)
+		return nil
+	}
+	request := map[string]any{"submissionId": id, "attemptId": attempt, "codeRun": true, "runtime": runtime, "runtimeDigest": image, "source": source,
+		"stdin": base64.StdEncoding.EncodeToString([]byte(stdin)), "timeLimitMs": submissions.CodeRunTimeLimitMS, "memoryLimitMb": submissions.CodeRunMemoryLimitMB}
+	if err = b.upload(ctx, id, attempt, request, &stage); err != nil {
+		return err
+	}
 	stage = "outbox_update"
-	// If commit fails after SendMessage, the same stable attempt is sent again.
-	_, err = tx.Exec(ctx, `UPDATE submissions SET dispatched_at=clock_timestamp() WHERE id=$1`, id)
+	_, err = tx.Exec(ctx, `UPDATE code_runs SET dispatched_at=clock_timestamp() WHERE id=$1`, id)
 	return err
 }
 

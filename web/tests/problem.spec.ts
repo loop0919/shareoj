@@ -90,6 +90,8 @@ for (const width of [320, 375, 414, 768, 1280]) {
     const overflow = await page.evaluate(() => {
       const viewport = document.documentElement.clientWidth
       return [...document.querySelectorAll('body *')].filter(element => {
+        // The header menus scroll sideways on narrow screens, so their items may lie beyond the edge (ADR 0031).
+        if (element.parentElement?.closest('.nav-links, .contest-menu')) return false
         // Closed details can retain layout boxes even though their contents are not rendered.
         if (!element.checkVisibility()) return false
         const rect = element.getBoundingClientRect()

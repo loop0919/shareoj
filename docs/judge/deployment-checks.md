@@ -135,6 +135,23 @@ python3 judge/rollout.py finish --config judge/.build/rollout.json --run-dir "$J
 手順3の後にbridgeを手順1より前の版へ戻すと、部分点の設定がワーカーに届かず、得点のない結果をJEにする安全網も働かない。
 手順3以降にbridgeのコード（結果の確認と保存）を変えた場合は、もう一度`run`で配布する。
 
+## コード実行を有効にする配布
+
+[ADR 0031](../adr/0031-run-code-without-problem.md)のコード実行は、`code_runs`の表とジョブの形式を加えるので、次の順で配布する。
+
+1. 参加者のいるコンテストのない時間に、コード実行を含むコミットをmainへpushする。
+   GitHub Actionsがマイグレーション（`code_runs`の表）、API、Webを配布する。
+   この時点のbridgeとワーカーは旧版のままで、コード実行は受け付けても送り出されず、待機中のまま残る。
+2. 続けて、そのコミットからワーカーとbridgeの配布物を作り、`judge/rollout.py run`を実行する。
+   `state.json`が`status: passed`と`step: complete`になるまで完了させる。
+3. 新しいbridgeは、受付停止中の排出で待機中のコード実行を旧ワーカーへ送ることがある。
+   旧ワーカーはこれをJEとして返し、bridgeはそのコード実行をJEで終える。
+   受け付けから10分を過ぎたものは「混雑」で打ち切る。
+
+`rollout.py run`をpushより先に実行しない（新しいbridgeが`code_runs`を読めず、送り出しが止まる）。
+`rolling`は使わない（スキーマとbridgeとワーカーの互換性を変える配布のため）。
+手順1と2の間にコード実行をした人には、JEか「混雑」が表示される。
+
 ## OS更新はローリング更新で配布する
 
 OSのセキュリティ更新は`judge/rollout.py rolling`で配布する。

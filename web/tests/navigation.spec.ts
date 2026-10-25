@@ -55,7 +55,7 @@ test('contest pages replace the site menu with the contest menu', async ({ page 
   const breadcrumb = page.getByRole('navigation', { name: 'パンくずリスト' })
   await expect(breadcrumb).toHaveText('共有コンテスト/順位表')
   await expect(breadcrumb.getByRole('link', { name: '共有コンテスト', exact: true })).toHaveAttribute('href', contest)
-  await expect(contestMenu.getByRole('link')).toHaveText(['概要', '問題', '順位表', '自分の提出', '解説一覧', '質問'])
+  await expect(contestMenu.getByRole('link')).toHaveText(['概要', '問題', '順位表', '自分の提出', '解説一覧', '質問', 'コード実行'])
   await expect(contestMenu.getByRole('link', { name: '順位表', exact: true })).toHaveAttribute('aria-current', 'page')
   await contestMenu.getByRole('link', { name: '問題', exact: true }).click()
   await expect(page).toHaveURL(`${contest}?view=problems`)

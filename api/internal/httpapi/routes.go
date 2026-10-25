@@ -221,6 +221,8 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	private("PUT /my/favorites/{id}", problems.favorite, true)
 	private("POST /my/submissions", submissions.submission, true)
 	private("GET /my/submissions", submissions.submission, false)
+	private("POST /my/code-runs", submissions.codeRuns, false)
+	private("GET /my/code-runs/latest", submissions.codeRuns, false)
 	private("GET /my/submissions/{id}", submissions.submission, false)
 	private("GET /my/submissions/{submission}/public", submissions.problemSubmissions, true)
 	private("GET /my/featured", problems.featuredApplication, true)

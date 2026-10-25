@@ -622,6 +622,83 @@ class RunnerTests(unittest.TestCase):
             path.symlink_to('/etc/passwd')
             with self.assertRaises(OSError): sandbox.regular_read(path, 10)
 
+    def code_run_job(self, **changes):
+        job = dict(codeRun=True, runtime='cpp23-gcc-isolate', runtimeDigest='sha256:test', source='int main(){}',
+                   stdin=base64.b64encode(b'1 2\n').decode(), timeLimitMs=5000, memoryLimitMb=512)
+        return dict(job, **changes)
+
+    def run_code(self, reply=None, compiled=None, job=None):
+        import tempfile
+        b64 = lambda data: base64.b64encode(data).decode()
+        reply = dict(dict(status='', oom=False, overflow=False, signal=0, exitCode=0, cpuTimeMs=12, wallTimeMs=15,
+                          memoryBytes=3600000, output=b64(b'3\n'), checkerLog='debug\n'), **(reply or {}))
+        with tempfile.TemporaryDirectory() as tmp, patch.object(sandbox, 'ARTIFACT', Path(tmp) / 'main'), \
+                patch.object(sandbox, 'META', Path(tmp) / 'meta'), \
+                patch.object(sandbox, 'execute', side_effect=[compiled or {'compiled': True}, reply]) as execute:
+            result = host.run_code(job or self.code_run_job(), 'sha256:test')
+        return result, execute
+
+    def test_code_run_returns_output_stderr_and_measurements(self):
+        result, execute = self.run_code()
+        self.assertEqual(result, {'verdict': 'AC', 'exitCode': 0, 'cpuTimeMs': 12, 'wallTimeMs': 15, 'memoryBytes': 3600000,
+                                  'stdout': {'text': '3\n', 'truncated': False}, 'stderr': {'text': 'debug\n', 'truncated': False}})
+        self.assertEqual(execute.call_count, 2)
+        self.assertTrue(execute.call_args_list[0].args[1])
+        run = execute.call_args_list[1]
+        self.assertEqual(run.args[0]['input'], base64.b64encode(b'1 2\n').decode())
+        self.assertEqual((run.args[0]['timeLimitMs'], run.args[0]['memoryLimitMb']), (5000, 512))
+        self.assertIs(run.kwargs['stderr_log'], True)
+
+    def test_code_run_maps_failures_like_submissions(self):
+        for reply, verdict in ((dict(exitCode=3), 'RE'), (dict(status='TO'), 'TLE'), (dict(oom=True), 'MLE'), (dict(overflow=True), 'OLE')):
+            with self.subTest(verdict=verdict):
+                result, _ = self.run_code(reply)
+                self.assertEqual(result['verdict'], verdict)
+                self.assertEqual(result['exitCode'], reply.get('exitCode', 0))
+
+    def test_code_run_reports_a_signal_as_a_shell_style_exit_code(self):
+        # isolate omits the exit code when a signal kills the program, so it would otherwise show as 0.
+        result, _ = self.run_code(dict(status='SG', signal=11, exitCode=0))
+        self.assertEqual((result['verdict'], result['exitCode']), ('RE', 139))
+
+    def test_code_run_replaces_nul_bytes_in_the_previews(self):
+        b64 = lambda data: base64.b64encode(data).decode()
+        result, _ = self.run_code(dict(output=b64(b'a\0b'), checkerLog='c\0d'))
+        self.assertEqual(result['stdout']['text'], 'a�b')
+        self.assertEqual(result['stderr']['text'], 'c�d')
+
+    def test_code_run_compile_error_has_only_the_log(self):
+        result, execute = self.run_code(compiled={'compiled': False, 'compileLog': 'error'})
+        self.assertEqual(result, {'verdict': 'CE', 'compileLog': 'error'})
+        self.assertEqual(execute.call_count, 1)
+
+    def test_code_run_truncates_long_output(self):
+        result, _ = self.run_code(dict(output=base64.b64encode(b'x' * 70000).decode()))
+        self.assertEqual(len(result['stdout']['text']), 65536)
+        self.assertTrue(result['stdout']['truncated'])
+
+    def test_code_run_shrinks_control_character_output_to_fit_the_queue(self):
+        import json
+        result, _ = self.run_code(dict(output=base64.b64encode(b'\x01' * 65536).decode(), checkerLog='\x01' * 65536))
+        self.assertLessEqual(len(json.dumps(result, ensure_ascii=False, allow_nan=False).encode()), 240 * 1024)
+        self.assertEqual(result['verdict'], 'AC')
+        for name in ('stdout', 'stderr'):
+            self.assertLessEqual(len(result[name]['text']), 16384)
+            self.assertTrue(result[name]['truncated'])
+
+    def test_code_run_rejects_invalid_jobs(self):
+        b64 = lambda data: base64.b64encode(data).decode()
+        invalid = [dict(timeLimitMs=1000), dict(memoryLimitMb=256), dict(stdin='***'), dict(stdin=b64(b'x' * 1048577)),
+                   dict(stdin=b64(b'a\0b')), dict(cases=[]), dict(checker=dict(runtime='cpp23-gcc', source='x')), dict(generate=True)]
+        for changes in invalid:
+            with self.subTest(changes=list(changes)), patch.object(sandbox, 'execute') as execute:
+                with self.assertRaises(ValueError):
+                    host.validate_code_run(self.code_run_job(**changes), 'sha256:test')
+                execute.assert_not_called()
+        host.validate_code_run(self.code_run_job(stdin=b64(b'x' * 1048576)), 'sha256:test')
+        with self.assertRaises(host.telemetry.PlatformError):
+            host.validate_code_run(self.code_run_job(runtimeDigest='sha256:other'), 'sha256:test')
+
 
 if __name__ == '__main__':
     unittest.main()

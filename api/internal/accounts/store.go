@@ -44,6 +44,7 @@ var cleanup = []string{
 	`DELETE FROM notifications n USING contest_drafts d WHERE d.id=n.contest_id AND d.owner_id=$1`,
 	`DELETE FROM contest_drafts WHERE owner_id=$1`,
 	`DELETE FROM problem_favorites WHERE owner_id=$1`,
+	`DELETE FROM code_runs WHERE owner_id=$1`,
 	`DELETE FROM notifications WHERE owner_id=$1`,
 	`DELETE FROM creation_quotas WHERE owner_id=$1`,
 	`DELETE FROM contest_attempt_failures WHERE owner_id=$1`,

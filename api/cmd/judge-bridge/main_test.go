@@ -531,6 +531,11 @@ func TestRollingUpdateHoldsAndRebindsUndispatchedSubmissions(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// A code run waiting on the previous digest is rebound like a submission.
+	const codeRunID = "99999999-2222-4222-8222-222222222222"
+	if _, err := db.Exec(ctx, `INSERT INTO code_runs(id,owner_id,runtime,image,source,stdin,judge_attempt) VALUES ($1,'alice','python314-isolate',$2,'print(1)','',$1)`, codeRunID, old); err != nil {
+		t.Fatal(err)
+	}
 	// Only a contest with participants blocks a rollout; a finished one never does.
 	contest := func(id string, starts, ends time.Duration, participant bool) {
 		t.Helper()
@@ -583,7 +588,7 @@ func TestRollingUpdateHoldsAndRebindsUndispatchedSubmissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := status()
-	if sent != 0 || got["undispatched"] != 4.0 || got["dispatchPaused"] != true || got["previousRuntimeDigest"] != old {
+	if sent != 0 || got["undispatched"] != 5.0 || got["dispatchPaused"] != true || got["previousRuntimeDigest"] != old {
 		t.Fatalf("paused dispatch sent requests: sent=%d status=%v", sent, got)
 	}
 	window, err := time.Parse(time.RFC3339Nano, got["nextContestWindowAt"].(string))
@@ -597,12 +602,26 @@ func TestRollingUpdateHoldsAndRebindsUndispatchedSubmissions(t *testing.T) {
 	if sent != 2 || len(jobs) != 2 {
 		t.Fatalf("expected the rebound and current submissions only: sent=%d", sent)
 	}
+	// Both slots are taken, so the code run waits until they are done.
+	if _, err := db.Exec(ctx, `UPDATE submissions SET status='DONE' WHERE dispatched_at IS NOT NULL`); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.dispatch(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if sent != 3 || len(jobs) != 3 || !bytes.Contains(jobs[2], []byte(`"codeRun":true`)) {
+		t.Fatalf("expected the code run next: sent=%d", sent)
+	}
+	var runImage string
+	if err := db.QueryRow(ctx, `SELECT image FROM code_runs WHERE id=$1`, codeRunID).Scan(&runImage); err != nil || runImage != current {
+		t.Fatalf("code run image: %s %v", runImage, err)
+	}
 	for _, job := range jobs {
 		if !bytes.Contains(job, []byte(`"runtimeDigest":"`+current+`"`)) {
 			t.Fatalf("dispatched with a stale digest: %s", job)
 		}
 	}
-	for name, want := range map[string]string{"rebound": "QUEUED/" + current, "unpublished": "DONE/" + old, "unknown": "DONE/" + other, "current": "QUEUED/" + current} {
+	for name, want := range map[string]string{"rebound": "DONE/" + current, "unpublished": "DONE/" + old, "unknown": "DONE/" + other, "current": "DONE/" + current} {
 		var state, image string
 		if err := db.QueryRow(ctx, `SELECT status, job->>'image' FROM submissions WHERE id=$1`, submissionsByName[name]).Scan(&state, &image); err != nil {
 			t.Fatal(err)
@@ -617,4 +636,153 @@ func TestRollingUpdateHoldsAndRebindsUndispatchedSubmissions(t *testing.T) {
 	if err != nil || time.Since(window) < 4*time.Hour || time.Since(window) > 5*time.Hour {
 		t.Fatalf("contest window without a cap: %v %v", window, err)
 	}
+}
+
+func codeRunAC() submissions.CodeRunResult {
+	zero, one, mem := 0, int64(12), int64(3<<20)
+	return submissions.CodeRunResult{Verdict: "AC", ExitCode: &zero, CPUTimeMS: &one, WallTimeMS: &one, MemoryBytes: &mem,
+		Stdout: &submissions.TextPreview{Text: "3\n"}, Stderr: &submissions.TextPreview{}}
+}
+
+func TestCodeRunResultValidation(t *testing.T) {
+	with := func(change func(r *submissions.CodeRunResult)) submissions.CodeRunResult {
+		r := codeRunAC()
+		change(&r)
+		return r
+	}
+	exit := func(code int) *int { return &code }
+	num := func(n int64) *int64 { return &n }
+	preview := func(text string) *submissions.TextPreview { return &submissions.TextPreview{Text: text} }
+	for _, tc := range []struct {
+		name string
+		r    submissions.CodeRunResult
+		ok   bool
+	}{
+		{"AC", codeRunAC(), true},
+		{"RE exit 1", with(func(r *submissions.CodeRunResult) { r.Verdict = "RE"; r.ExitCode = exit(1) }), true},
+		{"RE exit 255", with(func(r *submissions.CodeRunResult) { r.Verdict = "RE"; r.ExitCode = exit(255) }), true},
+		{"RE exit 0", with(func(r *submissions.CodeRunResult) { r.Verdict = "RE" }), true},
+		{"TLE", with(func(r *submissions.CodeRunResult) { r.Verdict = "TLE"; r.ExitCode = exit(137) }), true},
+		{"MLE", with(func(r *submissions.CodeRunResult) { r.Verdict = "MLE"; r.ExitCode = exit(137) }), true},
+		{"OLE", with(func(r *submissions.CodeRunResult) { r.Verdict = "OLE"; r.ExitCode = exit(1) }), true},
+		{"CE", submissions.CodeRunResult{Verdict: "CE", CompileLog: "error"}, true},
+		{"JE", submissions.CodeRunResult{Verdict: "JE"}, true},
+		{"max preview", with(func(r *submissions.CodeRunResult) { r.Stdout = preview(strings.Repeat("a", 65536)) }), true},
+		{"max compile log", submissions.CodeRunResult{Verdict: "CE", CompileLog: strings.Repeat("a", 196608)}, true},
+		{"expired", submissions.CodeRunResult{Verdict: "JE", Expired: true}, false},
+		{"AC exit 3", with(func(r *submissions.CodeRunResult) { r.ExitCode = exit(3) }), false},
+		{"RE exit 256", with(func(r *submissions.CodeRunResult) { r.Verdict = "RE"; r.ExitCode = exit(256) }), false},
+		{"stdout too long", with(func(r *submissions.CodeRunResult) { r.Stdout = preview(strings.Repeat("a", 65537)) }), false},
+		{"stderr NUL", with(func(r *submissions.CodeRunResult) { r.Stderr = preview("a\x00") }), false},
+		{"cpu too long", with(func(r *submissions.CodeRunResult) { r.CPUTimeMS = num(120001) }), false},
+		{"negative wall", with(func(r *submissions.CodeRunResult) { r.WallTimeMS = num(-1) }), false},
+		{"memory too large", with(func(r *submissions.CodeRunResult) { r.MemoryBytes = num(4<<30 + 1) }), false},
+		{"AC missing stderr", with(func(r *submissions.CodeRunResult) { r.Stderr = nil }), false},
+		{"AC missing exit code", with(func(r *submissions.CodeRunResult) { r.ExitCode = nil }), false},
+		{"CE with stdout", submissions.CodeRunResult{Verdict: "CE", CompileLog: "error", Stdout: preview("")}, false},
+		{"AC with compile log", with(func(r *submissions.CodeRunResult) { r.CompileLog = "warning" }), false},
+		{"compile log too long", submissions.CodeRunResult{Verdict: "CE", CompileLog: strings.Repeat("a", 196609)}, false},
+		{"JE with exit code", submissions.CodeRunResult{Verdict: "JE", ExitCode: exit(0)}, false},
+		{"unknown verdict", with(func(r *submissions.CodeRunResult) { r.Verdict = "WA" }), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := validCodeRunResult(tc.r); got != tc.ok {
+				t.Fatalf("validCodeRunResult = %v, want %v", got, tc.ok)
+			}
+		})
+	}
+}
+
+func TestCodeRunResultsFinishTheCurrentAttemptOnly(t *testing.T) {
+	ctx := context.Background()
+	const waiting = "cccccccc-2222-4222-8222-222222222222"
+	f := newDispatchFixture(t, "")
+	// A submission that shares the code run's ID must stay untouched.
+	f.exec(`INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,judge_attempt,status)
+ VALUES ($1,'alice',$1,1,'test','python314-isolate','source',$2,$1,'DONE')`, codeRunA, queuedJob(nil))
+	f.codeRun(codeRunA, time.Minute)
+	f.codeRun(codeRunB, time.Minute)
+	f.exec(`UPDATE code_runs SET dispatched_at=clock_timestamp(),status='RUNNING' WHERE id=ANY($1)`, []string{codeRunA, codeRunB})
+	f.codeRun(waiting, 30*time.Second)
+	send := func(id, attempt string, result any) events.SQSEventResponse {
+		body, _ := json.Marshal(map[string]any{"submissionId": id, "attemptId": attempt, "codeRun": true, "result": result})
+		return f.b.results(ctx, events.SQSEvent{Records: []events.SQSMessage{{MessageId: "run", Body: string(body)}}})
+	}
+	sibling := f.state(codeRunA)
+
+	if response := send(codeRunA, "stale-attempt", codeRunAC()); len(response.BatchItemFailures) != 0 || !strings.HasPrefix(f.codeRunState(codeRunA), "RUNNING/") || len(f.sent) != 0 {
+		t.Fatalf("stale attempt: %v %s sent=%v", response, f.codeRunState(codeRunA), f.sent)
+	}
+	if response := send(codeRunA, codeRunA, codeRunAC()); len(response.BatchItemFailures) != 0 {
+		t.Fatal(response)
+	}
+	if state := f.codeRunState(codeRunA); !strings.HasPrefix(state, "DONE/") || !strings.Contains(state, `"verdict": "AC"`) {
+		t.Fatalf("code run: %s", state)
+	}
+	if f.state(codeRunA) != sibling {
+		t.Fatalf("submission changed: %s -> %s", sibling, f.state(codeRunA))
+	}
+	if fmt.Sprint(f.sent) != fmt.Sprint([]string{waiting}) {
+		t.Fatalf("a received result must let the waiting code run go out: %v", f.sent)
+	}
+	f.assertCodeRunCleared(codeRunA)
+	done := f.codeRunState(codeRunA)
+	if response := send(codeRunA, codeRunA, submissions.CodeRunResult{Verdict: "JE"}); len(response.BatchItemFailures) != 0 || f.codeRunState(codeRunA) != done {
+		t.Fatalf("resend: %v %s", response, f.codeRunState(codeRunA))
+	}
+	if response := send(codeRunB, codeRunB, submissions.CodeRunResult{Verdict: "WA"}); len(response.BatchItemFailures) != 1 || !strings.HasPrefix(f.codeRunState(codeRunB), "RUNNING/") {
+		t.Fatalf("invalid result: %v %s", response, f.codeRunState(codeRunB))
+	}
+	// An empty attempt would finish a local run, so the bridge refuses it.
+	if response := send(codeRunB, "", codeRunAC()); len(response.BatchItemFailures) != 1 || !strings.HasPrefix(f.codeRunState(codeRunB), "RUNNING/") {
+		t.Fatalf("empty attempt: %v %s", response, f.codeRunState(codeRunB))
+	}
+	// A code-run envelope never carries progress.
+	body := fmt.Sprintf(`{"submissionId":%q,"attemptId":%q,"codeRun":true,"progress":{"phase":"PREPARING","total":1,"completed":0}}`, codeRunB, codeRunB)
+	if response := f.b.results(ctx, events.SQSEvent{Records: []events.SQSMessage{{MessageId: "p", Body: body}}}); len(response.BatchItemFailures) != 1 {
+		t.Fatalf("progress for a code run: %v", response)
+	}
+	var processed, invalid int
+	for _, event := range logEvents(t, f.logs) {
+		if event["event"] == "result_processed" {
+			processed++
+		}
+		if event["reason"] == "invalid_result_envelope" {
+			invalid++
+		}
+	}
+	if processed < 1 || invalid != 3 {
+		t.Fatalf("logs: processed=%d invalid=%d", processed, invalid)
+	}
+}
+
+func TestOldWorkerJEFinishesTheCodeRun(t *testing.T) {
+	ctx := context.Background()
+	f := newDispatchFixture(t, "")
+	const submissionID = "eeeeeeee-2222-4222-8222-222222222222"
+	f.codeRun(codeRunA, time.Minute)
+	f.exec(`UPDATE code_runs SET dispatched_at=clock_timestamp(),status='RUNNING' WHERE id=$1`, codeRunA)
+	f.exec(`INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,judge_attempt,status)
+ VALUES ($1,'alice',$1,1,'test','python314-isolate','source',$2,$1,'RUNNING')`, submissionID, queuedJob(nil))
+	// A worker older than ADR 0031 cannot parse a code-run job and answers it as a submission JE.
+	send := func(id, attempt string) events.SQSEventResponse {
+		body, _ := json.Marshal(map[string]any{"submissionId": id, "attemptId": attempt, "result": map[string]any{"verdict": "JE", "passed": 0, "total": 0}})
+		return f.b.results(ctx, events.SQSEvent{Records: []events.SQSMessage{{MessageId: "old", Body: string(body)}}})
+	}
+	if response := send(codeRunA, "stale-attempt"); len(response.BatchItemFailures) != 0 || !strings.HasPrefix(f.codeRunState(codeRunA), "RUNNING/") {
+		t.Fatalf("stale attempt: %v %s", response, f.codeRunState(codeRunA))
+	}
+	if response := send(submissionID, submissionID); len(response.BatchItemFailures) != 0 || !strings.HasPrefix(f.codeRunState(codeRunA), "RUNNING/") {
+		t.Fatalf("submission JE touched the code run: %v %s", response, f.codeRunState(codeRunA))
+	}
+	if !strings.HasPrefix(f.state(submissionID), "DONE") {
+		t.Fatalf("submission: %s", f.state(submissionID))
+	}
+	if response := send(codeRunA, codeRunA); len(response.BatchItemFailures) != 0 {
+		t.Fatal(response)
+	}
+	if got := f.codeRunState(codeRunA); !strings.HasPrefix(got, `DONE/{"verdict": "JE"}/`) {
+		t.Fatalf("code run: %s", got)
+	}
+	f.assertCodeRunCleared(codeRunA)
 }

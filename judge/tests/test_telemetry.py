@@ -65,18 +65,43 @@ class TelemetryTests(unittest.TestCase):
             with self.assertRaisesRegex(telemetry.PlatformError, 'isolate_init_failed'):
                 sandbox.execute({'runtime': 'cpp23-gcc-isolate', 'source': 'test'}, True)
 
-    def process(self, judge_result=None, judge_error=None, s3_error=None, progress=None, digest='runtime'):
-        data = json.dumps(dict(submissionId='id', attemptId='attempt', runtimeDigest=digest)).encode()
+    def process(self, judge_result=None, judge_error=None, s3_error=None, progress=None, digest='runtime', job=None, code_run=None, code_run_error=None, size=None):
+        data = json.dumps(job or dict(submissionId='id', attemptId='attempt', runtimeDigest=digest)).encode()
+        data = data + b' ' * (size - len(data)) if size else data
         item = dict(submissionId='id', attemptId='attempt', key='key', versionId='v', sha256=hashlib.sha256(data).hexdigest())
         s3, sqs = Mock(), Mock()
         s3.get_object.return_value = {'Body': io.BytesIO(data)}
         if s3_error:
             s3.get_object.side_effect = s3_error
         with tempfile.TemporaryDirectory() as tmp, patch.object(worker, 'pointer', return_value=item), \
-                patch.object(worker, 'judge', return_value=judge_result or dict(verdict='AC'), side_effect=judge_error), \
+                patch.object(worker, 'judge', return_value=judge_result or dict(verdict='AC'), side_effect=judge_error) as judged, \
+                patch.object(worker, 'run_code', return_value=code_run or dict(verdict='AC'), side_effect=code_run_error), \
                 patch.object(worker.time, 'sleep'):
             worker.process_message({'Body': 'secret source', 'ReceiptHandle': 'receipt'}, sqs, s3, progress or Mock(), 'runtime', Path(tmp), 'bucket', 'tests', 'requests', 'results')
+        sqs.judged = judged
         return sqs
+
+    def test_code_run_job_sends_a_code_run_result_without_progress(self):
+        progress = Mock()
+        job = dict(submissionId='id', attemptId='attempt', runtimeDigest='runtime', codeRun=True)
+        sqs = self.process(job=job, code_run=dict(verdict='AC'), progress=progress)
+        sqs.send_message.assert_called_once_with(QueueUrl='results', MessageBody=json.dumps(
+            {"submissionId": "id", "attemptId": "attempt", "codeRun": True, "result": {"verdict": "AC"}}))
+        sqs.judged.assert_not_called()
+        progress.send_message.assert_not_called()
+
+    def test_code_run_failure_becomes_je(self):
+        job = dict(submissionId='id', attemptId='attempt', runtimeDigest='runtime', codeRun=True)
+        sqs = self.process(job=job, code_run_error=ValueError('source'))
+        body = json.loads(sqs.send_message.call_args.kwargs['MessageBody'])
+        self.assertEqual(body['result'], {'verdict': 'JE'})
+        self.assertIs(body['codeRun'], True)
+
+    def test_job_limit_accepts_4_mib(self):
+        limit = 4 * 1024 * 1024
+        self.assertEqual(worker.JOB_LIMIT, limit)
+        self.assertEqual(self.process(size=limit).send_message.call_count, 1)
+        self.assertEqual(self.process(size=limit + 1).send_message.call_count, 0)
 
     def test_stop_during_judging_releases_the_request(self):
         progress = Mock()

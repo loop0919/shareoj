@@ -46,7 +46,7 @@ func (l *LocalObjects) PutObject(_ context.Context, in *s3.PutObjectInput, _ ...
 	if err != nil {
 		return nil, err
 	}
-	defer os.Remove(f.Name())
+	defer func() { _ = os.Remove(f.Name()) }()
 	_, err = f.Write(data)
 	closeErr := f.Close()
 	if err != nil {
@@ -103,7 +103,7 @@ func NewLocal(pool *pgxpool.Pool, dir, base, origin string) (*Store, http.Handle
 }
 func (l *localURLs) signature(method, key, expires string) string {
 	mac := hmac.New(sha256.New, l.secret[:])
-	fmt.Fprintf(mac, "%s\n%s\n%s", method, key, expires)
+	_, _ = fmt.Fprintf(mac, "%s\n%s\n%s", method, key, expires)
 	return hex.EncodeToString(mac.Sum(nil))
 }
 func (l *localURLs) signed(method, key string) *v4Request {
@@ -122,7 +122,7 @@ func (l *localURLs) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if origin := r.Header.Get("Origin"); origin != "" {
 		if origin != l.origin && origin != strings.Replace(l.origin, "://localhost:", "://127.0.0.1:", 1) {
-			http.Error(w, "forbidden", 403)
+			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		w.Header().Set("Access-Control-Allow-Origin", origin)
@@ -140,7 +140,7 @@ func (l *localURLs) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	signature, decodeErr := hex.DecodeString(q.Get("signature"))
 	expected, _ := hex.DecodeString(l.signature(r.Method, key, expires))
 	if (r.Method != "GET" && r.Method != "PUT") || err != nil || decodeErr != nil || deadline <= time.Now().Unix() || deadline > time.Now().Add(10*time.Minute).Unix() || !strings.HasPrefix(key, "test-files/") || !hmac.Equal(signature, expected) {
-		http.Error(w, "forbidden", 403)
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	if r.Method == "PUT" {
@@ -158,7 +158,7 @@ func (l *localURLs) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	defer result.Body.Close()
+	defer func() { _ = result.Body.Close() }()
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = io.Copy(w, result.Body)
 }

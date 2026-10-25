@@ -539,7 +539,7 @@ func TestContestOnsitePostgres(t *testing.T) {
 		f.problem(id)
 	}
 	// Turning the division on needs a passphrase of 4 to 64 ASCII letters, digits and underscores after normalization.
-	for _, phrase := range []any{nil, " ａｂｃ ", "a​bcd", "Venue-2026", "two words", "会場の合言葉", "ａｂｃｄ！", strings.Repeat("x", 65)} {
+	for _, phrase := range []any{nil, " ａｂｃ ", "a\u200bbcd", "Venue-2026", "two words", "会場の合言葉", "ａｂｃｄ！", strings.Repeat("x", 65)} {
 		bad := map[string]any{"onsiteDivision": true, "title": "Onsite", "startsAt": time.Now().Add(time.Hour), "endsAt": time.Now().Add(2 * time.Hour), "version": 0,
 			"problems": []map[string]any{{"id": pa, "points": 100}}}
 		if phrase != nil {
@@ -1118,7 +1118,7 @@ func TestContestTeamOnsiteDropPostgres(t *testing.T) {
 	if n := f.count(`SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND column_name='kept_open'`); n != 0 {
 		t.Fatalf("kept_open columns: %d", n)
 	}
-	c := f.create(tc, pa, map[string]any{"teamMode": true, "onsiteDivision": true, "onsitePassphrase": "first"})
+	f.create(tc, pa, map[string]any{"teamMode": true, "onsiteDivision": true, "onsitePassphrase": "first"})
 	if alpha := f.join(tc, "bob", withOnsite(create("Alpha"), "first")); !alpha.Onsite {
 		t.Fatalf("onsite team: %+v", alpha)
 	}
@@ -1127,7 +1127,7 @@ func TestContestTeamOnsiteDropPostgres(t *testing.T) {
 	if dan := f.join(tc, "dan", map[string]any{"onsitePassphrase": "first"}); !dan.Onsite || dan.Team != nil {
 		t.Fatalf("onsite individual: %+v", dan)
 	}
-	c = f.contest(tc, "alice")
+	c := f.contest(tc, "alice")
 	f.decode(f.request("PUT", "/my/contests/"+tc, "alice", update(c, map[string]any{"onsiteDivision": false}), 200), &c)
 	if n := f.count(`SELECT count(*) FROM contest_teams WHERE contest_id=$1 AND (onsite_at IS NOT NULL OR onsite_via IS NOT NULL)`, tc) +
 		f.count(`SELECT count(*) FROM contest_participants WHERE contest_id=$1 AND (onsite_at IS NOT NULL OR onsite_via IS NOT NULL)`, tc); n != 0 {
