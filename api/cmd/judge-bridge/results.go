@@ -135,11 +135,73 @@ func validScore(s submissions.SubmissionScore, verdict string) bool {
 	return score == s.Score && maxScore == s.MaxScore
 }
 
+// validCodeRunResult checks the fields each verdict may carry. A code run is not compared with an expected output, so
+// a finished run has its measurements and both outputs, a compile error only its log, and a judge error nothing.
+// Expiry is set by the bridge itself, never by a worker.
+func validCodeRunResult(r submissions.CodeRunResult) bool {
+	if r.Expired || len(r.CompileLog) > 196608 {
+		return false
+	}
+	switch r.Verdict {
+	case "JE":
+		return r.ExitCode == nil && r.CPUTimeMS == nil && r.WallTimeMS == nil && r.MemoryBytes == nil && r.Stdout == nil && r.Stderr == nil && r.CompileLog == ""
+	case "CE":
+		return r.ExitCode == nil && r.CPUTimeMS == nil && r.WallTimeMS == nil && r.MemoryBytes == nil && r.Stdout == nil && r.Stderr == nil
+	case "AC", "RE", "TLE", "MLE", "OLE":
+	default:
+		return false
+	}
+	if r.CompileLog != "" || r.ExitCode == nil || r.CPUTimeMS == nil || r.WallTimeMS == nil || r.MemoryBytes == nil || r.Stdout == nil || r.Stderr == nil {
+		return false
+	}
+	if *r.ExitCode < 0 || *r.ExitCode > 255 || (r.Verdict == "AC" && *r.ExitCode != 0) {
+		return false
+	}
+	if *r.CPUTimeMS < 0 || *r.CPUTimeMS > 120000 || *r.WallTimeMS < 0 || *r.WallTimeMS > 120000 || *r.MemoryBytes < 0 || *r.MemoryBytes > 4<<30 {
+		return false
+	}
+	for _, preview := range []*submissions.TextPreview{r.Stdout, r.Stderr} {
+		if len(preview.Text) > 65536 || strings.ContainsRune(preview.Text, 0) {
+			return false
+		}
+	}
+	return true
+}
+
+// codeRunEnvelope is a worker message about a code run. It never carries progress.
+type codeRunEnvelope struct {
+	ID       string                     `json:"submissionId"`
+	Attempt  string                     `json:"attemptId"`
+	Result   *submissions.CodeRunResult `json:"result"`
+	Progress json.RawMessage            `json:"progress"`
+}
+
 func (b bridge) results(ctx context.Context, event events.SQSEvent) events.SQSEventResponse {
 	response := events.SQSEventResponse{}
 	finished := false
 	for _, record := range event.Records {
 		started := time.Now()
+		// A code run has its own result shape and table, so it is read and stored apart from submissions.
+		var kind struct {
+			CodeRun bool `json:"codeRun"`
+		}
+		if len(record.Body) <= 256<<10 && json.Unmarshal([]byte(record.Body), &kind) == nil && kind.CodeRun {
+			var c codeRunEnvelope
+			// An empty attempt is refused because FinishCodeRun would treat it as a local run.
+			if json.Unmarshal([]byte(record.Body), &c) != nil || c.Attempt == "" || c.Result == nil || c.Progress != nil || !validCodeRunResult(*c.Result) {
+				observe("failure", "platform", "invalid_result_envelope", "", "")
+				response.BatchItemFailures = append(response.BatchItemFailures, events.SQSBatchItemFailure{ItemIdentifier: record.MessageId})
+				continue
+			}
+			if err := (&submissions.Store{Pool: b.db}).FinishCodeRun(ctx, c.ID, c.Attempt, *c.Result); err != nil {
+				observe("failure", "platform", "result_apply_failed", c.ID, c.Attempt)
+				response.BatchItemFailures = append(response.BatchItemFailures, events.SQSBatchItemFailure{ItemIdentifier: record.MessageId})
+				continue
+			}
+			finished = true
+			observe("result_processed", "", "", c.ID, c.Attempt, "verdict", c.Result.Verdict, "durationMs", time.Since(started).Milliseconds())
+			continue
+		}
 		var e envelope
 		if len(record.Body) > 256<<10 || json.Unmarshal([]byte(record.Body), &e) != nil ||
 			(e.Result == nil) == (e.Progress == nil) ||
