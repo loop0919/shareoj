@@ -16,6 +16,8 @@ const forwardedCodes = new Set([
   'tests_not_ready',
   'judging_unavailable',
   'judge_maintenance',
+  'invalid_code_run',
+  'code_run_not_found',
   'invalid_submission',
   'contest_participation_required',
   'contest_participation_unavailable',
@@ -62,6 +64,7 @@ const forwardedCodes = new Set([
 // Passed on with Retry-After only on a 429; they are not in forwardedCodes, so other statuses drop them.
 const retryAfterCodes = new Set([
   'submission_rate_limited',
+  'code_run_rate_limited',
   'creation_quota_exceeded',
   'contest_attempts_limited',
 ])

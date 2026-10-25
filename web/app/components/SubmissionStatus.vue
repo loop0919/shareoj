@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import type { Submission } from '../../shared/types/submission'
+import type { Submission, SubmissionScore } from '../../shared/types/submission'
 import { formatScore } from '~/utils/score'
 
 // showScore adds the score of a partially scored result where no column shows it (ADR 0025).
-const { item, showScore = false } = defineProps<{ item: Submission, showScore?: boolean }>()
+// Code runs (ADR 0031) pass the same status, with a result that only has a verdict.
+const { item, showScore = false } = defineProps<{ item: { status: Submission['status'], progress?: Submission['progress'], result: { verdict: string, scoring?: SubmissionScore } | null }, showScore?: boolean }>()
 const tooltipId = useId()
 const pending = computed(() => item.status !== 'DONE')
 const verdict = computed(() => pending.value ? item.progress?.verdict : item.result?.verdict)
