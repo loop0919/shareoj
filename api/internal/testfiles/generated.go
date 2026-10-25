@@ -28,8 +28,14 @@ func ValidGeneratedFile(file *problems.TestFile) bool {
 	return file != nil && generatedID.MatchString(file.ID) && file.Size > 0 && file.Size <= MaxSize && IsValidDigest(file.SHA256) && len(file.Version) > 0 && len(file.Version) <= 1024 && len(file.Key) <= 512
 }
 
+// FileObjects is the object I/O needed by a worker, backed by S3 or local immutable files.
+type FileObjects interface {
+	GetObject(context.Context, *s3.GetObjectInput, ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+	PutObject(context.Context, *s3.PutObjectInput, ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+}
+
 // WriteGenerated stores one immutable, pending upload. Complete verifies its bytes before use.
-func WriteGenerated(ctx context.Context, client *s3.Client, bucket, prefix string, data []byte) (*problems.TestFile, error) {
+func WriteGenerated(ctx context.Context, client FileObjects, bucket, prefix string, data []byte) (*problems.TestFile, error) {
 	if bucket == "" || len(data) == 0 || len(data) > MaxSize || !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
 		return nil, ErrInvalid
 	}
@@ -52,7 +58,7 @@ func WriteGenerated(ctx context.Context, client *s3.Client, bucket, prefix strin
 	return &problems.TestFile{ID: id, Size: int64(len(data)), SHA256: hex.EncodeToString(hash[:]), Key: key, Version: *result.VersionId}, nil
 }
 
-func ReadFile(ctx context.Context, client *s3.Client, bucket string, file *problems.TestFile) (string, error) {
+func ReadFile(ctx context.Context, client FileObjects, bucket string, file *problems.TestFile) (string, error) {
 	if file.Size <= 0 || file.Size > MaxSize || file.Version == "" {
 		return "", ErrInvalid
 	}

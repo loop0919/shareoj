@@ -99,23 +99,14 @@ func TestLocalDockerQueue(t *testing.T) {
 	if err := queue.Finish(ctx, item.ID, submissions.Result{Verdict: "JE", Total: 1}); err != nil {
 		t.Fatal(err)
 	}
-	// Both new local runtimes still refuse interactive and scored problems.
-	for _, kind := range []string{"interactor", "scoring"} {
-		changed := draft
-		if kind == "interactor" {
-			changed.Interactor = &problems.Generator{Runtime: "python314", Source: "print(1)"}
-		} else {
-			changed.Scoring = &problems.Scoring{Mode: "groups", Groups: []problems.ScoringGroup{{Name: "g", Points: 100}}}
-			changed.TestCases = []problems.TestCase{{Input: "1", Output: "1", Groups: []string{"g"}}}
-		}
-		saved, err = problemsStore.Save(ctx, "alice", pid, saved.Version, changed)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, runtime := range []string{"cpp23-gcc", "python314"} {
-			if _, err := create(runtime, "source", nil); !errors.Is(err, submissions.ErrNotReady) {
-				t.Fatal(kind, runtime, err)
-			}
+	// Interactive judging still requires isolate.
+	draft.Interactor = &problems.Generator{Runtime: "python314", Source: "print(1)"}
+	if _, err = problemsStore.Save(ctx, "alice", pid, saved.Version, draft); err != nil {
+		t.Fatal(err)
+	}
+	for _, runtime := range []string{"cpp23-gcc", "python314"} {
+		if _, err := create(runtime, "source", nil); !errors.Is(err, submissions.ErrNotReady) {
+			t.Fatal(runtime, err)
 		}
 	}
 }

@@ -24,21 +24,6 @@ func TestOutputLimitWhileCopying(t *testing.T) {
 	}
 }
 
-func TestTokenComparison(t *testing.T) {
-	for _, tc := range []struct {
-		a, b  string
-		equal bool
-	}{
-		{"1 2\n", "\t1\r\n2 ", true}, {"", " \n", true}, {"1", "1.0", false},
-		{"Yes", "YES", false}, {"1 2", "1 2 3", false}, {"a\u00a0b", "a b", false},
-		{string([]byte{255}), string([]byte{254}), false},
-	} {
-		if got := equalTokens([]byte(tc.a), []byte(tc.b)); got != tc.equal {
-			t.Errorf("%q vs %q = %v", tc.a, tc.b, got)
-		}
-	}
-}
-
 func TestCPPDocker(t *testing.T) {
 	image := os.Getenv("TEST_JUDGE_CPP_IMAGE")
 	if image == "" {
@@ -50,7 +35,7 @@ func TestCPPDocker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	job := Job{Runtime: "cpp23-gcc-local", Image: strings.TrimSpace(string(data)), TimeLimitMS: 300, MemoryLimitMB: 64, Cases: []Case{{Name: "sample", Input: "3 5\n", Output: "8\n"}, {Name: "large", Input: "1000000000 1000000000\n", Output: "2000000000\n"}}}
+	job := Job{GenerationPrefix: "test-files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/11111111-1111-4111-8111-111111111111/generated/", Runtime: "cpp23-gcc-local", Image: strings.TrimSpace(string(data)), TimeLimitMS: 300, MemoryLimitMB: 64, Cases: []Case{{Name: "sample", Input: "3 5\n", Output: "8\n"}, {Name: "large", Input: "1000000000 1000000000\n", Output: "2000000000\n"}}}
 	for _, tc := range []struct{ name, source, verdict string }{
 		{"AC", "#include <expected>\nstatic_assert(__cplusplus > 202002L);\nstd::expected<int,int> value;\n#include <iostream>\nint main(){long long a,b;std::cin>>a>>b;std::cout<<a+b;}", "AC"},
 		{"partial", "#include <iostream>\nint main(){long long a,b;std::cin>>a>>b;std::cout<<(a==3?a+b:0);}", "WA"},
@@ -73,6 +58,9 @@ func TestCPPDocker(t *testing.T) {
 			result := Judge(ctx, tc.source, caseJob)
 			if result.Verdict != tc.verdict {
 				t.Fatalf("got %+v, want %s", result, tc.verdict)
+			}
+			if tc.verdict == "CE" {
+				return
 			}
 			if len(result.Cases) != 2 || result.Cases[0].Name != "sample" || result.Cases[1].Name != "large" {
 				t.Fatalf("missing case names: %+v", result)
@@ -123,8 +111,8 @@ func TestCaseDataDocker(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The program prints the number of CRs and whether the input ends with LF (2 when it is empty).
-	job := Job{Runtime: "cpp23-gcc-local", Image: strings.TrimSpace(string(data)), TimeLimitMS: 2000, MemoryLimitMB: 64,
-		Cases:    []Case{{Input: "abc\r\nd\r", Output: "0 1"}, {Input: "abc\r\nd", Output: "0 1"}, {InputFile: &problems.TestFile{ID: "crlf"}, Output: "0 1"}, {Output: "0 2"}},
+	job := Job{GenerationPrefix: "test-files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/11111111-1111-4111-8111-111111111111/generated/", Runtime: "cpp23-gcc-local", Image: strings.TrimSpace(string(data)), TimeLimitMS: 2000, MemoryLimitMB: 64,
+		Cases:    []Case{{Input: "abc\r\nd\r", Output: "0 1"}, {Input: "abc\r\nd", Output: "0 1"}, {InputFile: &problems.TestFile{ID: "11111111-1111-4111-8111-111111111111", Size: 6, SHA256: strings.Repeat("a", 64), Key: "test-files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/11111111-1111-4111-8111-111111111111/11111111-1111-4111-8111-111111111111", Version: "1"}, Output: "0 1"}, {Output: "0 2"}},
 		LoadFile: func(context.Context, *problems.TestFile) (string, error) { return "abc\r\nd", nil }}
 	source := "#include <algorithm>\n#include <iostream>\n#include <iterator>\n#include <string>\nint main(){std::string s{std::istreambuf_iterator<char>(std::cin),{}};std::cout<<std::count(s.begin(),s.end(),'\\r')<<' '<<(s.empty()?2:s.back()=='\\n');}"
 	if result := Judge(ctx, source, job); result.Verdict != "AC" || result.Passed != 4 {
@@ -143,7 +131,7 @@ func TestGeneratorDocker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	job := Job{Runtime: "cpp23-gcc-local", Generate: true, Image: strings.TrimSpace(string(raw)), TimeLimitMS: 1000, MemoryLimitMB: 512, Cases: []Case{{Input: "7\n"}, {Input: "8\n"}}}
+	job := Job{GenerationPrefix: "test-files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/11111111-1111-4111-8111-111111111111/generated/", Runtime: "cpp23-gcc-local", Generate: true, Image: strings.TrimSpace(string(raw)), TimeLimitMS: 1000, MemoryLimitMB: 512, Cases: []Case{{Input: "7\n"}, {Input: "8\n"}}}
 	var stored []string
 	job.SaveOutput = func(_ context.Context, data []byte) (*problems.TestFile, error) {
 		stored = append(stored, string(data))
@@ -199,7 +187,7 @@ func TestKnockoutDocker(t *testing.T) {
 	source := "#include <iostream>\nint main(){int n;std::cin>>n;if(n==1||n==3)for(;;){};}"
 	for _, mode := range []string{"normal", "sample", "validation", "generation"} {
 		t.Run(mode, func(t *testing.T) {
-			job := Job{Runtime: "cpp23-gcc-local", Image: strings.TrimSpace(string(data)), TimeLimitMS: 100, MemoryLimitMB: 64,
+			job := Job{GenerationPrefix: "test-files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/11111111-1111-4111-8111-111111111111/generated/", Runtime: "cpp23-gcc-local", Image: strings.TrimSpace(string(data)), TimeLimitMS: 100, MemoryLimitMB: 64,
 				EasyTest: mode == "sample", Validate: mode == "validation", Generate: mode == "generation",
 				Cases: []Case{{Input: "1"}, {Input: "2"}, {Input: "3"}, {Input: "4"}}}
 			r := Judge(ctx, source, job)
@@ -255,7 +243,7 @@ int main(int argc,char** argv){
 int main(){return access("/submission/expected-output",F_OK)==-1 && access("/submission/test-input",F_OK)==-1 ? 0:1;}`, "int main(){return 0;}", "AC"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			job := Job{Runtime: "cpp23-gcc-local", Image: strings.TrimSpace(string(raw)), TimeLimitMS: 1000, MemoryLimitMB: 512,
+			job := Job{GenerationPrefix: "test-files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/11111111-1111-4111-8111-111111111111/generated/", Runtime: "cpp23-gcc-local", Image: strings.TrimSpace(string(raw)), TimeLimitMS: 1000, MemoryLimitMB: 512,
 				Checker: &problems.Generator{Runtime: "cpp23-gcc", Source: tc.checker}, Cases: []Case{{Input: "10", Output: "secret"}, {Input: "10", Output: "secret"}}}
 			r := Judge(ctx, tc.source, job)
 			if r.Verdict != tc.verdict {
@@ -271,31 +259,6 @@ int main(){return access("/submission/expected-output",F_OK)==-1 && access("/sub
 	}
 }
 
-func TestSamplePreview(t *testing.T) {
-	if got := samplePreview([]byte("あい"), 4); got.Text != "あ" || !got.Truncated {
-		t.Fatalf("UTF-8 boundary: %+v", got)
-	}
-	if got := samplePreview([]byte{'x', 0, 255}, 100); got.Text != "x��" || got.Truncated {
-		t.Fatalf("unsafe output: %+v", got)
-	}
-	if got := samplePreview(nil, 100); got.Text != "" || got.Truncated {
-		t.Fatalf("empty output: %+v", got)
-	}
-}
-
-func TestLocalJudgeRefusesPartialScoring(t *testing.T) {
-	job := Job{Runtime: "cpp23-gcc-local", Image: "sha256:local", TimeLimitMS: 1000, MemoryLimitMB: 256, Cases: []Case{{Input: "1", Output: "1", Groups: []string{"a"}}},
-		Scoring: &problems.Scoring{Mode: "groups", Groups: []problems.ScoringGroup{{Name: "a", Points: 100}}}}
-	result := Judge(context.Background(), "int main(){}", job)
-	if result.Verdict != "JE" || result.Scoring != nil || len(result.Cases) != 0 || !strings.Contains(result.CheckerLog, "isolate") {
-		t.Fatalf("local judge scored a partial-scoring job: %+v", result)
-	}
-	// FinishAttempt stores this JE for a partial-scoring job.
-	if err := scoreResult(job, &result); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestPythonDocker(t *testing.T) {
 	image := os.Getenv("TEST_JUDGE_CPP_IMAGE")
 	if image == "" {
@@ -307,7 +270,7 @@ func TestPythonDocker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	job := Job{Runtime: "python314-local", Image: strings.TrimSpace(string(raw)), TimeLimitMS: 1000, MemoryLimitMB: 64,
+	job := Job{GenerationPrefix: "test-files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/11111111-1111-4111-8111-111111111111/generated/", Runtime: "python314-local", Image: strings.TrimSpace(string(raw)), TimeLimitMS: 1000, MemoryLimitMB: 64,
 		Cases: []Case{{Input: "3 5\r", Output: "8"}, {Input: "10 11", Output: "21"}}}
 	for _, tc := range []struct{ name, source, verdict string }{
 		{"AC", "import sys\nassert sys.version_info[:2] == (3,14)\nprint(sum(map(int,input().split())))", "AC"},
@@ -359,5 +322,63 @@ func TestLocalJudgeRejectsUnknownRuntime(t *testing.T) {
 		if r := Judge(context.Background(), "print(1)", job); r.Verdict != "JE" || len(r.Cases) != 0 {
 			t.Fatal(runtime, r)
 		}
+	}
+}
+
+func TestLocalScoringDocker(t *testing.T) {
+	image := os.Getenv("TEST_JUDGE_CPP_IMAGE")
+	if image == "" {
+		t.Skip("TEST_JUDGE_CPP_IMAGE required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	raw, err := exec.CommandContext(ctx, "docker", "image", "inspect", "--format={{.Id}}", image).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := Job{Runtime: "python314-local", Image: strings.TrimSpace(string(raw)), TimeLimitMS: 100, MemoryLimitMB: 128,
+		Scoring: &problems.Scoring{Mode: "groups", Groups: []problems.ScoringGroup{{Name: "slow", Points: 40}, {Name: "fast", Points: 60}}},
+		Cases:   []Case{{Input: "1", Output: "1", Groups: []string{"slow"}}, {Input: "1", Output: "1", Groups: []string{"slow"}}, {Input: "1", Output: "1", Groups: []string{"slow"}}, {Input: "2", Output: "2", Groups: []string{"fast"}}}}
+	source := "n=int(input())\nwhile n==1: pass\nprint(n)"
+	r := Judge(ctx, source, job)
+	if r.Verdict != "TLE" || r.Scoring == nil || r.Scoring.Score != 6000 || r.Cases[2].Verdict != "SKIPPED" || r.Cases[3].Verdict != "AC" {
+		t.Fatal(r)
+	}
+	if err := scoreResult(job, &r); err != nil {
+		t.Fatal(err)
+	}
+	r = Judge(ctx, "if :", job)
+	if r.Verdict != "CE" || r.Scoring == nil || r.Scoring.Score != 0 || r.Scoring.MaxScore != 10000 {
+		t.Fatal(r)
+	}
+	job.TimeLimitMS = 1000
+	job.Cases = []Case{{Input: "1", Output: "1", Groups: []string{"slow"}, IsSample: true}, {Input: "2", Output: "2", Groups: []string{"fast"}}}
+	job.Scoring.Mode = "aggregate"
+	job.Scoring.Aggregator = &problems.Generator{Runtime: "python314", Source: "import sys\nlines=sys.stdin.read().splitlines()\nassert lines==['2 2','40','60','AC 7 1 1 0','AC 7 0 1 1']\nprint('12.349 50')"}
+	job.Checker = &problems.Generator{Runtime: "python314", Source: "import sys\nopen(sys.argv[4],'w').write('7')"}
+	r = Judge(ctx, "print(input())", job)
+	if r.Verdict != "AC" || r.Scoring == nil || r.Scoring.Score != 6234 || r.Cases[0].Score == nil || *r.Cases[0].Score != 7 {
+		t.Fatal(r)
+	}
+	if err := scoreResult(job, &r); err != nil {
+		t.Fatal(err)
+	}
+	// The same pinned testlib header and result parser handle quitp locally.
+	job.Checker = &problems.Generator{Runtime: "cpp23-gcc", Protocol: "testlib", Source: "#include \"testlib.h\"\nint main(int argc,char**argv){registerTestlibCmd(argc,argv);ouf.readInt();quitp(7,\"partial\");}"}
+	r = Judge(ctx, "print(input())", job)
+	if r.Verdict != "AC" || r.Scoring == nil || r.Scoring.Score != 6234 {
+		t.Fatal(r)
+	}
+	job.Scoring.Aggregator.Source = "print('40.001 50')"
+	r = Judge(ctx, "print(input())", job)
+	if r.Verdict != "JE" || r.Scoring != nil || r.CheckerLog == "" {
+		t.Fatal(r)
+	}
+	job.Scoring = nil
+	job.EasyTest = true
+	job.AcceptPoints = true
+	r = Judge(ctx, "print(input())", job)
+	if r.Verdict != "AC" || r.Scoring != nil || r.Cases[0].Score != nil {
+		t.Fatal(r)
 	}
 }

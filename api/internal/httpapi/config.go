@@ -136,6 +136,12 @@ func configuredStorage(getenv func(string) string, auth AuthConfig, region strin
 				return nil, errors.New("test file storage unavailable")
 			}
 			private.Files = testfiles.New(pool, s3.NewFromConfig(sdk), bucket)
+		} else if dir := getenv("TEST_DATA_DIR"); dir != "" {
+			private.Files, private.LocalFiles, err = testfiles.NewLocal(pool, dir, getenv("LOCAL_TEST_FILE_URL"), getenv("LOCAL_WEB_ORIGIN"))
+			if err != nil {
+				pool.Close()
+				return nil, errors.New("local test file storage unavailable")
+			}
 		}
 	}
 	return &configuredHandler{Handler: newHandler(auth, private), pool: pool}, nil

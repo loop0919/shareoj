@@ -65,6 +65,9 @@ func TestPartialScoringJobsAndResults(t *testing.T) {
 	ids := map[string]string{}
 	create := func(name, owner, runtime string, easyTest bool) error {
 		t.Helper()
+		if _, err := db.Exec(ctx, `UPDATE submissions SET created_at=clock_timestamp()-interval '61 seconds'`); err != nil {
+			t.Fatal(err)
+		}
 		ids[name] = fmt.Sprintf("%08d-3333-4333-8333-333333333333", len(ids))
 		_, err := queue.CreateRun(ctx, submissions.RunInput{Owner: owner, ID: ids[name], ProblemID: problem, Source: "source", Image: digest, Runtime: runtime, EasyTest: easyTest, CheckerRuntimes: checkers})
 		return err
@@ -77,9 +80,9 @@ func TestPartialScoringJobsAndResults(t *testing.T) {
 			t.Fatal(s.name, err)
 		}
 	}
-	// The local Docker judge does not score; a sample check never scores, so it still runs there.
-	if err := create("local", "dave", "cpp17-local", false); !errors.Is(err, submissions.ErrNotReady) {
-		t.Fatal("local judge accepted a partial-scoring job", err)
+	// Local Docker uses the same scoring rules; sample checks still carry no score.
+	if err := create("local", "dave", "cpp17-local", false); err != nil {
+		t.Fatal("local judge refused a partial-scoring job", err)
 	}
 	if err := create("local sample", "dave", "cpp17-local", true); err != nil {
 		t.Fatal(err)

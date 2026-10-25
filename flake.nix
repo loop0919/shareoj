@@ -27,6 +27,7 @@
           default = pkgs.mkShell {
             packages = with pkgs; [
               go
+              python3
               gofumpt
               golangci-lint
               gopls

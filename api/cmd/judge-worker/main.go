@@ -32,13 +32,20 @@ func main() {
 	defer pool.Close()
 	store := submissions.Store{Pool: pool}
 	bucket := os.Getenv("TEST_DATA_BUCKET")
-	var objects *s3.Client
+	var objects testfiles.FileObjects
 	if bucket != "" {
 		sdk, err := config.LoadDefaultConfig(ctx)
 		if err != nil {
 			log.Fatal("AWS configuration unavailable")
 		}
 		objects = s3.NewFromConfig(sdk)
+	}
+	if bucket == "" && os.Getenv("TEST_DATA_DIR") != "" {
+		objects, err = testfiles.NewLocalObjects(os.Getenv("TEST_DATA_DIR"))
+		if err != nil {
+			log.Fatal("Local test file storage unavailable: ", err)
+		}
+		bucket = "local"
 	}
 	log.Print("Local Docker judge worker started")
 	for ctx.Err() == nil {

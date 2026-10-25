@@ -181,7 +181,7 @@ type RunInput struct {
 // rejudge never queues a draft that a new submission refuses. The case-count bounds (1 to 100) stay with each caller,
 // written two ways there, and the callers must keep them equivalent. They are ANDed for a WHERE clause, placed after an AND.
 // draft, runtime and checkerRuntimes are SQL expressions for the draft, the submission runtime and the text[] of judge
-// code runtimes. The local Docker judge takes no interactor or scoring; the legacy cpp17-local takes only a cpp17
+// code runtimes. The local Docker judge takes no interactor; the legacy cpp17-local takes only a cpp17
 // checker. sampleCheck is a boolean SQL expression that waives the scoring conditions,
 // as a sample never scores.
 // Scoring without groups, or an aggregate one without its aggregator, waits like missing judge code, since the judge
@@ -200,7 +200,7 @@ func judgeReady(draft, runtime, checkerRuntimes, sampleCheck string) string {
      ` + draft + `->'interactor'->>'runtime'=ANY(` + checkerRuntimes + `) AND
      length(btrim(` + draft + `->'interactor'->>'source', E' \t\r\n'))>0))
   AND (` + sampleCheck + ` OR COALESCE(` + draft + `->'scoring','null'::jsonb) = 'null'::jsonb OR
-    (` + runtime + ` NOT IN ('cpp17-local','cpp23-gcc-local','python314-local') AND CASE WHEN jsonb_typeof(` + draft + `->'scoring'->'groups')='array' THEN jsonb_array_length(` + draft + `->'scoring'->'groups') ELSE 0 END > 0 AND
+    (CASE WHEN jsonb_typeof(` + draft + `->'scoring'->'groups')='array' THEN jsonb_array_length(` + draft + `->'scoring'->'groups') ELSE 0 END > 0 AND
      (` + draft + `->'scoring'->>'mode' <> 'aggregate' OR
      (` + draft + `->'scoring'->'aggregator'->>'runtime'=ANY(` + checkerRuntimes + `) AND
       length(btrim(` + draft + `->'scoring'->'aggregator'->>'source', E' \t\r\n'))>0))))`

@@ -102,9 +102,13 @@ func TestSubmitAndRejudgeAgreeOnReadiness(t *testing.T) {
 		{"blank aggregator", `{"scoring":{"mode":"aggregate","groups":` + group + `,"aggregator":{"runtime":"cpp17","source":"\t"}}}`, false, true, false, true},
 	} {
 		exec(`UPDATE problem_drafts SET published_draft=$2::jsonb || $3::jsonb WHERE id=$1`, problem, base, c.patch)
+		local := c.local
+		if strings.Contains(c.patch, `"scoring":`) {
+			local = c.isolate
+		}
 		got := [6]bool{ready("cpp17-isolate", false), ready("cpp17-isolate", true), ready("cpp17-local", false), ready("cpp17-local", true), rejudged("cpp17-isolate"), rejudged("cpp17-local")}
 		// A rejudge accepts what a submission in the same language accepts.
-		if want := [6]bool{c.isolate, c.sample, c.local, c.localSample, c.isolate, c.local}; got != want {
+		if want := [6]bool{c.isolate, c.sample, local, c.localSample, c.isolate, local}; got != want {
 			t.Errorf("%s: got %v, want %v", c.name, got, want)
 		}
 	}

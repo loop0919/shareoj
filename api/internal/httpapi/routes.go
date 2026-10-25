@@ -44,6 +44,7 @@ type handlerDependencies struct {
 	Profiles             *profiles.Store
 	Verifier             TokenVerifier
 	Files                testFileStore
+	LocalFiles           http.Handler
 }
 
 type problemHandler struct {
@@ -104,6 +105,9 @@ func releaseBefore(store *contests.Store, problemStore *problems.Store, judging 
 }
 
 func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
+	if d.LocalFiles != nil {
+		mux.Handle("/local-test-files", d.LocalFiles)
+	}
 	docs := newPublicDocumentation()
 	documentPublicRoute(docs, "GET /health", publicOperation{Summary: "稼働状態", Response: healthResponse{}})
 	judging := submissions.Config{JudgeImage: d.JudgeImage, JudgeRuntime: d.JudgeRuntime, JudgeEnabledRuntimes: d.JudgeEnabledRuntimes}

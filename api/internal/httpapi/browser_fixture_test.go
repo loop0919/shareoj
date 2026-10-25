@@ -26,6 +26,7 @@ import (
 	"judge/api/internal/problems"
 	"judge/api/internal/profiles"
 	"judge/api/internal/submissions"
+	"judge/api/internal/testfiles"
 )
 
 // This identity provider exists only in the Go test binary, never in the API build.
@@ -137,11 +138,58 @@ func TestBrowserFixture(t *testing.T) {
 		}
 		cognito.users[name+"@example.test"] = &browserUser{password: "test-password", confirmed: true}
 	}
-	handler := newHandler(AuthConfig{Client: cognito, ClientID: "client"}, handlerDependencies{Accounts: &accounts.Store{Pool: store.Pool()}, CognitoUsers: cognito, UserPoolID: "local_browser", Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Profiles: profileStore, Posts: posts.New(store.Pool()), Submissions: &submissions.Store{Pool: store.Pool()}, JudgeImage: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Operators: map[string]bool{"alice@example.test": true}, Verifier: newCognitoVerifier(f.server.URL, "client")})
+	dependencies := handlerDependencies{Accounts: &accounts.Store{Pool: store.Pool()}, CognitoUsers: cognito, UserPoolID: "local_browser", Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Profiles: profileStore, Posts: posts.New(store.Pool()), Submissions: &submissions.Store{Pool: store.Pool()}, JudgeImage: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Operators: map[string]bool{"alice@example.test": true}, Verifier: newCognitoVerifier(f.server.URL, "client")}
 	address := os.Getenv("OPENOJ_BROWSER_API_ADDR")
 	if address == "" {
 		address = "127.0.0.1:18082"
 	}
+	if image := os.Getenv("BROWSER_JUDGE_IMAGE"); image != "" {
+		dependencies.JudgeImage = image
+		dir := t.TempDir()
+		dependencies.Files, dependencies.LocalFiles, err = testfiles.NewLocal(store.Pool(), dir, "http://"+address+"/local-test-files", "http://127.0.0.1:13002")
+		if err != nil {
+			t.Fatal(err)
+		}
+		objects, err := testfiles.NewLocalObjects(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		workerCtx, cancel := context.WithCancel(ctx)
+		finished := make(chan struct{})
+		defer func() { cancel(); <-finished }()
+		go func() {
+			defer close(finished)
+			for workerCtx.Err() == nil {
+				item, job, err := dependencies.Submissions.Claim(workerCtx)
+				if err == nil {
+					if err = dependencies.Submissions.ResolveTestFiles(workerCtx, &job); err != nil {
+						t.Error(err)
+						return
+					}
+					job.LoadFile = func(ctx context.Context, file *problems.TestFile) (string, error) {
+						return testfiles.ReadFile(ctx, objects, "local", file)
+					}
+					job.SaveOutput = func(ctx context.Context, data []byte) (*problems.TestFile, error) {
+						return testfiles.WriteGenerated(ctx, objects, "local", job.GenerationPrefix, data)
+					}
+					result := submissions.Judge(workerCtx, item.Source, job)
+					if err = dependencies.Submissions.Finish(workerCtx, item.ID, result); err != nil && workerCtx.Err() == nil {
+						t.Error(err)
+						return
+					}
+				} else if err != pgx.ErrNoRows && workerCtx.Err() == nil {
+					t.Error(err)
+					return
+				}
+				select {
+				case <-workerCtx.Done():
+					return
+				case <-time.After(100 * time.Millisecond):
+				}
+			}
+		}()
+	}
+	handler := newHandler(AuthConfig{Client: cognito, ClientID: "client"}, dependencies)
 	server := &http.Server{Addr: address, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	listener, err := net.Listen("tcp", address)
 	if err != nil {

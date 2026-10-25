@@ -115,6 +115,25 @@ try {
   console.log('Building API…')
   await run('go', ['build', '-o', '.build/local-api', './cmd/api'], `${root}api`)
   const localJudge = Boolean(process.env.JUDGE_CPP_IMAGE)
+  if (localJudge) {
+    process.env.JUDGE_LOCAL_RUNNER = `${root}judge/local.py`
+    if (!process.env.TEST_DATA_BUCKET) {
+      process.env.TEST_DATA_DIR ??= `${root}.local/test-files`
+      process.env.LOCAL_TEST_FILE_URL = `http://127.0.0.1:${apiPort}/local-test-files`
+      process.env.LOCAL_WEB_ORIGIN = `http://localhost:${webPort}`
+    }
+    const inputs = `${root}judge/.build/extension-inputs`
+    mkdirSync(inputs, { recursive: true })
+    const locked = JSON.parse(readFileSync('judge/runtime/runtime-extension-sources.lock.json', 'utf8')).files['testlib.h']
+    const header = `${inputs}/testlib.h`
+    if (!existsSync(header) || createHash('sha256').update(readFileSync(header)).digest('hex') !== locked.sha256) {
+      const response = await fetch(locked.url)
+      if (!response.ok) throw new Error('Cannot fetch pinned testlib.h')
+      const data = Buffer.from(await response.arrayBuffer())
+      if (createHash('sha256').update(data).digest('hex') !== locked.sha256) throw new Error('testlib.h checksum mismatch')
+      writeFileSync(header, data)
+    }
+  }
   if (localJudge) await run('go', ['build', '-o', '.build/judge-worker', './cmd/judge-worker'], `${root}api`)
   const supervise = promise => promise.then(() => stop(1), error => {
     if (!stopping) console.error(error.message)
