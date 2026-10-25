@@ -128,6 +128,7 @@ func TestAccountPostgres(t *testing.T) {
 	exec(`INSERT INTO content_images(id,owner_id,digest,media_type,data,size) SELECT id,'alice-sub',decode(md5(id::text),'hex'),'image/png','\x00'::bytea,1 FROM unnest($1::uuid[]) id`, []string{keptImage, privateImage})
 	exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'alice-sub'),($2,'bob-sub')`, bobs, draft)
 	exec(`INSERT INTO problem_favorites(problem_id,owner_id) VALUES($1,'alice-sub'),($2,'bob-sub')`, bobs, public)
+	exec(`INSERT INTO code_runs(id,owner_id,runtime,image,source,stdin) VALUES ('77777777-7777-4777-8777-777777777777','alice-sub','cpp17-isolate','sha256:x','s','')`)
 	exec(`INSERT INTO blog_posts(id,owner_id,title,markdown) VALUES ('44444444-4444-4444-8444-444444444444','alice-sub','Draft post','secret')`)
 	exec(`INSERT INTO blog_posts(id,owner_id,title,markdown,published_title,published_markdown,published_version,published_at) VALUES ('55555555-5555-4555-8555-555555555555','alice-sub','Edited','edited','Public post','public',1,now())`)
 	exec(`INSERT INTO contest_drafts(id,owner_id,draft) VALUES ('66666666-6666-4666-8666-666666666666','alice-sub','{}')`)
@@ -207,6 +208,7 @@ func TestAccountPostgres(t *testing.T) {
 		`SELECT count(*) FROM blog_posts WHERE owner_id='alice-sub' AND published_title IS NULL`:             0,
 		`SELECT count(*) FROM contest_drafts WHERE owner_id='alice-sub'`:                                     0,
 		`SELECT count(*) FROM problem_favorites WHERE owner_id='alice-sub'`:                                  0,
+		`SELECT count(*) FROM code_runs WHERE owner_id='alice-sub'`:                                          0,
 		`SELECT count(*) FROM content_images WHERE id='` + privateImage + `'`:                                0,
 		`SELECT count(*) FROM problem_drafts WHERE id='` + public + `' AND draft::text LIKE '%unpublished%'`: 0,
 		`SELECT count(*) FROM blog_posts WHERE owner_id='alice-sub' AND title='Public post'`:                 1,

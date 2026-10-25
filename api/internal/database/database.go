@@ -161,6 +161,9 @@ var contestAnnouncementsSchema string
 //go:embed 045_clarification_setters.sql
 var clarificationSettersSchema string
 
+//go:embed 046_code_runs.sql
+var codeRunsSchema string
+
 // migrations lists the schemas in version order: version N is the Nth entry, from NNN_*.sql.
 // Add a migration at the end under the next number. Deployed databases record the versions they applied, so never
 // remove or reorder an entry; a reverted migration keeps its number reserved, like 019_reserved.sql.
@@ -211,6 +214,7 @@ func migrations() []string {
 		rejudgeNotificationsSchema,
 		contestAnnouncementsSchema,
 		clarificationSettersSchema,
+		codeRunsSchema,
 	}
 }
 
