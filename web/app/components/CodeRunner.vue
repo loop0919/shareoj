@@ -17,13 +17,17 @@ const available = computed(() => usableRuntimes(catalog.value, catalogError.valu
 const draftKey = 'openoj.code-run-draft'
 const submissionRuntimeKey = 'openoj.submission-runtime'
 let restored = false
+// The language the user chose, kept even while no language is offered (maintenance), so the draft never loses it.
+let savedRuntime = ''
 onMounted(() => {
   try {
     const draft = JSON.parse(localStorage.getItem(draftKey) ?? 'null') as { runtime?: unknown, source?: unknown, stdin?: unknown } | null
     if (typeof draft?.source === 'string') source.value = draft.source
     if (typeof draft?.stdin === 'string') stdin.value = draft.stdin
-    const saved = typeof draft?.runtime === 'string' ? draft.runtime : localStorage.getItem(submissionRuntimeKey)
-    if (saved && available.value.some(item => item.id === saved)) runtime.value = saved
+    const draftRuntime = typeof draft?.runtime === 'string' ? draft.runtime : ''
+    savedRuntime = draftRuntime
+    const usable = [draftRuntime, localStorage.getItem(submissionRuntimeKey) ?? ''].find(id => id && available.value.some(item => item.id === id))
+    if (usable) { runtime.value = usable; savedRuntime = usable }
   } catch { /* Storage may be disabled by the browser, or hold a broken draft. */ }
   restored = true
   // The layout resolves the account after hydration, so wait for it before reading the last run.
@@ -35,11 +39,14 @@ onMounted(() => {
 })
 watch([runtime, source, stdin], () => {
   if (!restored) return
-  try { localStorage.setItem(draftKey, JSON.stringify({ runtime: runtime.value, source: source.value, stdin: stdin.value })) }
+  if (runtime.value) savedRuntime = runtime.value
+  try { localStorage.setItem(draftKey, JSON.stringify({ runtime: savedRuntime, source: source.value, stdin: stdin.value })) }
   catch { /* Keep running usable without storage. */ }
 })
 watch(available, items => {
-  if (runtime.value && !items.some(item => item.id === runtime.value)) runtime.value = items[0]?.id ?? ''
+  if (items.some(item => item.id === runtime.value)) return
+  // Coming back from maintenance, return to the saved language before falling back to the first one.
+  if (runtime.value || items.length) runtime.value = items.find(item => item.id === savedRuntime)?.id ?? items[0]?.id ?? ''
 }, { immediate: true })
 
 const run = ref<CodeRun | null>(null)

@@ -135,3 +135,24 @@ test('maintenance closes the runner', async ({ page }) => {
   await expect(page.getByText('現在、コード実行の受付を停止しています。', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: /実行$/ })).toBeDisabled()
 })
+
+test('a saved language survives maintenance in the draft', async ({ page }) => {
+  await mockLatest(page, [null])
+  await page.addInitScript(() => localStorage.setItem('openoj.code-run-draft', JSON.stringify({ runtime: 'python314', source: 'x', stdin: 'y' })))
+  await page.route('**/api/runtimes', route => route.fulfill({ json: { items: [], maintenance: true } }))
+  await page.goto('/run')
+  await expect(page.getByLabel('標準入力', { exact: true })).toHaveValue('y')
+  await expect(page.getByLabel('ソースコード', { exact: true })).toHaveText('x')
+  const draft = await page.evaluate(() => JSON.parse(localStorage.getItem('openoj.code-run-draft') ?? '{}'))
+  expect(draft).toEqual({ runtime: 'python314', source: 'x', stdin: 'y' })
+})
+
+test('an unavailable draft language falls back to the submission form language', async ({ page }) => {
+  await mockLatest(page, [null])
+  await page.addInitScript(() => {
+    localStorage.setItem('openoj.code-run-draft', JSON.stringify({ runtime: 'gone-lang', source: 'x', stdin: '' }))
+    localStorage.setItem('openoj.submission-runtime', 'python314')
+  })
+  await page.goto('/run')
+  await expect(page.getByRole('combobox', { name: '言語' })).toHaveValue('python314')
+})
