@@ -92,7 +92,7 @@ func releaseBefore(store *contests.Store, problemStore *problems.Store, judging 
 			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 			err := problemStore.ReleaseScheduled(ctx)
 			if err == nil {
-				err = problemStore.ReleaseFeatured(ctx, submissions.RuntimeIDs(), judging.RuntimeIDs())
+				err = problemStore.ReleaseFeatured(ctx, submissions.RuntimeIDs(), judging.ContentRuntimeIDs())
 			}
 			cancel()
 			if err != nil {

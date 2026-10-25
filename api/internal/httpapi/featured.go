@@ -28,7 +28,7 @@ func (p problemHandler) featured(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	page, err := p.Store.FeaturedList(r.Context(), offset, submissions.RuntimeIDs(), p.Judging.RuntimeIDs())
+	page, err := p.Store.FeaturedList(r.Context(), offset, submissions.RuntimeIDs(), p.Judging.ContentRuntimeIDs())
 	if err != nil {
 		problemError(w, err)
 		return
@@ -103,7 +103,7 @@ func (p problemHandler) writeFeaturedPlan(w http.ResponseWriter, r *http.Request
 		authError(w, 503, "database_unavailable")
 		return
 	}
-	plan, err := p.Store.FeaturedPlan(r.Context(), owner, id, preference, submissions.RuntimeIDs(), p.Judging.RuntimeIDs())
+	plan, err := p.Store.FeaturedPlan(r.Context(), owner, id, preference, submissions.RuntimeIDs(), p.Judging.ContentRuntimeIDs())
 	if err != nil {
 		problemError(w, err)
 		return

@@ -55,6 +55,15 @@ func (p Config) RuntimeIDs() []string {
 	return ids
 }
 
+// ContentRuntimeIDs is what saved judge code is checked against outside a submission. A judge rollout enables no
+// runtime for a while, and that must not change saved state: a draft or the 定期便 preview and release.
+func (p Config) ContentRuntimeIDs() []string {
+	if p.Maintenance() {
+		return RuntimeIDs()
+	}
+	return p.RuntimeIDs()
+}
+
 func RuntimeIDs() []string {
 	ids := make([]string, 0, len(Runtimes))
 	for _, rt := range Runtimes {

@@ -26,6 +26,8 @@ type featuredTest struct {
 	t       *testing.T
 	store   *problems.Store
 	request func(string, string, string, any, int) string
+	// maintenance sends the request to an API that a judge rollout has put in maintenance.
+	maintenance func(string, string, string, any, int) string
 }
 
 func newFeaturedTest(t *testing.T) featuredTest {
@@ -64,28 +66,31 @@ func newFeaturedTest(t *testing.T) featuredTest {
 	f := featuredTest{t: t, store: store}
 	f.exec(`INSERT INTO user_profiles(owner_id,handle) VALUES('alice','alice'),('bob','bob'),('carol','carol'),('tester','tester')`)
 	sign := newSigningFixture(t)
-	h := newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Profiles: profiles.New(store.Pool()), Submissions: &submissions.Store{Pool: store.Pool()}, JudgeImage: "sha256:" + strings.Repeat("a", 64), JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: "cpp17", Verifier: newCognitoVerifier(sign.server.URL, "client")})
-	f.request = func(method, path, owner string, body any, want int) string {
-		t.Helper()
-		var data []byte
-		if body != nil {
-			data, _ = json.Marshal(body)
+	serve := func(enabled string) func(string, string, string, any, int) string {
+		h := newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Profiles: profiles.New(store.Pool()), Submissions: &submissions.Store{Pool: store.Pool()}, JudgeImage: "sha256:" + strings.Repeat("a", 64), JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: enabled, Verifier: newCognitoVerifier(sign.server.URL, "client")})
+		return func(method, path, owner string, body any, want int) string {
+			t.Helper()
+			var data []byte
+			if body != nil {
+				data, _ = json.Marshal(body)
+			}
+			r := httptest.NewRequest(method, path, strings.NewReader(string(data)))
+			r.Header.Set("Content-Type", "application/json")
+			if owner != "" {
+				r.Header.Set("Authorization", "Bearer "+sign.token(t, owner, nil))
+			}
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != want {
+				t.Fatalf("%s %s (%s): %d want %d: %s", method, path, owner, w.Code, want, w.Body.String())
+			}
+			if w.Header().Get("Cache-Control") != "no-store" {
+				t.Fatal("cacheable featured response")
+			}
+			return w.Body.String()
 		}
-		r := httptest.NewRequest(method, path, strings.NewReader(string(data)))
-		r.Header.Set("Content-Type", "application/json")
-		if owner != "" {
-			r.Header.Set("Authorization", "Bearer "+sign.token(t, owner, nil))
-		}
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, r)
-		if w.Code != want {
-			t.Fatalf("%s %s (%s): %d want %d: %s", method, path, owner, w.Code, want, w.Body.String())
-		}
-		if w.Header().Get("Cache-Control") != "no-store" {
-			t.Fatal("cacheable featured response")
-		}
-		return w.Body.String()
 	}
+	f.request, f.maintenance = serve("cpp17"), serve("none")
 	return f
 }
 
@@ -436,6 +441,45 @@ func TestFeaturedPreviewRevalidationPostgres(t *testing.T) {
 	f.exec(`DELETE FROM problem_drafts WHERE id=$1`, a.ID)
 	if f.page("/featured").NextSlots[0].Kind != "revival" {
 		t.Fatal("deleted draft retained preview")
+	}
+}
+
+func TestFeaturedJudgeMaintenancePostgres(t *testing.T) {
+	f := newFeaturedTest(t)
+	interactive, other, late := f.draft("alice", 4), f.draft("bob", 3), f.draft("carol", 2)
+	f.exec(`UPDATE problem_drafts SET draft=draft||'{"interactor":{"runtime":"cpp17","source":"interact"}}' WHERE id=ANY($1::uuid[])`, []string{interactive.ID, late.ID})
+	f.apply(interactive, "soon", 204)
+	f.apply(other, "soon", 204)
+	if f.page("/featured").NextSlots[0].Writer != "alice" {
+		t.Fatal("wrong initial selection")
+	}
+	// A judge rollout publishes no runtime; the reserved interactive problem keeps its round and place in the schedule.
+	var page problems.FeaturedPage
+	if err := json.Unmarshal([]byte(f.maintenance("GET", "/featured", "", nil, 200)), &page); err != nil {
+		t.Fatal(err)
+	}
+	if page.NextSlots[0].Writer != "alice" || page.Waiting.Easy != 2 {
+		t.Fatal("maintenance replaced the preview", page)
+	}
+	var plan problems.FeaturedPlan
+	if err := json.Unmarshal([]byte(f.maintenance("GET", "/featured/schedule", "", nil, 200)), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if got := levels(plan, 0); !strings.HasPrefix(got, "4,3,") {
+		t.Fatal("maintenance dropped the application from the schedule", got)
+	}
+	if f.page("/featured").NextSlots[0].Writer != "alice" {
+		t.Fatal("preview lost after maintenance")
+	}
+	// Applying still follows the readiness the author sees, which lacks the runtime during maintenance.
+	f.maintenance("PUT", "/my/problems/"+late.ID+"/featured", "carol", map[string]any{"version": late.Version, "preference": "soon"}, 400)
+	// A round that falls due during maintenance publishes the reserved problem.
+	at := f.due()
+	f.exec(`UPDATE featured_previews SET scheduled_at=$1`, at)
+	f.maintenance("GET", "/featured", "", nil, 200)
+	var id string
+	if err := f.store.Pool().QueryRow(context.Background(), `SELECT COALESCE(problem_id::text,'') FROM featured_slots WHERE scheduled_at=$1 AND slot='easy'`, at).Scan(&id); err != nil || id != interactive.ID {
+		t.Fatal("maintenance release skipped the interactive problem", id, err)
 	}
 }
 
