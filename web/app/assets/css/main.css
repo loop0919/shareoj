@@ -120,7 +120,9 @@ code { font-family: var(--font-code); }
   .site-footer-brand { grid-column: auto; }
 }
 @media (pointer: coarse) { .site-footer-group a { min-height: 44px; } }
-.catalogue { padding-block: 40px 96px; }
+.catalogue { padding-block: 16px 96px; }
+/* A leading breadcrumb brings its own padding, so it sits where it does on the detail pages. */
+.catalogue:has(> .breadcrumb:first-child) { padding-top: 0; }
 .error-page { padding-block: 64px 96px; }
 .lead { color: var(--color-muted); max-width: 44rem; }
 .problem-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; padding-block: 24px; margin-block: 40px 24px; border-block: 1px solid var(--color-line); text-decoration: none; color: var(--color-ink); }

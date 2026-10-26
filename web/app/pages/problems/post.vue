@@ -119,7 +119,6 @@ async function post(cancel = false) {
  * Same shape as the 定期便 application: a bounded list on the left, the timing on the right, the action bar across both with the button at the bottom right.
  * Under 60rem: list, timing, then the bar, pinned to the bottom of the screen.
  * States: guest, loading, load error, empty, blocked rows (hideable), scheduled (update/cancel), applied (no schedule), invalid date, busy, request error. */
-.problem-post > .breadcrumb { padding-top: 0; }
 .post-form { display: flex; flex-direction: column; gap: 20px; }
 .post-columns { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; }
 .post-timing { display: grid; gap: 12px; min-width: 0; }

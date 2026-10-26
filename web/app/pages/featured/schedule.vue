@@ -24,7 +24,6 @@ usePolling(() => refresh(), 60000)
 <style scoped>
 /* Hallmark · pre-emit critique: P4 H4 E4 S5 R5 V4 · existing ShareOJ tokens (Plain · modern-minimal)
  * One table, the waiting count in the delivery block's mono numerals, no cards. States: loading, error, refresh. */
-.featured-schedule-page > .breadcrumb { padding-top: 0; }
 .featured-schedule-page > div, .schedule-note { max-width: 46rem; }
 .schedule-waiting { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin: 0 0 16px; font-size: .8125rem; }
 .schedule-waiting > span { color: var(--color-muted); font-size: .75rem; }
