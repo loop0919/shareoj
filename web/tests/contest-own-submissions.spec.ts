@@ -25,14 +25,14 @@ const ownB = submission(2, pb, 'ui_test', '2026-09-15T12:20:00Z')
 const mateB = submission(3, pb, 'mate', '2026-09-15T12:30:00Z')
 
 // The server renders the page from the real API, so the mocked contest comes in on the client, and the views after it
-// are opened from the menu. requested records the mine parameter of each list.
+// are opened from the menu. requested records the mine parameter of each list, and the problem after a colon.
 async function open(page: Page, contest: typeof running & Record<string, unknown>, lists: Record<string, unknown[]>) {
   const requested: string[] = []
   await page.route(`**/api/contests/${id}**`, route => {
     const url = new URL(route.request().url())
     if (url.pathname.endsWith('/submissions')) {
-      const mine = url.searchParams.get('mine') ?? '0'
-      requested.push(mine)
+      const mine = url.searchParams.get('mine') ?? '0', problem = url.searchParams.get('problem')
+      requested.push(problem ? `${mine}:${problem}` : mine)
       const items = lists[mine]
       return route.fulfill(items ? { json: { items, hasMore: false, total: items.length } } : { status: 404, json: {} })
     }
@@ -69,15 +69,23 @@ test('a participant lists their own submissions to every problem while the whole
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('自分の提出')
   await expect(page.getByRole('navigation', { name: 'パンくずリスト' })).toHaveText(`${running.title}/自分の提出`)
   const rows = page.locator('#my-submissions tbody tr')
-  await expect(rows.locator('th')).toHaveText(['A × B', 'A + B'])
-  await expect(rows.first().getByRole('link', { name: 'A × B' })).toHaveAttribute('href', `${path}/my-submissions/${shortId(ownB.id)}?from=contest`)
+  await expect(rows.locator('th')).toHaveText(['B - A × B', 'A - A + B'])
+  await expect(rows.first().getByRole('link', { name: 'B - A × B' })).toHaveAttribute('href', `${path}/my-submissions/${shortId(ownB.id)}?from=contest`)
   expect(requested).not.toContain('0')
+  // The list narrows to one problem, named as the contest names it (ADR 0034).
+  const choice = page.getByLabel('問題', { exact: true })
+  await expect(choice.locator('option')).toHaveText(['すべて', 'A - A + B', 'B - A × B'])
+  await choice.selectOption({ label: 'B - A × B' })
+  await expect(page).toHaveURL(/view=my-submissions&problem=B$/)
+  await expect.poll(() => requested.at(-1)).toBe(`1:${pb}`)
+  await expect(page.getByText('この問題への、自分の提出です。練習提出も掲載します。')).toBeVisible()
   await fits(page)
   await page.setViewportSize({ width: 1280, height: 900 })
-  // The problem page offers no list that cannot be read yet.
+  // The problem page has no tabs; the menu holds the lists.
   await menu.getByRole('link', { name: '問題', exact: true }).click()
   await page.getByRole('region', { name: 'コンテストの問題' }).getByRole('link', { name: 'A + B', exact: true }).click()
-  await expect(page.getByRole('navigation', { name: '問題メニュー' }).getByRole('link')).toHaveText(['問題文', '自分の提出'])
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('A - A + B')
+  await expect(page.getByRole('navigation', { name: '問題メニュー' })).toHaveCount(0)
   // A direct link to the whole list explains when it opens, and the menu still marks the submissions.
   await visit(page, `${path}?view=submissions`)
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('すべての提出')
@@ -120,7 +128,7 @@ test('after the end the menu folds both lists into 「提出」', async ({ page 
   await expect(page.locator('#my-submissions tbody tr')).toHaveCount(2)
   await menu.getByRole('link', { name: '問題', exact: true }).click()
   await page.getByRole('region', { name: 'コンテストの問題' }).getByRole('link', { name: 'A + B', exact: true }).click()
-  await expect(page.getByRole('navigation', { name: '問題メニュー' }).getByRole('link')).toHaveText(['問題文', '自分の提出', 'すべての提出'])
+  await expect(page.getByRole('navigation', { name: '問題メニュー' })).toHaveCount(0)
 })
 
 test('a team member lists the team\'s submissions from the menu while the contest runs', async ({ page }) => {
@@ -132,8 +140,8 @@ test('a team member lists the team\'s submissions from the menu while the contes
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('チームの提出')
   await expect(page.getByRole('navigation', { name: 'パンくずリスト' })).toHaveText(`${running.title}/チームの提出`)
   const rows = page.locator('#my-submissions tbody tr')
-  await expect(rows.first().getByRole('link', { name: 'A × B' })).toHaveAttribute('href', `${path}/submissions/${shortId(mateB.id)}?from=contest-team`)
-  await expect(rows.last().getByRole('link', { name: 'A + B' })).toHaveAttribute('href', `${path}/my-submissions/${shortId(ownA.id)}?from=contest-team`)
+  await expect(rows.first().getByRole('link', { name: 'B - A × B' })).toHaveAttribute('href', `${path}/submissions/${shortId(mateB.id)}?from=contest-team`)
+  await expect(rows.last().getByRole('link', { name: 'A - A + B' })).toHaveAttribute('href', `${path}/my-submissions/${shortId(ownA.id)}?from=contest-team`)
   await fits(page)
   await visit(page, `${path}?view=submissions`)
   await expect(page.locator('#submissions .notice')).toHaveText(`${whole}開催中のチームの提出は「チームの提出」で確認できます。`)

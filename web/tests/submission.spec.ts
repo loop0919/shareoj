@@ -57,7 +57,8 @@ for (const scope of ['problem', 'contest']) {
     await page.getByRole('button', { name: 'コピー', exact: true }).click()
     await expect(page.getByText('コピーしました。', { exact: true })).toBeVisible()
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('int main(){}')
-    await expect(page.getByRole('link', { name: 'この問題のすべての提出', exact: true })).toHaveAttribute('href', `${problemPath}?view=submissions`)
+    // A contest problem's list is the contest's, narrowed to it (ADR 0034).
+    await expect(page.getByRole('link', { name: 'この問題のすべての提出', exact: true })).toHaveAttribute('href', scope === 'contest' ? `/contests/${shortId(contestId)}?view=submissions&problem=A` : `${problemPath}?view=submissions`)
     for (const width of [375, 1280]) {
       await page.setViewportSize({ width, height: 900 })
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)

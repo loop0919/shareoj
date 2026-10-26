@@ -5,20 +5,20 @@ import { shortId } from '~~/shared/utils/short-id'
 import { submissionUsage } from '~/utils/submission-usage'
 import { runtimeLabel } from '~/utils/runtime-label'
 import { formatScore } from '~/utils/score'
-// team lists the viewer's and their teammates' submissions in a team contest; onsite keeps the onsite participants'
-// (ADR 0024). scored adds the score column of a partially scored problem (ADR 0025).
-const props = defineProps<{ problemId: string, contestId?: string, mine: boolean, team?: boolean, onsite?: boolean, scored?: boolean }>()
-const { user, profile } = useAccount()
+// A public problem's list; a contest's problems use the contest's lists (ADR 0034). scored adds the score column of a
+// partially scored problem (ADR 0025).
+const props = defineProps<{ problemId: string, mine: boolean, scored?: boolean }>()
+const { user } = useAccount()
 const route = useRoute()
-const title = computed(() => props.team ? 'チームの提出' : props.mine ? '自分の提出' : 'すべての提出')
+const title = computed(() => props.mine ? '自分の提出' : 'すべての提出')
 const data = ref<{ items: Submission[], hasMore: boolean } | null>(null)
 const offset = ref(0)
 const { loading, run, invalidate } = useLatestRequest()
 const message = ref('')
 function load() {
   if (props.mine && !user.value) { invalidate(); data.value = null; return Promise.resolve() }
-  const base = props.contestId ? `/api/contests/${props.contestId}/problems/${props.problemId}` : `/api/problems/${props.problemId}`
-  const query = { mine: props.team ? 'team' : props.mine ? '1' : '0', offset: offset.value, ...props.onsite && !props.mine ? { scope: 'onsite' } : {} }
+  const base = `/api/problems/${props.problemId}`
+  const query = { mine: props.mine ? '1' : '0', offset: offset.value }
   message.value = ''
   return run(JSON.stringify([base, query, user.value?.id]),
     () => $fetch<{ items: Submission[], hasMore: boolean }>(`${base}/submissions`, { query }),
@@ -26,15 +26,12 @@ function load() {
     () => { message.value = '提出一覧を取得できませんでした。閲覧権限を確認し、再取得してください。' })
 }
 function detail(item: Submission) {
-  // A teammate's submission is not the viewer's own, so it opens on the shared detail page. Either way the breadcrumb
-  // leads back to 「チームの提出」.
-  if (props.mine && (!props.team || item.author === profile.value?.handle)) return props.contestId ? `/contests/${shortId(props.contestId)}/my-submissions/${shortId(item.id)}${props.team ? '?from=team' : ''}` : `/my/submissions/${shortId(item.id)}?from=problem`
-  return props.contestId ? `/contests/${shortId(props.contestId)}/submissions/${shortId(item.id)}?from=${props.team ? 'team' : 'problem'}` : `/problems/${shortId(props.problemId)}/submissions/${shortId(item.id)}`
+  return props.mine ? `/my/submissions/${shortId(item.id)}?from=problem` : `/problems/${shortId(props.problemId)}/submissions/${shortId(item.id)}`
 }
-watch(() => [user.value?.id, props.problemId, props.contestId, props.mine, props.team, props.onsite], () => {
+watch(() => [user.value?.id, props.problemId, props.mine], () => {
   invalidate(); data.value = null; offset.value = 0
 }, { flush: 'sync' })
-watch([offset, () => user.value?.id, () => props.problemId, () => props.contestId, () => props.mine, () => props.team, () => props.onsite], load)
+watch([offset, () => user.value?.id, () => props.problemId, () => props.mine], load)
 onMounted(load)
 usePolling(load, 15000)
 

@@ -47,5 +47,5 @@ test('a rejudge opens the own submissions of the problem, in its contest when it
   await expect(links.nth(0)).toContainText('aliceがリジャッジしました')
   await expect(links.nth(0)).toHaveAttribute('href', `/problems/${shortId(problemId)}?view=my-submissions`)
   await expect(links.nth(1)).toContainText('コンテストの題')
-  await expect(links.nth(1)).toHaveAttribute('href', `/contests/${shortId(contestId)}/B?view=my-submissions`)
+  await expect(links.nth(1)).toHaveAttribute('href', `/contests/${shortId(contestId)}?view=my-submissions&problem=B`)
 })

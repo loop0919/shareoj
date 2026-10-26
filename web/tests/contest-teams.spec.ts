@@ -959,43 +959,48 @@ test('the contest submission list filters onsite participants in the URL, and te
   await expect(page.locator('#submissions .notice')).toHaveText('提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。')
 })
 
-test('the problem page lists the team\'s submissions with their submitters and filters all submissions by onsite', async ({ page }) => {
+test('the problem\'s lists are the contest\'s narrowed to it: the team\'s with their submitters, and all filtered by onsite', async ({ page }) => {
   const team = { id: alpha, name: 'Alpha', members: ['ui_test', 'bob'], onsite: false }
   const contest = { ...base, status: 'running' as const, startsAt: '2026-09-15T12:00:00Z', endsAt: '2099-09-15T14:00:00Z', teamMode: true, onsiteDivision: true, participating: true, canViewSubmissions: true, team }
   const own = 'aaaaaaaa-0000-4000-8000-000000000001', bobs = 'bbbbbbbb-0000-4000-8000-000000000002'
   const state = await routeContest(page, contest, { items: [submission(bobs, 'bob', '2026-09-15T12:40:00Z'), submission(own, 'ui_test')] })
-  await page.goto(`/contests/${shortId(id)}/A?view=my-submissions`, { waitUntil: 'networkidle' })
-  const menuBar = page.getByRole('navigation', { name: '問題メニュー' })
-  await expect(menuBar.getByRole('link')).toHaveText(['問題文', 'チームの提出'])
-  const list = page.getByRole('region', { name: 'チームの提出' })
-  await expect(list.getByRole('heading', { name: 'チームの提出' })).toBeVisible()
-  await expect(list.locator('tbody tr')).toHaveCount(2)
-  await expect.poll(() => state.lists.at(-1)!.query.get('mine')).toBe('team')
-  expect(state.lists.at(-1)!.path).toBe(`/api/contests/${id}/problems/${problemId}/submissions`)
+  await open(page, 'my-submissions')
+  // The problem page has no tabs; its older link to the team's list opens the contest's, narrowed to it (ADR 0034).
+  await visit(page, `/contests/${shortId(id)}/A?view=my-submissions`)
+  await expect(page).toHaveURL(`/contests/${shortId(id)}?view=my-submissions&problem=A`)
+  await expect(page.getByLabel('問題', { exact: true })).toHaveValue('0')
+  await expect(page.getByText('この問題への、チームの提出です。練習提出も掲載します。')).toBeVisible()
+  await expect.poll(() => state.lists.at(-1)!.query.get('problem')).toBe(problemId)
+  expect(state.lists.at(-1)!.query.get('mine')).toBe('team')
+  expect(state.lists.at(-1)!.path).toBe(`/api/contests/${id}/submissions`)
   // A teammate's submission opens on the shared page; one's own keeps the personal page.
-  await expect(list.locator('tbody tr').nth(0).getByRole('cell').nth(1)).toHaveText('bob')
-  await expect(list.locator('tbody tr').nth(0).getByRole('link', { name: '詳細' })).toHaveAttribute('href', `/contests/${shortId(id)}/submissions/${shortId(bobs)}?from=team`)
-  await expect(list.locator('tbody tr').nth(1).getByRole('link', { name: '詳細' })).toHaveAttribute('href', `/contests/${shortId(id)}/my-submissions/${shortId(own)}?from=team`)
-  // Either way the breadcrumb names the list it came from.
-  await page.route(`**/api/my/submissions/${own}`, route => route.fulfill({ json: { ...submission(own, 'ui_test'), contestId: id, source: 'int main() {}' } }))
-  await list.locator('tbody tr').nth(1).getByRole('link', { name: '詳細' }).click()
-  await expect(page).toHaveURL(`/contests/${shortId(id)}/my-submissions/${shortId(own)}?from=team`)
+  const rows = page.locator('#my-submissions tbody tr')
+  await expect(rows).toHaveCount(2)
+  await expect(rows.nth(0).getByRole('cell').nth(0)).toHaveText('bob')
+  await expect(rows.nth(0).getByRole('link', { name: 'A - A + B' })).toHaveAttribute('href', `/contests/${shortId(id)}/submissions/${shortId(bobs)}?from=contest-team`)
+  await expect(rows.nth(1).getByRole('link', { name: 'A - A + B' })).toHaveAttribute('href', `/contests/${shortId(id)}/my-submissions/${shortId(own)}?from=contest-team`)
+  // A submission just made from the problem page leads back to the team's list of that problem.
+  await page.route(`**/api/my/submissions/${own}`, route => route.fulfill({ json: { ...submission(own, 'ui_test'), contestId: id, problemIndex: 0, source: 'int main() {}' } }))
+  await visit(page, `/contests/${shortId(id)}/my-submissions/${shortId(own)}?from=team`)
   const crumb = page.getByRole('navigation', { name: 'パンくずリスト' }).getByRole('link', { name: /^この問題の/ })
   await expect(crumb).toHaveText('この問題のチームの提出')
-  await expect(crumb).toHaveAttribute('href', `/contests/${shortId(id)}/problems/${shortId(problemId)}?view=my-submissions`)
-  await page.goBack()
+  await expect(crumb).toHaveAttribute('href', `/contests/${shortId(id)}?view=my-submissions&problem=A`)
+  await expect(page.getByRole('row', { name: /^問題/ }).getByRole('link')).toHaveText('A - A + B')
   // While the contest runs, everyone else's submissions stay closed to a member, and a link to them says so.
   await visit(page, `/contests/${shortId(id)}/A?view=submissions`)
-  await expect(page.locator('.submission-notice')).toHaveText('提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。開催中のチームの提出は「チームの提出」で確認できます。')
-  // After the end the list opens with the onsite filter in the URL.
+  await expect(page).toHaveURL(`/contests/${shortId(id)}?view=submissions&problem=A`)
+  await expect(page.locator('#submissions .notice')).toHaveText('提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。開催中のチームの提出は「チームの提出」で確認できます。')
+  // After the end the list opens with the onsite filter in the URL, which the older link keeps.
   state.contest = { ...contest, status: 'ended', endsAt: '2026-09-15T14:00:00Z', resultsFinal: true }
   await page.goto(`/contests/${shortId(id)}/A?view=submissions&scope=onsite`, { waitUntil: 'networkidle' })
+  await expect(page).toHaveURL(`/contests/${shortId(id)}?view=submissions&scope=onsite&problem=A`)
   const onsite = page.getByRole('switch', { name: 'オンサイトのみ表示' })
   await expect(onsite).toBeChecked({ timeout: 20000 })
   await expect.poll(() => state.lists.at(-1)!.query.get('scope')).toBe('onsite')
-  expect(state.lists.at(-1)!.query.get('mine')).toBe('0')
+  expect(state.lists.at(-1)!.query.get('problem')).toBe(problemId)
+  expect(state.lists.at(-1)!.query.get('mine')).toBeNull()
   await onsite.uncheck()
-  await expect(page).toHaveURL(/[?&]view=submissions$/)
+  await expect(page).toHaveURL(/[?&]view=submissions&problem=A$/)
   await expect.poll(() => state.lists.at(-1)!.query.get('scope')).toBeNull()
   await noHorizontalScroll(page)
 })

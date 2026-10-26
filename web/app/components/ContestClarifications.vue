@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { contestDate, problemLabel, type Contest } from '~~/shared/types/contest'
+import { contestDate, contestProblemTitle, type Contest } from '~~/shared/types/contest'
 import type { Clarification, ClarificationList } from '~~/shared/types/clarification'
 import { errorCode } from '~/utils/contest-team'
 
@@ -32,7 +32,7 @@ usePolling(load, 15000)
 function label(id: string) {
   if (!id) return 'コンテスト全体'
   const index = props.contest.problems.findIndex(problem => problem.id === id)
-  return index < 0 ? '問題' : `${problemLabel(index)} - ${props.contest.problems[index]!.title}`
+  return index < 0 ? '問題' : contestProblemTitle(index, props.contest.problems[index]!.title)
 }
 function failure(error: unknown) {
   const code = errorCode(error)
@@ -111,7 +111,7 @@ async function publish(item: Clarification) {
           <label for="clarification-problem">対象問題</label>
           <select id="clarification-problem" v-model="problemId" required :disabled="!!busy">
             <option value="" disabled>問題を選択</option>
-            <option v-for="(problem, index) in contest.problems" :key="problem.id || index" :value="problem.id" :disabled="!problem.id">{{ problemLabel(index) }} - {{ problem.title }}</option>
+            <option v-for="(problem, index) in contest.problems" :key="problem.id || index" :value="problem.id" :disabled="!problem.id">{{ contestProblemTitle(index, problem.title) }}</option>
           </select>
         </div>
         <div class="clarification-field">
@@ -128,7 +128,7 @@ async function publish(item: Clarification) {
           <label for="clarification-announce-problem">対象問題</label>
           <select id="clarification-announce-problem" v-model="problemId" :disabled="!!busy">
             <option value="">コンテスト全体</option>
-            <option v-for="(problem, index) in contest.problems" :key="problem.id || index" :value="problem.id" :disabled="!problem.id">{{ problemLabel(index) }} - {{ problem.title }}</option>
+            <option v-for="(problem, index) in contest.problems" :key="problem.id || index" :value="problem.id" :disabled="!problem.id">{{ contestProblemTitle(index, problem.title) }}</option>
           </select>
         </div>
         <div class="clarification-field">

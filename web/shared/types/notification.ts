@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { contestProblemPath } from './contest'
+import { contestSubmissionsPath } from './contest'
 import { shortId } from '../utils/short-id'
 // A rejudge names the problem, and also its contest and index when the problem is in one.
 const problemNotification = z.object({
@@ -24,7 +24,7 @@ export const notificationTitle = (item: Notification) => item.title.trim() || ('
 // management, where the owner can remove someone who joined through a leaked link.
 export function notificationLink(item: Notification) {
   if (item.kind === 'rejudge') {
-    if (item.contestId && item.problemIndex !== undefined) return `${contestProblemPath(item.contestId, item.problemIndex)}?view=my-submissions`
+    if (item.contestId && item.problemIndex !== undefined) return contestSubmissionsPath(item.contestId, 'my-submissions', item.problemIndex)
     return `/problems/${shortId(item.problemId)}?view=my-submissions`
   }
   if (item.kind === 'contest_setter') return `/my/contests/${shortId(item.contestId)}?section=manage`

@@ -59,7 +59,7 @@ const verdicts: Record<string, string> = { AC: '正解', WA: '不正解', CE: '�
             <tr><th scope="row">提出日時</th><td><time :datetime="item.createdAt">{{ new Date(item.createdAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) }}</time></td></tr>
             <tr v-if="item.rejudgedAt"><th scope="row">リジャッジ日時</th><td><time :datetime="item.rejudgedAt">{{ new Date(item.rejudgedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) }}</time></td></tr>
             <tr v-if="item.author"><th scope="row">提出者</th><td><UserLink :handle="item.author" /></td></tr>
-            <tr><th scope="row">問題</th><td><NuxtLink :to="submissionProblemPath(item)">{{ item.problemTitle }}</NuxtLink></td></tr>
+            <tr><th scope="row">問題</th><td><NuxtLink :to="submissionProblemPath(item)"><!-- A contest submission names its problem as the contest does. --><ContestProblemTitle v-if="item.contestId && item.problemIndex !== undefined" :index="item.problemIndex" :title="item.problemTitle" /><template v-else>{{ item.problemTitle }}</template></NuxtLink></td></tr>
             <tr><th scope="row">言語</th><td>{{ runtimeLabel(item.runtime) }}</td></tr>
             <tr><th scope="row">コード長</th><td>{{ codeBytes === null ? '—' : `${codeBytes.toLocaleString('en-US')} bytes` }}</td></tr>
             <tr><th scope="row" title="各テストケースの最大CPU時間">実行時間</th><td>{{ executionTime(item.result?.cpuTimeMs) }}</td></tr>

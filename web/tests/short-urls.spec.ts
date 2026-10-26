@@ -28,7 +28,7 @@ for (const [from, to, status] of [
 test('an old contest problem link opens the problem at its letter', async ({ page }) => {
   await page.goto(`/contests/${running}/problems/${problem}`)
   await expect(page).toHaveURL(`/contests/${shortId(running)}/A`)
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('A + B')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('A - A + B')
 })
 
 for (const path of [`/contests/${shortId(running)}/B`, `/contests/${shortId(running)}/a`, `/contests/${shortId(running)}/problems/${shortId('33333333-3333-4333-8333-333333333333')}`, `/problems/${'z'.repeat(22)}`]) {

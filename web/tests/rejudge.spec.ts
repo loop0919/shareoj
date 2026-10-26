@@ -61,6 +61,50 @@ test('authors select finished submissions in the list and rejudge them together'
   await expect(list.getByRole('button', { name: /リジャッジ/ })).toHaveCount(0)
 })
 
+// A contest's list offers the same once narrowed to one problem, as the problem page's list did (ADR 0034).
+test('a contest list narrowed to one problem lets its authors rejudge chosen submissions', async ({ page }) => {
+  const contestId = '88888888-8888-4888-8888-888888888888'
+  const contest = {
+    id: contestId, title: 'リジャッジテスト', author: 'ui_test', description: '', status: 'ended', startsAt: '2026-09-15T12:00:00Z', endsAt: '2026-09-15T14:00:00Z',
+    penaltyMinutes: 5, version: 1, official: false, staff: true, canEdit: false, canViewSubmissions: true, problems: [{ id: problemId, title: 'A + B', points: 100 }],
+  }
+  const requests: unknown[] = []
+  await page.route('**/api/my/problems/*/rejudge', async route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { pending: 0 } })
+    const body = route.request().postDataJSON() as { submissionIds?: string[] }
+    requests.push(body)
+    return route.fulfill({ status: 202, json: { queued: body.submissionIds?.length ?? 0 } })
+  })
+  await page.route(`**/api/contests/${contestId}**`, route => {
+    const url = new URL(route.request().url())
+    if (url.pathname.endsWith('/submissions')) return route.fulfill({ json: { items: [done(first, 'WA'), done(second, 'AC'), judging].map(item => ({ ...item, contestId })), hasMore: false, total: 3 } })
+    if (url.pathname.endsWith('/standings')) return route.fulfill({ json: [] })
+    return route.fulfill({ json: contest })
+  })
+  // The server renders the page from the fixture API, so the mocked contest comes in on the client.
+  await page.goto(`/contests/${shortId(contestId)}?view=standings`, { waitUntil: 'networkidle' })
+  await page.getByRole('button', { name: '今すぐ更新' }).click()
+  await expect(page.locator('.site-header')).toContainText(contest.title)
+  await page.evaluate(to => (window as unknown as { useNuxtApp: () => { $router: { push: (to: string) => Promise<unknown> } } }).useNuxtApp().$router.push(to), `/contests/${shortId(contestId)}?view=submissions`)
+  const list = page.locator('#submissions')
+  await expect(list.locator('tbody tr')).toHaveCount(3)
+  // The whole contest's list spans problems, so it offers no selection.
+  await expect(list.getByRole('checkbox')).toHaveCount(0)
+  await page.getByLabel('問題', { exact: true }).selectOption({ label: 'A - A + B' })
+  const rows = list.getByRole('checkbox', { name: /の提出を選択$/ })
+  await expect(rows).toHaveCount(3)
+  await expect(rows.nth(2)).toBeDisabled()
+  await list.getByRole('checkbox', { name: 'このページの提出をすべて選択' }).check()
+  for (const width of [320, 768]) {
+    await page.setViewportSize({ width, height: 900 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  }
+  page.once('dialog', dialog => void dialog.accept())
+  await list.getByRole('button', { name: '選択した2件の提出をリジャッジ', exact: true }).click()
+  await expect(list.getByRole('status').filter({ hasText: '2件の提出をリジャッジしています。' })).toBeVisible()
+  expect(requests).toEqual([{ submissionIds: [first, second] }])
+})
+
 test('problem management rejudges every saved submission and reports progress and errors', async ({ page }, testInfo) => {
   let pending = 0
   let failure = ''

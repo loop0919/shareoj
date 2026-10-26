@@ -18,11 +18,12 @@ async function openWholeList(page: Page, offered: boolean) {
   await menu.getByText('提出', { exact: true }).click()
   await menu.getByRole('link', { name: 'すべての提出', exact: true }).click()
 }
-async function openProblemList(page: Page, offered: boolean) {
-  const tab = page.getByRole('navigation', { name: '問題メニュー' }).getByRole('link', { name: 'すべての提出', exact: true })
-  if (offered) return tab.click()
-  await expect(tab).toHaveCount(0)
+// The problem page has no tabs; its old link to the problem's list opens the contest's, narrowed to it (ADR 0034).
+async function openProblemList(page: Page) {
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('A - A + B')
+  await expect(page.getByRole('navigation', { name: '問題メニュー' })).toHaveCount(0)
   await visit(page, `/contests/${shortId(id)}/A?view=submissions`)
+  await expect(page).toHaveURL(/view=submissions&problem=A$/)
 }
 
 for (const allowed of [true, false]) {
@@ -53,8 +54,9 @@ for (const allowed of [true, false]) {
       await expect(page.getByRole('cell', { name: 'participant', exact: true })).toBeVisible()
       await expect(page.getByRole('cell', { name: '42 ms・ 2.50 MB', exact: true })).toBeVisible()
       await expect(page.getByRole('cell', { name: '24 bytes', exact: true })).toBeVisible()
-      await page.getByRole('link', { name: 'A + B', exact: true }).click()
+      await page.getByRole('link', { name: 'A - A + B', exact: true }).click()
       await expect(page.getByRole('textbox', { name: 'ソースコード', exact: true })).toHaveText(item.source)
+      await expect(page.getByRole('navigation', { name: '提出メニュー' }).getByRole('link', { name: 'すべての提出', exact: true })).toHaveAttribute('href', `/contests/${shortId(id)}?view=submissions`)
       await page.getByRole('navigation', { name: '提出メニュー' }).getByRole('link', { name: '問題', exact: true }).click()
     } else {
       await expect(page.getByText('提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。')).toBeVisible()
@@ -62,12 +64,13 @@ for (const allowed of [true, false]) {
       await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '問題', exact: true }).click()
       await page.getByRole('link', { name: 'A + B', exact: true }).click()
     }
-    await openProblemList(page, allowed)
+    await openProblemList(page)
     if (allowed) {
+      await expect(page.getByLabel('問題', { exact: true })).toHaveValue('0')
       await expect(page.getByRole('cell', { name: 'participant', exact: true })).toBeVisible()
       await expect(page.getByRole('cell', { name: '42 ms・ 2.50 MB', exact: true })).toBeVisible()
       await expect(page.getByRole('cell', { name: '24 bytes', exact: true })).toBeVisible()
-      await page.getByRole('link', { name: '詳細', exact: true }).click()
+      await page.getByRole('link', { name: 'A - A + B', exact: true }).click()
       await expect(page.getByRole('textbox', { name: 'ソースコード', exact: true })).toHaveText(item.source)
     } else {
       await expect(page.getByText('提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。')).toBeVisible()
@@ -103,15 +106,14 @@ for (const phase of ['running', 'ended', 'revealed'] as const) {
     else await expect(section.locator('p.muted').first()).toHaveText(`提出コードを閲覧できます。練習提出も掲載します。${phase === 'ended' ? note : ''}`)
     await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '問題', exact: true }).click()
     await page.getByRole('link', { name: 'A + B', exact: true }).click()
-    await openProblemList(page, phase !== 'running')
-    if (phase === 'running') await expect(page.locator('.submission-notice')).toHaveText(`提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。${note}`)
-    else {
-      await expect(page.getByRole('heading', { name: 'すべての提出' })).toBeVisible()
-      await expect(page.locator('.submission-freeze')).toHaveText(phase === 'ended' ? [note] : [])
-    }
+    await openProblemList(page)
+    // Narrowed to the problem, the whole list says the same.
+    if (phase === 'running') await expect(section.locator('.notice')).toHaveText(`提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。${note}`)
+    else await expect(section.locator('p.muted').first()).toHaveText(`提出コードを閲覧できます。練習提出も掲載します。${phase === 'ended' ? note : ''}`)
     // The submitter's own list needs no such note.
-    await page.getByRole('navigation', { name: '問題メニュー' }).getByRole('link', { name: '自分の提出', exact: true }).click()
-    await expect(page.locator('.submission-freeze')).toHaveCount(0)
+    await visit(page, `/contests/${shortId(id)}?view=my-submissions&problem=A`)
+    await expect(page.locator('#my-submissions')).toBeVisible()
+    await expect(page.locator('#my-submissions')).not.toContainText(note)
   })
 }
 
@@ -131,7 +133,7 @@ test('the submission list pages by number and size', async ({ page }) => {
       const offset = Number(url.searchParams.get('offset')), limit = Number(url.searchParams.get('limit'))
       // Like the real API, which answers an offset above a million with 400.
       if (!(offset <= 1000000)) return route.fulfill({ status: 400, json: { error: 'invalid_offset' } })
-      requested.push(`offset=${offset}&limit=${limit}${url.searchParams.get('scope') ? `&scope=${url.searchParams.get('scope')}` : ''}`)
+      requested.push(`offset=${offset}&limit=${limit}${url.searchParams.get('scope') ? `&scope=${url.searchParams.get('scope')}` : ''}${url.searchParams.get('problem') ? `&problem=${url.searchParams.get('problem')}` : ''}`)
       const items = Array.from({ length: Math.max(Math.min(limit, total - offset), 0) }, (_, i) => ({
         id: `00000000-0000-4000-8000-${String(offset + i).padStart(12, '0')}`, contestId: id, problemId: pid, problemTitle: 'A + B', author: `user${offset + i}`,
         problemVersion: 1, runtime: 'cpp17', sourceBytes: 24, createdAt: '2026-09-15T12:10:00Z', status: 'DONE', result: { verdict: 'AC', passed: 1, total: 1, cpuTimeMs: 1, memoryBytes: 1000, cases: [] },
@@ -180,6 +182,17 @@ test('the submission list pages by number and size', async ({ page }) => {
   await page.getByRole('switch', { name: 'オンサイトのみ表示' }).click({ force: true })
   await expect(page).not.toHaveURL(/page=/)
   await expect.poll(() => requested.at(-1)).toBe('offset=0&limit=20&scope=onsite')
+
+  // Choosing a problem also starts over, and asks for the problem's ID by its letter in the URL (ADR 0034).
+  await page.getByRole('navigation', { name: 'ページ' }).last().getByRole('link', { name: '2', exact: true }).click()
+  await expect(page).toHaveURL(/page=2/)
+  await page.getByLabel('問題', { exact: true }).selectOption({ label: 'A - A + B' })
+  await expect(page).toHaveURL(/[?&]problem=A(&|$)/)
+  await expect(page).not.toHaveURL(/page=/)
+  await expect.poll(() => requested.at(-1)).toBe(`offset=0&limit=20&scope=onsite&problem=${pid}`)
+  await expect(page.locator('#submissions tbody th').first()).toHaveText('A - A + B')
+  await page.getByLabel('問題', { exact: true }).selectOption({ label: 'すべて' })
+  await expect(page).not.toHaveURL(/problem=/)
 
   await open('&page=99')
   await expect(page).toHaveURL(/page=7/)

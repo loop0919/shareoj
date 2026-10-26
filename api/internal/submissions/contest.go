@@ -106,7 +106,8 @@ type CountedSubmissionList struct {
 
 // ContestList lists the contest's submissions; onsite keeps those of participants who are onsite now.
 // ScopeMine and ScopeTeam list the viewer's or their team's own instead, and ignore onsite.
-func (s *Store) ContestList(ctx context.Context, contestID, viewer string, scope Scope, offset, limit int, onsite bool) (CountedSubmissionList, error) {
+// A problemID keeps the submissions to that problem; empty keeps every problem's.
+func (s *Store) ContestList(ctx context.Context, contestID, viewer string, scope Scope, offset, limit int, onsite bool, problemID string) (CountedSubmissionList, error) {
 	var allowed bool
 	// Members of a team may list from the start; contestPublic keeps only their team's submissions until the end.
 	err := s.Pool.QueryRow(ctx, `SELECT $3 OR c.ends_at<=statement_timestamp() OR contest_staff(c.id,$2)
@@ -121,7 +122,12 @@ func (s *Store) ContestList(ctx context.Context, contestID, viewer string, scope
 	if scope != ScopeAll {
 		filter, narrow = contestOwn, string(scope)
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT `+columns+` FROM submissions WHERE `+filter+` ORDER BY created_at DESC,id DESC LIMIT $5 OFFSET $2`, contestID, offset, viewer, narrow, limit+1)
+	filter += ` AND ($5::uuid IS NULL OR problem_id=$5::uuid)`
+	var problem any
+	if problemID != "" {
+		problem = problemID
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT `+columns+` FROM submissions WHERE `+filter+` ORDER BY created_at DESC,id DESC LIMIT $6 OFFSET $2`, contestID, offset, viewer, narrow, problem, limit+1)
 	if err != nil {
 		return CountedSubmissionList{}, err
 	}
@@ -131,7 +137,7 @@ func (s *Store) ContestList(ctx context.Context, contestID, viewer string, scope
 	}
 	result := CountedSubmissionList{ContestSubmissionList: page}
 	// The filter leaves $2 unused here, so PostgreSQL cannot type it unless the query refers to it.
-	err = s.Pool.QueryRow(ctx, `SELECT count(*) FROM submissions WHERE `+filter+` AND $2::integer>=0`, contestID, offset, viewer, narrow).Scan(&result.Total)
+	err = s.Pool.QueryRow(ctx, `SELECT count(*) FROM submissions WHERE `+filter+` AND $2::integer>=0`, contestID, offset, viewer, narrow, problem).Scan(&result.Total)
 	return result, err
 }
 

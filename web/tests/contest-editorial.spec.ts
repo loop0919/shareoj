@@ -1,34 +1,21 @@
 import { expect, test } from '@playwright/test'
 import { shortId } from '../shared/utils/short-id'
 
-// The fixture contest is running. The server tells each viewer whether the editorial is readable before the end,
-// so co-setters get the tab as well as the problem's author and testers. The fixture keeps all submissions closed, so
-// 「すべての提出」 is not offered (ADR 0030).
+// The fixture contest is running. The problem page has no tabs (ADR 0034): 解説一覧 links to the editorial, whose
+// breadcrumb leads back there.
 const path = `/contests/${shortId('88888888-8888-4888-8888-888888888888')}/A`
 
-for (const visible of [true, false]) {
-  test(`running contest editorial tab follows the server: ${visible}`, async ({ page }) => {
-    await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'viewer' } } }))
-    await page.route('**/api/my/profile', route => route.fulfill({ json: { profile: { handle: 'viewer', avatar: '', version: 1, createdAt: '2026-09-01T00:00:00Z' } } }))
-    await page.route('**/api/contests/88888888-8888-4888-8888-888888888888/problems/**', async route => {
-      const response = await route.fetch()
-      await route.fulfill({ response, json: { ...await response.json(), canReadEditorial: visible } })
-    })
-    // Logging in refetches the problem, so the menu follows this viewer's answer.
-    const refreshed = page.waitForResponse('**/api/contests/88888888-8888-4888-8888-888888888888/problems/**')
-    await page.goto(path)
-    await refreshed
-    const menu = page.getByRole('navigation', { name: '問題メニュー' })
-    if (!visible) {
-      await expect(menu.getByRole('link')).toHaveText(['問題文', '自分の提出'])
-      return
-    }
-    await expect(menu.getByRole('link')).toHaveText(['問題文', '解説', '自分の提出'])
-    await menu.getByRole('link', { name: '解説', exact: true }).click()
-    await expect(page).toHaveURL(`${path}?view=editorial`)
-    await expect(page.getByRole('heading', { name: '解説', exact: true })).toBeVisible()
-  })
-}
+test('a contest problem\'s editorial has no tabs and leads back to 解説一覧', async ({ page }) => {
+  await page.goto(`${path}?view=editorial`)
+  const crumbs = page.getByRole('navigation', { name: 'パンくずリスト' })
+  await expect(page.locator('.problem-header .eyebrow')).toHaveText('解説')
+  await expect(page.getByRole('navigation', { name: '問題メニュー' })).toHaveCount(0)
+  await expect(crumbs.getByRole('link', { name: '解説一覧', exact: true })).toHaveAttribute('href', `/contests/${shortId('88888888-8888-4888-8888-888888888888')}?view=editorials`)
+  await page.goto(path)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('A - A + B')
+  await expect(page.locator('.problem-header .eyebrow')).toHaveCount(0)
+  await expect(crumbs.getByRole('link', { name: '問題', exact: true })).toBeVisible()
+})
 
 for (const status of ['running', 'ended'] as const) {
   test(`contest editorial list links readable editorials: ${status}`, async ({ page }) => {
@@ -61,6 +48,7 @@ for (const status of ['running', 'ended'] as const) {
     await expect(list.getByRole('rowheader', { name: /A - B/ })).toContainText(status === 'ended' ? '未登録' : '終了後に公開')
     await list.getByRole('link', { name: 'A + B', exact: true }).click()
     await expect(page).toHaveURL(`/contests/${shortId(id)}/A?view=editorial`)
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('A - A + B')
     await expect(page.getByText('足すだけです。')).toBeVisible()
     await expect(page.getByRole('region', { name: 'ユーザー解説' })).toHaveCount(status === 'ended' ? 1 : 0)
   })

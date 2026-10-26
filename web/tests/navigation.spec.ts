@@ -71,10 +71,9 @@ test('contest pages replace the site menu with the contest menu', async ({ page 
   await expect(page).toHaveURL(`${contest}/A`)
   await expect(contestMenu.getByRole('link', { name: '問題', exact: true })).toHaveAttribute('aria-current', 'true')
   await expect(breadcrumb.getByRole('link')).toHaveText(['共有コンテスト', '問題'])
-  // The problem's own tabs come after its title so the two menus do not stack.
-  const problemMenu = page.getByRole('navigation', { name: '問題メニュー' })
-  await expect(problemMenu.getByRole('link', { name: '問題文', exact: true })).toHaveAttribute('aria-current', 'page')
-  expect(await page.locator('.problem-header, .problem-menu').evaluateAll(nodes => nodes.map(node => node.className))).toEqual(['problem-header', 'problem-menu'])
+  // The problem page has no tabs of its own, so only the contest menu sits above it (ADR 0034).
+  await expect(page.locator('.problem-header')).toBeVisible()
+  await expect(page.getByRole('navigation', { name: '問題メニュー' })).toHaveCount(0)
   await page.goto(`${contest}/submissions/22222222-2222-4222-8222-222222222222`)
   await expect(contestMenu.getByRole('link', { name: '自分の提出', exact: true })).toHaveAttribute('aria-current', 'true')
   await expect(header).toContainText('共有コンテスト')

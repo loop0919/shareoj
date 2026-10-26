@@ -55,3 +55,56 @@ func TestContestSubmissionPagesPostgres(t *testing.T) {
 		t.Fatalf("problem list counts: %v", problem)
 	}
 }
+
+// A problem narrows the contest's list, the viewer's own included, and the total counts only that problem's.
+func TestContestSubmissionProblemFilterPostgres(t *testing.T) {
+	f := newTeamTest(t, "alice", "bob", "carol")
+	const (
+		first  = "11111111-1111-4111-8111-111111111111"
+		second = "22222222-2222-4222-8222-222222222222"
+		cid    = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+	)
+	f.problem(first)
+	f.problem(second)
+	f.create(cid, first, map[string]any{"problems": []map[string]any{{"id": first, "points": 100}, {"id": second, "points": 200}}})
+	f.join(cid, "bob", nil)
+	f.join(cid, "carol", nil)
+	f.schedule(cid, "running")
+	start := time.Now().Add(-30 * time.Minute)
+	for i, run := range []struct{ owner, problem string }{{"bob", first}, {"carol", second}, {"bob", second}, {"carol", first}, {"bob", second}} {
+		f.run(cid, run.owner, run.problem, "DONE", acceptedResult, start.Add(time.Duration(i)*time.Minute))
+	}
+
+	list := func(query, owner string) submissions.CountedSubmissionList {
+		t.Helper()
+		var page submissions.CountedSubmissionList
+		path := "/contests/" + cid + "/submissions" + query
+		if owner != "" {
+			path = "/my" + path
+		}
+		f.decode(f.request("GET", path, owner, nil, 200), &page)
+		return page
+	}
+	// bob's own list is open while the contest runs.
+	if page := list("?mine=1&problem="+second, "bob"); page.Total != 2 || len(page.Items) != 2 || page.Items[0].ProblemID != second || page.Items[1].ProblemID != second {
+		t.Fatalf("own list of the second problem: %+v", page)
+	}
+	if page := list("?mine=1", "bob"); page.Total != 3 {
+		t.Fatalf("own list of every problem: %+v", page)
+	}
+	f.schedule(cid, "ended")
+	page := list("?problem="+second+"&limit=1", "")
+	if page.Total != 3 || len(page.Items) != 1 || !page.HasMore || page.Items[0].ProblemID != second {
+		t.Fatalf("all of the second problem: %+v", page)
+	}
+	if page = list("?problem="+first, ""); page.Total != 2 || page.Items[0].Author != "carol" || page.Items[1].Author != "bob" {
+		t.Fatalf("all of the first problem: %+v", page)
+	}
+	// A problem outside the contest leaves nothing.
+	if page = list("?problem=33333333-3333-4333-8333-333333333333", ""); page.Total != 0 || len(page.Items) != 0 {
+		t.Fatalf("outside problem: %+v", page)
+	}
+	for _, q := range []string{"problem=A", "problem=1"} {
+		f.fail("GET", "/contests/"+cid+"/submissions?"+q, "", nil, 400, "invalid_request")
+	}
+}

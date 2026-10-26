@@ -123,6 +123,11 @@ func limitParameter() *huma.Param {
 	return &huma.Param{Name: "limit", In: "query", Description: "1ページの件数。1〜100。省略すると50件。", Schema: &huma.Schema{Type: "integer", Minimum: floatPointer(1), Maximum: floatPointer(100), Default: 50}}
 }
 
+// problemFilterParameter narrows a contest's submission list to one problem.
+func problemFilterParameter() *huma.Param {
+	return &huma.Param{Name: "problem", In: "query", Description: "問題IDを指定すると、その問題への提出だけを返します。", Schema: &huma.Schema{Type: "string", Format: "uuid"}}
+}
+
 func intPointer(v int) *int           { return &v }
 func floatPointer(v float64) *float64 { return &v }
 

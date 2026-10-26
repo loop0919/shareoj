@@ -107,6 +107,12 @@ export function labelIndex(label: unknown) {
   return index - 1
 }
 export const contestProblemPath = (contestId: string, index: number) => `/contests/${shortId(contestId)}/${problemLabel(index)}`
+// A contest problem's name as the contest shows it, such as 「A - タイトル」.
+export const contestProblemTitle = (index: number, title = '') => `${problemLabel(index)} - ${title}`
+// The contest's list of submissions, narrowed to one problem when its index is given (ADR 0034).
+export function contestSubmissionsPath(contestId: string, view: 'submissions' | 'my-submissions', index?: number) {
+  return `/contests/${shortId(contestId)}?view=${view}${index === undefined || index < 0 ? '' : `&problem=${problemLabel(index)}`}`
+}
 
 export const contestScheduleSchema = z.object({
   items: z.array(z.object({ id: z.string().uuid(), title: z.string(), startsAt: z.string().datetime({ offset: true }), endsAt: z.string().datetime({ offset: true }) })),

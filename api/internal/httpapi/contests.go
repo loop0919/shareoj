@@ -260,7 +260,12 @@ func (p contestHandler) contestSubmissions(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	result, err := p.Submissions.ContestList(r.Context(), id, owner, scope, offset, limit, onsite)
+	problem := r.URL.Query().Get("problem")
+	if problem != "" && !problemID.MatchString(problem) {
+		authError(w, 400, "invalid_request")
+		return
+	}
+	result, err := p.Submissions.ContestList(r.Context(), id, owner, scope, offset, limit, onsite, problem)
 	if err != nil {
 		contestError(w, err)
 		return
