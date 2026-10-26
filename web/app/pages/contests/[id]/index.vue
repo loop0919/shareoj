@@ -354,7 +354,8 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
  * modern-minimal · Long Document · existing problem page tokens and hierarchy */
 .contest-page { padding-bottom: 64px; }
 .contest-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 16px 24px; margin-bottom: 20px; }
-.contest-heading h1 { flex: 1 1 24rem; margin: 0; }
+/* The contest's name sits a step above its problems' names (2rem), which share .problem-header. */
+.contest-heading h1 { flex: 1 1 24rem; margin: 0; font-size: clamp(2rem, 5vw, 2.5rem); }
 .contest-edit, .contest-reveal { flex-shrink: 0; min-height: 44px; padding: 8px 16px; font-weight: 600; }
 .standings-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
 .contest-status { display: inline-flex; align-items: center; min-height: 28px; padding: 2px 10px; border: 1px solid var(--color-line); border-radius: 4px; color: var(--color-muted); background: var(--color-surface); white-space: nowrap; }
