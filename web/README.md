@@ -347,9 +347,9 @@ a public URL with the [Discord Embed Debugger](https://discord.com/developers/em
 問題の状態（×準備中、✅準備中、応募中（コンテスト）、応募中（定期便）、公開中）と足りない項目は、APIが返す`readiness`をそのまま表示する。
 公開、コンテスト、定期便の条件は画面側に持たず、`app/utils/problem-readiness.ts`は理由のコードを文言と編集画面のセクションに対応づけるだけにする。
 各回の「順位表」から`/featured/standings?at=<scheduledAt>`へ移動できる。
-公開から翌22時までの提出を集計し、両方正解・Hardのみ・Easyのみ・0完の順に並べ、同じ正解状況は同順位にする。
-正解は得点の代わりにチェックマークで示し、経過時間と不正解数を併記する。
-誤答ペナルティはなく、同順位内はその正解状況に到達した提出が早い順に表示する。
+公開から翌22時までの提出を集計し、Hardの点数、同点ならEasyの点数で順位を決め、同じ点数は同順位にする（[ADR 0033](../docs/adr/0033-rank-featured-by-scores.md)）。
+部分点の問題は点数を示し、満点にはチェックマークを並べる。部分点のない問題は正解をチェックマークだけで示す。
+経過時間と不正解数を併記し、誤答ペナルティはなく、同順位内はその点数に到達した提出が早い順に表示する。
 「新作を応募」は`/featured/apply`を開き、保存済みの未公開問題と公開希望を選ぶ。
 選んだ問題と希望を`GET /api/my/featured/schedule`へ渡し、その問題が入る見込みの回を予定表に示す。
 `/featured/schedule`は次回から8回分の予定を作者名つきで表示し、2回目以降は見込みと明記する（[ADR 0020](../docs/adr/0020-post-and-apply-on-dedicated-pages.md)）。

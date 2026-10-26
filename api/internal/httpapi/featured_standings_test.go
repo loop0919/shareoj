@@ -88,7 +88,7 @@ func TestFeaturedStandingsPostgres(t *testing.T) {
 		t.Fatal(page)
 	}
 	fast := page.Items[0]
-	if !fast.Easy.Accepted || !fast.Hard.Accepted || *fast.TimeMS != 120000 || *fast.Easy.TimeMS != 60000 || fast.Easy.Wrong != 1 || fast.Hard.Wrong != 1 {
+	if !fast.Easy.Accepted || !fast.Hard.Accepted || *fast.TimeMS != 120000 || *fast.Easy.TimeMS != 60000 || fast.Easy.Wrong != 1 || fast.Hard.Wrong != 1 || fast.Easy.Score != nil || fast.Hard.Score != nil {
 		t.Fatal(fast)
 	}
 	if *page.Items[3].TimeMS != 0 || page.Items[4].TimeMS != nil || page.Items[4].Easy.Accepted || page.Items[5].Hard.Wrong != 1 {
@@ -119,6 +119,83 @@ func TestFeaturedStandingsPostgres(t *testing.T) {
 		f.request("GET", "/featured/standings"+bad, "", nil, 400)
 	}
 	f.request("GET", "/featured/standings?at="+url.QueryEscape(at.Add(time.Second).Format(time.RFC3339)), "", nil, 404)
+}
+
+// Partial scores rank by Hard's score, then Easy's; a full score is the old 正解 (ADR 0033).
+func TestFeaturedStandingsPartialScoresPostgres(t *testing.T) {
+	f := newFeaturedTest(t)
+	easy, hard := f.draft("alice", 4), f.draft("bob", 9)
+	for _, p := range []problems.Problem{easy, hard} {
+		f.request("PUT", "/my/problems/"+p.ID+"/publication", p.Author, map[string]any{"version": p.Version, "publish": true}, 200)
+	}
+	at := time.Now().UTC().Add(-25 * time.Hour).Truncate(time.Second)
+	f.exec(`INSERT INTO featured_slots(scheduled_at,slot,kind,problem_id,difficulty,reveal_at) VALUES($1,'easy','new',$2,4,$1::timestamptz+interval '24 hours'),($1,'hard','new',$3,9,$1::timestamptz+interval '24 hours')`, at, easy.ID, hard.ID)
+	for _, owner := range []string{"full_both", "hard_full", "h60_late", "h60_early", "decimal", "hard_10", "easy_only", "zero"} {
+		f.exec(`INSERT INTO user_profiles(owner_id,handle) VALUES($1,$1)`, owner)
+	}
+	// Both problems have a full score of 100 points, 10000 in hundredths.
+	scored := func(owner, problem, verdict string, minutes int, score int64) {
+		t.Helper()
+		f.exec(`INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,result,created_at) VALUES($1,$2,$3,2,'T','cpp17','S','{"privateDraft":false}','DONE',jsonb_build_object('verdict',$4::text,'scoring',jsonb_build_object('score',$5::bigint,'maxScore',10000)),$6)`, newSubmissionID(), owner, problem, verdict, score, at.Add(time.Duration(minutes)*time.Minute))
+	}
+	scored("full_both", easy.ID, "AC", 10, 10000)
+	scored("full_both", hard.ID, "WA", 20, 3000)
+	scored("full_both", hard.ID, "AC", 25, 3000) // An AC short of the full score that raises nothing is wrong.
+	scored("full_both", hard.ID, "AC", 60, 10000)
+	scored("hard_full", hard.ID, "AC", 30, 10000)
+	scored("hard_full", easy.ID, "WA", 90, 4000)
+	scored("h60_late", hard.ID, "WA", 5, 0)
+	scored("h60_late", hard.ID, "WA", 10, 6000)
+	scored("h60_late", hard.ID, "WA", 50, 2000) // After the score is reached, nothing counts.
+	scored("h60_late", easy.ID, "AC", 100, 10000)
+	scored("h60_early", easy.ID, "AC", 5, 10000)
+	scored("h60_early", hard.ID, "TLE", 40, 6000)
+	scored("decimal", hard.ID, "WA", 15, 3750)
+	scored("hard_10", hard.ID, "WA", 15, 1000)
+	scored("easy_only", easy.ID, "AC", 1, 10000)
+	scored("zero", hard.ID, "WA", 1, 0)
+	f.exec(`INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,result,created_at) VALUES($1,'zero',$2,2,'T','cpp17','S','{"privateDraft":false}','DONE','{"verdict":"CE"}',$3)`, newSubmissionID(), hard.ID, at.Add(2*time.Minute))
+	raw := f.request("GET", "/featured/standings?at="+url.QueryEscape(at.Format(time.RFC3339Nano)), "", nil, 200)
+	var page problems.FeaturedStandings
+	if err := json.Unmarshal([]byte(raw), &page); err != nil {
+		t.Fatal(err)
+	}
+	var handles []string
+	var ranks []int64
+	for _, row := range page.Items {
+		handles = append(handles, row.Handle)
+		ranks = append(ranks, row.Rank)
+	}
+	if !reflect.DeepEqual(handles, []string{"full_both", "hard_full", "h60_early", "h60_late", "decimal", "hard_10", "easy_only", "zero"}) || !reflect.DeepEqual(ranks, []int64{1, 2, 3, 3, 5, 6, 7, 8}) {
+		t.Fatal(raw)
+	}
+	row := func(handle string) problems.FeaturedStanding {
+		for _, item := range page.Items {
+			if item.Handle == handle {
+				return item
+			}
+		}
+		t.Fatal(handle)
+		return problems.FeaturedStanding{}
+	}
+	if r := row("full_both"); !r.Hard.Accepted || *r.Hard.Score != 10000 || *r.Hard.TimeMS != 3600000 || r.Hard.Wrong != 1 || *r.TimeMS != 3600000 {
+		t.Fatal(r)
+	}
+	if r := row("hard_full"); r.Easy.Accepted || *r.Easy.Score != 4000 || *r.Easy.TimeMS != 5400000 || r.Easy.Wrong != 0 || *r.TimeMS != 5400000 {
+		t.Fatal(r)
+	}
+	if r := row("h60_late"); r.Hard.Accepted || *r.Hard.Score != 6000 || *r.Hard.TimeMS != 600000 || r.Hard.Wrong != 1 || *r.TimeMS != 6000000 {
+		t.Fatal(r)
+	}
+	if r := row("decimal"); *r.Hard.Score != 3750 || r.Easy.Score != nil {
+		t.Fatal(r)
+	}
+	if r := row("easy_only"); r.Hard.Score != nil || r.Hard.TimeMS != nil {
+		t.Fatal(r)
+	}
+	if r := row("zero"); *r.Hard.Score != 0 || r.Hard.TimeMS != nil || r.Hard.Wrong != 1 || r.TimeMS != nil {
+		t.Fatal(r)
+	}
 }
 
 func TestFeaturedStandingsMissingAndFuturePostgres(t *testing.T) {

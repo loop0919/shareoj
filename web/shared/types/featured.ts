@@ -52,7 +52,8 @@ export const featuredApplicationsSchema = z.object({ items: z.array(z.object({
   enteredAt: z.string().datetime({ offset: true }),
 })) })
 
-const featuredResultSchema = z.object({ accepted: z.boolean(), timeMs: z.number().int().nonnegative().nullable(), wrong: z.number().int().nonnegative() })
+// score is the best score of a single run in hundredths, and null for an all-or-nothing problem (ADR 0033).
+const featuredResultSchema = z.object({ accepted: z.boolean(), score: z.number().int().nonnegative().nullable().default(null), timeMs: z.number().int().nonnegative().nullable(), wrong: z.number().int().nonnegative() })
 export const featuredStandingsSchema = z.object({
   round: roundSchema,
   closesAt: z.string().datetime({ offset: true }),

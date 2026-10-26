@@ -2,6 +2,7 @@
 import { contestDate } from '~~/shared/types/contest'
 import { featuredSlotLabel } from '~~/shared/types/featured'
 import { shortId } from '~~/shared/utils/short-id'
+import { formatScore } from '~/utils/score'
 
 definePageMeta({ key: route => String(route.query.at) })
 useResponseHeader('Cache-Control').value = 'no-store'
@@ -51,10 +52,11 @@ function elapsed(ms: number | null) {
               <td v-for="column in columns" :key="column.slot">
                 <span class="standing-result">
                   <svg v-if="row[column.slot].accepted" class="accepted-check" viewBox="0 0 24 24" role="img" :aria-label="`${column.label} 正解`"><path d="m5 12 4 4L19 6" /></svg>
-                  <span v-else class="muted" aria-label="未正解">—</span>
+                  <strong v-if="row[column.slot].score" :class="row[column.slot].accepted ? 'standing-full' : 'standing-partial'">{{ formatScore(row[column.slot].score!) }}<span v-if="!row[column.slot].accepted" class="visually-hidden">（部分点）</span></strong>
+                  <span v-else-if="!row[column.slot].accepted" class="muted" aria-label="未正解">—</span>
                   <span v-if="row[column.slot].wrong" class="standing-wrong" :aria-label="`不正解 ${row[column.slot].wrong} 回`">({{ row[column.slot].wrong }})</span>
                 </span>
-                <small v-if="row[column.slot].accepted">{{ elapsed(row[column.slot].timeMs) }}</small>
+                <small v-if="row[column.slot].timeMs !== null">{{ elapsed(row[column.slot].timeMs) }}</small>
               </td>
             </tr>
           </tbody>
@@ -65,14 +67,15 @@ function elapsed(ms: number | null) {
       <details class="standings-rules">
         <summary>順位の決まり方</summary>
         <ul>
-          <li>両方正解 → Hardのみ正解 → Easyのみ正解 → 0完の順です。</li>
-          <li>同じ正解状況は同順位です。同順位内では、その正解状況に到達した提出が早い人から表示します。0完は最初の提出順です。</li>
+          <li>Hardの点数が高い順に並べ、同点ならEasyの点数で決めます。部分点のない問題は正解か不正解かだけなので、両方正解 → Hardのみ正解 → Easyのみ正解 → 0完の順です。</li>
+          <li>各問題の点数は、1回の提出で取った最高点です。別々の提出の点数は合算しません。</li>
+          <li>HardとEasyの点数が同じ人は同順位です。同順位内では、その点数に先に届いた人から表示します。両方0点の人は最初の提出順です。</li>
           <li>公開から翌22時までに、この回の問題へ通常の提出をした人を集計します。締め切り時刻以降の提出は含みません。</li>
           <li>締め切り前の提出は、採点が遅れても結果を反映します。</li>
           <li>この回の作問者・テスター、コンテスト経由の提出、下書き・サンプルの実行は対象外です。</li>
-          <li>時間は公開から初正解までの経過時間です。両方正解した人の時間欄には、後に正解した問題の時間を表示します。</li>
-          <li>括弧内は各問題の初正解前の不正解数です。WA・RE・TLE・MLE・OLEを数え、CE・JEは含めません。誤答ペナルティはなく、時間や順位に加算しません。</li>
-          <li>正解は得点の代わりにチェックマークで表示します。</li>
+          <li>各問題の時間は、公開からその点数に届くまでの経過時間です。全体の時間欄には、2問のうち後に届いた問題の時間を表示します。</li>
+          <li>括弧内は、各問題でその点数に届く前の不正解数です。点数を伸ばさなかった提出を数え、CE・JEは含めません。誤答ペナルティはなく、時間や順位に加算しません。</li>
+          <li>満点はチェックマークを付けて表示します。部分点のない問題は、正解をチェックマークだけで表示します。</li>
         </ul>
       </details>
     </template>
@@ -81,7 +84,7 @@ function elapsed(ms: number | null) {
 
 <style scoped>
 /* Hallmark · pre-emit critique: P4 H4 E4 S5 R5 V4 · existing ShareOJ table and theme.
- * Checks with elapsed times and non-penalizing wrong counts; loading, empty, unavailable, error and refresh states. */
+ * Checks and scores with elapsed times and non-penalizing wrong counts; loading, empty, unavailable, error and refresh states. */
 .featured-standings > .breadcrumb { padding-top: 0; }
 .standings-period { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 4px; font-size: .9375rem; }
 .standings-period > span { color: var(--color-muted); font-size: .75rem; }
@@ -92,6 +95,9 @@ function elapsed(ms: number | null) {
 .featured-standings-table small { display: block; font-size: .6875rem; font-weight: 400; }
 .standing-result { display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
 .standing-wrong { color: var(--color-muted); font-size: .75rem; }
+/* A partial score keeps the ordinary colour; the accent marks the full score, as in contest standings (ADR 0033). */
+.standing-full { color: var(--color-accent); }
+.standing-partial { color: var(--color-ink); }
 .accepted-check { display: inline-block; width: 22px; height: 22px; vertical-align: middle; fill: none; stroke: var(--color-accent); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
 .standings-empty { padding-block: 24px; }
 .standings-rules { margin-top: 24px; color: var(--color-muted); font-size: .8125rem; }

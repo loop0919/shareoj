@@ -69,6 +69,15 @@ const featuredStandings = {
     { rank: 5, handle: 'mika', timeMs: null, easy: featuredResult(), hard: featuredResult(null, 1) },
   ],
 }
+// A round with partial scores, reachable only by its URL so that the lists above stay as they are (ADR 0033).
+const partialFeaturedStandings = {
+  round: { ...featured.items[0], number: 10, scheduledAt: '2099-09-21T14:00:00Z' }, closesAt: '2099-09-22T13:00:00Z', closed: true, hasMore: false,
+  items: [
+    { rank: 1, handle: 'carol', timeMs: 1200000, easy: { accepted: true, score: 10000, timeMs: 600000, wrong: 0 }, hard: { accepted: true, score: 10000, timeMs: 1200000, wrong: 2 } },
+    { rank: 2, handle: 'alice', timeMs: 5400000, easy: { accepted: false, score: 3750, timeMs: 5400000, wrong: 1 }, hard: { accepted: true, score: 10000, timeMs: 1800000, wrong: 0 } },
+    { rank: 3, handle: 'bob', timeMs: null, easy: { accepted: false, score: 0, timeMs: null, wrong: 1 }, hard: { accepted: false, score: null, timeMs: null, wrong: 0 } },
+  ],
+}
 const submission = {
   id: '22222222-2222-4222-8222-222222222222', problemId: problem.id, problemTitle: problem.title,
   problemVersion: 1, author: 'alice', runtime: 'cpp17', source: 'int main(){}', status: 'DONE',
@@ -155,6 +164,7 @@ createServer(async (req, res) => {
   else if (path === '/runtimes') res.end(JSON.stringify({ items: [{ id: 'cpp23-gcc', label: 'C++23 (GCC)' }, { id: 'cpp17', label: 'C++17 (GCC)' }, { id: 'python314', label: 'Python 3.14' }, { id: 'whitespace13', label: 'Whitespace (whitespacers 1.3)' }, { id: 'text', label: 'Text (cat 9.4)' }] }))
   else if (path === '/featured/standings') {
     const at = new URL(req.url, 'http://localhost').searchParams.get('at')
+    if (at === partialFeaturedStandings.round.scheduledAt) return res.end(JSON.stringify(partialFeaturedStandings))
     const round = featured.items.find(round => round.scheduledAt === at)
     if (!round) return res.writeHead(404).end('{}')
     res.end(JSON.stringify({ ...featuredStandings, round }))

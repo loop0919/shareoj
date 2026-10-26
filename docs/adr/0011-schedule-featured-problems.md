@@ -1,6 +1,6 @@
 # ADR 0011: 月曜と木曜に難易度別の問題を出す
 
-- 状態: Accepted（応募条件は[ADR 0013](0013-assess-problem-readiness.md)、応募一覧は[ADR 0020](0020-post-and-apply-on-dedicated-pages.md)、順位表の正解は[ADR 0025](0025-score-partially-with-test-groups.md)で一部変更。出題時刻は2026-10-25に23時から22時へ変更）
+- 状態: Accepted（応募条件は[ADR 0013](0013-assess-problem-readiness.md)、応募一覧は[ADR 0020](0020-post-and-apply-on-dedicated-pages.md)、順位表の正解は[ADR 0025](0025-score-partially-with-test-groups.md)、順位表の順位と表示は[ADR 0033](0033-rank-featured-by-scores.md)で一部変更。出題時刻は2026-10-25に23時から22時へ変更）
 - 決定日: 2026-09-26
 - 範囲: 定期出題の募集、選出、公開と解説の解禁。実装済み（本番反映は別途）
 

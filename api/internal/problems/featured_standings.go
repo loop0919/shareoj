@@ -7,8 +7,11 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// FeaturedResult is a problem's cell. Accepted marks the full score, and Score is a single run's best score in
+// hundredths, nil for an all-or-nothing problem. TimeMS is when that score was reached (ADR 0033).
 type FeaturedResult struct {
 	Accepted bool   `json:"accepted"`
+	Score    *int64 `json:"score"`
 	TimeMS   *int64 `json:"timeMs"`
 	Wrong    int64  `json:"wrong"`
 }
@@ -70,15 +73,18 @@ func (s *Store) FeaturedStandings(ctx context.Context, at time.Time, offset int)
 	// The window ends at the round's saved reveal: 22:00 the next day, 23 hours for rounds started at 23:00 before 2026-10-25.
 	page.ClosesAt = page.Round.Slots[0].RevealAt
 	// Participation needs an ordinary public submission in this edition's window.
-	// Rank only by the solved set: both > Hard > Easy > neither. Completion time,
-	// wrong answers and repeat ACs never change the rank. Within a tied rank,
-	// show earlier completion first; zero-solvers use their first submission.
-	// A problem is solved by a full score, and a judged run short of it is wrong, so partial scores never show
-	// (ADR 0011, ADR 0025); for an all-or-nothing problem that is an AC and the other judged verdicts, as before.
+	// Rank by Hard's score, then Easy's (ADR 0033): a full score first, then the best score of a single run, since a
+	// problem outside contests can change its scoring and runs never add up group by group (ADR 0025). For an
+	// all-or-nothing problem that is the solved set: both > Hard > Easy > neither. Completion time, wrong answers and
+	// repeat ACs never change the rank. Within a tied rank, show the earlier arrival at those scores first;
+	// zero-scorers use their first submission.
+	// A judged run raises the score when it is the first full score or beats the best so far; any other judged run,
+	// CE and JE aside, is wrong. A problem's time is its last raise, and it counts the wrong runs before it.
 	rows, err = tx.Query(ctx, `WITH attempts AS (
- SELECT u.handle,f.slot,s.created_at,
- CASE WHEN s.status='DONE' THEN COALESCE(s.result->>'verdict','') ELSE '' END AS verdict,
- s.status='DONE' AND submission_full_score(s.result) AS full_score
+ SELECT u.handle,f.slot,s.id,s.created_at,
+ CASE WHEN s.status='DONE' THEN COALESCE(s.result->>'verdict','') ELSE '' END IN ('AC','WA','RE','TLE','MLE','OLE') AS judged,
+ s.status='DONE' AND submission_full_score(s.result) AS full_score,
+ CASE WHEN s.status='DONE' AND jsonb_typeof(s.result->'scoring')='object' THEN (s.result->'scoring'->>'score')::bigint END AS score
  FROM featured_slots f JOIN submissions s ON s.problem_id=f.problem_id
  JOIN user_profiles u ON u.owner_id=s.owner_id
  WHERE f.scheduled_at=$1 AND f.kind<>'missing'
@@ -88,30 +94,37 @@ func (s *Store) FeaturedStandings(ctx context.Context, at time.Time, offset int)
  AND NOT COALESCE((s.job->>'generate')::boolean,false)
  AND NOT COALESCE((s.job->>'validate')::boolean,false)
  AND NOT EXISTS(SELECT 1 FROM featured_slots other WHERE other.scheduled_at=$1 AND can_manage_problem(other.problem_id,s.owner_id))
+ ), marked AS (
+ SELECT *,judged AND NOT COALESCE(bool_or(full_score) OVER earlier,false)
+ AND (full_score OR COALESCE(score,0)>COALESCE(max(score) FILTER (WHERE judged) OVER earlier,0)) AS raised
+ FROM attempts WINDOW earlier AS (PARTITION BY handle,slot ORDER BY created_at,id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)
  ), solved AS (
- SELECT handle,slot,min(created_at) FILTER (WHERE full_score) AS accepted_at,min(created_at) AS first_at
- FROM attempts GROUP BY handle,slot
+ SELECT handle,slot,min(created_at) FILTER (WHERE full_score) AS accepted_at,max(created_at) FILTER (WHERE raised) AS scored_at,
+ max(score) FILTER (WHERE judged) AS score,min(created_at) AS first_at
+ FROM marked GROUP BY handle,slot
  ), per_problem AS (
- SELECT s.handle,s.slot,s.accepted_at,s.first_at,
- count(*) FILTER (WHERE a.verdict IN ('AC','WA','RE','TLE','MLE','OLE') AND NOT a.full_score AND (s.accepted_at IS NULL OR a.created_at<s.accepted_at)) AS wrong
- FROM solved s JOIN attempts a USING(handle,slot) GROUP BY s.handle,s.slot,s.accepted_at,s.first_at
+ SELECT s.handle,s.slot,s.accepted_at,s.scored_at,s.score,s.first_at,
+ count(*) FILTER (WHERE m.judged AND NOT m.raised AND (s.scored_at IS NULL OR m.created_at<s.scored_at)) AS wrong
+ FROM solved s JOIN marked m USING(handle,slot) GROUP BY s.handle,s.slot,s.accepted_at,s.scored_at,s.score,s.first_at
  ), totals AS (
  SELECT handle,max(accepted_at) FILTER (WHERE slot='easy') AS easy_at,max(accepted_at) FILTER (WHERE slot='hard') AS hard_at,
+ max(score) FILTER (WHERE slot='easy') AS easy_score,max(score) FILTER (WHERE slot='hard') AS hard_score,
+ max(scored_at) FILTER (WHERE slot='easy') AS easy_scored_at,max(scored_at) FILTER (WHERE slot='hard') AS hard_scored_at,
  COALESCE(max(wrong) FILTER (WHERE slot='easy'),0) AS easy_wrong,COALESCE(max(wrong) FILTER (WHERE slot='hard'),0) AS hard_wrong,
- max(accepted_at) AS last_at,min(first_at) AS first_at FROM per_problem GROUP BY handle
+ max(scored_at) AS last_at,min(first_at) AS first_at FROM per_problem GROUP BY handle
  ), ranked AS (
- SELECT rank() OVER (ORDER BY (hard_at IS NOT NULL) DESC,(easy_at IS NOT NULL) DESC) AS rank,* FROM totals
+ SELECT rank() OVER (ORDER BY (hard_at IS NOT NULL) DESC,COALESCE(hard_score,0) DESC,(easy_at IS NOT NULL) DESC,COALESCE(easy_score,0) DESC) AS rank,* FROM totals
  )
  SELECT rank,handle,(extract(epoch FROM last_at-$1::timestamptz)*1000)::bigint,
- easy_at IS NOT NULL,(extract(epoch FROM easy_at-$1::timestamptz)*1000)::bigint,easy_wrong,
- hard_at IS NOT NULL,(extract(epoch FROM hard_at-$1::timestamptz)*1000)::bigint,hard_wrong
+ easy_at IS NOT NULL,easy_score,(extract(epoch FROM easy_scored_at-$1::timestamptz)*1000)::bigint,easy_wrong,
+ hard_at IS NOT NULL,hard_score,(extract(epoch FROM hard_scored_at-$1::timestamptz)*1000)::bigint,hard_wrong
  FROM ranked ORDER BY rank,COALESCE(last_at,first_at),handle LIMIT 51 OFFSET $2`, at, offset)
 	if err != nil {
 		return page, err
 	}
 	page.Items, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (FeaturedStanding, error) {
 		var item FeaturedStanding
-		err := row.Scan(&item.Rank, &item.Handle, &item.TimeMS, &item.Easy.Accepted, &item.Easy.TimeMS, &item.Easy.Wrong, &item.Hard.Accepted, &item.Hard.TimeMS, &item.Hard.Wrong)
+		err := row.Scan(&item.Rank, &item.Handle, &item.TimeMS, &item.Easy.Accepted, &item.Easy.Score, &item.Easy.TimeMS, &item.Easy.Wrong, &item.Hard.Accepted, &item.Hard.Score, &item.Hard.TimeMS, &item.Hard.Wrong)
 		return item, err
 	})
 	if err != nil {

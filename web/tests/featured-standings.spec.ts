@@ -38,6 +38,30 @@ test('edition standings show tied ranks, checks, elapsed times and non-penalizin
   await page.screenshot({ path: testInfo.outputPath('featured-standings-dark.png'), fullPage: true })
 })
 
+test('partial scores show the score, and a full score adds the check (ADR 0033)', async ({ page }, testInfo) => {
+  await page.goto(`/featured/standings?at=${encodeURIComponent('2099-09-21T14:00:00Z')}`)
+  const rows = page.getByRole('table').locator('tbody tr')
+  await expect(rows).toHaveCount(3)
+  const easy = rows.locator('td:nth-child(4)'), hard = rows.locator('td:nth-child(5)')
+  await expect(easy.nth(0).getByRole('img', { name: 'Easy 正解' })).toBeVisible()
+  await expect(easy.nth(0).locator('.standing-result')).toHaveText('100')
+  await expect(easy.nth(1).getByRole('img')).toHaveCount(0)
+  await expect(easy.nth(1).locator('.standing-result')).toHaveText('37.50（部分点）(1)')
+  await expect(easy.nth(1).locator('small')).toHaveText('1:30:00')
+  await expect(easy.nth(2)).toHaveText('—(1)')
+  await expect(hard.nth(1).getByRole('img', { name: 'Ultimate 正解' })).toBeVisible()
+  await expect(hard.nth(1).locator('.standing-result')).toHaveText('100')
+  await expect(page.getByRole('table')).not.toContainText('得点')
+  await expect(page.locator('.standings-rules')).toContainText('Hardの点数が高い順')
+  for (const width of [320, 1280]) {
+    await page.setViewportSize({ width, height: 800 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+    await page.screenshot({ path: testInfo.outputPath(`featured-standings-partial-${width}.png`), fullPage: true })
+  }
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.screenshot({ path: testInfo.outputPath('featured-standings-partial-dark.png'), fullPage: true })
+})
+
 test('home links to the last edition standings and refresh can recover from an error', async ({ page }) => {
   await page.goto('/')
   const payload = await (await page.request.get(`/api/featured/standings?at=${encodeURIComponent(at)}`)).json()

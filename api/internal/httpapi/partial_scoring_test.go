@@ -318,7 +318,8 @@ func TestPartialScoringSolvedPostgres(t *testing.T) {
 		}
 	}
 
-	// 定期便 solves with the full score too, and a judged run short of it is wrong, AC or not; scores never show.
+	// 定期便 solves with the full score too, whatever the verdict, and shows a single run's best score; a run that
+	// raises the score is not wrong (ADR 0033). An all-or-nothing problem shows no score.
 	at := now.UTC().Add(-48 * time.Hour).Truncate(time.Second)
 	f.exec(`INSERT INTO featured_slots(scheduled_at,slot,kind,problem_id,difficulty,reveal_at) VALUES($1,'easy','revival',$2,3,$1::timestamptz+interval '23 hours'),($1,'hard','revival',$3,7,$1::timestamptz+interval '23 hours')`, at, scored, allOr)
 	f.run("", "erin", scored, "DONE", scoredResult("AC", 3000, 0), at.Add(time.Minute))
@@ -326,17 +327,14 @@ func TestPartialScoringSolvedPostgres(t *testing.T) {
 	f.run("", "fay", scored, "DONE", scoredResult("AC", 0, 7000), at.Add(time.Minute))
 	f.run("", "fay", allOr, "DONE", acceptedResult, at.Add(3*time.Minute))
 	raw := f.request("GET", "/featured/standings?at="+url.QueryEscape(at.Format(time.RFC3339)), "", nil, 200)
-	if strings.Contains(raw, "score") {
-		t.Fatal("featured standings show scores", raw)
-	}
 	var standings problems.FeaturedStandings
 	f.decode(raw, &standings)
 	if len(standings.Items) != 2 {
 		t.Fatalf("featured: %+v", standings.Items)
 	}
 	fay, erin := standings.Items[0], standings.Items[1]
-	if fay.Handle != "fay" || fay.Rank != 1 || fay.Easy.Accepted || fay.Easy.Wrong != 1 || !fay.Hard.Accepted ||
-		erin.Handle != "erin" || erin.Rank != 2 || !erin.Easy.Accepted || erin.Easy.Wrong != 1 || *erin.Easy.TimeMS != 120000 || erin.Hard.Accepted {
+	if fay.Handle != "fay" || fay.Rank != 1 || fay.Easy.Accepted || *fay.Easy.Score != 7000 || fay.Easy.Wrong != 0 || !fay.Hard.Accepted || fay.Hard.Score != nil ||
+		erin.Handle != "erin" || erin.Rank != 2 || !erin.Easy.Accepted || *erin.Easy.Score != 10000 || erin.Easy.Wrong != 0 || *erin.Easy.TimeMS != 120000 || erin.Hard.Accepted {
 		t.Fatalf("featured: %+v", standings.Items)
 	}
 
