@@ -190,12 +190,11 @@ test('joining without a passphrase sends no body, and an open participant turns 
   await expect(page.locator('.toast').getByRole('status')).toHaveText('オンサイト参加に変わりました')
   await expect(later).toHaveCount(0)
   expect(bodies).toEqual([null, { onsitePassphrase: 'osaka' }, { onsitePassphrase: 'osaka' }, { onsitePassphrase: 'Venue_2026' }])
-  // Other views show the division alone, and after the end nobody turns onsite.
+  // Other views leave the registration to the overview, and after the end nobody turns onsite.
   state.contest = { ...contest, participating: true }
   await menu(page, 'standings')
   await page.getByRole('button', { name: '今すぐ更新' }).click()
-  await expect(page.locator('.participation-division')).toHaveText('オープン参加')
-  await expect(later).toHaveCount(0)
+  await expect(page.locator('.contest-participation')).toHaveCount(0)
   state.contest = { ...contest, participating: true, status: 'ended' }
   await page.getByRole('button', { name: '今すぐ更新' }).click()
   await menu(page, 'overview')
@@ -226,7 +225,8 @@ test('team contests offer 個人参加 and チーム参加, and joining alone wo
   await expect(area.getByRole('link', { name: 'チーム参加', exact: true })).toHaveAttribute('href', `/contests/${shortId(id)}/team`)
   await expect(area).toContainText('オンサイト参加の人は、概要ページかチームのページで会場の合言葉を入れて参加してください。')
   await area.getByRole('button', { name: '個人参加', exact: true }).click()
-  await expect(area.locator('.participation-state')).toHaveText('参加済みオープン参加個人参加')
+  // Once joined, only the overview shows the registration.
+  await expect(area).toHaveCount(0)
   // On the overview the passphrase goes with 個人参加, as in an individual contest.
   state.contest = contest
   await reread(page, 'overview')
@@ -251,8 +251,8 @@ test('team contests offer 個人参加 and チーム参加, and joining alone wo
   await area.screenshot({ path: test.info().outputPath('individual-375.png') })
   await page.setViewportSize({ width: 1280, height: 900 })
   await menu(page, 'standings')
-  await expect(area.locator('.participation-team')).toHaveText('個人参加')
-  await expect(area.getByRole('link')).toHaveCount(0)
+  await expect(page.locator('#standings')).toBeVisible()
+  await expect(area).toHaveCount(0)
   // After the start the switch is gone.
   state.contest = { ...state.contest, status: 'running' }
   await reread(page, 'overview')
@@ -372,9 +372,10 @@ test('the team page creates a team with the passphrase typed on the overview, an
   await expect(page.getByRole('region', { name: '所属チーム', exact: true })).toHaveCount(0)
   await expect(page.locator('.contest-participation').getByRole('link', { name: 'チームのページ', exact: true })).toHaveAttribute('href', `/contests/${shortId(id)}/team`)
   await expect(page.locator('.contest-participation')).toContainText('メンバーと参加コードは、チームのページで確認できます。')
+  // The other views leave the registration to the overview.
   await menu(page, 'standings')
-  await expect(page.locator('.participation-team')).toHaveText('チーム Alpha')
-  await expect(page.locator('.contest-participation').getByRole('link')).toHaveCount(0)
+  await expect(page.locator('#standings')).toBeVisible()
+  await expect(page.locator('.contest-participation')).toHaveCount(0)
 })
 
 test('joining a team takes only the join code and explains a wrong code, a full team and the retry time', async ({ page }) => {

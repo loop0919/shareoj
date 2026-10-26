@@ -377,10 +377,11 @@ for (const [role, flags, participation] of [
     // The server render reads the fixture API, so refresh in the browser to use the routed contest.
     await page.goto(`/contests/${shortId(contest.id)}?view=standings`, { waitUntil: 'networkidle' })
     await page.getByRole('button', { name: '今すぐ更新' }).click()
-    // The participation line explains it once; the standings do not repeat it.
-    await expect(page.getByText(participation, { exact: true })).toBeVisible()
+    // Only the overview explains the viewer's place; the standings do not repeat it.
+    await expect(page.getByText(participation, { exact: true })).toHaveCount(0)
     await expect(page.locator('#standings .notice')).toHaveCount(0)
     await page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '概要', exact: true }).click()
+    await expect(page.getByText(participation, { exact: true })).toBeVisible()
     await expect(page.locator('.problem-meta')).toContainText('作成者 alice、bob')
     await expect(page.locator('.problem-meta')).toContainText('作問者 carol')
     // Setters reach co-setter management after the start, when the settings no longer change.

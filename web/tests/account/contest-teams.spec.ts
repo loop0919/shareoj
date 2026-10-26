@@ -159,7 +159,8 @@ test('the venue passphrase makes participants onsite, a mistake registers nothin
   await bob.goto(`/contests/${shortId(id)}?view=standings`)
   await expect(bob.getByLabel('会場の合言葉（オンサイト参加者のみ）')).toHaveCount(0)
   await bob.getByRole('button', { name: '参加する', exact: true }).click()
-  await expect(bob.locator('.participation-division')).toHaveText('オープン参加')
+  // The registration itself shows only on the overview.
+  await expect(bob.locator('.contest-participation')).toHaveCount(0)
   await expect(bob.locator('.standings-table tbody th').filter({ hasText: 'dave' })).toContainText('オンサイト')
   await expect(bob.locator('.standings-table tbody th').filter({ hasText: 'bob' })).not.toContainText('オンサイト')
   // carol sees the passphrase, when and how dave became onsite, and moves bob onsite herself, for good.

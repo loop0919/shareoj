@@ -11,6 +11,8 @@ const route = useRoute()
 const teamMode = computed(() => props.contest.teamMode === true)
 const division = computed(() => props.contest.onsiteDivision === true)
 const teamPage = computed(() => `/contests/${shortId(props.contest.id)}/team`)
+// Outside the overview it only offers a way to join; the viewer's settled role (staff, 参加済み) stays on the overview.
+const settled = computed(() => !!user.value && (props.contest.excluded || props.contest.staff || props.contest.participating))
 const login = (next: string) => ({ path: '/login', query: { next } })
 const { saving, error, send } = useContestJoin(() => props.contest.id)
 const passphrase = ref('')
@@ -38,7 +40,7 @@ function joinAlone(event: MouseEvent) {
 </script>
 
 <template>
-  <div class="contest-participation">
+  <div v-if="detailed || !settled" class="contest-participation">
     <!-- A public response (for example, before the profile exists) says nothing about the viewer, so it claims no role. -->
     <p v-if="user && contest.excluded" class="muted">このコンテストのスタッフを務めたため、参加できません。</p>
     <p v-else-if="user && contest.staff" class="muted">スタッフ（作成者・作問者・テスター）は公式参加の対象外です。</p>

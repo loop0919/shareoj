@@ -441,8 +441,9 @@ for (const scope of ['problem', 'contest']) {
     })
     await page.goto(scope === 'contest' ? `${base}?view=problems` : '/problems')
     await page.locator(`a[href="${scope === 'contest' ? `/contests/${shortId(contestId)}/A` : `/problems/${shortId(problemId)}`}"]`).first().click()
-    if (scope === 'contest') await expect(page.getByText('参加済み', { exact: true })).toBeVisible()
     await page.getByLabel('ソースコード', { exact: true }).fill('int main(){}')
+    // A participant's problem page leaves 参加済み to the overview.
+    if (scope === 'contest') await expect(page.locator('.contest-participation')).toHaveCount(0)
     const sample = page.getByRole('button', { name: 'サンプル検証', exact: true })
     await expect(sample).toBeDisabled()
     await expect(page.getByRole('button', { name: '提出する', exact: true })).toBeEnabled()
