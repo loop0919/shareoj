@@ -3,7 +3,7 @@ useSeoMeta({ title: 'コード実行 | ShareOJ' })
 </script>
 
 <template>
-  <div class="code-run-page">
+  <div class="catalogue code-run-page">
     <header class="catalogue-heading"><h1>コード実行</h1></header>
     <CodeRunner />
   </div>
