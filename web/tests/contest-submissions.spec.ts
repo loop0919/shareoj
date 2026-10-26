@@ -54,7 +54,7 @@ for (const allowed of [true, false]) {
       await expect(page.getByRole('cell', { name: 'participant', exact: true })).toBeVisible()
       await expect(page.getByRole('cell', { name: '42 ms・ 2.50 MB', exact: true })).toBeVisible()
       await expect(page.getByRole('cell', { name: '24 bytes', exact: true })).toBeVisible()
-      await page.getByRole('link', { name: 'A - A + B', exact: true }).click()
+      await page.getByRole('link', { name: '詳細', exact: true }).click()
       await expect(page.getByRole('textbox', { name: 'ソースコード', exact: true })).toHaveText(item.source)
       await expect(page.getByRole('navigation', { name: '提出メニュー' }).getByRole('link', { name: 'すべての提出', exact: true })).toHaveAttribute('href', `/contests/${shortId(id)}?view=submissions`)
       await page.getByRole('navigation', { name: '提出メニュー' }).getByRole('link', { name: '問題', exact: true }).click()
@@ -70,7 +70,7 @@ for (const allowed of [true, false]) {
       await expect(page.getByRole('cell', { name: 'participant', exact: true })).toBeVisible()
       await expect(page.getByRole('cell', { name: '42 ms・ 2.50 MB', exact: true })).toBeVisible()
       await expect(page.getByRole('cell', { name: '24 bytes', exact: true })).toBeVisible()
-      await page.getByRole('link', { name: 'A - A + B', exact: true }).click()
+      await page.getByRole('link', { name: '詳細', exact: true }).click()
       await expect(page.getByRole('textbox', { name: 'ソースコード', exact: true })).toHaveText(item.source)
     } else {
       await expect(page.getByText('提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。')).toBeVisible()
@@ -190,7 +190,7 @@ test('the submission list pages by number and size', async ({ page }) => {
   await expect(page).toHaveURL(/[?&]problem=A(&|$)/)
   await expect(page).not.toHaveURL(/page=/)
   await expect.poll(() => requested.at(-1)).toBe(`offset=0&limit=20&scope=onsite&problem=${pid}`)
-  await expect(page.locator('#submissions tbody th').first()).toHaveText('A - A + B')
+  await expect(page.locator('#submissions tbody .submission-problem').first()).toHaveText('A - A + B')
   await page.getByLabel('問題', { exact: true }).selectOption({ label: 'すべて' })
   await expect(page).not.toHaveURL(/problem=/)
 

@@ -945,7 +945,7 @@ test('the contest submission list filters onsite participants in the URL, and te
   await expect(page.getByRole('switch', { name: 'オンサイトのみ表示' })).toHaveCount(0)
   await expect.poll(() => state.lists.at(-1)!.query.get('mine')).toBe('team')
   expect(state.lists.at(-1)!.query.get('scope')).toBeNull()
-  await expect(page.locator('#my-submissions tbody tr a').first()).toHaveAttribute('href', `/contests/${shortId(id)}/submissions/${shortId('aaaaaaaa-0000-4000-8000-000000000001')}?from=contest-team`)
+  await expect(page.locator('#my-submissions tbody tr').first().getByRole('link', { name: '詳細', exact: true })).toHaveAttribute('href', `/contests/${shortId(id)}/submissions/${shortId('aaaaaaaa-0000-4000-8000-000000000001')}?from=contest-team`)
   await visit(page, `/contests/${shortId(id)}?view=submissions`)
   await expect(page.locator('#submissions .notice')).toHaveText('提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。開催中のチームの提出は「チームの提出」で確認できます。')
   // In a frozen team contest the note names teammates among those who see the frozen submissions.
@@ -976,9 +976,9 @@ test('the problem\'s lists are the contest\'s narrowed to it: the team\'s with t
   // A teammate's submission opens on the shared page; one's own keeps the personal page.
   const rows = page.locator('#my-submissions tbody tr')
   await expect(rows).toHaveCount(2)
-  await expect(rows.nth(0).getByRole('cell').nth(0)).toHaveText('bob')
-  await expect(rows.nth(0).getByRole('link', { name: 'A - A + B' })).toHaveAttribute('href', `/contests/${shortId(id)}/submissions/${shortId(bobs)}?from=contest-team`)
-  await expect(rows.nth(1).getByRole('link', { name: 'A - A + B' })).toHaveAttribute('href', `/contests/${shortId(id)}/my-submissions/${shortId(own)}?from=contest-team`)
+  await expect(rows.nth(0).getByRole('cell').nth(2)).toHaveText('bob')
+  await expect(rows.nth(0).getByRole('link', { name: '詳細', exact: true })).toHaveAttribute('href', `/contests/${shortId(id)}/submissions/${shortId(bobs)}?from=contest-team`)
+  await expect(rows.nth(1).getByRole('link', { name: '詳細', exact: true })).toHaveAttribute('href', `/contests/${shortId(id)}/my-submissions/${shortId(own)}?from=contest-team`)
   // A submission just made from the problem page leads back to the team's list of that problem.
   await page.route(`**/api/my/submissions/${own}`, route => route.fulfill({ json: { ...submission(own, 'ui_test'), contestId: id, problemIndex: 0, source: 'int main() {}' } }))
   await visit(page, `/contests/${shortId(id)}/my-submissions/${shortId(own)}?from=team`)

@@ -10,10 +10,12 @@ test('a contest problem\'s editorial has no tabs and leads back to 解説一覧'
   const crumbs = page.getByRole('navigation', { name: 'パンくずリスト' })
   await expect(page.locator('.problem-header .eyebrow')).toHaveText('解説')
   await expect(page.getByRole('navigation', { name: '問題メニュー' })).toHaveCount(0)
+  await expect(page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '解説一覧', exact: true })).toHaveAttribute('aria-current', 'true')
   await expect(crumbs.getByRole('link', { name: '解説一覧', exact: true })).toHaveAttribute('href', `/contests/${shortId('88888888-8888-4888-8888-888888888888')}?view=editorials`)
   await page.goto(path)
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('A - A + B')
   await expect(page.locator('.problem-header .eyebrow')).toHaveCount(0)
+  await expect(page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '問題', exact: true })).toHaveAttribute('aria-current', 'true')
   await expect(crumbs.getByRole('link', { name: '問題', exact: true })).toBeVisible()
 })
 

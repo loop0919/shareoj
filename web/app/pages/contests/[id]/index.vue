@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { submissionUsage } from '~/utils/submission-usage'
+import { runtimeLabel } from '~/utils/runtime-label'
 import { formatScore } from '~/utils/score'
 import { clampPage, lastPage, pageOffset } from '~/utils/pagination'
 import { isOwnStanding, pinnedStanding } from '~/utils/standings-page'
@@ -90,7 +91,8 @@ const problemFilter = computed({
   get: () => chosenProblem.value?.index ?? -1,
   set: (index: number) => { void router.replace({ query: { ...route.query, problem: index < 0 ? undefined : problemLabel(index), page: undefined } }) },
 })
-// A row names its problem as the contest does, 「A - タイトル」; a staff test of a problem no longer listed keeps the title.
+// A row names its problem as the contest does, 「A - タイトル」, and links to it; 「詳細」 opens the submission. A staff
+// test of a problem no longer listed keeps the plain title.
 const problemIndex = (item: Submission) => contest.value?.problems.findIndex(p => p.id === item.problemId) ?? -1
 const submissions = ref<{ items: Submission[], hasMore: boolean, total: number } | null>(null)
 const submissionsError = ref('')
@@ -322,7 +324,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <p v-if="rejudgeMessage" class="rejudge-message" role="status">{{ rejudgeMessage }}</p>
       <p v-if="submissionsError" class="notice notice-error" role="alert">{{ submissionsError }}</p>
       <LoadingSpinner v-if="!submissions && !submissionsError" label="提出一覧を読み込み中" />
-      <template v-if="submissions"><ListToolbar v-if="showSubmissionPages" :total="submissions.total" :page="submissionsPage" :size="submissionsSize" unit="件" :link="pageLink" @update:size="resizeSubmissions" /><p v-if="!submissions.items.length" class="contest-empty muted">提出はまだありません。</p><div v-else class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0"><table class="content-table"><thead><tr><th v-if="canRejudge" scope="col" class="select-cell"><input type="checkbox" :checked="allSelected" :disabled="!selectable.length" aria-label="このページの提出をすべて選択" @change="selected = ($event.target as HTMLInputElement).checked ? [...selectable] : []"></th><th scope="col">問題</th><th scope="col">ユーザー</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th v-if="showSubmissionScore" scope="col">得点</th><th scope="col">結果</th><th scope="col">提出日時 (JST)</th></tr></thead><tbody><tr v-for="s in submissions.items" :key="s.id"><td v-if="canRejudge" class="select-cell"><input v-model="selected" type="checkbox" :value="s.id" :disabled="!selectable.includes(s.id)" :aria-label="`${contestDate(s.createdAt)}の提出を選択`"></td><th scope="row"><NuxtLink :to="submissionLink(s)"><ContestProblemTitle v-if="problemIndex(s) >= 0" :index="problemIndex(s)" :title="s.problemTitle" /><template v-else>{{ s.problemTitle }}</template></NuxtLink></th><td><UserLink :handle="s.author" /></td><td class="submission-usage">{{ s.sourceBytes == null ? '—' : `${s.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage">{{ submissionUsage(s.result) }}</td><td v-if="showSubmissionScore" class="submission-score" :data-full="(s.result?.scoring && s.result.scoring.score === s.result.scoring.maxScore) || undefined">{{ s.result?.scoring ? formatScore(s.result.scoring.score) : '—' }}</td><td><SubmissionStatus :item="s" /></td><td>{{ contestDate(s.createdAt) }}<span v-if="new Date(s.createdAt) >= new Date(contest.endsAt)"> · 練習</span></td></tr></tbody></table></div><PageNav v-if="showSubmissionPages" class="submissions-pages" :page="submissionsPage" :last="submissionsLast" :link="pageLink" /></template>
+      <template v-if="submissions"><ListToolbar v-if="showSubmissionPages" :total="submissions.total" :page="submissionsPage" :size="submissionsSize" unit="件" :link="pageLink" @update:size="resizeSubmissions" /><p v-if="!submissions.items.length" class="contest-empty muted">提出はまだありません。</p><div v-else class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0"><table class="content-table"><thead><tr><th v-if="canRejudge" scope="col" class="select-cell"><input type="checkbox" :checked="allSelected" :disabled="!selectable.length" aria-label="このページの提出をすべて選択" @change="selected = ($event.target as HTMLInputElement).checked ? [...selectable] : []"></th><th scope="col">提出日時 (JST)</th><th scope="col">問題</th><th scope="col">ユーザー</th><th scope="col">言語</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th v-if="showSubmissionScore" scope="col">得点</th><th scope="col">結果</th><th scope="col">詳細</th></tr></thead><tbody><tr v-for="s in submissions.items" :key="s.id"><td v-if="canRejudge" class="select-cell"><input v-model="selected" type="checkbox" :value="s.id" :disabled="!selectable.includes(s.id)" :aria-label="`${contestDate(s.createdAt)}の提出を選択`"></td><td><time :datetime="s.createdAt">{{ contestDate(s.createdAt) }}</time><span v-if="new Date(s.createdAt) >= new Date(contest.endsAt)" class="practice-badge">練習</span></td><td class="submission-problem"><NuxtLink v-if="problemIndex(s) >= 0" :to="contestProblemPath(contest.id, problemIndex(s))"><ContestProblemTitle :index="problemIndex(s)" :title="s.problemTitle" /></NuxtLink><template v-else>{{ s.problemTitle }}</template></td><td><UserLink :handle="s.author" /></td><td>{{ runtimeLabel(s.runtime) }}</td><td class="submission-usage">{{ s.sourceBytes == null ? '—' : `${s.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage">{{ submissionUsage(s.result) }}</td><td v-if="showSubmissionScore" class="submission-score" :data-full="(s.result?.scoring && s.result.scoring.score === s.result.scoring.maxScore) || undefined">{{ s.result?.scoring ? formatScore(s.result.scoring.score) : '—' }}</td><td><SubmissionStatus :item="s" /></td><td><NuxtLink :to="submissionLink(s)">詳細</NuxtLink></td></tr></tbody></table></div><PageNav v-if="showSubmissionPages" class="submissions-pages" :page="submissionsPage" :last="submissionsLast" :link="pageLink" /></template>
       </template>
     </section>
     <section v-if="activeView === 'editorials'" id="editorials" class="contest-section" aria-labelledby="editorials-title">
@@ -342,6 +344,9 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 </template>
 <style scoped>
 .submission-usage { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.submission-problem { min-width: 200px; overflow-wrap: anywhere; }
+/* A submission after the end, set back like the onsite mark but without its accent. */
+.practice-badge { display: inline-block; margin-inline-start: 6px; padding: 0 6px; border: 1px solid var(--color-line); border-radius: 4px; color: var(--color-muted); font-size: .6875rem; font-weight: 600; white-space: nowrap; }
 .submission-score { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .submission-score[data-full] { color: var(--color-accent); font-weight: 600; }
 /* Hallmark · component: contest standings · genre: modern-minimal · theme: existing ShareOJ tokens

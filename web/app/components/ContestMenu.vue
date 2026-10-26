@@ -13,6 +13,8 @@ const section = computed<ContestView>(() => {
   if (name === 'contests-id-team') return 'overview'
   if (name.startsWith('contests-id-submissions')) return 'submissions'
   if (name.startsWith('contests-id-my-submissions')) return 'my-submissions'
+  // A problem's editorial is opened from 解説一覧 (ADR 0034).
+  if (name === 'contests-id-label' && route.query.view === 'editorial') return 'editorials'
   return 'problems'
 })
 const inSubmissions = computed(() => section.value === 'submissions' || section.value === 'my-submissions')
