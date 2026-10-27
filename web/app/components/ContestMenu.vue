@@ -73,7 +73,8 @@ watch(() => route.fullPath, close)
 .contest-menu::-webkit-scrollbar { display: none; }
 /* The scroll box clips outlines, so the focus ring is drawn inside the item. */
 .contest-menu > a:focus-visible, .submissions-menu summary:focus-visible { outline-offset: -3px; }
-.contest-menu > a, .submissions-menu summary { flex-shrink: 0; min-height: 44px; border-bottom: 2px solid transparent; color: var(--color-muted); }
+/* Items touch each other and their padding makes the space between labels, so all of it is clickable. */
+.contest-menu > a, .submissions-menu summary { flex-shrink: 0; min-height: 44px; padding-inline: clamp(6px, 2vw, 14px); border-bottom: 2px solid transparent; color: var(--color-muted); }
 .contest-menu > a:hover, .submissions-menu summary:hover { color: var(--color-accent); }
 .contest-menu > a[aria-current], .submissions-menu[data-current] summary { border-bottom-color: var(--color-accent); color: var(--color-accent); font-weight: 600; }
 .submissions-menu { position: relative; }
@@ -85,8 +86,8 @@ watch(() => route.fullPath, close)
 .submissions-menu-links a:hover, .submissions-menu-links a:focus-visible { background: var(--color-surface); }
 .submissions-menu-links a[aria-current] { color: var(--color-accent); font-weight: 600; }
 /* The row's own box overlaps the header's rule by 1px, so the current item's underline sits on the rule without the
- * scroll box clipping it. With the layout's narrower gap, this keeps the row within the narrowest phones. */
+ * scroll box clipping it. The narrowest phones tighten the spacing; what still does not fit scrolls sideways (ADR 0031). */
 @media (max-width: 22.499rem) {
-  .contest-menu > a, .submissions-menu summary { font-size: .8125rem; }
+  .contest-menu > a, .submissions-menu summary { padding-inline: 4px; font-size: .8125rem; }
 }
 </style>

@@ -125,16 +125,12 @@ useNotificationPolling()
 .site-header--contest .contest-title { grid-column: 2; grid-row: 1; justify-self: start; max-width: 100%; }
 .site-header--contest .contest-title::before { content: ''; flex-shrink: 0; width: 1px; height: 24px; background: var(--color-line); }
 .site-header--contest .header-tools { grid-column: 3; grid-row: 1; }
-.site-header--contest .contest-menu { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; gap: 0 clamp(12px, 4vw, 28px); flex-wrap: nowrap; }
+.site-header--contest .contest-menu { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; gap: 0; flex-wrap: nowrap; }
 @media (max-width: 59.999rem) {
   .site-header--contest .contest-title { grid-column: 1 / -1; grid-row: 2; }
   .site-header--contest .contest-title::before { display: none; }
   .site-header--contest .header-tools { grid-column: 2; }
   .site-header--contest .contest-menu { grid-row: 3; }
-}
-/* The narrowest phones tighten the spacing; what still does not fit scrolls sideways in the menu row (ADR 0031). */
-@media (max-width: 22.499rem) {
-  .site-header--contest .contest-menu { gap: 0 8px; }
 }
 .create-menu { font-size: .875rem; }
 .create-menu summary { display: flex; align-items: center; gap: 6px; min-height: 44px; cursor: pointer; list-style: none; color: var(--color-accent); }
