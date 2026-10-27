@@ -70,7 +70,7 @@ test('refresh credentials do not bypass the origin check on submissions', async 
 
 test('login returns to any path of this site and sends anything else to my page', () => {
   for (const path of ['/', '/my', '/problems/post', '/featured/apply', `/problems/${'A'.repeat(22)}`, '/my/contests', '/my/contests/new',
-    `/my/contests/${'A'.repeat(22)}`, '/my/submissions', '/my?tab=testing', `/my/tester-invitations/${'A'.repeat(32)}`, '/problems?tag=%E3%82%B0']) {
+    `/my/contests/${'A'.repeat(22)}`, `/my/submissions/${'A'.repeat(22)}`, '/my?tab=testing', `/my/tester-invitations/${'A'.repeat(32)}`, '/problems?tag=%E3%82%B0']) {
     expect(loginDestination(path), path).toBe(path)
   }
   for (const value of [undefined, null, 42, ['/problems/post'], '', 'problems', 'https://attacker.example/', '//attacker.example/', '/\\attacker.example/',

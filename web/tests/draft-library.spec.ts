@@ -49,7 +49,6 @@ for (const width of [375, 1280]) {
       { id, title: '公開記事', publishedVersion: 1, publishedAt: updatedAt, updatedAt, isOperator: false },
       { id: draftId, title: '下書き記事', publishedVersion: 0, publishedAt: null, updatedAt, isOperator: false },
     ], nextCursor: '' } }))
-    await page.route('**/api/my/submissions', route => route.fulfill({ json: { items: [] } }))
     await page.goto('/my')
     const problems = page.getByRole('table', { name: '自分の問題' })
     await expect(problems).toBeVisible()
@@ -67,16 +66,9 @@ for (const width of [375, 1280]) {
     await expect(page.getByRole('link', { name: '公開記事を閲覧' })).toHaveAttribute('href', `/blog/${shortId(id)}`)
     await expect(page.getByRole('button', { name: '下書き記事を閲覧（公開すると閲覧できます）' })).toBeDisabled()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-    await page.getByRole('button', { name: '提出履歴', exact: true }).click()
-    await expect(page).toHaveURL('/my?tab=submissions')
-    await expect(page.getByRole('button', { name: '提出履歴', exact: true })).toHaveAttribute('aria-pressed', 'true')
-    await expect(page.getByRole('heading', { name: '提出履歴', exact: true })).toBeVisible()
-    await expect(page.getByText('提出はまだありません。')).toBeVisible()
-    await expect(page.getByRole('table', { name: '作成した記事' })).toBeHidden()
-    await expect(page.getByRole('table', { name: '自分の問題' })).toBeHidden()
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    // Each problem lists its own submissions, so the my page has no submission history.
+    await expect(page.getByRole('button', { name: '提出履歴', exact: true })).toHaveCount(0)
     await page.getByRole('button', { name: '自分の問題', exact: true }).click()
-    await expect(page.getByRole('heading', { name: '提出履歴', exact: true })).toHaveCount(0)
     await page.getByRole('link', { name: 'A + Bを閲覧' }).click()
     await expect(page).toHaveURL(`/problems/${shortId(id)}`)
     await expect(page.getByRole('heading', { name: 'A + B', exact: true })).toBeVisible()
@@ -137,7 +129,6 @@ for (const width of [320, 1280]) {
       { id: '44444444-4444-4444-8444-444444444444', title: '公開した問題', publishedVersion: 1, updatedAt, readiness: { publish: [], contest: ['published'], featured: ['ever_published'] } },
     ], nextCursor: '' } }))
     await page.route('**/api/my/posts', route => route.fulfill({ json: { items: [], nextCursor: '' } }))
-    await page.route('**/api/my/submissions', route => route.fulfill({ json: { items: [] } }))
     await page.goto('/my?tab=problems')
     const row = (title: string) => page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: title, exact: true }) })
     await expect(row('準備完了').locator('[data-kind="ready"]')).toContainText('準備中')

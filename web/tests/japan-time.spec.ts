@@ -28,10 +28,7 @@ test('the my page shows its dates in Japan time in any time zone', async ({ page
 
 test('submission times read in Japan time in any time zone', async ({ page }) => {
   const submission = { id: submissionId, problemId, problemVersion: 1, problemTitle: '時刻の問題', runtime: 'cpp17', sourceBytes: 12, status: 'DONE', result: { verdict: 'AC', passed: 1, total: 1 }, createdAt: at }
-  await page.route('**/api/my/submissions', route => route.fulfill({ json: { items: [submission] } }))
   await page.route(`**/api/my/submissions/${submissionId}`, route => route.fulfill({ json: { ...submission, source: 'int main(){}', rejudgedAt: '2026-10-31T16:00:00Z' } }))
-  await page.goto('/my?tab=submissions')
-  await expect(page.getByRole('table', { name: '提出履歴' }).locator('tbody time')).toHaveText('2026/10/1 5:00:00')
   // Rejudged at 16:00 on October 31 in UTC, already November in Japan.
   await page.goto(`/my/submissions/${shortId(submissionId)}`)
   await expect(page.getByRole('table', { name: '提出情報' }).locator('time')).toHaveText(['2026/10/1 5:00:00', '2026/11/1 1:00:00'])

@@ -158,6 +158,8 @@ test('C++ submission opens its result and polls until completion', async ({ page
   expect(await keyword.evaluate(element => getComputedStyle(element).color !== getComputedStyle(element.closest('.cm-content')!).color)).toBe(true)
   await page.getByRole('button', { name: '提出する', exact: true }).click()
   await expect(page).toHaveURL(`/my/submissions/${shortId(submissionId)}`)
+  await expect(page.getByRole('navigation', { name: 'パンくずリスト' }).getByRole('link', { name: 'この問題の自分の提出', exact: true }))
+    .toHaveAttribute('href', `/problems/${shortId(problemId)}?view=my-submissions`)
   await expect(page.getByRole('status')).toHaveText('AC：正解')
   await expect(page.getByRole('row', { name: '正解したケース 2 / 2' })).toBeVisible()
   await expect(page.getByRole('row', { name: '実行時間 4 ms', exact: true })).toBeVisible()
@@ -176,46 +178,40 @@ test('C++ submission opens its result and polls until completion', async ({ page
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('int main(){}')
 })
 
-for (const view of ['detail', 'history']) {
-  for (const verdict of ['AC', 'WA', 'TLE', 'RE', 'MLE', 'OLE']) {
-    test(`${view} ${verdict} displays actual preparation and case progress, then stops polling`, async ({ page }) => {
-      await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'alice' } } }))
-      await page.route('**/api/my/profile', route => route.fulfill({ json: { profile: { handle: 'alice', avatar: '', version: 1, createdAt: '2026-09-01T00:00:00Z' } } }))
-      const item = { id: submissionId, problemId, problemVersion: 2, problemTitle: 'A + B', runtime: 'python314-isolate', source: 'print(3)', status: 'QUEUED', result: null, createdAt: '2026-09-01T00:00:00Z' }
-      const states = [item,
-        { ...item, status: 'RUNNING', progress: { phase: 'PREPARING', completed: 0, total: 4 } },
-        { ...item, status: 'RUNNING', progress: { phase: 'JUDGING', completed: 0, total: 4 } },
-        { ...item, status: 'RUNNING', progress: { phase: 'JUDGING', completed: 2, total: 4, ...(verdict === 'AC' ? {} : { verdict }) } },
-        { ...item, status: 'DONE', progress: null, result: { verdict, passed: verdict === 'AC' ? 4 : 1, total: 4 } },
-      ]
-      let reads = 0
-      const endpoint = `/api/my/submissions${view === 'detail' ? `/${submissionId}` : ''}`
-      await page.route(`**${endpoint}`, route => {
-        const state = states[Math.min(reads++, states.length - 1)]
-        return route.fulfill({ json: view === 'detail' ? state : { items: [state] } })
-      })
-      await page.goto(`/my/submissions${view === 'detail' ? `/${submissionId}` : ''}`)
-      await expect(page.getByRole('cell', { name: 'Python (CPython 3.14)', exact: true })).toBeVisible()
-      const badge = page.locator('.verdict-badge').first()
-      await expect(badge).toHaveText('WJ')
-      await expect(badge.locator('.judge-spinner')).toBeVisible()
-      await badge.focus()
-      await expect(page.getByRole('tooltip')).toHaveText('ジャッジ中')
-      await expect(badge).toHaveAccessibleDescription('ジャッジ中')
-      for (const [index, label] of ['WJ', 'WJ', '0/4', verdict === 'AC' ? '2/4' : `${verdict} 2/4`, verdict].entries()) {
-        await expect.poll(() => reads).toBeGreaterThanOrEqual(index + 1)
-        await expect(badge).toHaveText(label)
-        if (index === 3) {
-          await expect(badge.locator('.judge-spinner')).toBeVisible()
-          if (verdict !== 'AC') await expect(badge).toHaveAttribute('data-verdict', verdict)
-        }
+for (const verdict of ['AC', 'WA', 'TLE', 'RE', 'MLE', 'OLE']) {
+  test(`detail ${verdict} displays actual preparation and case progress, then stops polling`, async ({ page }) => {
+    await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'alice' } } }))
+    await page.route('**/api/my/profile', route => route.fulfill({ json: { profile: { handle: 'alice', avatar: '', version: 1, createdAt: '2026-09-01T00:00:00Z' } } }))
+    const item = { id: submissionId, problemId, problemVersion: 2, problemTitle: 'A + B', runtime: 'python314-isolate', source: 'print(3)', status: 'QUEUED', result: null, createdAt: '2026-09-01T00:00:00Z' }
+    const states = [item,
+      { ...item, status: 'RUNNING', progress: { phase: 'PREPARING', completed: 0, total: 4 } },
+      { ...item, status: 'RUNNING', progress: { phase: 'JUDGING', completed: 0, total: 4 } },
+      { ...item, status: 'RUNNING', progress: { phase: 'JUDGING', completed: 2, total: 4, ...(verdict === 'AC' ? {} : { verdict }) } },
+      { ...item, status: 'DONE', progress: null, result: { verdict, passed: verdict === 'AC' ? 4 : 1, total: 4 } },
+    ]
+    let reads = 0
+    await page.route(`**/api/my/submissions/${submissionId}`, route => route.fulfill({ json: states[Math.min(reads++, states.length - 1)] }))
+    await page.goto(`/my/submissions/${submissionId}`)
+    await expect(page.getByRole('cell', { name: 'Python (CPython 3.14)', exact: true })).toBeVisible()
+    const badge = page.locator('.verdict-badge').first()
+    await expect(badge).toHaveText('WJ')
+    await expect(badge.locator('.judge-spinner')).toBeVisible()
+    await badge.focus()
+    await expect(page.getByRole('tooltip')).toHaveText('ジャッジ中')
+    await expect(badge).toHaveAccessibleDescription('ジャッジ中')
+    for (const [index, label] of ['WJ', 'WJ', '0/4', verdict === 'AC' ? '2/4' : `${verdict} 2/4`, verdict].entries()) {
+      await expect.poll(() => reads).toBeGreaterThanOrEqual(index + 1)
+      await expect(badge).toHaveText(label)
+      if (index === 3) {
+        await expect(badge.locator('.judge-spinner')).toBeVisible()
+        if (verdict !== 'AC') await expect(badge).toHaveAttribute('data-verdict', verdict)
       }
-      await expect(badge.locator('.judge-spinner')).toHaveCount(0)
-      await page.clock.install()
-      await page.clock.fastForward(6000)
-      expect(reads).toBe(5)
-    })
-  }
+    }
+    await expect(badge.locator('.judge-spinner')).toHaveCount(0)
+    await page.clock.install()
+    await page.clock.fastForward(6000)
+    expect(reads).toBe(5)
+  })
 }
 
 test('unready judging settings explain why submission was rejected', async ({ page }) => {
@@ -353,7 +349,7 @@ for (const failed of [false, true]) {
 }
 
 
-test('history labels cover all runtimes, historical aliases and unknown IDs', async ({ page }) => {
+test('submission list labels cover all runtimes, historical aliases and unknown IDs', async ({ page }) => {
   await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'alice' } } }))
   const languages = [
     ['cpp17-isolate', 'C++17 (GCC)'], ['cpp17-local', 'C++17 (GCC)'],
@@ -367,11 +363,14 @@ test('history labels cover all runtimes, historical aliases and unknown IDs', as
   ]
   // Labels must not depend on which languages currently accept submissions.
   await page.route('**/api/runtimes', route => route.fulfill({ json: { items: [] } }))
-  await page.route('**/api/my/submissions', route => route.fulfill({ json: { items: languages.map(([runtime], index) => ({
-    id: String(index), problemId, problemTitle: 'A + B', runtime, status: 'DONE', result: { verdict: 'AC', passed: 1, total: 1 }, createdAt: '2026-09-01T00:00:00Z',
-  })) } }))
-  await page.goto('/my/submissions')
-  await expect(page.locator('.submission-language')).toHaveText(languages.map(([, label]) => label!))
+  await page.route(`**/api/problems/${problemId}/submissions?*`, route => route.fulfill({ json: { items: languages.map(([runtime], index) => ({
+    id: String(index), problemId, problemTitle: 'A + B', author: 'alice', runtime, status: 'DONE', result: { verdict: 'AC', passed: 1, total: 1 }, createdAt: '2026-09-01T00:00:00Z',
+  })), hasMore: false } }))
+  await page.goto(`/problems/${problemId}?view=submissions`)
+  const table = page.getByRole('region', { name: '提出一覧のスクロール領域' }).getByRole('table')
+  const counts = new Map<string, number>()
+  for (const [, label] of languages) counts.set(label!, (counts.get(label!) ?? 0) + 1)
+  for (const [label, count] of counts) await expect(table.getByRole('cell', { name: label, exact: true }), label).toHaveCount(count)
 })
 
 test('submission frequency limit preserves the wait time and styles both actions', async ({ page, context, request }) => {
@@ -399,7 +398,7 @@ test('submission frequency limit preserves the wait time and styles both actions
   }
 })
 
-for (const view of ['all', 'mine', 'history']) {
+for (const view of ['all', 'mine']) {
   test(`${view} submission list shows code size and measured resource usage`, async ({ page }) => {
     await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'alice' } } }))
     await page.route('**/api/my/profile', route => route.fulfill({ json: { profile: { handle: 'alice', avatar: '', version: 1, createdAt: '2026-09-01T00:00:00Z' } } }))
@@ -410,9 +409,8 @@ for (const view of ['all', 'mine', 'history']) {
       { ...base, id: 'missing', result: { verdict: 'CE', passed: 0, total: 1 } },
       { ...base, id: 'pending', sourceBytes: 42, status: 'RUNNING', result: null },
     ]
-    const endpoint = view === 'history' ? '**/api/my/submissions' : `**/api/problems/${problemId}/submissions?*`
-    await page.route(endpoint, route => route.fulfill({ json: { items, hasMore: false } }))
-    await page.goto(view === 'history' ? '/my/submissions' : `/problems/${problemId}?view=${view === 'mine' ? 'my-submissions' : 'submissions'}`)
+    await page.route(`**/api/problems/${problemId}/submissions?*`, route => route.fulfill({ json: { items, hasMore: false } }))
+    await page.goto(`/problems/${problemId}?view=${view === 'mine' ? 'my-submissions' : 'submissions'}`)
     await expect(page.getByRole('columnheader', { name: 'コード長', exact: true })).toBeVisible()
     for (const size of ['1,234 bytes', '0 bytes', '42 bytes', '—']) {
       await expect(page.getByRole('cell', { name: size, exact: true })).toBeVisible()

@@ -6,7 +6,6 @@ import type { Submission } from '../../../../shared/types/submission'
 export default defineEventHandler(async event => {
   privateHeaders(event)
   if (!hasSession(event)) throw createError({ statusCode: 401 })
-  if (event.method === 'GET') return privateAPI<{ items: Submission[] }>(event, '/my/submissions')
   if (event.method !== 'POST') throw createError({ statusCode: 405 })
   requireSameOrigin(event)
   const body = await limitedJSON(event, 400 << 10)

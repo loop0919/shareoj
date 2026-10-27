@@ -26,7 +26,7 @@ function load() {
     () => { message.value = '提出一覧を取得できませんでした。閲覧権限を確認し、再取得してください。' })
 }
 function detail(item: Submission) {
-  return props.mine ? `/my/submissions/${shortId(item.id)}?from=problem` : `/problems/${shortId(props.problemId)}/submissions/${shortId(item.id)}`
+  return props.mine ? `/my/submissions/${shortId(item.id)}` : `/problems/${shortId(props.problemId)}/submissions/${shortId(item.id)}`
 }
 watch(() => [user.value?.id, props.problemId, props.mine], () => {
   invalidate(); data.value = null; offset.value = 0

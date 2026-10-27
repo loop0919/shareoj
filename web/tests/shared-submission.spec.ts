@@ -11,7 +11,7 @@ for (const scope of ['problem', 'contest', 'contest-own']) {
       if (guest) await page.route('**/api/auth/me', route => route.fulfill({ json: { user: null } }))
       await page.route(`**/api/my/submissions/${sid}`, route => route.fulfill({ status: guest ? 401 : 404, json: {} }))
       await page.route(`**/api/submissions/${sid}`, route => route.fulfill({ json: { id: sid, problemId: pid, ...(scope !== 'problem' ? { contestId: cid } : {}) } }))
-      await page.goto(scope === 'contest-own' ? `/contests/${cid}/my-submissions/${sid}` : `/my/submissions/${sid}?from=problem`)
+      await page.goto(scope === 'contest-own' ? `/contests/${cid}/my-submissions/${sid}` : `/my/submissions/${sid}`)
       await expect(page).toHaveURL(scope !== 'problem' ? `/contests/${shortId(cid)}/submissions/${shortId(sid)}` : `/problems/${shortId(pid)}/submissions/${shortId(sid)}`)
       await expect(page.getByRole('textbox', { name: 'ソースコード', exact: true })).toHaveText('int main(){}')
       await expect(page.getByRole('link', { name: 'すべての提出', exact: true })).toBeVisible()

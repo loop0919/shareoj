@@ -29,7 +29,7 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   const second = await seed(page, 'コンテスト選択B')
   await page.goto('/my')
   const tabs = page.getByRole('navigation', { name: 'マイページのコンテンツ' })
-  await expect(tabs.getByRole('button')).toHaveText(['自分の問題', 'テスト中の問題', '記事', 'コンテスト', '提出履歴', 'イベント'])
+  await expect(tabs.getByRole('button')).toHaveText(['自分の問題', 'テスト中の問題', '記事', 'コンテスト', 'イベント'])
   await tabs.getByRole('button', { name: 'コンテスト', exact: true }).click()
   await expect(page.getByRole('heading', { name: '作成したコンテスト', exact: true })).toBeVisible()
   await page.getByRole('link', { name: '新規コンテスト', exact: true }).click()

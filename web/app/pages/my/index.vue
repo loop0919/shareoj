@@ -4,7 +4,7 @@ const { profile } = useAccount()
 const route = useRoute()
 const router = useRouter()
 const activeContent = computed({
-  get: () => ['problems', 'testing', 'posts', 'contests', 'submissions', 'events'].includes(String(route.query.tab)) ? String(route.query.tab) : 'problems',
+  get: () => ['problems', 'testing', 'posts', 'contests', 'events'].includes(String(route.query.tab)) ? String(route.query.tab) : 'problems',
   set: tab => { void router.replace({ query: { ...route.query, tab, status: undefined } }) },
 })
 // One status filter in the URL; only the shown tab reads it, and switching tabs clears it.
@@ -28,14 +28,12 @@ const joined = computed(() => profile.value ? new Date(profile.value.createdAt).
       <button :aria-pressed="activeContent === 'testing'" @click="activeContent = 'testing'">テスト中の問題</button>
       <button :aria-pressed="activeContent === 'posts'" @click="activeContent = 'posts'">記事</button>
       <button :aria-pressed="activeContent === 'contests'" @click="activeContent = 'contests'">コンテスト</button>
-      <button :aria-pressed="activeContent === 'submissions'" @click="activeContent = 'submissions'">提出履歴</button>
       <button :aria-pressed="activeContent === 'events'" @click="activeContent = 'events'">イベント</button>
     </nav>
     <SavedProblems v-show="activeContent === 'problems'" :status="tabStatus('problems')" @update:status="statusFilter = $event" />
     <SavedProblems v-if="activeContent === 'testing'" v-model:status="statusFilter" testing />
     <SavedPosts v-show="activeContent === 'posts'" :status="tabStatus('posts')" @update:status="statusFilter = $event" />
     <ContestList v-if="activeContent === 'contests'" v-model:status="statusFilter" mine />
-    <SubmissionHistory v-if="activeContent === 'submissions'" embedded />
     <EventHistory v-if="activeContent === 'events'" />
   </section>
 </template>

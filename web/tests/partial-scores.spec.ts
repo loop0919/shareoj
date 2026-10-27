@@ -53,18 +53,6 @@ test('a submission shows its score, the score of each group with its cases, and 
   await expect(groups.locator('tbody tr')).toHaveText(['小課題10 / 30ケース2、ケース3'])
 })
 
-test('the submission history adds the score of partially scored results', async ({ page }) => {
-  const items = [
-    submission('55555555-5555-4555-8555-000000000001', 'ui_test', scored(3750)),
-    submission('55555555-5555-4555-8555-000000000002', 'ui_test', scored(10000, 'AC')),
-    submission('55555555-5555-4555-8555-000000000003', 'ui_test', { verdict: 'AC', passed: 1, total: 1 }),
-  ]
-  await page.route('**/api/my/submissions', route => route.fulfill({ json: { items } }))
-  await page.goto('/my/submissions')
-  await expect(page.locator('.submission-result')).toHaveText(['WA37.50点', 'AC100点', 'AC'])
-  await expect(page.locator('.judge-score').nth(1)).toHaveAttribute('data-full', 'true')
-})
-
 test('a partially scored problem shows its full score and groups, and its submissions a score column', async ({ page }, testInfo) => {
   const items = [
     submission('66666666-6666-4666-8666-000000000001', 'alice', scored(3750)),
