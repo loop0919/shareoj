@@ -120,6 +120,20 @@ test('contest problem rows highlight own ACs and refresh after judging', async (
   await page.screenshot({ path: testInfo.outputPath('contest-solved-mobile.png'), fullPage: true })
 })
 
+// The header keeps the contest read by the page before, so the list reads it again instead of waiting for the poll.
+test('contest problem rows show an AC made on the problem page right after moving to the list', async ({ page }) => {
+  const current = { ...contest, problems: [{ id: 'a', title: 'A + B', points: 100, solved: false }] }
+  await page.clock.install()
+  await page.route(`**/api/contests/${id}**`, route => route.fulfill({ json: route.request().url().includes('/problems/')
+    ? { id: 'a', title: 'A + B', author: 'setter', testers: [], markdown: '足し算', editorial: '', timeLimitMs: '2000', memoryLimitMb: '512' }
+    : route.request().url().includes('/standings') ? rows : current }))
+  await page.goto(`/contests/${id}/A`, { waitUntil: 'networkidle' })
+  current.problems[0]!.solved = true
+  await page.getByRole('navigation', { name: 'パンくずリスト' }).getByRole('link', { name: '問題', exact: true }).click()
+  await expect(page).toHaveURL(/view=problems$/)
+  await expect(page.locator('.contest-problems tbody tr').first()).toHaveClass('solved')
+})
+
 
 test('scheduled problems show points and labels without links', async ({ page }) => {
   const scheduled: Contest = { ...contest, status: 'scheduled', problems: [

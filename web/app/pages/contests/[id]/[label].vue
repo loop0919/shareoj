@@ -8,7 +8,7 @@ const route = useRoute()
 const { user } = useAccount()
 const id = fullId(route.params.id)
 const index = labelIndex(route.params.label)
-const { data: contest, error: contestError, refresh: refreshContest } = await useContest(id)
+const { data: contest, error: contestError, refresh: refreshContest } = await useContest(id, true)
 // The contest returns a problem's ID only to viewers who may open it.
 const pid = contest.value?.problems[index]?.id
 if (!pid) throw createError({ statusCode: contestError.value && contestError.value.statusCode !== 404 ? 502 : 404, statusMessage: '問題が見つからないか、まだ公開されていません', fatal: true })

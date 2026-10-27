@@ -8,7 +8,7 @@ useResponseHeader('Vary').value = 'Cookie'
 const route = useRoute()
 const { user } = useAccount()
 const id = fullId(route.params.id)
-const { data: contest, error, refresh } = await useContest(id)
+const { data: contest, error, refresh } = await useContest(id, true)
 if (error.value || !contest.value) throw createError({ statusCode: error.value?.statusCode === 404 ? 404 : 502, statusMessage: 'コンテストを取得できませんでした', fatal: true })
 useSeoMeta({ title: () => `チーム | ${contest.value?.title} | ShareOJ`, robots: 'noindex' })
 const overview = `/contests/${shortId(id)}`

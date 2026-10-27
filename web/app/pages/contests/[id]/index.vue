@@ -20,7 +20,7 @@ const { user, profile } = useAccount()
 const { showToast } = useToast()
 const id = fullId(route.params.id)
 const base = `/api/contests/${encodeURIComponent(id)}`
-const { data: contest, error, refresh } = await useContest(id)
+const { data: contest, error, refresh } = await useContest(id, true)
 if (error.value || !contest.value) throw createError({ statusCode: error.value?.statusCode === 404 ? 404 : 502, statusMessage: 'コンテストを取得できませんでした', fatal: true })
 useSeoMeta({ title: () => `${contest.value?.title} | ShareOJ` })
 // Re-read on each poll so the banner appears once the freeze starts.
