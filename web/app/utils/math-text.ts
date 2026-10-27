@@ -4,6 +4,12 @@ export type MathTextPart =
   | { kind: 'text'; text: string }
   | { kind: 'math'; html: string; display: boolean }
 
+// Reject non-LaTeX input, but let \\ break lines in display math. LaTeX ignores it there,
+// and KaTeX copies that under strict mode, so a strict 'error' would drop every line break.
+export function katexStrictness(code: string) {
+  return code === 'newLineInDisplayMode' ? 'ignore' as const : 'error' as const
+}
+
 // Dollar delimiters only; ordinary prose is always rendered as Vue text.
 export function renderMathText(source: string): MathTextPart[] {
   const parts: MathTextPart[] = []
@@ -59,7 +65,7 @@ export function renderMathText(source: string): MathTextPart[] {
         output: 'htmlAndMathml',
         throwOnError: true,
         trust: false,
-        strict: 'error',
+        strict: katexStrictness,
         maxExpand: 1000,
         maxSize: 20,
       })

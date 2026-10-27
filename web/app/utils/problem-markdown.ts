@@ -14,7 +14,7 @@ import haskell from 'highlight.js/lib/languages/haskell'
 import javascript from 'highlight.js/lib/languages/javascript'
 import typescript from 'highlight.js/lib/languages/typescript'
 import ruby from 'highlight.js/lib/languages/ruby'
-import { renderMathText } from './math-text'
+import { katexStrictness, renderMathText } from './math-text'
 
 hljs.registerLanguage('c', c)
 hljs.registerLanguage('cpp', cpp)
@@ -45,8 +45,8 @@ const markdown = new MarkdownIt({ html: false, linkify: false, typographer: fals
   .use(katex, {
     mathFence: true,
     trust: false,
-    strict: 'error',
-    logger: () => 'error' as const,
+    // The plugin replaces strict with logger, so logger sets the strictness.
+    logger: katexStrictness,
     throwOnError: false,
     maxExpand: 1000,
     maxSize: 20,

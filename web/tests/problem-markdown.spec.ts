@@ -169,6 +169,14 @@ test('Markdown supports flexible structure and dedicated input / math fences', (
   expect(html).not.toContain('$A_1')
 })
 
+test('a double backslash breaks lines in every kind of display math', () => {
+  for (const source of ['$$\na \\\\ b\n$$', '```math\na \\\\ b\n```', '```input\n$$a \\\\ b$$\n```']) {
+    const html = renderProblemMarkdown(source)
+    expect(html).toContain('class="mspace katex-newline"')
+    expect(html).toContain('<mspace linebreak="newline">')
+  }
+})
+
 test('code fences highlight every supported submission language', () => {
   for (const [language, source] of [
     ['cpp', '#include <iostream>\nint main() { return 0; }'],
