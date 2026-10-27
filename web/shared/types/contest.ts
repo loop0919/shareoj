@@ -64,7 +64,7 @@ export type Standing = {
 // authors are the contest's setters; canReadEditorial is the server's answer for this viewer.
 export type ContestProblemDetail = Omit<PublicProblem, 'timeLimitMs' | 'memoryLimitMb'> & { timeLimitMs: string, memoryLimitMb: string, authors?: string[], canReadEditorial?: boolean }
 export const contestStatus = { scheduled: '開催予定', running: '開催中', ended: '終了' }
-export const contestViews = { overview: '概要', problems: '問題', standings: '順位表', 'my-submissions': '自分の提出', submissions: 'すべての提出', editorials: '解説一覧', clarifications: '質問', run: 'コード実行' }
+export const contestViews = { overview: '概要', problems: '問題', standings: '順位表', 'my-submissions': '自分の提出', submissions: 'すべての提出', editorials: '解説', clarifications: '質問', run: 'コード実行' }
 export type ContestView = keyof typeof contestViews
 export function contestView(value: unknown): ContestView {
   return value === 'problems' || value === 'standings' || value === 'my-submissions' || value === 'submissions' || value === 'editorials' || value === 'clarifications' || value === 'run' ? value : 'overview'

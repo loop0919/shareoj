@@ -285,7 +285,7 @@ test('scheduled problems open for submission, then publish with editorial and so
   const response = await page.request.put(`/api/my/contests/${id}`, { headers: { origin }, data: { title: '自動公開コンテスト', description: '', startsAt: new Date(now + 4000).toISOString(), endsAt: new Date(now + 30000).toISOString(), version: 0, problems: [{ id: pid, points: 100 }] } })
   expect(response.status()).toBe(200)
   expect((await guest.request.get(`/api/contests/${id}/problems/${pid}`)).status()).toBe(404)
-  // The problem page has no tabs (ADR 0034); the author reads the editorial before the start through 解説一覧.
+  // The problem page has no tabs (ADR 0034); the author reads the editorial before the start through 解説.
   await page.goto(`/contests/${id}/problems/${pid}?view=editorial`)
   await expect(page.getByRole('heading', { name: 'コンテスト解説', exact: true })).toBeVisible()
   await expect(page.getByRole('navigation', { name: '問題メニュー' })).toHaveCount(0)
@@ -360,7 +360,7 @@ test('scheduled problems open for submission, then publish with editorial and so
   await expect.poll(async () => (await guest.request.get(`/api/problems/${pid}`)).status(), { timeout: 35000 }).toBe(200)
   await reader.goto(`/contests/${id}/problems/${pid}?view=editorial`)
   await expect(reader.getByRole('heading', { name: 'コンテスト解説', exact: true })).toBeVisible()
-  await expect(reader.getByRole('navigation', { name: 'パンくずリスト' }).getByRole('link', { name: '解説一覧', exact: true })).toHaveAttribute('href', `/contests/${shortId(id)}?view=editorials`)
+  await expect(reader.getByRole('navigation', { name: 'パンくずリスト' }).getByRole('link', { name: '解説', exact: true })).toHaveAttribute('href', `/contests/${shortId(id)}?view=editorials`)
   await expect(reader.getByRole('navigation', { name: '問題メニュー' })).toHaveCount(0)
   for (const width of [320, 375, 414, 768]) {
     await reader.setViewportSize({ width, height: 900 })

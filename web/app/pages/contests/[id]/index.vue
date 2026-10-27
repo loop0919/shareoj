@@ -328,11 +328,11 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       </template>
     </section>
     <section v-if="activeView === 'editorials'" id="editorials" class="contest-section" aria-labelledby="editorials-title">
-      <h1 id="editorials-title">解説一覧</h1>
+      <h1 id="editorials-title">解説</h1>
       <p v-if="contest.status !== 'ended'" class="notice">解説はコンテスト終了後に公開されます。終了前は作成者と、各問題の作者・テスターが閲覧できます。</p>
       <p v-if="userEditorialsError" class="notice notice-error" role="alert">{{ userEditorialsError }}</p>
       <LoadingSpinner v-else-if="contest.status === 'ended' && !userEditorials" label="ユーザー解説を読み込み中" />
-      <div v-if="contest.problems.length" class="content-table-scroll" role="region" aria-label="解説一覧のスクロール領域" tabindex="0">
+      <div v-if="contest.problems.length" class="content-table-scroll" role="region" aria-label="解説のスクロール領域" tabindex="0">
         <table class="content-table contest-editorials"><thead><tr><th scope="col">#</th><th scope="col">解説</th><th v-if="contest.status === 'ended'" scope="col">ユーザー解説</th></tr></thead><tbody><tr v-for="(p, index) in contest.problems" :key="p.id || index"><td>{{ problemLabel(index) }}</td><th scope="row"><NuxtLink v-if="p.hasEditorial" :to="{ path: contestProblemPath(contest.id, index), query: { view: 'editorial' } }">{{ p.title }}</NuxtLink><template v-else><span>{{ p.title || '???' }}</span><span class="editorial-state muted">{{ p.hasEditorial === false ? '未登録' : contest.status === 'ended' ? '公開待ち' : '終了後に公開' }}</span></template></th><td v-if="contest.status === 'ended'"><ul v-if="editorialsByProblem[p.id]?.length" class="contest-user-editorials"><li v-for="item in editorialsByProblem[p.id]" :key="item.id"><NuxtLink :to="`/blog/${shortId(item.id)}`">{{ item.title }}</NuxtLink> <span class="muted">{{ item.author }}</span></li></ul><span v-else class="muted">—</span></td></tr></tbody></table>
       </div>
     </section>

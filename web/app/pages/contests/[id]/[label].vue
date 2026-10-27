@@ -14,7 +14,7 @@ const pid = contest.value?.problems[index]?.id
 if (!pid) throw createError({ statusCode: contestError.value && contestError.value.statusCode !== 404 ? 502 : 404, statusMessage: '問題が見つからないか、まだ公開されていません', fatal: true })
 const { data: problem, error, refresh } = await useFetch<ContestProblemDetail>(`/api/contests/${encodeURIComponent(id)}/problems/${encodeURIComponent(pid)}`)
 if (error.value || !problem.value || !contest.value) throw createError({ statusCode: error.value?.statusCode === 404 ? 404 : 502, statusMessage: '問題が見つからないか、まだ公開されていません', fatal: true })
-// The editorial has no tab; 解説一覧 links to it (ADR 0034).
+// The editorial has no tab; 解説 links to it (ADR 0034).
 const showingEditorial = computed(() => route.query.view === 'editorial')
 const problemPath = contestProblemPath(id, index)
 const title = computed(() => contestProblemTitle(index, problem.value!.title))
@@ -35,7 +35,7 @@ useSharePreview({ title: () => title.value, path: problemPath, description: () =
 </script>
 <template>
   <div v-if="problem && contest" class="problem-page">
-    <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink :to="`/contests/${shortId(id)}`">{{ contest.title }}</NuxtLink><span aria-hidden="true">/</span><NuxtLink v-if="showingEditorial" :to="`/contests/${shortId(id)}?view=editorials`">解説一覧</NuxtLink><NuxtLink v-else :to="`/contests/${shortId(id)}?view=problems`">問題</NuxtLink><span aria-hidden="true">/</span><span>{{ title }}</span></nav><TweetButton v-if="contest.status !== 'scheduled'" :title="title" :url="problemPath" /></div>
+    <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink :to="`/contests/${shortId(id)}`">{{ contest.title }}</NuxtLink><span aria-hidden="true">/</span><NuxtLink v-if="showingEditorial" :to="`/contests/${shortId(id)}?view=editorials`">解説</NuxtLink><NuxtLink v-else :to="`/contests/${shortId(id)}?view=problems`">問題</NuxtLink><span aria-hidden="true">/</span><span>{{ title }}</span></nav><TweetButton v-if="contest.status !== 'scheduled'" :title="title" :url="problemPath" /></div>
     <header class="problem-header"><p v-if="showingEditorial" class="eyebrow editorial-eyebrow">解説</p><h1><ContestProblemTitle :index="index" :title="problem.title" /></h1><div class="problem-summary"><div class="problem-meta muted"><p>作成者 <template v-for="(author, index) in contestAuthors(problem)" :key="author"><span v-if="index">、</span><UserLink :handle="author" /></template></p><p v-if="problem.testers?.length">テスター <template v-for="(tester, index) in problem.testers" :key="tester"><span v-if="index">、</span><UserLink :handle="tester" /></template></p><p v-if="!problem.scoring">配点 {{ contest.problems.find(p => p.id === problem!.id)?.points }} 点</p></div></div><dl class="limits"><div><dt>実行時間制限</dt><dd>{{ Number(problem.timeLimitMs) / 1000 }} 秒</dd></div><div><dt>メモリ制限</dt><dd>{{ problem.memoryLimitMb }} MiB</dd></div></dl><ProblemScoring v-if="problem.scoring" :scoring="problem.scoring" /></header>
     <article class="problem-body">
       <template v-if="showingEditorial"><ProblemMarkdown v-if="problem.editorial" :source="problem.editorial" /><p v-else class="muted">解説は終了後に公開されます。終了後も表示されない場合は未登録です。</p><UserEditorials v-if="contest.status === 'ended'" :problem-id="problem.id" /></template>

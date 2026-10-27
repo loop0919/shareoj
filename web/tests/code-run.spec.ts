@@ -294,7 +294,7 @@ test('the current menu item keeps its underline without a vertical scroll', asyn
 test('the contest menu opens code runs in the contest', async ({ page }) => {
   await openContest(page, 'standings')
   const menu = page.getByRole('navigation', { name: 'コンテストメニュー' })
-  await expect(menu.getByRole('link')).toHaveText(['概要', '問題', '順位表', '自分の提出', '解説一覧', '質問', 'コード実行'])
+  await expect(menu.getByRole('link')).toHaveText(['概要', '問題', '順位表', '自分の提出', '解説', '質問', 'コード実行'])
   await menu.getByRole('link', { name: 'コード実行', exact: true }).click()
   await expect(page).toHaveURL(`${contestPath}?view=run`)
   await expect(menu.getByRole('link', { name: 'コード実行', exact: true })).toHaveAttribute('aria-current', 'page')
