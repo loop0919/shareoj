@@ -1,6 +1,16 @@
 /* Hallmark · pre-emit critique: P4 H4 E4 S5 R5 V4
  * macrostructure: Workbench · existing Plain tokens · editor / live document */
 :root { --color-error: light-dark(#a12622, #ff9b96); --color-error-soft: light-dark(#fff3f2, #422a2a); --color-dialog-backdrop: #0008; --editor-control-size: 32px; }
+/* Raised button faces: lighter at the top, a thin highlight on the top edge, and a soft shadow below. */
+:root {
+  --button-top: light-dark(#fff, #2d3947); --button-bottom: light-dark(#edf0f4, #222c38);
+  --button-top-hover: light-dark(#f7f9fb, #34414f); --button-bottom-hover: light-dark(#e4e9ee, #29343f);
+  --button-highlight: light-dark(rgb(255 255 255 / .95), rgb(255 255 255 / .08));
+  --button-shadow: light-dark(rgb(16 24 40 / .1), rgb(0 0 0 / .5)); --button-press: light-dark(rgb(16 24 40 / .14), rgb(0 0 0 / .45));
+  --accent-top: light-dark(#1d8556, #8ce7b6); --accent-bottom: light-dark(#146b45, #5ccb8f);
+  --accent-top-hover: light-dark(#1a7c50, #9cedc1); --accent-bottom-hover: light-dark(#115f3d, #6bd59b);
+  --accent-edge: light-dark(#11603f, #4db47d); --accent-highlight: light-dark(rgb(255 255 255 / .25), rgb(255 255 255 / .4));
+}
 .site-header nav { display: flex; flex-wrap: wrap; gap: 4px 20px; }
 .author-page { padding-block: 40px 64px; }
 .author-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; }
@@ -8,10 +18,15 @@
 .author-heading p { margin-bottom: 0; }
 .author-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .editor-button, .editor-toolbar button { min-height: var(--editor-control-size); padding: 4px 8px; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-paper); color: var(--color-ink); font: inherit; font-size: .8125rem; white-space: nowrap; cursor: pointer; }
-.editor-button:hover, .editor-toolbar button:hover { background: var(--color-surface); }
-.editor-button:active, .editor-toolbar button:active { transform: translateY(1px); }
-.editor-button.primary, .editor-button[aria-pressed="true"] { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-paper); }
-.editor-button.primary:hover { text-decoration: underline; text-underline-offset: 3px; }
+.editor-toolbar button:hover { background: var(--color-surface); }
+.editor-toolbar button:active { transform: translateY(1px); }
+/* States change only the face and depth, so buttons that set their own background or shadow keep it. */
+.editor-button { --button-face: linear-gradient(var(--button-top), var(--button-bottom)); --button-depth: inset 0 1px 0 var(--button-highlight), 0 1px 2px var(--button-shadow); border-radius: 8px; background: var(--button-face); font-weight: 500; box-shadow: var(--button-depth); }
+.editor-button:hover { --button-face: linear-gradient(var(--button-top-hover), var(--button-bottom-hover)); }
+.editor-button:active { --button-face: linear-gradient(var(--button-bottom-hover), var(--button-top-hover)); --button-depth: inset 0 1px 3px var(--button-press); }
+.editor-button.primary, .editor-button[aria-pressed="true"] { --button-face: linear-gradient(var(--accent-top), var(--accent-bottom)); --button-depth: inset 0 1px 0 var(--accent-highlight), 0 1px 2px var(--button-shadow); border-color: var(--accent-edge); color: var(--color-paper); font-weight: 600; }
+.editor-button.primary:hover, .editor-button[aria-pressed="true"]:hover { --button-face: linear-gradient(var(--accent-top-hover), var(--accent-bottom-hover)); }
+.editor-button.primary:active, .editor-button[aria-pressed="true"]:active { --button-face: linear-gradient(var(--accent-bottom), var(--accent-top)); --button-depth: inset 0 1px 3px var(--button-press); }
 .editor-button:focus-visible, .editor-toolbar button:focus-visible, .author-page input:focus-visible, .author-page textarea:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 3px; }
 .author-page :disabled { opacity: .55; cursor: not-allowed; }
 .draft-status { display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: .75rem; color: var(--color-muted); padding-block: 20px; }
@@ -178,7 +193,7 @@
 .author-body { display: flex; position: relative; flex: 1; min-height: 0; min-width: 0; }
 .editor-main { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
 .editor-sidebar { display: flex; flex-direction: column; flex: 0 0 56px; width: 56px; min-height: 0; padding: 8px 5px; border-right: 1px solid var(--color-line); background: var(--color-surface); color: var(--color-ink); overflow-y: auto; }
-.editor-sidebar-toggle, .editor-sidebar-item { display: flex; align-items: center; gap: 10px; min-height: 44px; width: 44px; padding: 10px 12px; flex-shrink: 0; border-color: transparent; background: transparent; text-align: left; }
+.editor-sidebar-toggle, .editor-sidebar-item { display: flex; align-items: center; gap: 10px; min-height: 44px; width: 44px; padding: 10px 12px; flex-shrink: 0; border-color: transparent; border-radius: 4px; background: transparent; box-shadow: none; text-align: left; }
 .editor-sidebar .editor-icon { flex-shrink: 0; }
 .editor-sidebar-label { display: none; }
 .editor-sidebar-toggle { margin-bottom: 12px; color: var(--color-muted); }

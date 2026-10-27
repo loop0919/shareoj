@@ -58,7 +58,7 @@ const options = computed(() => [
 header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 h2 { margin: 0; font-size: 1.25rem; }
 header p { margin: 2px 0 0; color: var(--color-muted); font-size: .8125rem; overflow-wrap: anywhere; }
-.close-button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 40px; height: 40px; padding: 0; border: 0; background: transparent; }
+.close-button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 40px; height: 40px; padding: 0; border: 0; background: transparent; box-shadow: none; }
 ul { display: grid; gap: 10px; margin: 20px 0 0; padding: 0; list-style: none; }
 .publish-option { display: flex; align-items: center; gap: 14px; min-height: 72px; padding: 12px 16px; border: 1px solid var(--color-line); border-radius: 6px; color: var(--color-ink); text-decoration: none; }
 a.publish-option:active { transform: translateY(1px); }
