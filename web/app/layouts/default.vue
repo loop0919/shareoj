@@ -106,20 +106,30 @@ useNotificationPolling()
 .site-shell--contest { padding-bottom: 96px; }
 .judge-banner { flex-shrink: 0; padding: 12px 16px; background: var(--color-surface); color: var(--color-ink); border-bottom: 2px solid var(--color-accent); font-size: .875rem; overflow-wrap: anywhere; }
 .site-header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; }
-.site-header nav { position: relative; width: auto; justify-content: flex-end; }
+.site-header nav { position: relative; width: auto; justify-content: flex-end; gap: 0; }
 .header-tools { position: relative; display: flex; align-items: center; gap: 4px; }
 .header-tools a { font-size: .875rem; text-decoration: none; }
 @media (max-width: 59.999rem) {
   .site-header { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }
   .header-tools { grid-column: 2; grid-row: 1; gap: 0; }
-  .site-header nav { grid-column: 1 / -1; grid-row: 2; justify-content: space-between; gap: 0 8px; flex-wrap: nowrap; }
+  .site-header nav { grid-column: 1 / -1; grid-row: 2; justify-content: space-between; flex-wrap: nowrap; }
   /* Only the links scroll sideways: 「作成」 stays outside the scroll box, whose edge would cut off its absolute panel. */
-  .nav-links { display: flex; flex: 1; justify-content: space-between; gap: 0 8px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .nav-links { display: flex; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
   .nav-links::-webkit-scrollbar { display: none; }
   .nav-links a:focus-visible { outline-offset: -3px; }
-  .nav-links a, .create-menu { flex-shrink: 0; }
+  /* The links grow into the spare width instead of leaving gaps, so the whole row is clickable. The end links take half
+   * a share and keep their labels at the edges, which spaces the labels exactly like space-between. */
+  .nav-links a { flex: 2 0 auto; justify-content: center; padding-inline: 4px; }
+  .nav-links a:first-child { flex-grow: 1; justify-content: flex-start; padding-inline-start: 0; }
+  .nav-links a:last-child { flex-grow: 1; justify-content: flex-end; }
+  .create-menu { flex-shrink: 0; }
+  .create-menu summary { padding-inline: 4px 0; }
 }
-@media (min-width: 60rem) { .nav-links { display: contents; } }
+@media (min-width: 60rem) {
+  .nav-links { display: contents; }
+  /* Padding instead of a gap, so the space between labels is clickable too. */
+  .nav-links a, .create-menu summary { padding-inline: 10px; }
+}
 /* Contest pages: the contest title sits beside the wordmark and its menu becomes a tab row on the header line. */
 .site-header--contest { row-gap: 4px; padding-bottom: 0; }
 .site-header--contest .contest-title { grid-column: 2; grid-row: 1; justify-self: start; max-width: 100%; }
