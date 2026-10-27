@@ -57,4 +57,5 @@ li { margin-block: 4px; }
 form { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--color-line); }
 label { display: block; margin-bottom: 8px; font-weight: 600; }
 input { width: 100%; border: 1px solid var(--color-line); border-radius: 4px; min-height: 44px; padding: 8px 12px; margin-bottom: 16px; font: inherit; color: var(--color-ink); background: var(--color-paper); }
+.editor-button[type="submit"] { min-height: 44px; padding: 8px 20px; }
 </style>

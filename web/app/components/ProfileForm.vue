@@ -105,6 +105,7 @@ label { display: block; margin-bottom: 8px; font-weight: 600; }
 input[type=file] { max-width: 100%; font: inherit; font-size: .85rem; }
 .handle-input { width: 100%; border: 1px solid var(--color-line); border-radius: 4px; min-height: 44px; padding: 8px 12px; font: inherit; }
 .hint { margin: 8px 0 24px; color: var(--color-muted); font-size: .85rem; }
+.editor-button[type="submit"] { min-height: 44px; padding: 8px 20px; }
 .account-field { margin-bottom: 20px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); }
 @media(max-width: 480px) { .avatar-field { align-items: flex-start; flex-direction: column; gap: 16px; } }

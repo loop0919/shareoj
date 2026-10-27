@@ -89,7 +89,9 @@ test('deletion asks for the handle and explains a contest whose results are not 
   await expect(page.getByRole('heading', { name: 'アカウント削除', exact: true })).toBeVisible()
   const remove = page.getByRole('button', { name: 'アカウントを削除', exact: true })
   await expect(remove).toBeDisabled()
+  await expect(remove).toHaveCSS('opacity', '0.55')
   await page.getByLabel(/確認のため/).fill('ui_test')
+  await expect(remove).toHaveCSS('opacity', '1')
   await remove.click()
   await expect(page.getByRole('alert')).toHaveText('結果が確定していないコンテストがあるため削除できません。コンテストの終了後、順位表を凍結した場合は結果を公開してから削除してください。')
   active = false

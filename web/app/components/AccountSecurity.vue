@@ -70,6 +70,7 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 label { display: block; margin-bottom: 8px; font-weight: 600; }
 input { width: 100%; border: 1px solid var(--color-line); border-radius: 4px; min-height: 44px; padding: 8px 12px; margin-bottom: 20px; font: inherit; color: var(--color-ink); background: var(--color-paper); }
 .hint { margin: -12px 0 20px; color: var(--color-muted); font-size: .85rem; }
+.editor-button[type="submit"] { min-height: 44px; padding: 8px 20px; }
 .sign-in { display: grid; gap: 12px; margin: 0; }
 .sign-in div { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: 16px; }
 .sign-in dt { color: var(--color-muted); }

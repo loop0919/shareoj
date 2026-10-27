@@ -22,11 +22,13 @@
 .editor-toolbar button:active { transform: translateY(1px); }
 /* States change only the face and depth, so buttons that set their own background or shadow keep it. */
 .editor-button { --button-face: linear-gradient(var(--button-top), var(--button-bottom)); --button-depth: inset 0 1px 0 var(--button-highlight), 0 1px 2px var(--button-shadow); border-radius: 8px; background: var(--button-face); font-weight: 500; box-shadow: var(--button-depth); }
-.editor-button:hover { --button-face: linear-gradient(var(--button-top-hover), var(--button-bottom-hover)); }
-.editor-button:active { --button-face: linear-gradient(var(--button-bottom-hover), var(--button-top-hover)); --button-depth: inset 0 1px 3px var(--button-press); }
+.editor-button:hover:not(:disabled) { --button-face: linear-gradient(var(--button-top-hover), var(--button-bottom-hover)); }
+.editor-button:active:not(:disabled) { --button-face: linear-gradient(var(--button-bottom-hover), var(--button-top-hover)); --button-depth: inset 0 1px 3px var(--button-press); }
 .editor-button.primary, .editor-button[aria-pressed="true"] { --button-face: linear-gradient(var(--accent-top), var(--accent-bottom)); --button-depth: inset 0 1px 0 var(--accent-highlight), 0 1px 2px var(--button-shadow); border-color: var(--accent-edge); color: var(--color-paper); font-weight: 600; }
-.editor-button.primary:hover, .editor-button[aria-pressed="true"]:hover { --button-face: linear-gradient(var(--accent-top-hover), var(--accent-bottom-hover)); }
-.editor-button.primary:active, .editor-button[aria-pressed="true"]:active { --button-face: linear-gradient(var(--accent-bottom), var(--accent-top)); --button-depth: inset 0 1px 3px var(--button-press); }
+.editor-button.primary:hover:not(:disabled), .editor-button[aria-pressed="true"]:hover:not(:disabled) { --button-face: linear-gradient(var(--accent-top-hover), var(--accent-bottom-hover)); }
+.editor-button.primary:active:not(:disabled), .editor-button[aria-pressed="true"]:active:not(:disabled) { --button-face: linear-gradient(var(--accent-bottom), var(--accent-top)); --button-depth: inset 0 1px 3px var(--button-press); }
+/* A disabled button looks unavailable everywhere, not only inside the problem editor. */
+.editor-button:disabled { opacity: .55; cursor: not-allowed; }
 .editor-button:focus-visible, .editor-toolbar button:focus-visible, .author-page input:focus-visible, .author-page textarea:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 3px; }
 .author-page :disabled { opacity: .55; cursor: not-allowed; }
 .draft-status { display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: .75rem; color: var(--color-muted); padding-block: 20px; }
