@@ -64,7 +64,7 @@ useSharePreview({ type: 'website', title: heading, path, description })
 </script>
 <template>
   <div class="catalogue">
-    <header class="catalogue-heading"><h1>問題</h1><NuxtLink class="editor-button primary catalogue-action" to="/problems/post">問題投稿</NuxtLink></header>
+    <header class="catalogue-heading"><h1>問題</h1><NuxtLink class="editor-button primary" to="/problems/post">問題投稿</NuxtLink></header>
     <!-- Viewers who hide problem tags get no tag search, unless a link opened a filtered list. The switch comes first so it stays put when the search appears. -->
     <div class="catalogue-tools">
       <InlineSwitch v-model="showTags" class="tags-switch" :describedby="showTags ? undefined : 'problem-tags-hint'">タグを表示</InlineSwitch>
@@ -94,7 +94,6 @@ useSharePreview({ type: 'website', title: heading, path, description })
 </template>
 
 <style scoped>
-.catalogue-action { min-height: 40px; padding-inline: 16px; }
 .catalogue-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 20px; }
 .catalogue-tools > .tag-filter { margin-bottom: 0; }
 .tags-switch { font-size: .875rem; }
