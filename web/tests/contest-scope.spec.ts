@@ -5,7 +5,7 @@ const id = '66666666-6666-4666-8666-666666666666'
 const problem = '11111111-1111-4111-8111-111111111111'
 const session = { Cookie: 'openoj_access=valid-access' }
 
-test('the web server forwards only the onsite filter and asks for the team list with a session (ADR 0024)', async ({ request }) => {
+test('the web server forwards the onsite filter and asks for the team list with a session (ADR 0024)', async ({ request }) => {
   const forwarded = async (path: string, headers?: Record<string, string>) => {
     const response = await request.get(`/api/contests/${id}/${path}`, { headers })
     if (!response.ok()) return response.status()
@@ -22,4 +22,15 @@ test('the web server forwards only the onsite filter and asks for the team list 
   expect(await forwarded(`problems/${problem}/submissions?scope=onsite`)).toBe('public ?offset=0&mine=0&scope=onsite')
   expect(await forwarded(`problems/${problem}/submissions?mine=team`)).toBe(401)
   expect(await forwarded(`problems/${problem}/submissions?mine=team&scope=onsite`, session)).toBe('private ?offset=0&mine=team&scope=onsite')
+})
+
+test('the web server forwards the problem filter of the contest submission list (ADR 0034)', async ({ request }) => {
+  const forwarded = async (path: string, headers?: Record<string, string>) => {
+    const response = await request.get(`/api/contests/${id}/${path}`, { headers })
+    const { route, query } = await response.json() as { route: string, query: string }
+    return `${route} ${query}`
+  }
+  expect(await forwarded(`submissions?problem=${problem}`)).toBe(`public ?offset=0&mine=0&problem=${problem}`)
+  expect(await forwarded(`submissions?mine=1&scope=onsite&problem=${problem}`, session)).toBe(`private ?offset=0&mine=1&scope=onsite&problem=${problem}`)
+  expect(await forwarded('submissions?problem=A')).toBe('public ?offset=0&mine=0')
 })
