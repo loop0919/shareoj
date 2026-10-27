@@ -28,7 +28,7 @@ const joined = computed(() => profile.value ? new Date(profile.value.createdAt).
       <button :aria-pressed="activeContent === 'testing'" @click="activeContent = 'testing'">テスト中の問題</button>
       <button :aria-pressed="activeContent === 'posts'" @click="activeContent = 'posts'">記事</button>
       <button :aria-pressed="activeContent === 'contests'" @click="activeContent = 'contests'">コンテスト</button>
-      <button :aria-pressed="activeContent === 'events'" @click="activeContent = 'events'">イベント</button>
+      <button :aria-pressed="activeContent === 'events'" @click="activeContent = 'events'">通知</button>
     </nav>
     <SavedProblems v-show="activeContent === 'problems'" :status="tabStatus('problems')" @update:status="statusFilter = $event" />
     <SavedProblems v-if="activeContent === 'testing'" v-model:status="statusFilter" testing />

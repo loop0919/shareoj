@@ -22,8 +22,8 @@ test('the my page shows its dates in Japan time in any time zone', async ({ page
   const tabs = page.getByRole('navigation', { name: 'マイページのコンテンツ' })
   await tabs.getByRole('button', { name: '記事', exact: true }).click()
   await expect(page.getByRole('table', { name: '作成した記事' }).locator('tbody time')).toHaveText('2026/10/01 05:00')
-  await tabs.getByRole('button', { name: 'イベント', exact: true }).click()
-  await expect(page.getByRole('region', { name: 'イベント', exact: true }).locator('time')).toHaveText('2026/10/1 5:00:00')
+  await tabs.getByRole('button', { name: '通知', exact: true }).click()
+  await expect(page.getByRole('region', { name: '通知', exact: true }).locator('time')).toHaveText('2026/10/1 5:00:00')
 })
 
 test('submission times read in Japan time in any time zone', async ({ page }) => {

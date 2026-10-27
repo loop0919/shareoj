@@ -38,7 +38,7 @@ watch(() => route.fullPath, close)
           </NuxtLink>
         </li>
       </ul>
-      <NuxtLink class="events-link" to="/my?tab=events" @click="close">イベントをすべて見る</NuxtLink>
+      <NuxtLink class="events-link" to="/my?tab=events" @click="close">通知をすべて見る</NuxtLink>
     </div>
   </details>
 </template>

@@ -430,7 +430,7 @@ test('a co-setter notification opens the contest management', async ({ page }) =
   await page.route('**/api/my/notifications**', route => route.fulfill({ json: notifications }))
   await routeEditor(page, () => draftResult(['ui_test', 'bob'], true))
   await page.goto('/my?tab=events')
-  const events = page.getByRole('region', { name: 'イベント', exact: true })
+  const events = page.getByRole('region', { name: '通知', exact: true })
   await expect(events.getByText('bobが共同作成者に加わりました', { exact: true })).toBeVisible()
   await events.getByRole('link', { name: '無題のコンテスト', exact: true }).click()
   await expect(page).toHaveURL(`/my/contests/${shortId(id)}?section=manage`)
