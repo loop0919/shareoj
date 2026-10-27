@@ -39,7 +39,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
 .account-menu { position: relative; }
 .account-nav { display: flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; }
 .account-nav:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
-.account-menu-links { position: absolute; right: 0; top: 100%; z-index: 20; display: grid; min-width: max-content; padding: 6px; background: var(--color-paper); border: 1px solid var(--color-line); border-radius: 6px; box-shadow: 0 4px 12px #0001; font-size: .875rem; }
+.account-menu-links { position: absolute; right: 0; top: 100%; z-index: 20; display: grid; width: 240px; padding: 8px; background: var(--color-paper); border: 1px solid var(--color-line); border-radius: 6px; box-shadow: 0 4px 12px #0001; font-size: .875rem; }
 .account-menu-handle { margin: 0; padding: 4px 12px 8px; border-bottom: 1px solid var(--color-line); margin-bottom: 4px; color: var(--color-muted); font-size: .8125rem; overflow-wrap: anywhere; }
 .account-menu-links a, .account-menu-links button { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border: 0; border-radius: 4px; background: none; color: var(--color-ink); font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
 .account-menu-links .account-logout { color: var(--color-error); }
