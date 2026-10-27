@@ -65,7 +65,7 @@ test('scroll sync can be turned off, persists, and keeps the line when switching
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-checked', 'false')
   await expect(dialog.getByText('OFF', { exact: true })).toBeVisible()
-  await dialog.getByRole('button', { name: '閉じる', exact: true }).click()
+  await page.mouse.click(2, 2)
 
   const previewTop = await preview.evaluate(element => element.scrollTop)
   await scrollTo(editor, .5)
@@ -84,7 +84,7 @@ test('scroll sync can be turned off, persists, and keeps the line when switching
   await settings.click()
   await expect(toggle).toHaveAttribute('aria-checked', 'false')
   await toggle.click()
-  await dialog.getByRole('button', { name: '閉じる', exact: true }).click()
+  await page.mouse.click(2, 2)
 
   await page.locator('#problem-source').fill(source)
   await page.getByRole('button', { name: '編集', exact: true }).click()
