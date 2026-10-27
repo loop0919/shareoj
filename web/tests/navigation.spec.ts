@@ -40,13 +40,16 @@ test('creation dropdown supports keyboard, dismissal, and creation links', async
   await expect(page).toHaveURL(/\/blog\/new$/)
 })
 
-test('list pages give their heading actions the same size', async ({ context, page }) => {
-  // The blog shows its action only to a signed-in user.
+test('list pages and the my page give their heading actions the same size', async ({ context, page }) => {
+  // The blog and the my page show their actions only to a signed-in user.
   await context.addCookies([{ name: 'openoj_refresh', value: 'valid-refresh', url: 'http://127.0.0.1:13000' }])
   const sizes: Record<string, string> = {}
-  for (const [path, name] of [['/problems', '問題投稿'], ['/contests', '新規コンテスト'], ['/blog', '新規記事'], ['/featured', '新作を応募'], ['/featured/schedule', '新作を応募']]) {
+  for (const [path, name] of [
+    ['/problems', '問題投稿'], ['/contests', '新規コンテスト'], ['/blog', '新規記事'], ['/featured', '新作を応募'], ['/featured/schedule', '新作を応募'],
+    ['/my?tab=problems', '新規問題'], ['/my?tab=contests', '新規コンテスト'], ['/my?tab=posts', '新規記事'],
+  ]) {
     await page.goto(path)
-    sizes[path] = await page.locator('.catalogue-heading').getByRole('link', { name, exact: true }).evaluate(link => {
+    sizes[path] = await page.locator('.catalogue-heading, .draft-library-heading').getByRole('link', { name, exact: true }).evaluate(link => {
       const style = getComputedStyle(link)
       return `${link.getBoundingClientRect().height} ${style.paddingInline} ${style.fontSize}`
     })

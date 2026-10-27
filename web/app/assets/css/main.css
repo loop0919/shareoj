@@ -171,7 +171,7 @@ code { font-family: var(--font-code); }
 .catalogue-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin: 12px 0 24px; }
 .catalogue-heading h1 { font-size: 1.75rem; margin: 0; }
 .catalogue-heading > a { display: inline-flex; align-items: center; text-decoration: none; }
-.catalogue-heading > a.editor-button { min-height: 40px; padding-inline: 16px; }
+.catalogue-heading > a.editor-button, .draft-library-heading > a.editor-button { min-height: 40px; padding-inline: 16px; }
 
 /* Hallmark · component: contest participation · genre: modern-minimal · theme: existing ShareOJ tokens (Plain)
  * states: guest · staff · open · onsite · individual · team · busy · error
