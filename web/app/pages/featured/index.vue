@@ -40,7 +40,6 @@ usePolling(() => refresh(), 60000)
 <style scoped>
 .featured-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .featured-actions .editor-button { display: inline-flex; align-items: center; min-height: 40px; padding-inline: 16px; text-decoration: none; }
-.featured-actions .editor-button.primary:hover { text-decoration: underline; }
 .round { margin-block: 28px; }
 .round-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .round-heading a { font-size: .8125rem; min-height: 44px; display: inline-flex; align-items: center; }
