@@ -116,14 +116,14 @@ onBeforeUnmount(() => { requestVersion++ })
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .difficulty-vote { font-size: .875rem; }
 .editor-button { white-space: nowrap; }
-.difficulty-dialog { width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; border: 1px solid var(--color-line); border-radius: 8px; color: var(--color-ink); background: var(--color-paper); text-align: left; }
+.difficulty-dialog { width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 32px; border: 1px solid var(--color-line); border-radius: 8px; color: var(--color-ink); background: var(--color-paper); text-align: left; word-break: auto-phrase; }
 .difficulty-dialog::backdrop { background: var(--color-dialog-backdrop); }
 header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 h2 { margin: 0; font-size: 1.25rem; }
 p { margin: 0 0 20px; font-size: .875rem; line-height: 1.8; }
 .vote-button, .close-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .vote-button svg { width: 16px; height: 16px; }
-.close-button { flex-shrink: 0; width: 36px; height: 36px; padding: 8px; }
+.close-button { flex-shrink: 0; width: 40px; height: 40px; padding: 10px; }
 .close-button svg { width: 20px; height: 20px; }
 svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 label { display: block; margin-bottom: 8px; font-size: .875rem; font-weight: 600; }
@@ -142,4 +142,6 @@ label { display: block; margin-bottom: 8px; font-size: .875rem; font-weight: 600
 .vote-loading { margin-top: 12px; }
 footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--color-line); }
 .withdraw { margin-right: auto; }
+footer .editor-button { min-height: 40px; padding: 8px 16px; font-size: .875rem; }
+@media (max-width: 30rem) { .difficulty-dialog { padding: 24px; } }
 </style>

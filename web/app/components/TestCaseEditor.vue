@@ -308,7 +308,6 @@ function add() {
 .case-info-tooltip { display: none; position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 3; max-width: 22rem; padding: 8px 12px; border-radius: 4px; background: var(--color-ink); color: var(--color-paper); font-size: .75rem; line-height: 1.7; }
 .case-info:hover .case-info-tooltip, .case-info:focus .case-info-tooltip { display: block; }
 .case-message { margin: 0; padding: 8px 16px; font-size: .75rem; color: var(--color-muted); border-bottom: 1px solid var(--color-line); }
-.bulk-import { word-break: auto-phrase; }
 .import-pickers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .import-picker { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 12px; border: 1px dashed var(--color-line); border-radius: 6px; background: var(--color-surface); text-align: center; }
 .import-picker-label { font-size: .8125rem; font-weight: 600; }
