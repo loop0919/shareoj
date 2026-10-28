@@ -4,13 +4,17 @@ if (!process.env.TEST_DATABASE_URL) throw new Error('TEST_DATABASE_URL is requir
 const apiAddress = process.env.OPENOJ_BROWSER_API_ADDR ?? '127.0.0.1:18082'
 const webPort = process.env.OPENOJ_BROWSER_WEB_PORT ?? '13002'
 const siteURL = `http://127.0.0.1:${webPort}`
+// CI builds the fixture once (go test -c) and every shard runs that binary, from the package's directory as go test does.
+const fixture = process.env.OPENOJ_BROWSER_FIXTURE
+  ? { command: `${process.env.OPENOJ_BROWSER_FIXTURE} -test.v -test.run ^TestBrowserFixture$ -test.timeout 0 -test.count 1`, cwd: '../api/internal/httpapi' }
+  : { command: 'go test -v ./internal/httpapi -run ^TestBrowserFixture$ -timeout 0 -count=1', cwd: '../api' }
 
 export default defineConfig({
   testDir: './tests/account', outputDir: './test-results-account', workers: 1, retries: 0,
   use: { baseURL: siteURL, trace: 'retain-on-failure' },
   webServer: [
     {
-      command: 'go test -v ./internal/httpapi -run ^TestBrowserFixture$ -timeout 0 -count=1', cwd: '../api',
+      ...fixture,
       env: { OPENOJ_BROWSER_TEST: '1', TEST_DATABASE_URL: process.env.TEST_DATABASE_URL, OPENOJ_BROWSER_API_ADDR: apiAddress },
       wait: { stdout: /browser API ready/ }, timeout: 120000,
       gracefulShutdown: { signal: 'SIGTERM', timeout: 10000 },

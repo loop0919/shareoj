@@ -394,6 +394,8 @@ golangci-lint run
 実DBのテストは、専用の接続先を`TEST_DATABASE_URL`へ設定して`go test -race ./...`を実行する。
 テストは一意なスキーマを作成して終了時に削除し、永続化、所有者の分離、競合と一覧のページングを検証する。
 `TEST_DATABASE_URL`が未設定なら実DBのテストはスキップする。
+CIは時間のかかる`internal/httpapi`のテストを4プロセスに分け、ほかのパッケージと並べて実行する。
+手元でも`scripts/parallel-test.sh ./internal/httpapi 4`で同じように実行できる。
 
 Lambda用バイナリでは、ビルド時に`CGO_ENABLED=0`と対象アーキテクチャを指定する。
 

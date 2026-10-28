@@ -238,22 +238,33 @@ bun run test --config playwright.account.config.ts
 Cognitoの代わりにテスト用の署名鍵でトークンを発行し、実際のJWT検証、Go API、Nuxt、PostgreSQLを通して保存と再編集を確認する。
 テスト用の認証処理はGoの`_test.go`だけに含まれ、本番バイナリには入らない。
 
-CIではSSRを一度ビルドし、画面テストと実DBテストをそれぞれ2分割して別のランナーで実行する。
-実DBテストはランナーごとに独立したPostgreSQLを使い、同じDB内では1ワーカーで実行する。
-ブラウザーとOSライブラリは[公式Playwrightイメージ](https://playwright.dev/docs/docker)を使い、バージョンを`bun.lock`の`@playwright/test`に合わせる。
-イメージにはunzipがなく`oven-sh/setup-bun`が動かないため、`scripts/bun_release.py`がBunを入れる。
+CIではSSRを一度ビルドし、画面テストと実DBテストをそれぞれ複数のジョブに分けて実行する。
+ジョブの数は`.github/workflows/ci.yml`で決める。
+分け方は`scripts/shard-tests.mjs`が`tests/durations.json`の所要時間から決め、どのジョブもほぼ同じ時間で終わるようにする。
+所要時間の記録がないテストは中央値として数えるため、追加したテストもどれかのジョブで必ず実行される。
+実DBテストはジョブごとに独立したPostgreSQLを使い、同じDB内では1ワーカーで実行する。
+同じファイルのテストが別のジョブに分かれることがあるため、実DBテストは1件だけでも成功するように書く。
+Go APIのテスト用サーバーは一度だけビルドし、各ジョブで使い回す。
 CIのwebのジョブは、失敗する`node`（`scripts/no-node/node`）をPATHの先頭に置き、Node.jsへの取りこぼしを検出する。
-すべての分割が成功した場合だけ`Test SSR frontend`が成功し、デプロイへ進む。
+すべてのジョブが成功した場合だけ`Test SSR frontend`が成功し、デプロイへ進む。
 自動リトライは行わない。
 
-分割をローカルで再実行する場合は、次の`1/2`を対象の番号に変える。
+テストが増えてジョブの時間が偏ってきたら、手元で全体を実行して所要時間を記録し直す。
 
 ```console
-bun run test --shard=1/2
-bun run test --config playwright.account.config.ts --shard=1/2
+PLAYWRIGHT_JSON_OUTPUT_FILE=.build/browser.json bun run test --reporter=json
+PLAYWRIGHT_JSON_OUTPUT_FILE=.build/account.json bun run test --config playwright.account.config.ts --reporter=json
+bun scripts/shard-tests.mjs record .build/browser.json .build/account.json
 ```
 
-CIの実行結果には`playwright-browser-1`などの名前で、所要時間を確認できるHTMLレポートと失敗時のトレースを7日間保存する。
+CIの1ジョブを手元で再実行する場合は、CIと同じ数で分け方を作り、対象の番号のリストを渡す。
+
+```console
+bun scripts/shard-tests.mjs split playwright.config.ts 16 .build/shards/browser
+bun run test --test-list .build/shards/browser/1.txt
+```
+
+失敗したジョブは、`playwright-browser-1`などの名前でHTMLレポートとトレースを7日間保存する。
 アーティファクトを展開し、`bun --bun playwright show-report <展開先>/playwright-report`で開く。
 トレースは`bun --bun playwright show-trace <trace.zipのパス>`で開く。
 

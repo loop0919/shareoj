@@ -1,0 +1,20 @@
+name: Set up Go
+description: Go from api/go.mod with a module and build cache of the job's own.
+inputs:
+  cache-name:
+    description: Names the cache. Jobs that build different things keep apart, or the first to save fills it for all.
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v7.0.0
+      with:
+        go-version-file: api/go.mod
+        cache: false
+    - name: Restore the Go caches
+      uses: actions/cache@v6.1.0
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: go-${{ inputs.cache-name }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('api/go.sum', 'cli/go.sum') }}

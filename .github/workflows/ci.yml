@@ -12,8 +12,8 @@ on:
 permissions:
   contents: read
 
-# Each job is short: work that does not depend on another job runs beside it, and the
-# browser suites are split across runners.
+# Jobs that do not need each other run side by side, and the browser suites are split into
+# shards of about equal running time (web/scripts/shard-tests.mjs), so that each job is short.
 jobs:
   web-ssr:
     name: Build SSR frontend
@@ -21,6 +21,8 @@ jobs:
     timeout-minutes: 5
     outputs:
       playwright-version: ${{ steps.playwright.outputs.version }}
+      browser-shards: ${{ steps.build.outputs.browser }}
+      account-shards: ${{ steps.build.outputs.account }}
     defaults:
       run:
         working-directory: web
@@ -29,13 +31,23 @@ jobs:
         uses: actions/checkout@v7.0.0
       - name: Set up Bun and dependencies
         uses: ./.github/actions/setup-web
-      - name: Build SSR server
-        run: bun run build
+      - name: Build SSR server and split the browser tests
+        id: build
+        run: |
+          # The shard counts: each shard is a job of its own, and all jobs share 20 runners.
+          browser=16 account=6
+          bun scripts/shard-tests.mjs split playwright.config.ts "$browser" .build/shards/browser & split_browser=$!
+          bun scripts/shard-tests.mjs split playwright.account.config.ts "$account" .build/shards/account & split_account=$!
+          bun run build
+          wait "$split_browser"
+          wait "$split_account"
+          echo "browser=[$(seq -s , "$browser")]" >> "$GITHUB_OUTPUT"
+          echo "account=[$(seq -s , "$account")]" >> "$GITHUB_OUTPUT"
       - name: Read Playwright version
         id: playwright
         run: bun -e 'console.log("version=" + require("@playwright/test/package.json").version)' >> "$GITHUB_OUTPUT"
-      - name: Archive SSR server
-        run: tar -czf .build/ssr.tar.gz .output
+      - name: Archive SSR server and shards
+        run: tar -czf .build/ssr.tar.gz .output .build/shards
       - name: Upload SSR server for browser tests
         uses: actions/upload-artifact@v7
         with:
@@ -61,7 +73,7 @@ jobs:
         uses: ./.github/actions/setup-web
       - name: Check types
         run: bun run typecheck
-      - name: Test the Lambda runtime client and the deployment smoke checks
+      - name: Test the Lambda runtime client, the deployment smoke checks and the test shards
         run: bun test
       - name: Test the pinned Bun release
         run: python3 -m unittest discover -s scripts -p 'test_*.py'
@@ -78,6 +90,11 @@ jobs:
         uses: actions/checkout@v7.0.0
       - name: Set up Bun and dependencies
         uses: ./.github/actions/setup-web
+      - name: Restore the Bun release for the Lambda
+        uses: actions/cache@v6.1.0
+        with:
+          path: web/.build/bun-linux-aarch64-*.zip
+          key: bun-release-${{ hashFiles('web/scripts/bun_release.py') }}
       - name: Build and package frontend Lambda
         run: bun run package:lambda
       - name: Upload frontend Lambda package
@@ -96,9 +113,6 @@ jobs:
     name: Validate frontend infrastructure
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    defaults:
-      run:
-        working-directory: infra/frontend
     steps:
       - name: Check out repository
         uses: actions/checkout@v7.0.0
@@ -109,9 +123,12 @@ jobs:
           terraform_wrapper: false
       - name: Validate and test frontend infrastructure
         run: |
-          terraform init -backend=false -input=false -lockfile=readonly
-          terraform validate
-          terraform test
+          # The tests only hash the Lambda package; web-lambda builds and checks the real one.
+          mkdir -p web/.build
+          touch web/.build/web.zip
+          terraform -chdir=infra/frontend init -backend=false -input=false -lockfile=readonly
+          terraform -chdir=infra/frontend validate
+          terraform -chdir=infra/frontend test
 
   web-lambda-boot:
     # Boot the exact zip that deploys, on arm64 like the function: in the provided.al2023 image
@@ -150,14 +167,14 @@ jobs:
         run: bun scripts/test-lambda-image.mjs .build/web.zip ${{ matrix.image }}
 
   web-browser:
-    name: Test browser (${{ matrix.shard }}/8)
+    name: Test browser (${{ matrix.shard }}/${{ strategy.job-total }})
     needs: web-ssr
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: ${{ fromJSON(needs.web-ssr.outputs.browser-shards) }}
     env:
       PLAYWRIGHT_HTML_OPEN: never
     defaults:
@@ -168,19 +185,10 @@ jobs:
         uses: actions/checkout@v7.0.0
       - name: Set up Bun and dependencies
         uses: ./.github/actions/setup-web
-      - name: Install a Japanese font
-        # The runner has Chrome's libraries but no CJK font; use the font the share images ship.
-        run: |
-          mkdir -p ~/.local/share/fonts
-          cp server/assets/fonts/ipaexg.ttf ~/.local/share/fonts/
-          fc-cache -f ~/.local/share/fonts
-      - name: Restore Chromium
-        uses: actions/cache@v6.1.0
+      - name: Set up Chromium
+        uses: ./.github/actions/setup-chromium
         with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ needs.web-ssr.outputs.playwright-version }}
-      - name: Install Chromium
-        run: bun --bun playwright install --only-shell chromium
+          playwright-version: ${{ needs.web-ssr.outputs.playwright-version }}
       - name: Download SSR server
         uses: actions/download-artifact@v8
         with:
@@ -189,9 +197,9 @@ jobs:
       - name: Extract SSR server
         run: tar -xzf .build/ssr.tar.gz
       - name: Run browser tests
-        run: bun --bun playwright test --shard=${{ matrix.shard }}/8 --workers=4 --reporter=dot,html
+        run: bun --bun playwright test --test-list .build/shards/browser/${{ matrix.shard }}.txt --reporter=dot,html
       - name: Upload browser report and failure traces
-        if: ${{ !cancelled() }}
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: playwright-browser-${{ matrix.shard }}
@@ -201,61 +209,76 @@ jobs:
           retention-days: 7
           overwrite: true
 
-  web-account:
-    name: Test accounts (${{ matrix.shard }}/2)
-    needs: web-ssr
+  web-fixture:
+    name: Build browser API fixture
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2]
-    # Match the lockfile so browsers and OS libraries are ready without apt downloads.
-    container:
-      image: mcr.microsoft.com/playwright:v${{ needs.web-ssr.outputs.playwright-version }}-noble
-      options: --ipc=host
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: openoj_test
-          POSTGRES_PASSWORD: test-only-password
-          POSTGRES_DB: openoj_test
-        options: >-
-          --health-cmd "pg_isready -U openoj_test -d openoj_test"
-          --health-interval 5s --health-timeout 5s --health-retries 12
-    env:
-      TEST_DATABASE_URL: postgresql://openoj_test:test-only-password@postgres:5432/openoj_test?sslmode=disable
-      PLAYWRIGHT_HTML_OPEN: never
-    defaults:
-      run:
-        working-directory: web
+    timeout-minutes: 5
     steps:
       - name: Check out repository
         uses: actions/checkout@v7.0.0
       - name: Set up Go
-        uses: actions/setup-go@v7.0.0
+        uses: ./.github/actions/setup-go
         with:
-          go-version-file: api/go.mod
-          cache-dependency-path: api/go.sum
-      - name: Set up Bun
-        # The Playwright image has no unzip, which oven-sh/setup-bun needs.
-        run: python3 scripts/bun_release.py install /usr/local/bin
-      - name: Keep Node.js out of the tests
-        run: echo "$GITHUB_WORKSPACE/web/scripts/no-node" >> "$GITHUB_PATH"
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+          cache-name: fixture
+      - name: Build the fixture
+        working-directory: api
+        run: go test -c -o .build/browser-fixture ./internal/httpapi
+      - name: Upload the fixture
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-fixture
+          path: api/.build/browser-fixture
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+
+  web-account:
+    name: Test accounts (${{ matrix.shard }}/${{ strategy.job-total }})
+    needs: [web-ssr, web-fixture]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.web-ssr.outputs.account-shards) }}
+    env:
+      TEST_DATABASE_URL: postgresql://openoj_test:test-only-password@127.0.0.1:5432/openoj_test?sslmode=disable
+      OPENOJ_BROWSER_FIXTURE: ${{ github.workspace }}/api/.build/browser-fixture
+      PLAYWRIGHT_HTML_OPEN: never
+    steps:
+      - name: Start PostgreSQL
+        # In the background, so that the image downloads while the job sets up the rest.
+        run: nohup docker run --detach --name postgres --publish 127.0.0.1:5432:5432 --env POSTGRES_USER=openoj_test --env POSTGRES_PASSWORD=test-only-password --env POSTGRES_DB=openoj_test postgres:17 > "$RUNNER_TEMP/postgres.log" 2>&1 &
+      - name: Check out repository
+        uses: actions/checkout@v7.0.0
+      - name: Set up Bun and dependencies
+        uses: ./.github/actions/setup-web
+      - name: Set up Chromium
+        uses: ./.github/actions/setup-chromium
+        with:
+          playwright-version: ${{ needs.web-ssr.outputs.playwright-version }}
       - name: Download SSR server
         uses: actions/download-artifact@v8
         with:
           name: frontend-ssr
           path: web/.build
-      - name: Extract SSR server
-        run: tar -xzf .build/ssr.tar.gz
+      - name: Download the API fixture
+        uses: actions/download-artifact@v8
+        with:
+          name: browser-fixture
+          path: api/.build
+      - name: Prepare the servers
+        run: |
+          tar -xzf web/.build/ssr.tar.gz -C web
+          chmod +x api/.build/browser-fixture
+          # Over TCP: the image's first start answers only on its socket, then restarts.
+          timeout 90 sh -c 'until docker exec postgres pg_isready --host 127.0.0.1 --username openoj_test --dbname openoj_test > /dev/null 2>&1; do sleep 0.5; done' || { cat "$RUNNER_TEMP/postgres.log"; docker logs postgres; exit 1; }
       - name: Run account tests
-        run: bun --bun playwright test --config playwright.account.config.ts --shard=${{ matrix.shard }}/2 --reporter=dot,html
+        working-directory: web
+        run: bun --bun playwright test --config playwright.account.config.ts --test-list .build/shards/account/${{ matrix.shard }}.txt --reporter=dot,html
       - name: Upload browser report and failure traces
-        if: ${{ !cancelled() }}
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: playwright-account-${{ matrix.shard }}
@@ -269,7 +292,7 @@ jobs:
     # Keep the existing required check; every frontend job must succeed before it passes.
     name: Test SSR frontend
     if: ${{ always() }}
-    needs: [web-ssr, web-check, web-lambda, web-infra, web-lambda-boot, web-browser, web-account]
+    needs: [web-ssr, web-check, web-lambda, web-infra, web-lambda-boot, web-browser, web-fixture, web-account]
     runs-on: ubuntu-24.04
     timeout-minutes: 1
     steps:
@@ -278,81 +301,74 @@ jobs:
           RESULTS: ${{ join(needs.*.result, ' ') }}
         run: for result in $RESULTS; do test "$result" = success; done
 
-  test:
-    name: Test and package API
+  api-test:
+    name: Test API
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: openoj_test
-          POSTGRES_PASSWORD: test-only-password
-          POSTGRES_DB: openoj_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U openoj_test -d openoj_test"
-          --health-interval 5s --health-timeout 5s --health-retries 12
     env:
       TEST_DATABASE_URL: postgresql://openoj_test:test-only-password@127.0.0.1:5432/openoj_test?sslmode=disable
+    steps:
+      - name: Start PostgreSQL
+        # In the background, so that the image downloads while the job sets up the rest.
+        run: nohup docker run --detach --name postgres --publish 127.0.0.1:5432:5432 --env POSTGRES_USER=openoj_test --env POSTGRES_PASSWORD=test-only-password --env POSTGRES_DB=openoj_test postgres:17 > "$RUNNER_TEMP/postgres.log" 2>&1 &
+      - name: Check out repository
+        uses: actions/checkout@v7.0.0
+      - name: Set up Go
+        uses: ./.github/actions/setup-go
+        with:
+          cache-name: test
+      - name: Build the tests
+        working-directory: api
+        run: go test -run '^$' ./...
+      - name: Run tests
+        working-directory: api
+        run: |
+          # Over TCP: the image's first start answers only on its socket, then restarts.
+          timeout 90 sh -c 'until docker exec postgres pg_isready --host 127.0.0.1 --username openoj_test --dbname openoj_test > /dev/null 2>&1; do sleep 0.5; done' || { cat "$RUNNER_TEMP/postgres.log"; docker logs postgres; exit 1; }
+          # The handler tests take most of the time; four processes match the runner's CPUs.
+          scripts/parallel-test.sh ./internal/httpapi 4
 
+  api-checks:
+    name: Check API and authoring CLI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@v7.0.0
-
       - name: Set up Go
-        uses: actions/setup-go@v7.0.0
+        uses: ./.github/actions/setup-go
         with:
-          go-version-file: api/go.mod
-          cache-dependency-path: api/go.sum
-
-      - name: Run tests
-        working-directory: api
-        run: go test ./...
-
+          cache-name: checks
       - name: Run static analysis
         working-directory: api
         run: go vet ./...
-
       - name: Test and build authoring CLI
         working-directory: cli
         run: |
           go test ./...
           go vet ./...
           CGO_ENABLED=0 go build -trimpath -o shareoj .
-
-      - name: Build Lambda package
-        working-directory: api
-        run: make package package-judge
-
       - name: Test judge validation and sandbox metadata
         run: python3 -m unittest discover -s judge/tests -v
 
+  api-package:
+    name: Package API Lambdas
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.0
+      - name: Set up Go
+        uses: ./.github/actions/setup-go
+        with:
+          cache-name: package
+      - name: Build Lambda package
+        working-directory: api
+        run: make package package-judge
       - name: Verify Lambda package
         run: |
           test -s api/.build/api.zip
           test -s api/.build/migrate.zip
-
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.16.0
-          terraform_wrapper: false
-
-      - name: Check Terraform formatting
-        run: terraform fmt -check -recursive infra
-
-      - name: Validate and test Terraform
-        shell: bash
-        run: |
-          set -euo pipefail
-          for root in bootstrap api deploy-access judge domain; do
-            terraform -chdir="infra/$root" init -backend=false -input=false -lockfile=readonly
-            terraform -chdir="infra/$root" validate
-            terraform -chdir="infra/$root" test
-          done
-
       - name: Upload API Lambda packages
         if: inputs.upload-deploy-artifacts
         uses: actions/upload-artifact@v7
@@ -365,3 +381,44 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           overwrite: true
+
+  api-infra:
+    name: Validate infrastructure (${{ matrix.root }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        root: [bootstrap, api, deploy-access, judge, domain]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.0
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.0
+          terraform_wrapper: false
+      - name: Check Terraform formatting
+        if: matrix.root == 'bootstrap'
+        run: terraform fmt -check -recursive infra
+      - name: Validate and test Terraform
+        run: |
+          # The tests only hash the Lambda packages; api-package builds and checks the real ones.
+          mkdir -p api/.build
+          touch api/.build/api.zip api/.build/migrate.zip api/.build/judge-bridge.zip api/.build/judge-notify.zip
+          terraform -chdir="infra/${{ matrix.root }}" init -backend=false -input=false -lockfile=readonly
+          terraform -chdir="infra/${{ matrix.root }}" validate
+          terraform -chdir="infra/${{ matrix.root }}" test
+
+  test:
+    # Keep the existing required check; every API job must succeed before it passes.
+    name: Test and package API
+    if: ${{ always() }}
+    needs: [api-test, api-checks, api-package, api-infra]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Require all API checks
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: for result in $RESULTS; do test "$result" = success; done

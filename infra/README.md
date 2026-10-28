@@ -308,6 +308,7 @@ APIルートの共通タグには`Service=judge`を追加し、`Environment`は`
 `.github/workflows/ci.yml`はGoのテスト・静的解析、フロントエンドの型チェック・ブラウザーテスト、各Lambdaのビルド、Terraformの整形確認・`validate`・モックテストを実行する。
 フロントエンドのLambdaテストは、ZIPをリポジトリ外へ展開してSSR・API接続・静的ファイル・404を確認する。
 Terraformのテストは実際のAWSリソースを作成しない。
+テストはLambdaのパッケージのハッシュだけを使うため、CIではビルドを待たずに空のファイルを置き、ディレクトリごとのジョブで検証する。
 ローカルでも同じ検証を実行できる。
 
 ```console
