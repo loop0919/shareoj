@@ -302,9 +302,15 @@ jobs:
         run: for result in $RESULTS; do test "$result" = success; done
 
   api-test:
-    name: Test API
+    # The handler tests take most of the time. More processes on one runner, which also runs the
+    # database server, were no faster, so two runners with a server each share them.
+    name: Test API (${{ matrix.part }}/${{ strategy.job-total }})
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2]
     env:
       TEST_DATABASE_URL: postgresql://openoj_test:test-only-password@127.0.0.1:5432/openoj_test?sslmode=disable
     steps:
@@ -325,9 +331,7 @@ jobs:
         run: |
           # Over TCP: the image's first start answers only on its socket, then restarts.
           timeout 90 sh -c 'until docker exec postgres pg_isready --host 127.0.0.1 --username openoj_test --dbname openoj_test > /dev/null 2>&1; do sleep 0.5; done' || { cat "$RUNNER_TEMP/postgres.log"; docker logs postgres; exit 1; }
-          # The handler tests take most of the time. They mostly wait for the database, so six
-          # processes finish sooner than four on the runner's four CPUs.
-          scripts/parallel-test.sh ./internal/httpapi 6
+          scripts/parallel-test.sh ./internal/httpapi 3 ${{ matrix.part }} ${{ strategy.job-total }}
 
   api-checks:
     name: Check API and authoring CLI
