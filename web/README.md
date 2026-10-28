@@ -257,10 +257,10 @@ PLAYWRIGHT_JSON_OUTPUT_FILE=.build/account.json bun run test --config playwright
 bun scripts/shard-tests.mjs record .build/browser.json .build/account.json
 ```
 
-CIの1ジョブを手元で再実行する場合は、CIと同じ数で分け方を作り、対象の番号のリストを渡す。
+CIの1ジョブを手元で再実行する場合は、`ci.yml`の`browser=`と同じ数で分け方を作り、対象の番号のリストを渡す。
 
 ```console
-bun scripts/shard-tests.mjs split playwright.config.ts 16 .build/shards/browser
+bun scripts/shard-tests.mjs split playwright.config.ts 14 .build/shards/browser
 bun run test --test-list .build/shards/browser/1.txt
 ```
 
