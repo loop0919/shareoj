@@ -15,7 +15,7 @@ const avatar = computed(() => profile.value?.handle === props.handle
 </script>
 <template>
   <span v-if="handle && deletedHandle.test(handle)" class="deleted-user">退会したユーザー</span>
-  <NuxtLink v-else-if="handle" class="user-link" :to="profile?.handle === handle ? '/my' : `/users/${encodeURIComponent(handle)}`"><UserAvatar :handle="handle" :avatar="avatar" :size="20" /><span>{{ handle }}</span></NuxtLink>
+  <NuxtLink v-else-if="handle" class="user-link" :to="`/users/${encodeURIComponent(handle)}`"><UserAvatar :handle="handle" :avatar="avatar" :size="20" /><span>{{ handle }}</span></NuxtLink>
   <span v-else>—</span>
 </template>
 <style scoped>

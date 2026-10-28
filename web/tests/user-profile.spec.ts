@@ -58,19 +58,22 @@ test('public author and tester profiles are reachable without signing in', async
 })
 
 
-test('own username leads to my page while other users keep their public links', async ({ page, context }) => {
+test('own username leads to the public user page like other users', async ({ page, context }) => {
   const response = await context.request.post('/api/auth/login', {
     headers: { Origin: 'https://judge.example' }, data: { username: 'user', password: 'password' },
   })
   expect(response.ok()).toBe(true)
   await page.goto('/problems/11111111-1111-4111-8111-111111111111')
   const author = page.getByRole('link', { name: 'alice', exact: true })
-  await expect(author).toHaveAttribute('href', '/my')
+  await expect(author).toHaveAttribute('href', '/users/alice')
   await expect(page.getByRole('link', { name: 'bob', exact: true })).toHaveAttribute('href', '/users/bob')
   await author.click()
-  await expect(page).toHaveURL(/\/my$/)
+  await expect(page).toHaveURL(/\/users\/alice$/)
+  await expect(page.getByText('ユーザーページ', { exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'alice', exact: true })).toBeVisible()
   // My page still offers the public page, so authors can check what others see.
+  await page.goto('/my')
+  await expect(page.getByRole('heading', { name: 'alice', exact: true })).toBeVisible()
   await page.getByRole('link', { name: '公開ページを見る', exact: true }).click()
   await expect(page).toHaveURL(/\/users\/alice$/)
   await expect(page.getByText('ユーザーページ', { exact: true })).toBeVisible()
