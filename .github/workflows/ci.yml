@@ -42,8 +42,7 @@ jobs:
         id: build
         run: |
           # The shard counts: enough that each test job, about 12 s of setup included, ends
-          # within 30 s. A run gets 20 runners at a time, so the shards run in waves; see
-          # max-parallel in the test jobs.
+          # within 30 s. A run gets 20 runners at a time, so the shards run in waves.
           browser=44 account=14
           bun scripts/shard-tests.mjs split playwright.config.ts "$browser" .build/shards/browser & split_browser=$!
           bun scripts/shard-tests.mjs split playwright.account.config.ts "$account" .build/shards/account & split_account=$!
@@ -219,14 +218,13 @@ jobs:
 
   web-browser:
     name: Test browser (${{ matrix.shard }}/${{ strategy.job-total }})
-    needs: web-ssr
+    # Waiting also for the Lambda build queues its packaging ahead of the shards, which would
+    # otherwise take every runner and hold back the packaging and the boot tests.
+    needs: [web-ssr, web-lambda-build]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
-      # 13 browser and 5 account jobs at a time leave 2 of the 20 runners to the Lambda's packaging
-      # and boot tests and to the summary jobs, which otherwise wait behind every shard.
-      max-parallel: 13
       matrix:
         shard: ${{ fromJSON(needs.web-ssr.outputs.browser-shards) }}
     env:
@@ -294,12 +292,11 @@ jobs:
 
   web-account:
     name: Test accounts (${{ matrix.shard }}/${{ strategy.job-total }})
-    needs: [web-ssr, web-fixture]
+    needs: [web-ssr, web-lambda-build, web-fixture]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
-      max-parallel: 5
       matrix:
         shard: ${{ fromJSON(needs.web-ssr.outputs.account-shards) }}
     env:
