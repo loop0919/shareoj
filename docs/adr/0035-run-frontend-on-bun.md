@@ -26,7 +26,9 @@ APIの関数は、すでにカスタムランタイムの`provided.al2023`で動
 
 - ランタイムを`provided.al2023`にする。zipにARM64版Bun、`bootstrap`、Runtime APIの受け口`lambda/runtime.mjs`を入れる。
 - ハンドラーの設定（`lambda/index.handler`）は変えない。zipは`nodejs22.x`でも動く。
-- ログは、Node.jsのランタイムと同じく時刻、リクエストID、レベルを付け、1回の出力を1つのイベントにする。
+- ログとエラーの扱いは、`nodejs22.x`のランタイムのクライアント（イメージの`/var/runtime`）にそろえる。
+- ログには時刻、リクエストID、レベルを付け、1回の出力を1つのイベントにする。
+- ハンドラーの外で起きた例外とPromiseの拒否は、実行中の呼び出しか初期化のエラーとして報告し、Node.jsと同じく129と128で終了する。次の呼び出しを受け取れないときも終了し、Lambdaに新しいランタイムを起動させる。
 - CIはarm64のランナーで、デプロイするzipを公式の`provided.al2023`イメージとRuntime Interface Emulatorで起動して確かめる。
 
 ### 移行で見つかった違いと対処
@@ -40,7 +42,8 @@ APIの関数は、すでにカスタムランタイムの`provided.al2023`で動
 | BunはテンプレートのASCII以外の文字を`\u`で持ち、`String.raw`に表れる | `String.raw`はASCIIだけにする。今の本番のバンドルに該当はない |
 | `Response.blob()`が、まれに`Content-Type`を落とす | アップロード画像の種類を、データの先頭のシグネチャで判定する |
 | `bun test`は`package.json`の`test`ではなくBunのテストランナーで、Playwrightのテストを読み込む | ブラウザーのテストは`bun run test`。`bun test`はBunのテストだけを対象にする |
-| Playwrightのイメージにunzipがなく、`oven-sh/setup-bun`が動かない | `bun_release.py`がBunを取得し、SHA-256を検証して入れる |
+| Playwrightのイメージにunzipがなく、`oven-sh/setup-bun`が動かない | `bun_release.py`がBunを取得し、SHA-256を検証して入れる。今はx86-64のマシンで起動テストのイメージにBunを入れるときに使う |
+| 自作のRuntime APIの受け口は、Node.jsのランタイムがするエラーの報告と終了、ログの見出し、`context`の項目を持たない | Node.jsのランタイムの実装に合わせる。ハンドラーがグローバルの`fetch`を置き換えても、Runtime APIとの通信は変わらない |
 
 ### 確かめたこと
 
@@ -49,6 +52,9 @@ APIの関数は、すでにカスタムランタイムの`provided.al2023`で動
 - SSR：同じビルドをNode.js 22とBunで動かし、69のURLのHTMLと共有画像がバイト単位で一致する（違いは比較用のポート番号だけ）。
 - 開発サーバー：同じURLの状態コードが、Node.jsの`nuxt dev`と一致する。
 - Lambda：Runtime Interface Emulatorでの初期化はBunが118〜126 ms、同じzipの`nodejs22.x`が199〜206 msだった（ローカル、zipのダウンロードは含まない）。
+- Lambdaの512 MBと同じ約0.29 vCPUとメモリ512 MBに絞ると、初期化はBunが中央値637 ms、`nodejs22.x`が1266 ms、初期化を含む最初のSSRは2767 msと3375 msだった（各5回）。
+- エラーの扱い：AWSの`nodejs:22`イメージと`provided.al2023`イメージで同じハンドラーを動かした。ハンドラーの例外、読み込み時の例外、ハンドラーの未定義、Promiseの拒否、捕まえていない例外、ログの6つで、応答とログの行が一致した（違うのはスタックの中身だけ）。
+- `TZ`：LambdaがすべてのランタイムでTZに設定する`:UTC`を、BunもNode.jsと同じくUTCとして読む。起動テストもこの値と関数のメモリで動かす。
 - Runtime APIの次の呼び出しは長く待つ。Bunの`fetch`は既定のまま330秒の応答を待ち切ったので、`timeout: false`のような指定は付けていない。
 
 ## 代替案
@@ -65,4 +71,4 @@ APIの関数は、すでにカスタムランタイムの`provided.al2023`で動
 - AWSプロバイダーは関数の設定をコードより先に更新する。ランタイムの切り替えとzipの入れ替えを同じデプロイで行うと、新しいランタイムで古いzipを起動する時間ができる。ランタイムを切り替えるコミット（「フロントエンドのLambdaをBunのカスタムランタイムに切り替える」）の1つ前までを先にpushしてデプロイし、残りは次のpushにする。
 - 戻すときは`infra/frontend/main.tf`の`runtime`を`nodejs22.x`にする。zipはそのまま動き、CIは両方のランタイムでzipを起動して確かめる。
 - 急いで戻すときは、先に`aws lambda update-function-configuration --function-name judge-dev-web --runtime nodejs22.x`で切り替え（数秒で終わる）、そのあと`main.tf`を戻してpushする。
-- zipが大きくなった分、コールドスタートが延びる可能性がある。切り替えの後、CloudWatchの`Init Duration`と`Max Memory Used`を切り替え前と比べる。
+- zipは大きくなったが、エミュレーターでは初期化が速くなった。本番の値は切り替えの後でないと測れないので、CloudWatchの`Init Duration`と`Max Memory Used`を切り替え前と比べる。

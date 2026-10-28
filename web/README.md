@@ -238,10 +238,13 @@ bun run test --config playwright.account.config.ts
 Cognitoの代わりにテスト用の署名鍵でトークンを発行し、実際のJWT検証、Go API、Nuxt、PostgreSQLを通して保存と再編集を確認する。
 テスト用の認証処理はGoの`_test.go`だけに含まれ、本番バイナリには入らない。
 
-CIではSSRを一度ビルドし、画面テストと実DBテストをそれぞれ複数のジョブに分けて実行する。
-ジョブの数は`.github/workflows/ci.yml`で決める。
+CIは各ジョブを30秒以内に収めるように分けている。
+SSRを一度ビルドし、画面テストと実DBテストをそれぞれ多数のジョブに分けて実行する。
+ジョブの数は`.github/workflows/ci.yml`の`browser=`と`account=`で決める。
 分け方は`scripts/shard-tests.mjs`が`tests/durations.json`の所要時間から決め、どのジョブもほぼ同じ時間で終わるようにする。
 所要時間の記録がないテストは中央値として数えるため、追加したテストもどれかのジョブで必ず実行される。
+テストのジョブは、チェックアウトの代わりにビルドのジョブが作るソースとSSRのアーカイブを使い、Bun、インストール済みの依存関係、Chromiumを1つのキャッシュから復元する。
+lockfileとの整合は、型チェックのジョブが毎回の`bun install --frozen-lockfile`で確かめる。
 実DBテストはジョブごとに独立したPostgreSQLを使い、同じDB内では1ワーカーで実行する。
 同じファイルのテストが別のジョブに分かれることがあるため、実DBテストは1件だけでも成功するように書く。
 Go APIのテスト用サーバーは一度だけビルドし、各ジョブで使い回す。
@@ -249,18 +252,20 @@ CIのwebのジョブは、失敗する`node`（`scripts/no-node/node`）をPATH�
 すべてのジョブが成功した場合だけ`Test SSR frontend`が成功し、デプロイへ進む。
 自動リトライは行わない。
 
-テストが増えてジョブの時間が偏ってきたら、手元で全体を実行して所要時間を記録し直す。
+テストが増えてジョブの時間が偏ってきたら、CIの所要時間を記録し直す。
+`record-durations`を選んでCIを手動で実行し、各ジョブのJSONレポートを取り込む。
+同じテストが複数の回にあれば、最も速い値を使う。
 
 ```console
-PLAYWRIGHT_JSON_OUTPUT_FILE=.build/browser.json bun run test --reporter=json
-PLAYWRIGHT_JSON_OUTPUT_FILE=.build/account.json bun run test --config playwright.account.config.ts --reporter=json
-bun scripts/shard-tests.mjs record .build/browser.json .build/account.json
+gh workflow run ci.yml --ref <ブランチ> -f record-durations=true
+gh run download <実行のID> -p 'durations-*' -D .build/durations
+bun scripts/shard-tests.mjs record .build/durations/*/durations.json
 ```
 
 CIの1ジョブを手元で再実行する場合は、`ci.yml`の`browser=`と同じ数で分け方を作り、対象の番号のリストを渡す。
 
 ```console
-bun scripts/shard-tests.mjs split playwright.config.ts 14 .build/shards/browser
+bun scripts/shard-tests.mjs split playwright.config.ts 44 .build/shards/browser
 bun run test --test-list .build/shards/browser/1.txt
 ```
 
