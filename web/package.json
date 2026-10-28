@@ -16,7 +16,8 @@
     "test": "bun --bun playwright test",
     "build:lambda": "OPENOJ_LAMBDA_BUILD=1 bun --bun nuxt build",
     "package:lambda": "bun run build:lambda && python3 scripts/package-lambda.py",
-    "test:lambda": "python3 -m unittest discover -s scripts -p 'test_*.py' && bun scripts/test-lambda.mjs",
+    "test:lambda": "python3 -m unittest discover -s scripts -p 'test_*.py' && bun test ./lambda/runtime.test.mjs && bun scripts/test-lambda.mjs",
+    "test:lambda-image": "bun scripts/test-lambda-image.mjs",
     "docs:screenshots": "bun --bun playwright test -c playwright.docs.config.ts"
   },
   "dependencies": {

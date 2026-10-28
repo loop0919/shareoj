@@ -71,7 +71,6 @@ jobs:
         run: bun test scripts/smoke-frontend.test.mjs
 
       - name: Upload frontend Lambda package
-        if: inputs.upload-deploy-artifacts
         uses: actions/upload-artifact@v7
         with:
           name: frontend-lambda
@@ -79,7 +78,35 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           compression-level: 0
+          # Deploys keep the repository default; other runs need it only for the arm64 boot test.
+          retention-days: ${{ inputs.upload-deploy-artifacts && '0' || '1' }}
           overwrite: true
+
+  web-lambda:
+    # Boot the exact zip that deploys in AWS's provided.al2023 image, on arm64 like the function.
+    name: Boot frontend Lambda on arm64
+    needs: web-build
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.0
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: web/package.json
+      - name: Keep Node.js out of the test
+        run: echo "$GITHUB_WORKSPACE/web/scripts/no-node" >> "$GITHUB_PATH"
+      - name: Download frontend Lambda package
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend-lambda
+          path: web/.build
+      - name: Boot the package in the Lambda runtime image
+        run: bun scripts/test-lambda-image.mjs .build/web.zip
 
   web-tests:
     name: Test frontend (${{ matrix.suite }}, ${{ matrix.shard }}/2)
@@ -157,7 +184,7 @@ jobs:
     # Keep the existing required check; every shard must succeed before it passes.
     name: Test SSR frontend
     if: ${{ always() }}
-    needs: [web-build, web-tests]
+    needs: [web-build, web-tests, web-lambda]
     runs-on: ubuntu-24.04
     timeout-minutes: 1
     steps:
@@ -165,7 +192,8 @@ jobs:
         env:
           BUILD_RESULT: ${{ needs.web-build.result }}
           TEST_RESULT: ${{ needs.web-tests.result }}
-        run: test "$BUILD_RESULT" = success && test "$TEST_RESULT" = success
+          LAMBDA_RESULT: ${{ needs.web-lambda.result }}
+        run: test "$BUILD_RESULT" = success && test "$TEST_RESULT" = success && test "$LAMBDA_RESULT" = success
 
   test:
     name: Test and package API

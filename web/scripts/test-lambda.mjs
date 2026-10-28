@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { readFile, readdir, mkdtemp, rm } from 'node:fs/promises'
+import { open, readFile, readdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
@@ -8,9 +8,19 @@ import { execFileSync } from 'node:child_process'
 import { createHmac } from 'node:crypto'
 
 // Test the shipped zip outside the repository so node_modules cannot hide missing files.
+const zip = fileURLToPath(new URL('../.build/web.zip', import.meta.url))
 const directory = await mkdtemp(join(tmpdir(), 'openoj-lambda-'))
-execFileSync('python3', ['-m', 'zipfile', '-e', fileURLToPath(new URL('../.build/web.zip', import.meta.url)), directory])
+execFileSync('python3', ['-m', 'zipfile', '-e', zip, directory])
 const bundle = pathToFileURL(`${directory}/`)
+// provided.al2023 executes bootstrap, which starts the bundled Bun; Lambda keeps the zip's modes.
+const modes = JSON.parse(execFileSync('python3', ['-c', 'import json, sys, zipfile; print(json.dumps({i.filename: i.external_attr >> 16 for i in zipfile.ZipFile(sys.argv[1]).infolist()}))', zip]))
+for (const name of ['bootstrap', 'bin/bun']) assert.equal(modes[name] & 0o777, 0o755, `${name} must be executable`)
+const elf = Buffer.alloc(20)
+const executable = await open(join(directory, 'bin/bun'))
+await executable.read(elf, 0, 20, 0)
+await executable.close()
+assert.equal(elf.subarray(0, 4).toString('hex'), '7f454c46')
+assert.equal(elf.readUInt16LE(18), 0xb7, 'The function runs on arm64')
 process.env.NODE_ENV = 'production'
 let judgeMaintenance = false
 

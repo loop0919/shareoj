@@ -1,0 +1,6 @@
+#!/bin/sh
+# Lambda's provided.al2023 runtime starts this file. Run the Runtime API client on the
+# bundled Bun without .env files or auto-install (the package is complete and read-only)
+# and without the transpiler cache (only /tmp is writable).
+export BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
+exec "$LAMBDA_TASK_ROOT/bin/bun" --no-env-file --no-install "$LAMBDA_TASK_ROOT/lambda/runtime.mjs"
