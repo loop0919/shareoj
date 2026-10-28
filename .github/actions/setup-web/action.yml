@@ -11,6 +11,12 @@ runs:
     - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       with:
         bun-version-file: web/package.json
+    - name: Check the Bun version
+      shell: bash
+      run: |
+        expected=$(bun -p 'require("./web/package.json").packageManager')
+        actual="bun@$(bun --version)"
+        [ "$actual" = "$expected" ] || { echo "::error::setup-bun installed $actual, but web/package.json pins $expected"; exit 1; }
     - name: Keep Node.js out
       shell: bash
       run: echo "$GITHUB_WORKSPACE/web/scripts/no-node" >> "$GITHUB_PATH"
