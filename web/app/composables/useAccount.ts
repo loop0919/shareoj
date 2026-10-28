@@ -15,13 +15,16 @@ export function useAccount() {
     user.value = result.user
     return result.user
   }
-  async function logout() {
-    const result = await $fetch<{ logoutUrl?: string } | undefined>('/api/auth/logout', { method: 'POST' })
+  // After the server has ended the session, Cognito clears its own sign-in cookie
+  // and sends the browser on to the page; without Google login there is none to clear.
+  async function signedOut(result: { logoutUrl?: string } | undefined, page: '/login' | '/') {
     user.value = null
     profile.value = null
-    // Cognito clears its own sign-in cookie, then sends the browser back to /login.
     if (result?.logoutUrl) return navigateTo(result.logoutUrl, { external: true })
-    await navigateTo('/login')
+    await navigateTo(page)
   }
-  return { user, profile, refreshAccount, refreshProfile, logout }
+  async function logout() {
+    await signedOut(await $fetch<{ logoutUrl?: string } | undefined>('/api/auth/logout', { method: 'POST' }), '/login')
+  }
+  return { user, profile, refreshAccount, refreshProfile, logout, signedOut }
 }

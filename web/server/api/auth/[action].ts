@@ -29,7 +29,7 @@ export default defineEventHandler(async event => {
   requireSameOrigin(event)
   if (action === 'logout') {
     clearPrivateSession(event)
-    const logoutUrl = cognitoLogoutUrl(event)
+    const logoutUrl = cognitoLogoutUrl(event, '/login')
     return logoutUrl ? { user: null, logoutUrl } : { user: null }
   }
   const body = await limitedJSON(event, 16 << 10)

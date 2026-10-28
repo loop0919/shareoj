@@ -100,6 +100,26 @@ test('deletion asks for the handle and explains a contest whose results are not 
   await expect(page.locator('.site-header').getByRole('link', { name: 'ログイン', exact: true })).toBeVisible()
 })
 
+test('deletion passes through the Cognito logout the server returns', async ({ page }) => {
+  const cognito = 'https://example.auth.ap-northeast-1.amazoncognito.com'
+  let visited = ''
+  await page.route('**/api/my/account', route => route.request().method() !== 'DELETE'
+    ? route.fallback()
+    : route.fulfill({ json: { logoutUrl: `${cognito}/logout?client_id=c` } }))
+  await page.route(`${cognito}/**`, route => {
+    visited = route.request().url()
+    return route.fulfill({ status: 302, headers: { location: 'http://127.0.0.1:13000/' } })
+  })
+  await page.goto('/my/settings?tab=deletion')
+  await page.getByLabel(/確認のため/).fill('ui_test')
+  // The top page loads afresh after Cognito, so it must see the signed-out state.
+  await page.route('**/api/auth/me', route => route.fulfill({ json: { user: null } }))
+  await page.getByRole('button', { name: 'アカウントを削除', exact: true }).click()
+  await expect(page).toHaveURL('http://127.0.0.1:13000/')
+  expect(visited).toBe(`${cognito}/logout?client_id=c`)
+  await expect(page.locator('.site-header').getByRole('link', { name: 'ログイン', exact: true })).toBeVisible()
+})
+
 test('deleted authors read as a former user without a profile link', async ({ page }) => {
   await page.route('**/api/my/contests/drafts**', route => route.fulfill({ json: { items: [], hasMore: false } }))
   await page.route('**/api/my/contests?**', route => route.fulfill({ json: { items: [{ id: 'ffffffff-ffff-4fff-8fff-ffffffffffff', author: 'deleted_0123456789a', problemAuthors: [], testers: [], title: '残ったコンテスト', description: '', startsAt: '2026-09-01T00:00:00Z', endsAt: '2026-09-01T02:00:00Z', penaltyMinutes: 5, version: 1, status: 'ended', canEdit: false, participating: false, official: false, canViewSubmissions: true, problems: [] }], hasMore: false } }))

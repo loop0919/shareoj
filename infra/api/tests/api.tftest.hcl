@@ -191,7 +191,7 @@ run "google_contract" {
       aws_cognito_user_pool_client.api.allowed_oauth_flows_user_pool_client &&
       aws_cognito_user_pool_client.api.allowed_oauth_flows == toset(["code"]) &&
       aws_cognito_user_pool_client.api.callback_urls == toset(["https://judge.example/auth/google/callback", "http://localhost:3000/auth/google/callback"]) &&
-      aws_cognito_user_pool_client.api.logout_urls == toset(["https://judge.example/login", "http://localhost:3000/login"]) &&
+      aws_cognito_user_pool_client.api.logout_urls == toset(["https://judge.example/login", "https://judge.example/", "http://localhost:3000/login", "http://localhost:3000/"]) &&
       contains(aws_cognito_user_pool_client.api.supported_identity_providers, "Google") &&
       aws_cognito_identity_provider.google[0].user_pool_id == aws_cognito_user_pool.users.id
     )
@@ -210,7 +210,7 @@ run "production_google_callback" {
   assert {
     condition = (
       aws_cognito_user_pool_client.api.callback_urls == toset(["https://judge.example/auth/google/callback"]) &&
-      aws_cognito_user_pool_client.api.logout_urls == toset(["https://judge.example/login"]) &&
+      aws_cognito_user_pool_client.api.logout_urls == toset(["https://judge.example/login", "https://judge.example/"]) &&
       aws_cognito_user_pool_client.api.default_redirect_uri == "https://judge.example/auth/google/callback"
     )
     error_message = "Production must only allow the deployed callback and logout return."

@@ -51,7 +51,10 @@ test('password changes and account deletion keep public work under an anonymous 
   await page.getByLabel(/確認のため/).fill('leave')
   await expect(remove).toBeDisabled()
   await page.getByLabel(/確認のため/).fill('leaver')
+  // The Cognito sign-in cookie must not outlive the account either.
+  const cognitoLogout = page.waitForRequest(/amazoncognito\.com\/logout\?/)
   await remove.click()
+  expect(new URL((await cognitoLogout).url()).searchParams.get('logout_uri')).toBe(`${origin}/`)
   await expect(page).toHaveURL('/')
   await expect(page.locator('.site-header').getByRole('link', { name: 'ログイン', exact: true })).toBeVisible()
 

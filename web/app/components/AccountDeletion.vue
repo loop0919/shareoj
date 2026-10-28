@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { user, profile } = useAccount()
+const { profile, signedOut } = useAccount()
 const confirmation = ref('')
 const busy = ref(false)
 const error = ref('')
@@ -7,9 +7,7 @@ async function remove() {
   if (busy.value || !profile.value || confirmation.value !== profile.value.handle) return
   busy.value = true; error.value = ''
   try {
-    await $fetch('/api/my/account', { method: 'DELETE', body: { handle: confirmation.value } })
-    user.value = null; profile.value = null
-    await navigateTo('/')
+    await signedOut(await $fetch<{ logoutUrl?: string } | undefined>('/api/my/account', { method: 'DELETE', body: { handle: confirmation.value } }), '/')
   } catch (e) {
     const failure = e as { data?: { data?: { code?: string } } }
     const code = failure.data?.data?.code
