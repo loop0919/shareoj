@@ -33,7 +33,8 @@ with ZipFile(archive, 'w', ZIP_DEFLATED) as bundle:
         info = ZipInfo(name)
         info.create_system = 3  # Unix, so that Lambda reads the mode below.
         info.external_attr = 0o100755 << 16
-        bundle.writestr(info, data, compress_type=ZIP_DEFLATED)
+        # Level 1 compresses the 107 MB Bun in about a third of the time for 6% more bytes.
+        bundle.writestr(info, data, compress_type=ZIP_DEFLATED, compresslevel=1)
     unpacked = sum(entry.file_size for entry in bundle.infolist())
 # Lambda refuses a package over 250 MB unzipped.
 if unpacked >= 250 * 1024 * 1024:

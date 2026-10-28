@@ -12,11 +12,13 @@ on:
 permissions:
   contents: read
 
+# Each job is short: work that does not depend on another job runs beside it, and the
+# browser suites are split across runners.
 jobs:
-  web-build:
+  web-ssr:
     name: Build SSR frontend
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 5
     outputs:
       playwright-version: ${{ steps.playwright.outputs.version }}
     defaults:
@@ -25,16 +27,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7.0.0
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: web/package.json
-      - name: Keep Node.js out of the build
-        run: echo "$GITHUB_WORKSPACE/web/scripts/no-node" >> "$GITHUB_PATH"
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-      - name: Check types
-        run: bun run typecheck
+      - name: Set up Bun and dependencies
+        uses: ./.github/actions/setup-web
       - name: Build SSR server
         run: bun run build
       - name: Read Playwright version
@@ -52,24 +46,40 @@ jobs:
           compression-level: 0
           retention-days: 1
           overwrite: true
-      - name: Build and test frontend Lambda
-        run: |
-          bun run package:lambda
-          bun run test:lambda
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.16.0
-          terraform_wrapper: false
-      - name: Validate frontend infrastructure
-        working-directory: infra/frontend
-        run: |
-          terraform init -backend=false -input=false -lockfile=readonly
-          terraform validate
-          terraform test
-      - name: Test deployment smoke checks
-        run: bun test scripts/smoke-frontend.test.mjs
 
+  web-check:
+    name: Check frontend types and scripts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.0
+      - name: Set up Bun and dependencies
+        uses: ./.github/actions/setup-web
+      - name: Check types
+        run: bun run typecheck
+      - name: Test the Lambda runtime client and the deployment smoke checks
+        run: bun test
+      - name: Test the pinned Bun release
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
+
+  web-lambda:
+    name: Package frontend Lambda
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.0
+      - name: Set up Bun and dependencies
+        uses: ./.github/actions/setup-web
+      - name: Build and package frontend Lambda
+        run: bun run package:lambda
       - name: Upload frontend Lambda package
         uses: actions/upload-artifact@v7
         with:
@@ -78,16 +88,46 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           compression-level: 0
-          # Deploys keep the repository default; other runs need it only for the arm64 boot test.
+          # Deploys keep the repository default; other runs need it only for the boot tests.
           retention-days: ${{ inputs.upload-deploy-artifacts && '0' || '1' }}
           overwrite: true
 
-  web-lambda:
-    # Boot the exact zip that deploys in AWS's provided.al2023 image, on arm64 like the function.
-    name: Boot frontend Lambda on arm64
-    needs: web-build
+  web-infra:
+    name: Validate frontend infrastructure
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: infra/frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.0
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.0
+          terraform_wrapper: false
+      - name: Validate and test frontend infrastructure
+        run: |
+          terraform init -backend=false -input=false -lockfile=readonly
+          terraform validate
+          terraform test
+
+  web-lambda-boot:
+    # Boot the exact zip that deploys, on arm64 like the function: in the provided.al2023 image
+    # it runs on, and on nodejs22.x, which the switch to Bun and its rollback rely on.
+    name: Boot frontend Lambda (${{ matrix.runtime }})
+    needs: web-lambda
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 10
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runtime: provided.al2023
+            image: public.ecr.aws/lambda/provided:al2023
+          - runtime: nodejs22.x
+            image: public.ecr.aws/lambda/nodejs:22
     defaults:
       run:
         working-directory: web
@@ -95,44 +135,88 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7.0.0
       - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        uses: ./.github/actions/setup-web
         with:
-          bun-version-file: web/package.json
-      - name: Keep Node.js out of the test
-        run: echo "$GITHUB_WORKSPACE/web/scripts/no-node" >> "$GITHUB_PATH"
+          install: 'false'
       - name: Download frontend Lambda package
         uses: actions/download-artifact@v8
         with:
           name: frontend-lambda
           path: web/.build
+      - name: Test the packaged handler
+        if: matrix.runtime == 'provided.al2023'
+        run: bun scripts/test-lambda.mjs
       - name: Boot the package in the Lambda runtime image
-        run: bun scripts/test-lambda-image.mjs .build/web.zip
-      - name: Boot the same package on the Node.js runtime
-        # The switch to provided.al2023 and its rollback both rely on this zip running on nodejs22.x.
-        run: bun scripts/test-lambda-image.mjs .build/web.zip public.ecr.aws/lambda/nodejs:22
+        run: bun scripts/test-lambda-image.mjs .build/web.zip ${{ matrix.image }}
 
-  web-tests:
-    name: Test frontend (${{ matrix.suite }}, ${{ matrix.shard }}/2)
-    needs: web-build
+  web-browser:
+    name: Test browser (${{ matrix.shard }}/8)
+    needs: web-ssr
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    env:
+      PLAYWRIGHT_HTML_OPEN: never
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.0
+      - name: Set up Bun and dependencies
+        uses: ./.github/actions/setup-web
+      - name: Install a Japanese font
+        # The runner has Chrome's libraries but no CJK font; use the font the share images ship.
+        run: |
+          mkdir -p ~/.local/share/fonts
+          cp server/assets/fonts/ipaexg.ttf ~/.local/share/fonts/
+          fc-cache -f ~/.local/share/fonts
+      - name: Restore Chromium
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ needs.web-ssr.outputs.playwright-version }}
+      - name: Install Chromium
+        run: bun --bun playwright install --only-shell chromium
+      - name: Download SSR server
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend-ssr
+          path: web/.build
+      - name: Extract SSR server
+        run: tar -xzf .build/ssr.tar.gz
+      - name: Run browser tests
+        run: bun --bun playwright test --shard=${{ matrix.shard }}/8 --workers=4 --reporter=dot,html
+      - name: Upload browser report and failure traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-browser-${{ matrix.shard }}
+          path: |
+            web/playwright-report/
+            web/test-results/
+          retention-days: 7
+          overwrite: true
+
+  web-account:
+    name: Test accounts (${{ matrix.shard }}/2)
+    needs: web-ssr
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        suite: [browser, account]
         shard: [1, 2]
-        include:
-          - suite: browser
-            config: playwright.config.ts
-          - suite: account
-            config: playwright.account.config.ts
     # Match the lockfile so browsers and OS libraries are ready without apt downloads.
     container:
-      image: mcr.microsoft.com/playwright:v${{ needs.web-build.outputs.playwright-version }}-noble
+      image: mcr.microsoft.com/playwright:v${{ needs.web-ssr.outputs.playwright-version }}-noble
       options: --ipc=host
     services:
       postgres:
-        image: ${{ matrix.suite == 'account' && 'postgres:17' || '' }}
+        image: postgres:17
         env:
           POSTGRES_USER: openoj_test
           POSTGRES_PASSWORD: test-only-password
@@ -150,7 +234,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7.0.0
       - name: Set up Go
-        if: matrix.suite == 'account'
         uses: actions/setup-go@v7.0.0
         with:
           go-version-file: api/go.mod
@@ -169,34 +252,31 @@ jobs:
           path: web/.build
       - name: Extract SSR server
         run: tar -xzf .build/ssr.tar.gz
-      - name: Run browser tests
-        run: bun --bun playwright test --config ${{ matrix.config }} --shard=${{ matrix.shard }}/2 --reporter=dot,html
+      - name: Run account tests
+        run: bun --bun playwright test --config playwright.account.config.ts --shard=${{ matrix.shard }}/2 --reporter=dot,html
       - name: Upload browser report and failure traces
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-${{ matrix.suite }}-${{ matrix.shard }}
+          name: playwright-account-${{ matrix.shard }}
           path: |
             web/playwright-report/
-            web/test-results/
             web/test-results-account/
           retention-days: 7
           overwrite: true
 
   web:
-    # Keep the existing required check; every shard must succeed before it passes.
+    # Keep the existing required check; every frontend job must succeed before it passes.
     name: Test SSR frontend
     if: ${{ always() }}
-    needs: [web-build, web-tests, web-lambda]
+    needs: [web-ssr, web-check, web-lambda, web-infra, web-lambda-boot, web-browser, web-account]
     runs-on: ubuntu-24.04
     timeout-minutes: 1
     steps:
       - name: Require all frontend checks
         env:
-          BUILD_RESULT: ${{ needs.web-build.result }}
-          TEST_RESULT: ${{ needs.web-tests.result }}
-          LAMBDA_RESULT: ${{ needs.web-lambda.result }}
-        run: test "$BUILD_RESULT" = success && test "$TEST_RESULT" = success && test "$LAMBDA_RESULT" = success
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: for result in $RESULTS; do test "$result" = success; done
 
   test:
     name: Test and package API

@@ -1,0 +1,27 @@
+name: Set up web
+description: Bun from web/package.json, a failing node first on PATH, and the cached frontend dependencies.
+inputs:
+  install:
+    description: Install the frontend dependencies.
+    default: 'true'
+runs:
+  using: composite
+  steps:
+    # A third-party action in jobs that may assume the deploy role: pin the commit.
+    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      with:
+        bun-version-file: web/package.json
+    - name: Keep Node.js out
+      shell: bash
+      run: echo "$GITHUB_WORKSPACE/web/scripts/no-node" >> "$GITHUB_PATH"
+    - name: Restore the Bun install cache
+      if: inputs.install == 'true'
+      uses: actions/cache@v6.1.0
+      with:
+        path: ~/.bun/install/cache
+        key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('web/bun.lock') }}
+    - name: Install dependencies
+      if: inputs.install == 'true'
+      shell: bash
+      working-directory: web
+      run: bun install --frozen-lockfile
