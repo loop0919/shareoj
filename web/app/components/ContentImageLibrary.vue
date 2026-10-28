@@ -48,9 +48,9 @@ async function remove(id: string) {
 .image-library-heading { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .image-library-muted { color: var(--color-muted); }
 .image-add, .image-icon-button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
-.image-icon-button { width: var(--editor-control-size); padding: 4px; border-color: transparent; background: transparent; box-shadow: none; }
+.image-icon-button { width: var(--editor-control-size); padding: 4px; border-color: transparent; background: transparent; }
 .image-close { margin-left: auto; }
-.image-thumbnail { width: 150px; height: 90px; padding: 0; border-color: transparent; background: transparent; box-shadow: none; }
+.image-thumbnail { width: 150px; height: 90px; padding: 0; border-color: transparent; background: transparent; }
 .image-library-items { display: flex; gap: 12px; flex-wrap: wrap; }
 .image-library-item { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 150px; }
 .image-library-item img { display: block; width: 100%; height: 100%; object-fit: contain; }
