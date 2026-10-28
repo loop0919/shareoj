@@ -28,10 +28,12 @@ resource "aws_iam_role_policy" "logs" {
     }]
   })
 }
+# The zip's bootstrap runs the bundled Bun, which calls the handler (ADR 0035).
+# The same zip also runs on nodejs22.x, so switching back needs only the runtime.
 resource "aws_lambda_function" "web" {
   function_name                  = "${local.name}-web"
   description                    = "OpenOJ Nuxt SSR frontend"
-  runtime                        = "nodejs22.x"
+  runtime                        = "provided.al2023"
   handler                        = "lambda/index.handler"
   architectures                  = ["arm64"]
   memory_size                    = 512

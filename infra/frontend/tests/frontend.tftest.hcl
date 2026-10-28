@@ -14,7 +14,7 @@ run "frontend_contract" {
   assert {
     condition = (
       length(aws_lambda_function.web.vpc_config) == 0 &&
-      aws_lambda_function.web.runtime == "nodejs22.x" &&
+      aws_lambda_function.web.runtime == "provided.al2023" &&
       aws_lambda_function.web.handler == "lambda/index.handler" &&
       aws_lambda_function.web.architectures == tolist(["arm64"]) &&
       aws_lambda_function.web.memory_size == 512 &&
