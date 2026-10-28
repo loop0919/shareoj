@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { expect, test } from '../fixtures/cognito-logout'
 import { randomUUID } from 'node:crypto'
 
 const origin = 'http://127.0.0.1:13002'
@@ -38,6 +39,7 @@ test('password changes and account deletion keep public work under an anonymous 
   // The new password signs in; the old one no longer does.
   await page.locator('.site-header').getByRole('button', { name: 'アカウントメニュー', exact: true }).click()
   await page.getByRole('navigation', { name: 'アカウント', exact: true }).getByRole('button', { name: 'ログアウト', exact: true }).click()
+  await expect(page).toHaveURL('/login')
   await login(page, 'test-password')
   await expect(page.getByRole('alert')).toBeVisible()
   await login(page, 'New-password-123!')

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from '../fixtures/cognito-logout'
 
 test('new users must choose an ID, upload an icon, and can edit their persisted profile', async ({ page }, testInfo) => {
   await page.route('**/api/ratings/*?*', route => route.fulfill({ json: { rating: 1600, unavailable: false } }))

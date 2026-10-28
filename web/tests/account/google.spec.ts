@@ -26,6 +26,14 @@ test('Google authorization uses PKCE and a private short-lived state cookie', as
   expect(response.headers()['cache-control']).toBe('no-store')
 })
 
+test('logout also ends the Cognito session, so the next Google login can pick another account', async ({ context }) => {
+  const logout = await context.request.post('/api/auth/logout', { headers: { origin: 'http://127.0.0.1:13002' } })
+  expect(logout.ok()).toBe(true)
+  const url = new URL((await logout.json()).logoutUrl)
+  expect(url.origin + url.pathname).toBe('https://example.auth.ap-northeast-1.amazoncognito.com/logout')
+  expect(Object.fromEntries(url.searchParams)).toEqual({ client_id: 'browser-client', logout_uri: 'http://127.0.0.1:13002/login' })
+})
+
 test('unrequested, mismatched and cancelled callbacks cannot establish a session', async ({ context }) => {
   for (const kind of ['missing', 'mismatched', 'cancelled']) {
     let state = 'invalid'

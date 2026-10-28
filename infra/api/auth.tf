@@ -68,6 +68,11 @@ resource "aws_cognito_user_pool_client" "api" {
     [local.cognito_callback_url],
     var.environment == "dev" && var.google_client_id != "" ? ["http://localhost:3000/auth/google/callback"] : []
   )
+  # Logout ends Cognito's own sign-in cookie at /logout, which returns only to these pages.
+  logout_urls = var.google_client_id != "" ? concat(
+    ["${var.public_site_url}/login"],
+    var.environment == "dev" ? ["http://localhost:3000/login"] : []
+  ) : []
   # Keep the default and allowlist consistent when adopting existing clients.
   default_redirect_uri = local.cognito_callback_url
   depends_on           = [aws_cognito_identity_provider.google]

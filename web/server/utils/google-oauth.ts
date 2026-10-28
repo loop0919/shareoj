@@ -16,8 +16,19 @@ export function googleOAuthConfig(event: H3Event) {
       clientId: config.cognitoClientId,
       clientSecret: config.cognitoClientSecret,
       redirectUri: new URL('/auth/google/callback', config.public.siteUrl).href,
+      logoutUri: new URL('/login', config.public.siteUrl).href,
     }
   } catch { return null }
+}
+
+// Cognito keeps its own sign-in cookie, which skips Google and signs the next Google login
+// back in as the same account. Its /logout clears that cookie and returns to the login page.
+export function cognitoLogoutUrl(event: H3Event) {
+  const config = googleOAuthConfig(event)
+  if (!config) return null
+  const url = new URL('/logout', config.domain)
+  url.search = new URLSearchParams({ client_id: config.clientId, logout_uri: config.logoutUri }).toString()
+  return url.href
 }
 
 const tokenSchema = sessionTokensSchema.extend({ token_type: z.string().regex(/^Bearer$/i) })

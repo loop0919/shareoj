@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { googleOAuthConfig } from '../../utils/google-oauth'
+import { cognitoLogoutUrl, googleOAuthConfig } from '../../utils/google-oauth'
 import { privateAPI } from '../../utils/private-api'
 import { clearPrivateSession, saveSession, sessionTokensSchema, hasSession } from '../../utils/private-session'
 import { limitedJSON, privateHeaders, requireSameOrigin } from '../../utils/private-request'
@@ -29,7 +29,8 @@ export default defineEventHandler(async event => {
   requireSameOrigin(event)
   if (action === 'logout') {
     clearPrivateSession(event)
-    return { user: null }
+    const logoutUrl = cognitoLogoutUrl(event)
+    return logoutUrl ? { user: null, logoutUrl } : { user: null }
   }
   const body = await limitedJSON(event, 16 << 10)
   if (['signup', 'confirm-signup', 'resend-confirmation'].includes(action ?? '')) {

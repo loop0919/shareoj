@@ -18,6 +18,8 @@ test('login retains private refresh credentials and logout removes both cookies'
   expect(cookies.find(c => c.name === 'openoj_refresh')!.expires).toBeGreaterThan(Date.now() / 1000 + 29 * 86400)
   const logout = await context.request.post('/api/auth/logout', { headers: { Origin: origin } })
   expect(logout.ok()).toBe(true)
+  // Without Google login there is no Cognito session to end.
+  expect(await logout.json()).toEqual({ user: null })
   expect((await context.cookies()).filter(c => c.name.startsWith('openoj_'))).toEqual([])
 })
 

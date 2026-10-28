@@ -16,9 +16,11 @@ export function useAccount() {
     return result.user
   }
   async function logout() {
-    await $fetch('/api/auth/logout', { method: 'POST' })
+    const result = await $fetch<{ logoutUrl?: string } | undefined>('/api/auth/logout', { method: 'POST' })
     user.value = null
     profile.value = null
+    // Cognito clears its own sign-in cookie, then sends the browser back to /login.
+    if (result?.logoutUrl) return navigateTo(result.logoutUrl, { external: true })
     await navigateTo('/login')
   }
   return { user, profile, refreshAccount, refreshProfile, logout }
