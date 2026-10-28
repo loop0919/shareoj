@@ -238,11 +238,12 @@ bun run test --config playwright.account.config.ts
 Cognitoの代わりにテスト用の署名鍵でトークンを発行し、実際のJWT検証、Go API、Nuxt、PostgreSQLを通して保存と再編集を確認する。
 テスト用の認証処理はGoの`_test.go`だけに含まれ、本番バイナリには入らない。
 
-CIは、各ジョブが30秒以内に終わることを目安に分けている。
-ランナーの速さは回ごとに違い、遅いランナーに当たったジョブは30秒を数秒超えることがある。
-ジョブを増やすほど準備の時間が重なり、同時に動くのは20ジョブまでなので、CI全体の時間はジョブの少ない構成より長くなる。
-SSRを一度ビルドし、画面テストと実DBテストをそれぞれ多数のジョブに分けて実行する。
+CIは、全体が最も早く終わるように分けている。
+SSRを一度ビルドし、画面テストと実DBテストをそれぞれ複数のジョブに分けて実行する。
 ジョブの数は`.github/workflows/ci.yml`の`browser=`と`account=`で決める。
+同時に動くのは20ジョブまでで、ジョブごとに準備が約12秒かかる。
+そのため、分割はほかのジョブと合わせて一度に動ける数にとどめる。
+画面テストを44、実DBテストを14に分けると各ジョブは30秒前後になったが、全体は約150秒かかり、今の構成より長かった。
 分け方は`scripts/shard-tests.mjs`が`tests/durations.json`の所要時間から決め、どのジョブもほぼ同じ時間で終わるようにする。
 所要時間の記録がないテストは中央値として数えるため、追加したテストもどれかのジョブで必ず実行される。
 テストのジョブは、チェックアウトの代わりにビルドのジョブが作るソースとSSRのアーカイブを使い、Bun、インストール済みの依存関係、Chromiumを1つのキャッシュから復元する。
@@ -267,7 +268,7 @@ bun scripts/shard-tests.mjs record .build/durations/*/durations.json
 CIの1ジョブを手元で再実行する場合は、`ci.yml`の`browser=`と同じ数で分け方を作り、対象の番号のリストを渡す。
 
 ```console
-bun scripts/shard-tests.mjs split playwright.config.ts 44 .build/shards/browser
+bun scripts/shard-tests.mjs split playwright.config.ts 14 .build/shards/browser
 bun run test --test-list .build/shards/browser/1.txt
 ```
 

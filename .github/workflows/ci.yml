@@ -21,9 +21,9 @@ on:
 permissions:
   contents: read
 
-# Each job aims to end within 30 seconds: jobs that do not need each other run side by side, test
-# jobs restore what they need from one cache, and the browser suites are split into shards of
-# about equal running time (web/scripts/shard-tests.mjs).
+# The whole run is kept short: jobs that do not need each other run side by side, test jobs
+# restore what they need from one cache, and the browser suites are split into shards of about
+# equal running time (web/scripts/shard-tests.mjs).
 jobs:
   web-ssr:
     name: Build SSR frontend
@@ -45,9 +45,10 @@ jobs:
       - name: Build SSR server and split the browser tests
         id: build
         run: |
-          # The shard counts: enough that each test job, about 12 s of setup included, ends
-          # within 30 s. A run gets 20 runners at a time, so the shards run in waves.
-          browser=44 account=14
+          # The shard counts. A run gets 20 runners at a time, and every job spends about 12 s
+          # setting up: these shards fit beside the other jobs in one wave, which makes the whole
+          # run shortest. 44 and 14 kept each job near 30 s, but the run took about 150 s.
+          browser=14 account=4
           bun scripts/shard-tests.mjs split playwright.config.ts "$browser" .build/shards/browser & split_browser=$!
           bun scripts/shard-tests.mjs split playwright.account.config.ts "$account" .build/shards/account & split_account=$!
           bun run build
@@ -222,9 +223,7 @@ jobs:
 
   web-browser:
     name: Test browser (${{ matrix.shard }}/${{ strategy.job-total }})
-    # Waiting also for the Lambda build queues its packaging ahead of the shards, which would
-    # otherwise take every runner and hold back the packaging and the boot tests.
-    needs: [web-ssr, web-lambda-build]
+    needs: web-ssr
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
@@ -296,7 +295,7 @@ jobs:
 
   web-account:
     name: Test accounts (${{ matrix.shard }}/${{ strategy.job-total }})
-    needs: [web-ssr, web-lambda-build, web-fixture]
+    needs: [web-ssr, web-fixture]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
