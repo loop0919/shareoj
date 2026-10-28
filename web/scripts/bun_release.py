@@ -1,8 +1,8 @@
 """The Bun release that the dev shell, CI, and the Lambda package share.
 
 Usage: python3 scripts/bun_release.py install <directory>
-Installs bun and bunx for this machine where oven-sh/setup-bun cannot run, such as the
-Playwright image, which has no unzip.
+Installs bun and bunx built for this machine's CPU, such as into the Lambda image that
+scripts/test-lambda-image.mjs boots on an x86-64 machine.
 """
 import base64
 import hashlib
@@ -59,13 +59,16 @@ def binary(asset, cache):
     return zipfile.ZipFile(io.BytesIO(data)).read(f'{name}/bun')
 
 
-def host_asset():
-    machine = platform.machine()
+def host_asset(machine=None, cpuinfo=Path('/proc/cpuinfo')):
+    """The Linux build for this machine's CPU, for Linux itself or a Linux container on it."""
+    machine = machine or platform.machine()
     if machine in ('aarch64', 'arm64'):
         return 'bun-linux-aarch64.zip'
     if machine == 'x86_64':
-        # The same check as Bun's installer: the default build needs AVX2.
-        return 'bun-linux-x64.zip' if 'avx2' in Path('/proc/cpuinfo').read_text() else 'bun-linux-x64-baseline.zip'
+        # The same check as Bun's installer: the default build needs AVX2. Without /proc, as on
+        # macOS, take the baseline build, which runs on every x86-64 CPU.
+        avx2 = cpuinfo.exists() and 'avx2' in cpuinfo.read_text()
+        return 'bun-linux-x64.zip' if avx2 else 'bun-linux-x64-baseline.zip'
     raise SystemExit(f'Unsupported machine: {machine}')
 
 

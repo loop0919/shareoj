@@ -68,5 +68,27 @@ class BinaryTest(unittest.TestCase):
             bun_release.binary('bun-linux-aarch64.zip', cache)
 
 
+class HostAssetTest(unittest.TestCase):
+    def cpuinfo(self, text):
+        path = Path(tempfile.mkdtemp()) / 'cpuinfo'
+        self.addCleanup(shutil.rmtree, path.parent)
+        path.write_text(text)
+        return path
+
+    def test_picks_the_build_for_the_cpu(self):
+        self.assertEqual(bun_release.host_asset('aarch64'), 'bun-linux-aarch64.zip')
+        self.assertEqual(bun_release.host_asset('arm64'), 'bun-linux-aarch64.zip')
+        self.assertEqual(bun_release.host_asset('x86_64', self.cpuinfo('flags : sse4_2 avx avx2')), 'bun-linux-x64.zip')
+        self.assertEqual(bun_release.host_asset('x86_64', self.cpuinfo('flags : sse4_2 avx')), 'bun-linux-x64-baseline.zip')
+
+    def test_falls_back_to_the_baseline_build_without_proc(self):
+        # macOS has no /proc; the baseline build runs on every x86-64 CPU.
+        self.assertEqual(bun_release.host_asset('x86_64', Path(tempfile.gettempdir()) / 'no-such-cpuinfo'), 'bun-linux-x64-baseline.zip')
+
+    def test_rejects_another_machine(self):
+        with self.assertRaisesRegex(SystemExit, 'riscv64'):
+            bun_release.host_asset('riscv64')
+
+
 if __name__ == '__main__':
     unittest.main()
