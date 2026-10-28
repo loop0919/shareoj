@@ -22,8 +22,8 @@ function japanDate(value: number) {
   return new Date(value + 9 * 60 * 60 * 1000).toISOString().slice(0, 16)
 }
 
-test('create, reorder and edit an unpublished contest; guests cannot inspect its problems', async ({ page, browser }, testInfo) => {
-  // This covers creation, editing and multiple viewport checks against the real DB.
+test('a contest is created in the editor, its problems reordered and pointed, and published', async ({ page }, testInfo) => {
+  // Creation and the editor at every width, against the real DB. The next test opens such a contest.
   test.slow()
   await login(page)
   const first = await seed(page, 'コンテスト選択A')
@@ -86,6 +86,22 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   await page.goto(`/contests/${id}/problems/${first}`)
   // Reordered second, the problem carries its letter (ADR 0034).
   await expect(page.getByRole('heading', { name: 'B - コンテスト選択A', exact: true })).toBeVisible()
+})
+
+test('a published contest\'s views fit every width, edit in place, and keep unstarted problems from guests', async ({ page, browser }, testInfo) => {
+  // The contest the editor publishes in the test above, saved through the API under other titles,
+  // so that the two tests can share a database.
+  test.slow()
+  await login(page)
+  const first = await seed(page, 'コンテスト表示A')
+  const second = await seed(page, 'コンテスト表示B')
+  const id = randomUUID()
+  const startsAt = Date.now() + 86400000
+  expect((await page.request.put(`/api/my/contests/${id}`, { headers: { origin }, data: {
+    title: 'ブラウザ表示コンテスト', description: '## 開催案内\nどなたでも参加できます。', version: 0,
+    startsAt: new Date(startsAt).toISOString(), endsAt: new Date(startsAt + 3600000).toISOString(),
+    problems: [{ id: second, points: 100 }, { id: first, points: 300 }],
+  } })).status()).toBe(200)
   await page.goto(`/contests/${id}`)
   const contestMenu = page.getByRole('navigation', { name: 'コンテストメニュー' })
   for (const width of [1280, 320, 375, 414, 768]) {
@@ -110,7 +126,7 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   await page.reload()
   await expect(page.getByRole('heading', { name: '公式順位表', exact: true })).toBeVisible()
   await contestMenu.getByRole('link', { name: '問題', exact: true }).click()
-  await expect(page.getByRole('region', { name: 'コンテストの問題', exact: true })).toContainText('コンテスト選択A')
+  await expect(page.getByRole('region', { name: 'コンテストの問題', exact: true })).toContainText('コンテスト表示A')
   await expect(page.getByRole('heading', { name: '公式順位表', exact: true })).toHaveCount(0)
   await contestMenu.getByText('提出', { exact: true }).click()
   await contestMenu.getByRole('link', { name: 'すべての提出', exact: true }).click()
@@ -163,7 +179,7 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   await page.goBack()
   await expect(page).toHaveURL(`/my/contests/${shortId(id)}`)
   await expect(page.locator('.site-shell')).toHaveClass(/site-shell--editor/)
-  await expect(page.getByLabel('コンテストタイトル', { exact: true })).toHaveValue('ブラウザ作成コンテスト')
+  await expect(page.getByLabel('コンテストタイトル', { exact: true })).toHaveValue('ブラウザ表示コンテスト')
   await page.reload()
   await expect(page.locator('.site-shell')).toHaveClass(/site-shell--editor/)
   await expect(page.locator('.site-header')).toHaveCount(0)
@@ -174,7 +190,8 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   await page.goto('/my/contests')
   await expect(page).toHaveURL('/my?tab=contests')
   await expect(page.getByRole('button', { name: 'コンテスト', exact: true })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByRole('link', { name: 'ブラウザ作成コンテスト', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'ブラウザ表示コンテスト', exact: true })).toBeVisible()
+  const tabs = page.getByRole('navigation', { name: 'マイページのコンテンツ' })
   for (const width of [320, 375, 414, 768]) {
     await page.setViewportSize({ width, height: 900 })
     await expect(tabs.getByRole('button', { name: 'コンテスト', exact: true })).toBeVisible()
@@ -186,7 +203,7 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   const guest = await browser.newContext({ baseURL: origin })
   const reader = await guest.newPage()
   await reader.goto(`/contests/${id}`)
-  await expect(reader.getByRole('heading', { name: 'ブラウザ作成コンテスト' })).toBeVisible()
+  await expect(reader.getByRole('heading', { name: 'ブラウザ表示コンテスト' })).toBeVisible()
   await reader.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '問題', exact: true }).click()
   await expect(reader.getByText('問題文は開始時刻に公開されます。')).toBeVisible()
   const hidden = reader.locator('.contest-problems tbody tr')
@@ -197,7 +214,7 @@ test('create, reorder and edit an unpublished contest; guests cannot inspect its
   const publicContest = await (await guest.request.get(`/api/contests/${id}`)).text()
   expect(publicContest).not.toContain(first)
   expect(publicContest).not.toContain(second)
-  expect(publicContest).not.toContain('コンテスト選択A')
+  expect(publicContest).not.toContain('コンテスト表示A')
   await reader.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '順位表', exact: true }).click()
   await expect(reader.locator('.standings-table thead th')).toHaveText(['順位', 'ユーザー', '得点', '時間', 'A', 'B'])
   await expect(reader.locator('.standings-table thead a')).toHaveCount(0)
