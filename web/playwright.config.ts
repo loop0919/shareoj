@@ -10,14 +10,15 @@ export default defineConfig({
   use: { baseURL: 'http://127.0.0.1:13000', trace: 'retain-on-failure' },
   // Wait for each server's ready line instead of a URL: a URL makes Playwright probe the
   // port first, and on WSL mirrored networking a closed port times out after about two minutes.
+  // Name Bun, not node: a runner started without Bun's node alias would test Node.js instead.
   webServer: [
     {
-      command: 'node tests/fixtures/public-api.mjs',
+      command: 'bun tests/fixtures/public-api.mjs',
       wait: { stdout: /fixture API ready/ },
       timeout: 120_000,
     },
     {
-      command: 'node .output/server/index.mjs',
+      command: 'bun .output/server/index.mjs',
       env: {
         HOST: '127.0.0.1', PORT: '13000',
         NUXT_API_BASE_URL: 'http://127.0.0.1:18080',
@@ -26,11 +27,11 @@ export default defineConfig({
       wait: { stdout: /Listening on/ },
     },
     {
-      command: 'node tests/fixtures/failing-api.mjs',
+      command: 'bun tests/fixtures/failing-api.mjs',
       wait: { stdout: /failing API ready/ },
     },
     {
-      command: 'node .output/server/index.mjs',
+      command: 'bun .output/server/index.mjs',
       env: {
         HOST: '127.0.0.1', PORT: '13001',
         NUXT_API_BASE_URL: 'http://127.0.0.1:18081',

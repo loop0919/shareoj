@@ -19,6 +19,10 @@ export default defineNuxtConfig({
     ...(process.env.OPENOJ_LAMBDA_BUILD === '1' ? { preset: 'aws-lambda', output: { dir: '.output-lambda' } } : {}),
   },
   devtools: { enabled: false },
+  // Bun reports `__esModule` on ES module namespaces, so vite-node's interop in `nuxt dev`
+  // swaps zod's exports for its default (the `z` namespace) and `z` goes missing. Let Vite
+  // transform zod instead. Builds bundle zod and are unaffected.
+  $development: { vite: { ssr: { noExternal: ['zod'] } } },
   routeRules: Object.fromEntries(Object.entries(legacyDocPaths).map(([path, slug]) => [path, { redirect: { to: docPath(slug), statusCode: 301 } }])),
   css: ['katex/dist/katex.min.css', '~/assets/css/main.css', '~/assets/css/editor.css', '~/assets/css/blog.css'],
   runtimeConfig: {

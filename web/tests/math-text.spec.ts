@@ -2,7 +2,8 @@ import { expect, test } from '@playwright/test'
 import { renderMathText } from '../app/utils/math-text'
 
 test('mixed prose, inline math, display math, and escaped dollars', () => {
-  const parts = renderMathText(String.raw`価格は \$5。$x^2$ と $$\frac{a}{b}$$。`)
+  // Not String.raw: Bun's transpiler stores non-ASCII template text as \u escapes, which raw strings expose.
+  const parts = renderMathText('価格は \\$5。$x^2$ と $$\\frac{a}{b}$$。')
   expect(parts[0]).toEqual({ kind: 'text', text: '価格は $5。' })
   const math = parts.filter(part => part.kind === 'math')
   expect(math.map(part => part.display)).toEqual([false, true])
@@ -41,6 +42,7 @@ test('display math is rendered in SSR; invalid content is text; code stays liter
   const page = await context.newPage()
   const response = await page.goto('http://127.0.0.1:13001/problems/22222222-2222-4222-8222-222222222222')
   expect(response?.status()).toBe(200)
+  await expect(page.locator('.markdown-body p').first()).toContainText('合計は')
   await expect(page.locator('.katex-display')).toHaveCount(2)
   await expect(page.locator('.katex-display').first()).toBeVisible()
   await expect(page.locator('.markdown-body img, .markdown-body a')).toHaveCount(0)

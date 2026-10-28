@@ -8,7 +8,8 @@ createServer((req, res) => {
     res.end(JSON.stringify({
       id: '22222222-2222-4222-8222-222222222222', title: 'Math fixture', description: 'Math rendering test',
       markdown: [
-        String.raw`合計は $\sum_{i=1}^{n} a_i$ です。`,
+        // Keep raw strings ASCII: Bun's transpiler stores non-ASCII template text as \u escapes.
+        '合計は ' + String.raw`$\sum_{i=1}^{n} a_i$` + ' です。',
         String.raw`$$\frac{n(n+1)}{2} = \sum_{i=1}^{n} i$$`,
         '<img src=x onerror="alert(1)">',
         String.raw`$\unknownCommand{x}$`,

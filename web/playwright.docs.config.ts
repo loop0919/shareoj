@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test'
 
 // Regenerates the annotated screenshots in public/images/docs from fixture data.
-// Run `npm run build` first; the screenshots show the built app, not the dev server.
+// Run `bun run build` first; the screenshots show the built app, not the dev server.
 export default defineConfig({
   testDir: './docs-screenshots',
   workers: 1,
@@ -17,16 +17,16 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'node tests/fixtures/public-api.mjs',
+      command: 'bun tests/fixtures/public-api.mjs',
       wait: { stdout: /fixture API ready/ },
       timeout: 120_000,
     },
     {
-      command: 'node docs-screenshots/api.mjs',
+      command: 'bun docs-screenshots/api.mjs',
       wait: { stdout: /docs screenshot API ready/ },
     },
     {
-      command: 'node .output/server/index.mjs',
+      command: 'bun .output/server/index.mjs',
       env: {
         HOST: '127.0.0.1', PORT: '13000',
         NUXT_API_BASE_URL: 'http://127.0.0.1:18082',

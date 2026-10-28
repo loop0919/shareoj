@@ -101,13 +101,13 @@ try {
 
   const fingerprint = createHash('sha256')
     .update(readFileSync('web/package.json'))
-    .update(readFileSync('web/package-lock.json'))
-    .update(process.version)
+    .update(readFileSync('web/bun.lock'))
+    .update(process.versions.bun)
     .digest('hex')
   const stamp = 'web/node_modules/.dev-dependencies'
   if (!existsSync(stamp) || readFileSync(stamp, 'utf8') !== fingerprint) {
     console.log('Installing frontend dependencies…')
-    await run('npm', ['ci'], `${root}web`)
+    await run(process.execPath, ['install', '--frozen-lockfile'], `${root}web`)
     writeFileSync(stamp, fingerprint)
   }
 
@@ -146,7 +146,8 @@ try {
   await waitForAPI(apiPort)
   if (!stopping) {
     console.log(`\nWeb: http://localhost:${webPort}/\nAPI: http://localhost:${apiPort}/health\nStop both servers with Ctrl+C.\n`)
-    supervise(run(process.execPath, ['node_modules/nuxt/bin/nuxt.mjs', 'dev', '--host', '127.0.0.1', '--port', String(webPort)], `${root}web`, {
+    // The package script runs Nuxt with --bun, so its child processes also get Bun for `node`.
+    supervise(run(process.execPath, ['run', 'dev', '--host', '127.0.0.1', '--port', String(webPort)], `${root}web`, {
       ...process.env,
       PORT: String(webPort),
       NUXT_API_BASE_URL: `http://127.0.0.1:${apiPort}`,
