@@ -22,6 +22,8 @@ export default defineEventHandler(async (event) => {
     if (failure.statusCode !== 401 && failure.data?.code !== 'profile_required') throw error
     image = await privateAPI<Blob>(event, `/images/${id}`, { token: '' })
   }
+  // ofetch parses JSON and text, so anything but a Blob is not an image.
+  if (!(image instanceof Blob)) throw createError({ statusCode: 502 })
   const data = Buffer.from(await image.arrayBuffer())
   const type = signatures.find(([, signature]) => data.subarray(0, signature.length).equals(signature))?.[0]
   if (!type) throw createError({ statusCode: 502 })
