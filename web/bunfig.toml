@@ -1,3 +1,8 @@
 # Do not load .env files implicitly, as Node.js did not. Nuxt still reads web/.env in
 # `nuxt dev` and `nuxt build`; the built server and the tests see only their environment.
 env = false
+
+[test]
+# `bun test` runs the Bun tests (lambda/, scripts/). The browser tests are Playwright's:
+# run them with `bun run test`.
+pathIgnorePatterns = ["tests/**", "docs-screenshots/**"]
