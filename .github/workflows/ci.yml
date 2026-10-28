@@ -8,6 +8,11 @@ on:
         type: boolean
         default: false
   workflow_dispatch:
+    inputs:
+      record-durations:
+        description: Keep each browser test job's JSON report, for scripts/shard-tests.mjs record
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -38,7 +43,7 @@ jobs:
         run: |
           # The shard counts: enough that each test job, about 12 s of setup included, ends
           # within 30 s. A run gets 20 runners at a time, so the shards run in waves.
-          browser=36 account=10
+          browser=40 account=12
           bun scripts/shard-tests.mjs split playwright.config.ts "$browser" .build/shards/browser & split_browser=$!
           bun scripts/shard-tests.mjs split playwright.account.config.ts "$account" .build/shards/account & split_account=$!
           bun run build
@@ -51,12 +56,12 @@ jobs:
         # clones at once took up to half a minute each. Besides web, the tests read the CLI's
         # problem template, and the fixture runs in its package directory.
         working-directory: .
-        run: git ls-files -z web .github cli/problem-template.json api/internal/httpapi | tar --null -T - -czf "$RUNNER_TEMP/ssr.tar.gz" web/.output web/.build/shards
+        run: git ls-files -z web .github cli/problem-template.json api/internal/httpapi | tar --zstd --null -T - -cf "$RUNNER_TEMP/ssr.tar.zst" web/.output web/.build/shards
       - name: Upload the archive for the browser tests
         uses: actions/upload-artifact@v7
         with:
           name: frontend-ssr
-          path: ${{ runner.temp }}/ssr.tar.gz
+          path: ${{ runner.temp }}/ssr.tar.zst
           include-hidden-files: true
           if-no-files-found: error
           compression-level: 0
@@ -78,10 +83,6 @@ jobs:
         uses: ./.github/actions/setup-web
       - name: Check types
         run: bun run typecheck
-      - name: Test the Lambda runtime client, the deployment smoke checks and the test shards
-        run: bun test
-      - name: Test the pinned Bun release
-        run: python3 -m unittest discover -s scripts -p 'test_*.py'
 
   web-lambda-build:
     name: Build frontend Lambda
@@ -100,19 +101,20 @@ jobs:
       - name: Build the Lambda server
         run: |
           bun run build:lambda
-          tar -czf "$RUNNER_TEMP/lambda-output.tar.gz" .output-lambda
+          tar --zstd -cf "$RUNNER_TEMP/lambda-output.tar.zst" .output-lambda
       - name: Upload the Lambda server for packaging
         uses: actions/upload-artifact@v7
         with:
           name: frontend-lambda-output
-          path: ${{ runner.temp }}/lambda-output.tar.gz
+          path: ${{ runner.temp }}/lambda-output.tar.zst
           if-no-files-found: error
           compression-level: 0
           retention-days: 1
           overwrite: true
 
   web-lambda:
-    # Packaging is a job of its own, so that the build and the package each stay short.
+    # Packaging is a job of its own, so that the build and the package each stay short. It also
+    # runs the Bun and Python tests, which need no dependencies.
     name: Package frontend Lambda
     needs: web-lambda-build
     runs-on: ubuntu-24.04
@@ -123,6 +125,14 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7.0.0
+      - name: Set up Bun
+        uses: ./.github/actions/setup-web
+        with:
+          install: none
+      - name: Test the Lambda runtime client, the deployment smoke checks and the test shards
+        run: bun test
+      - name: Test the pinned Bun release
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - name: Restore the Bun release for the Lambda
         uses: actions/cache@v6.1.0
         with:
@@ -135,7 +145,7 @@ jobs:
           path: ${{ runner.temp }}
       - name: Package frontend Lambda
         run: |
-          tar -xzf "$RUNNER_TEMP/lambda-output.tar.gz"
+          tar --zstd -xf "$RUNNER_TEMP/lambda-output.tar.zst"
           python3 scripts/package-lambda.py
       - name: Upload frontend Lambda package
         uses: actions/upload-artifact@v7
@@ -224,7 +234,7 @@ jobs:
           name: frontend-ssr
           path: ${{ runner.temp }}
       - name: Extract the sources and the SSR server
-        run: tar -xzf "$RUNNER_TEMP/ssr.tar.gz"
+        run: tar --zstd -xf "$RUNNER_TEMP/ssr.tar.zst"
       - name: Set up Bun, dependencies and Chromium
         uses: ./.github/actions/setup-web
         with:
@@ -246,7 +256,7 @@ jobs:
           retention-days: 7
           overwrite: true
       - name: Upload the test durations
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.record-durations }}
         uses: actions/upload-artifact@v7
         with:
           name: durations-browser-${{ matrix.shard }}
@@ -267,7 +277,7 @@ jobs:
           cache-name: fixture
       - name: Build the fixture
         working-directory: api
-        run: go test -c -o .build/browser-fixture ./internal/httpapi
+        run: go test -c -ldflags='-s -w' -o .build/browser-fixture ./internal/httpapi
       - name: Upload the fixture
         uses: actions/upload-artifact@v7
         with:
@@ -292,8 +302,9 @@ jobs:
       PLAYWRIGHT_HTML_OPEN: never
     steps:
       - name: Start PostgreSQL
-        # In the background, so that the image downloads while the job sets up the rest.
-        run: nohup docker run --detach --name postgres --publish 127.0.0.1:5432:5432 --env POSTGRES_USER=openoj_test --env POSTGRES_PASSWORD=test-only-password --env POSTGRES_DB=openoj_test postgres:17 > "$RUNNER_TEMP/postgres.log" 2>&1 &
+        # In the background, so that the image downloads while the job sets up the rest. In memory
+        # and without sync: the tests check queries, not durability.
+        run: nohup docker run --detach --name postgres --publish 127.0.0.1:5432:5432 --tmpfs /var/lib/postgresql/data --env POSTGRES_USER=openoj_test --env POSTGRES_PASSWORD=test-only-password --env POSTGRES_DB=openoj_test --env POSTGRES_INITDB_ARGS=--no-sync postgres:17 -c fsync=off -c synchronous_commit=off -c full_page_writes=off > "$RUNNER_TEMP/postgres.log" 2>&1 &
       - name: Download the sources, the SSR server and the API fixture
         uses: actions/download-artifact@v8
         with:
@@ -302,7 +313,7 @@ jobs:
           path: ${{ runner.temp }}
       - name: Extract the sources and the SSR server
         run: |
-          tar -xzf "$RUNNER_TEMP/ssr.tar.gz"
+          tar --zstd -xf "$RUNNER_TEMP/ssr.tar.zst"
           chmod +x "$RUNNER_TEMP/browser-fixture"
       - name: Set up Bun, dependencies and Chromium
         uses: ./.github/actions/setup-web
@@ -316,7 +327,9 @@ jobs:
           PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/durations.json
         run: |
           # Over TCP: the image's first start answers only on its socket, then restarts.
-          timeout 90 sh -c 'until docker exec postgres pg_isready --host 127.0.0.1 --username openoj_test --dbname openoj_test > /dev/null 2>&1; do sleep 0.5; done' || { cat "$RUNNER_TEMP/postgres.log"; docker logs postgres; exit 1; }
+          waiting=$(date +%s)
+          timeout 90 sh -c 'until docker exec postgres pg_isready --host 127.0.0.1 --username openoj_test --dbname openoj_test > /dev/null 2>&1; do sleep 0.2; done' || { cat "$RUNNER_TEMP/postgres.log"; docker logs postgres; exit 1; }
+          echo "Waited $(($(date +%s) - waiting)) s for PostgreSQL"
           bun --bun playwright test --config playwright.account.config.ts --test-list .build/shards/account/${{ matrix.shard }}.txt --reporter=dot,html,json
       - name: Upload browser report and failure traces
         if: failure()
@@ -329,7 +342,7 @@ jobs:
           retention-days: 7
           overwrite: true
       - name: Upload the test durations
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.record-durations }}
         uses: actions/upload-artifact@v7
         with:
           name: durations-account-${{ matrix.shard }}
@@ -364,8 +377,9 @@ jobs:
       TEST_DATABASE_URL: postgresql://openoj_test:test-only-password@127.0.0.1:5432/openoj_test?sslmode=disable
     steps:
       - name: Start PostgreSQL
-        # In the background, so that the image downloads while the job sets up the rest.
-        run: nohup docker run --detach --name postgres --publish 127.0.0.1:5432:5432 --env POSTGRES_USER=openoj_test --env POSTGRES_PASSWORD=test-only-password --env POSTGRES_DB=openoj_test postgres:17 > "$RUNNER_TEMP/postgres.log" 2>&1 &
+        # In the background, so that the image downloads while the job sets up the rest. In memory
+        # and without sync: the tests check queries, not durability.
+        run: nohup docker run --detach --name postgres --publish 127.0.0.1:5432:5432 --tmpfs /var/lib/postgresql/data --env POSTGRES_USER=openoj_test --env POSTGRES_PASSWORD=test-only-password --env POSTGRES_DB=openoj_test --env POSTGRES_INITDB_ARGS=--no-sync postgres:17 -c fsync=off -c synchronous_commit=off -c full_page_writes=off > "$RUNNER_TEMP/postgres.log" 2>&1 &
       - name: Check out repository
         uses: actions/checkout@v7.0.0
       - name: Set up Go
@@ -379,7 +393,9 @@ jobs:
         working-directory: api
         run: |
           # Over TCP: the image's first start answers only on its socket, then restarts.
-          timeout 90 sh -c 'until docker exec postgres pg_isready --host 127.0.0.1 --username openoj_test --dbname openoj_test > /dev/null 2>&1; do sleep 0.5; done' || { cat "$RUNNER_TEMP/postgres.log"; docker logs postgres; exit 1; }
+          waiting=$(date +%s)
+          timeout 90 sh -c 'until docker exec postgres pg_isready --host 127.0.0.1 --username openoj_test --dbname openoj_test > /dev/null 2>&1; do sleep 0.2; done' || { cat "$RUNNER_TEMP/postgres.log"; docker logs postgres; exit 1; }
+          echo "Waited $(($(date +%s) - waiting)) s for PostgreSQL"
           scripts/parallel-test.sh ./internal/httpapi 3 ${{ matrix.part }} ${{ strategy.job-total }}
 
   api-checks:
@@ -402,8 +418,6 @@ jobs:
           go test ./...
           go vet ./...
           CGO_ENABLED=0 go build -trimpath -o shareoj .
-      - name: Test judge validation and sandbox metadata
-        run: python3 -m unittest discover -s judge/tests -v
 
   api-package:
     name: Package API Lambdas
@@ -423,6 +437,8 @@ jobs:
         run: |
           test -s api/.build/api.zip
           test -s api/.build/migrate.zip
+      - name: Test judge validation and sandbox metadata
+        run: python3 -m unittest discover -s judge/tests -v
       - name: Upload API Lambda packages
         if: inputs.upload-deploy-artifacts
         uses: actions/upload-artifact@v7
