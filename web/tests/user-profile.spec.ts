@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { shortId } from '../shared/utils/short-id'
 
 test('user links show shared profile icons and keep initials when unavailable', async ({ page }) => {
   const avatar = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6V6kAAAAASUVORK5CYII='
@@ -41,7 +42,7 @@ test('public author and tester profiles are reachable without signing in', async
   await expect(page.getByRole('cell', { name: '2 秒・256 MiB', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '記事', exact: true }).click()
   await expect(page.getByRole('columnheader')).toHaveText(['タイトル', '投稿者', '公開日'])
-  await expect(page.getByRole('link', { name: '公開記事', exact: true })).toHaveAttribute('href', '/blog/77777777-7777-4777-8777-777777777777')
+  await expect(page.getByRole('link', { name: '公開記事', exact: true })).toHaveAttribute('href', `/blog/${shortId('77777777-7777-4777-8777-777777777777')}`)
   await page.goto('/problems/11111111-1111-4111-8111-111111111111')
   await page.getByRole('link', { name: 'bob', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'bob', exact: true })).toBeVisible()
@@ -57,6 +58,17 @@ test('public author and tester profiles are reachable without signing in', async
   expect(response?.status()).toBe(404)
 })
 
+
+test('the back button returns from a problem to the user page it was opened from', async ({ page }) => {
+  await page.goto('/users/alice')
+  const problem = page.getByRole('link', { name: 'A + B', exact: true })
+  await expect(problem).toHaveAttribute('href', `/problems/${shortId('11111111-1111-4111-8111-111111111111')}`)
+  await problem.click()
+  await expect(page.getByRole('heading', { name: 'A + B', exact: true })).toBeVisible()
+  await page.goBack()
+  await expect(page).toHaveURL(/\/users\/alice$/)
+  await expect(page.getByRole('heading', { name: 'alice', exact: true })).toBeVisible()
+})
 
 test('own username leads to the public user page like other users', async ({ page, context }) => {
   const response = await context.request.post('/api/auth/login', {

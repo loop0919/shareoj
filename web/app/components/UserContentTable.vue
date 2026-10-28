@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { z } from 'zod'
+import { shortId } from '~~/shared/utils/short-id'
 import type { publicProblemSummarySchema } from '~~/shared/types/problem'
 import type { postSummarySchema } from '~~/shared/types/post'
 type Item = z.infer<typeof publicProblemSummarySchema> | z.infer<typeof postSummarySchema>
@@ -22,7 +23,7 @@ const date = (value: string) => new Date(value).toLocaleDateString('ja-JP', { ti
       </tr></thead>
       <tbody><tr v-for="item in current.items" :key="item.id">
         <td v-if="kind === 'problems'"><time v-if="item.publishedAt" :datetime="item.publishedAt">{{ date(item.publishedAt) }}</time></td>
-        <th scope="row"><NuxtLink :to="`/${kind === 'posts' ? 'blog' : 'problems'}/${item.id}`">{{ item.title }}</NuxtLink></th>
+        <th scope="row"><NuxtLink :to="`/${kind === 'posts' ? 'blog' : 'problems'}/${shortId(item.id)}`">{{ item.title }}</NuxtLink></th>
         <td><UserLink :handle="item.author" /></td>
         <template v-if="kind === 'problems' && 'solverCount' in item">
           <td>{{ item.timeLimitMs == null ? '—' : `${item.timeLimitMs / 1000} 秒` }}・{{ item.memoryLimitMb == null ? '—' : `${item.memoryLimitMb} MiB` }}</td>

@@ -31,6 +31,16 @@ test('an old contest problem link opens the problem at its letter', async ({ pag
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('A - A + B')
 })
 
+test('an old link followed inside the app keeps the page it was on in history', async ({ page }) => {
+  await page.goto('/users/alice')
+  await expect(page.getByRole('heading', { name: 'alice', exact: true })).toBeVisible()
+  await page.evaluate(path => (document.querySelector('#__nuxt') as unknown as { __vue_app__: { config: { globalProperties: { $router: { push: (to: string) => Promise<unknown> } } } } })
+    .__vue_app__.config.globalProperties.$router.push(path), `/problems/${problem}`)
+  await expect(page).toHaveURL(`/problems/${shortId(problem)}`)
+  await page.goBack()
+  await expect(page).toHaveURL('/users/alice')
+})
+
 for (const path of [`/contests/${shortId(running)}/B`, `/contests/${shortId(running)}/a`, `/contests/${shortId(running)}/problems/${shortId('33333333-3333-4333-8333-333333333333')}`, `/problems/${'z'.repeat(22)}`]) {
   test(`unknown short URL is not found: ${path}`, async ({ request }) => {
     expect((await request.get(path, { maxRedirects: 0 })).status()).toBe(404)
