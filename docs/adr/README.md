@@ -44,3 +44,4 @@ Architecture Decision Record（ADR）は、採用した設計だけでなく、�
 | [0032](0032-count-authoring-runs-separately.md) | Accepted（コード実行との順番は0031で一部変更） | 作問の生成と検証を提出と別の枠で数え、空きがあるときに送る |
 | [0033](0033-rank-featured-by-scores.md) | Accepted | 定期便の順位を、Hardの点数、Easyの点数の順に決める |
 | [0034](0034-list-contest-problem-submissions-in-contest.md) | Accepted | コンテストの問題ページからタブをなくし、提出一覧を問題で絞り込む |
+| [0035](0035-run-frontend-on-bun.md) | Accepted | フロントエンドをBunで動かし、LambdaのSSRもBunにする |

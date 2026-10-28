@@ -9,8 +9,10 @@ API とフロントエンドをまとめて起動する場合は、リポジト�
 準備と停止方法は[ルートの README](../README.md#開発環境)を参照する。
 以下は個別に起動する手順である。
 
-Node.js 22.19 以上の 22 系と Go が必要になる。
+Bun 1.4.4 と Go が必要になる。
+Node.js は使わない。
 リポジトリのルートで `nix develop .` を実行すると、共通の開発環境に入れる。
+Bun の版は `package.json` の `packageManager`、ルートの `flake.nix`、`scripts/bun_release.py` で揃え、`scripts/bun_release.py` が一致を確かめる。
 
 まず、ターミナルで API を起動する。
 
@@ -23,10 +25,13 @@ go run ./cmd/api
 
 ```console
 cd web
-npm ci
+bun install --frozen-lockfile
 cp -n .env.example .env
-npm run dev
+bun run dev
 ```
+
+`.env` は Nuxt が `nuxt dev` と `nuxt build` で読み込む。
+Bun 自身の `.env` の自動読み込みは `bunfig.toml` の `env = false` で止めている（Bun は値の `$` を展開するため）。
 
 `http://localhost:3000/problems` で DB の公開問題一覧を表示できます。
 公開問題の閲覧に認証や AWS の認証情報は不要である。
@@ -69,8 +74,8 @@ UUID を含む旧 URL は 301 で短い形へ転送する。
 画面を変えたときは、ビルドしてから撮り直す。
 
 ```console
-npm run build
-npm run docs:screenshots
+bun run build
+bun run docs:screenshots
 ```
 
 以前の `/blog/*-guide` と `/blog/contest-rules` は、対応するガイドへ 301 で転送する（`legacyDocPaths`）。
@@ -209,20 +214,24 @@ Cognitoは自分のドメインにもログイン状態のCookieを持ち、残�
 以下は `web/` で実行する。
 
 ```console
-npm run typecheck
-npm run build
-npx playwright install chromium
-npm test
+bun run typecheck
+bun run build
+bun --bun playwright install chromium
+bun run test
 ```
 
-Linux でブラウザーの共有ライブラリが不足する場合は `npx playwright install --with-deps chromium` を使う。
+Linux でブラウザーの共有ライブラリが不足する場合は `bun --bun playwright install --with-deps chromium` を使う。
+Playwright のコマンドには `--bun` を付ける。
+付けないと、PATH に Node.js があればそちらで動く。
+ブラウザーのテストは `bun run test` で実行する。
+`bun test` は Bun のテストランナーで、`lambda/` と `scripts/` の Bun のテストだけを実行する。
 テストは Go API とビルド済み Nuxt を自動起動し、HTML 本文、SEO メタデータ、404 と 502、JavaScript 無効時の閲覧、画面遷移、画面幅 320 / 375 / 414 / 768 / 1280 px での表示を検証する。
 テスト用にポート13000、13001、18080、18081を使用する。
 
 実DBを使うブラウザーテストは`TEST_DATABASE_URL`を設定して実行する。
 
 ```console
-npx playwright test --config playwright.account.config.ts
+bun run test --config playwright.account.config.ts
 ```
 
 このテストはポート13002と18082を使う。
@@ -231,20 +240,22 @@ Cognitoの代わりにテスト用の署名鍵でトークンを発行し、実�
 
 CIではSSRを一度ビルドし、画面テストと実DBテストをそれぞれ2分割して別のランナーで実行する。
 実DBテストはランナーごとに独立したPostgreSQLを使い、同じDB内では1ワーカーで実行する。
-ブラウザーとOSライブラリは[公式Playwrightイメージ](https://playwright.dev/docs/docker)を使い、バージョンを`package-lock.json`に合わせる。
+ブラウザーとOSライブラリは[公式Playwrightイメージ](https://playwright.dev/docs/docker)を使い、バージョンを`bun.lock`の`@playwright/test`に合わせる。
+イメージにはunzipがなく`oven-sh/setup-bun`が動かないため、`scripts/bun_release.py`がBunを入れる。
+CIのwebのジョブは、失敗する`node`（`scripts/no-node/node`）をPATHの先頭に置き、Node.jsへの取りこぼしを検出する。
 すべての分割が成功した場合だけ`Test SSR frontend`が成功し、デプロイへ進む。
 自動リトライは行わない。
 
 分割をローカルで再実行する場合は、次の`1/2`を対象の番号に変える。
 
 ```console
-npx playwright test --shard=1/2
-npx playwright test --config playwright.account.config.ts --shard=1/2
+bun run test --shard=1/2
+bun run test --config playwright.account.config.ts --shard=1/2
 ```
 
 CIの実行結果には`playwright-browser-1`などの名前で、所要時間を確認できるHTMLレポートと失敗時のトレースを7日間保存する。
-アーティファクトを展開し、`npx playwright show-report <展開先>/playwright-report`で開く。
-トレースは`npx playwright show-trace <trace.zipのパス>`で開く。
+アーティファクトを展開し、`bun --bun playwright show-report <展開先>/playwright-report`で開く。
+トレースは`bun --bun playwright show-trace <trace.zipのパス>`で開く。
 
 手動では、開発サーバー起動後に HTML を確認できる。
 
@@ -256,15 +267,17 @@ curl -i http://localhost:3000/problems/missing
 ## 本番起動
 
 SSR には Nuxt サーバーを実行する環境が必要になる。
-`npm run build` 後、接続先と公開 URL を指定して起動する。
+`bun run build` 後、接続先と公開 URL を指定して起動する。
 
 ```console
 NUXT_API_BASE_URL=https://api.example.com \
 NUXT_PUBLIC_SITE_URL=https://judge.example.com \
-node .output/server/index.mjs
+bun run start
 ```
 
-ビルド済みサーバーは `.env` を自動では読み込まないため、実行環境で変数を設定する。
+ビルド済みサーバーは `.env` を読み込まないため、実行環境で変数を設定する。
+`web/` の外から `bun .output/server/index.mjs` のように起動する場合は、Bun が `.env` を読まないよう `--no-env-file` を付ける。
+本番の Lambda は `provided.al2023` で動き、ZIP に同梱した Bun が `lambda/runtime.mjs` からハンドラーを呼ぶ（[ADR 0035](../docs/adr/0035-run-frontend-on-bun.md)、[デプロイ手順](../infra/README.md#フロントエンドのデプロイ)）。
 AWSへのデプロイとは別に、[ローカルC++提出](../docs/judge/local-cpp.md)を利用できる。
 Go API のカタログには、ユーザーが公開した問題を表示します。
 
@@ -322,7 +335,7 @@ Public pages expose Open Graph and Twitter Card metadata during SSR. `/og/<page-
 returns a 1200×630 PNG with the ShareOJ mark and the page title (`/og/index.png` for home).
 The renderer uses `@resvg/resvg-wasm` and the bundled, unmodified IPAex Gothic font;
 the font license is in `server/assets/fonts/LICENSE.txt`. Nuxt stages the WASM under
-`.build/og-renderer` and Nitro bundles both assets for Node and Lambda.
+`.build/og-renderer` and Nitro bundles both assets for the server and Lambda.
 
 Dynamic images fetch only the public API, never session cookies or private fallbacks.
 Private and pre-start contest problems have no image preview. Responses use `no-store`
