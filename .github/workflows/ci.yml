@@ -42,8 +42,9 @@ jobs:
         id: build
         run: |
           # The shard counts: enough that each test job, about 12 s of setup included, ends
-          # within 30 s. A run gets 20 runners at a time, so the shards run in waves.
-          browser=40 account=12
+          # within 30 s. A run gets 20 runners at a time, so the shards run in waves; see
+          # max-parallel in the test jobs.
+          browser=44 account=14
           bun scripts/shard-tests.mjs split playwright.config.ts "$browser" .build/shards/browser & split_browser=$!
           bun scripts/shard-tests.mjs split playwright.account.config.ts "$account" .build/shards/account & split_account=$!
           bun run build
@@ -223,6 +224,9 @@ jobs:
     timeout-minutes: 10
     strategy:
       fail-fast: false
+      # 13 browser and 5 account jobs at a time leave 2 of the 20 runners to the Lambda's packaging
+      # and boot tests and to the summary jobs, which otherwise wait behind every shard.
+      max-parallel: 13
       matrix:
         shard: ${{ fromJSON(needs.web-ssr.outputs.browser-shards) }}
     env:
@@ -295,6 +299,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       fail-fast: false
+      max-parallel: 5
       matrix:
         shard: ${{ fromJSON(needs.web-ssr.outputs.account-shards) }}
     env:
@@ -365,14 +370,14 @@ jobs:
 
   api-test:
     # The handler tests take most of the time. More processes on one runner, which also runs the
-    # database server, were no faster, so three runners with a server each share them.
+    # database server, were no faster, so four runners with a server each share them.
     name: Test API (${{ matrix.part }}/${{ strategy.job-total }})
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2, 3]
+        part: [1, 2, 3, 4]
     env:
       TEST_DATABASE_URL: postgresql://openoj_test:test-only-password@127.0.0.1:5432/openoj_test?sslmode=disable
     steps:
