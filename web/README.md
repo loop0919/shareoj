@@ -254,7 +254,7 @@ CIのwebのジョブは、失敗する`node`（`scripts/no-node/node`）をPATH�
 
 テストが増えてジョブの時間が偏ってきたら、CIの所要時間を記録し直す。
 `record-durations`を選んでCIを手動で実行し、各ジョブのJSONレポートを取り込む。
-同じテストが複数の回にあれば、最も速い値を使う。
+同じテストが複数の回にあれば、中央値を使う。
 
 ```console
 gh workflow run ci.yml --ref <ブランチ> -f record-durations=true

@@ -2,7 +2,7 @@
 // usage: bun scripts/shard-tests.mjs split <config> <shards> <directory>
 //          writes <directory>/<n>.txt, n = 1 … shards, for `playwright test --test-list`
 //        bun scripts/shard-tests.mjs record <report.json>…
-//          records the durations of JSON reports in tests/durations.json, the fastest run of a
+//          records the durations of JSON reports in tests/durations.json, the median run of a
 //          test when several reports have it; make a report with
 //          PLAYWRIGHT_JSON_OUTPUT_FILE=<report.json> bun run test --reporter=json
 // Playwright's own --shard gives each shard the same number of tests, so a shard of slow tests
@@ -63,17 +63,22 @@ export function split(tests, durations, shards) {
 }
 
 // Durations from reports replace the recorded ones of their config. A test in several reports, such
-// as the shards of more than one run, keeps its fastest run: a slow runner slows every test on it.
+// as the shards of more than one run, takes the median: a slow runner slows every test on it, and
+// the fastest run understates tests whose time varies.
 export function merge(recorded, reports) {
-  const fresh = {}
+  const samples = {}
   for (const report of reports) {
     const config = basename(report.config.configFile)
-    fresh[config] ??= {}
-    for (const [key, seconds] of Object.entries(durationsOf(report))) fresh[config][key] = Math.min(fresh[config][key] ?? Infinity, seconds)
+    samples[config] ??= {}
+    for (const [key, seconds] of Object.entries(durationsOf(report))) (samples[config][key] ??= []).push(seconds)
+  }
+  const median = values => {
+    const sorted = [...values].sort((a, b) => a - b)
+    return Math.round((sorted[Math.floor((sorted.length - 1) / 2)] + sorted[Math.ceil((sorted.length - 1) / 2)]) * 5) / 10
   }
   const merged = { ...recorded }
-  for (const [config, durations] of Object.entries(fresh)) {
-    const all = { ...recorded[config], ...durations }
+  for (const [config, durations] of Object.entries(samples)) {
+    const all = { ...recorded[config], ...Object.fromEntries(Object.entries(durations).map(([key, values]) => [key, median(values)])) }
     merged[config] = Object.fromEntries(Object.keys(all).sort().map(key => [key, all[key]]))
   }
   return merged

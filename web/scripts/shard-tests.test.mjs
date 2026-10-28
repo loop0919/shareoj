@@ -28,10 +28,11 @@ test('records the last attempt of each test, in seconds, and skips tests that di
   assert.deepEqual(durationsOf(report), { 'a.spec.ts › first': 4, 'b.spec.ts › top': 3, 'b.spec.ts › group › deeper › last': 0.5 })
 })
 
-test('keeps the fastest of several runs of a test, so that one slow runner does not set its weight', () => {
+test('takes the median of several runs of a test, so that neither one slow runner nor the fastest run sets its weight', () => {
   const run = (config, seconds) => ({ config: { configFile: `/runner/web/${config}` }, suites: [{ file: 'a.spec.ts', specs: [{ title: 'first', tests: [{ results: [{ duration: seconds * 1000 }] }] }], suites: [] }] })
-  const merged = merge({ 'playwright.config.ts': { 'a.spec.ts › first': 9, 'a.spec.ts › gone': 1 } }, [run('playwright.config.ts', 5), run('playwright.config.ts', 3), run('playwright.account.config.ts', 4)])
-  assert.deepEqual(merged, { 'playwright.config.ts': { 'a.spec.ts › first': 3, 'a.spec.ts › gone': 1 }, 'playwright.account.config.ts': { 'a.spec.ts › first': 4 } })
+  const merged = merge({ 'playwright.config.ts': { 'a.spec.ts › first': 9, 'a.spec.ts › gone': 1 } }, [run('playwright.config.ts', 3.2), run('playwright.config.ts', 19), run('playwright.config.ts', 3), run('playwright.account.config.ts', 4)])
+  assert.deepEqual(merged, { 'playwright.config.ts': { 'a.spec.ts › first': 3.2, 'a.spec.ts › gone': 1 }, 'playwright.account.config.ts': { 'a.spec.ts › first': 4 } })
+  assert.deepEqual(merge({}, [run('playwright.config.ts', 2), run('playwright.config.ts', 3)]), { 'playwright.config.ts': { 'a.spec.ts › first': 2.5 } })
 })
 
 test('puts every test in exactly one shard, keeps the running order, and evens out the time', () => {
