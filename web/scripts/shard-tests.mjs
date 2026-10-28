@@ -2,7 +2,8 @@
 // usage: bun scripts/shard-tests.mjs split <config> <shards> <directory>
 //          writes <directory>/<n>.txt, n = 1 … shards, for `playwright test --test-list`
 //        bun scripts/shard-tests.mjs record <report.json>…
-//          merges the durations of JSON reports into tests/durations.json; make a report with
+//          records the durations of JSON reports in tests/durations.json, the fastest run of a
+//          test when several reports have it; make a report with
 //          PLAYWRIGHT_JSON_OUTPUT_FILE=<report.json> bun run test --reporter=json
 // Playwright's own --shard gives each shard the same number of tests, so a shard of slow tests
 // ran twice as long as another. A test without a recorded duration counts as the median of the
@@ -61,6 +62,23 @@ export function split(tests, durations, shards) {
   return loads.map((_, shard) => tests.filter(test => shardOf.get(test) === shard))
 }
 
+// Durations from reports replace the recorded ones of their config. A test in several reports, such
+// as the shards of more than one run, keeps its fastest run: a slow runner slows every test on it.
+export function merge(recorded, reports) {
+  const fresh = {}
+  for (const report of reports) {
+    const config = basename(report.config.configFile)
+    fresh[config] ??= {}
+    for (const [key, seconds] of Object.entries(durationsOf(report))) fresh[config][key] = Math.min(fresh[config][key] ?? Infinity, seconds)
+  }
+  const merged = { ...recorded }
+  for (const [config, durations] of Object.entries(fresh)) {
+    const all = { ...recorded[config], ...durations }
+    merged[config] = Object.fromEntries(Object.keys(all).sort().map(key => [key, all[key]]))
+  }
+  return merged
+}
+
 const readDurations = () => existsSync(durationsFile) ? JSON.parse(readFileSync(durationsFile, 'utf8')) : {}
 
 if (import.meta.main) {
@@ -81,15 +99,9 @@ if (import.meta.main) {
     const seconds = shard => Math.round(shard.reduce((sum, test) => sum + (durations[line(test)] ?? 0), 0))
     console.log(`${config}: ${tests.length} tests, ${tests.filter(test => durations[line(test)] === undefined).length} without a duration; recorded seconds per shard: ${shards.map(seconds).join(' ')}`)
   } else if (command === 'record' && args.length) {
-    const all = readDurations()
-    for (const path of args) {
-      const report = JSON.parse(readFileSync(path, 'utf8'))
-      const config = basename(report.config.configFile)
-      const merged = { ...all[config], ...durationsOf(report) }
-      all[config] = Object.fromEntries(Object.keys(merged).sort().map(key => [key, merged[key]]))
-      console.log(`${path}: ${Object.keys(durationsOf(report)).length} durations for ${config}`)
-    }
-    writeFileSync(durationsFile, `${JSON.stringify(all, null, 2)}\n`)
+    const reports = args.map(path => JSON.parse(readFileSync(path, 'utf8')))
+    writeFileSync(durationsFile, `${JSON.stringify(merge(readDurations(), reports), null, 2)}\n`)
+    console.log(`${reports.length} reports recorded in tests/durations.json`)
   } else {
     console.error('usage: bun scripts/shard-tests.mjs split <config> <shards> <directory> | record <report.json>…')
     process.exit(2)
