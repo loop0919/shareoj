@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # go test ./..., with one package's tests spread over several processes:
-#   scripts/parallel-test.sh <package> <processes>, e.g. scripts/parallel-test.sh ./internal/httpapi 4
+#   scripts/parallel-test.sh <package> <processes>, e.g. scripts/parallel-test.sh ./internal/httpapi 6
 # Each database test creates and drops its own schema, so the processes share only the server, as
 # the packages under go test ./... already do. Within a process the tests still run one at a time,
 # in the package's directory, and every test runs once.
@@ -13,7 +13,8 @@ trap 'rm -rf "$work"' EXIT
 
 go test -c -o "$work/package.test" "$package"
 mapfile -t others < <(go list ./... | grep -vxF "$package")
-go test "${others[@]}" > "$work/others.log" 2>&1 &
+# -count=1 runs them even when the build cache holds a result, as the split package always runs.
+go test -count=1 "${others[@]}" > "$work/others.log" 2>&1 &
 pids=("$!") labels=("go test ./... except $package") logs=("$work/others.log")
 
 dir=$(go list -f '{{.Dir}}' "$package")
