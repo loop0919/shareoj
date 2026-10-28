@@ -44,17 +44,25 @@ test('editing, math preview, automatic save, and reload work together', async ({
       }
     })
   })
+  // The first autosave must take every edit below. On a slow runner its 600 ms timer could fire between
+  // two of them, and the newer edit would then show as unsaved while the first save waits. The clock
+  // stays still, and moves 200 ms after an edit for the preview's 150 ms delay.
+  await page.clock.install()
+  await page.clock.pauseAt(new Date(Date.now() + 1000))
   await page.getByLabel('問題のタイトル', { exact: true }).fill('数列の和')
   await page.locator('#time-limit').fill('3000')
   await page.locator('#memory-limit').fill('512')
   const body = '## 好きな構成\n\n合計は $a_1+a_2$ です。\n\n```input\n$N$\n$A_1 \\quad A_N$\n```\n\n```math\n\\sum_{i=1}^{N} A_i\n```\n\n```text\n$literal$\n```'
   await page.locator('#problem-source').fill(body)
+  await page.clock.runFor(200)
   await expect(page.getByRole('region', { name: '問題のプレビュー' }).getByRole('heading', { name: '好きな構成' })).toBeVisible()
   await expect(page.locator('.preview-pane .input-format .katex')).toHaveCount(2)
   await expect(page.locator('.preview-pane .katex-display')).toHaveCount(1)
   await page.getByRole('button', { name: '解説', exact: true }).click()
   await page.locator('#problem-source').fill('## 解法\n\n```cpp\nreturn A + B;\n```')
+  await page.clock.runFor(200)
   await expect(page.getByRole('region', { name: '解説のプレビュー' }).getByRole('heading', { name: '解法' })).toBeVisible()
+  await page.clock.resume()
   await expect(page.locator('html')).toHaveAttribute('data-draft-navigation', 'pending')
   await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saving')
   await page.evaluate(() => (window as any).finishDraftNavigation())
