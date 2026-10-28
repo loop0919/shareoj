@@ -49,6 +49,7 @@ APIの関数は、すでにカスタムランタイムの`provided.al2023`で動
 - SSR：同じビルドをNode.js 22とBunで動かし、69のURLのHTMLと共有画像がバイト単位で一致する（違いは比較用のポート番号だけ）。
 - 開発サーバー：同じURLの状態コードが、Node.jsの`nuxt dev`と一致する。
 - Lambda：Runtime Interface Emulatorでの初期化はBunが118〜126 ms、同じzipの`nodejs22.x`が199〜206 msだった（ローカル、zipのダウンロードは含まない）。
+- Runtime APIの次の呼び出しは長く待つ。Bunの`fetch`は既定のまま330秒の応答を待ち切ったので、`timeout: false`のような指定は付けていない。
 
 ## 代替案
 
@@ -61,5 +62,7 @@ APIの関数は、すでにカスタムランタイムの`provided.al2023`で動
 
 - zipは約12 MBから約64 MB（展開後132 MB）になる。
 - Bunは管理ランタイムと違いAWSが更新しない。更新は3か所の版とSHA-256を揃えて行う。
-- AWSプロバイダーは関数の設定をコードより先に更新する。ランタイムの切り替えとzipの入れ替えを同じデプロイで行うと、新しいランタイムで古いzipを起動する時間ができる。zipの入れ替え（コミット「LambdaのZIPにBunとRuntime APIの受け口を同梱する」）を先にデプロイし、ランタイムの切り替えは次のpushにする。
-- 戻すときは`infra/frontend/main.tf`の`runtime`を`nodejs22.x`にする。zipはそのまま動く。
+- AWSプロバイダーは関数の設定をコードより先に更新する。ランタイムの切り替えとzipの入れ替えを同じデプロイで行うと、新しいランタイムで古いzipを起動する時間ができる。ランタイムを切り替えるコミット（「フロントエンドのLambdaをBunのカスタムランタイムに切り替える」）の1つ前までを先にpushしてデプロイし、残りは次のpushにする。
+- 戻すときは`infra/frontend/main.tf`の`runtime`を`nodejs22.x`にする。zipはそのまま動き、CIは両方のランタイムでzipを起動して確かめる。
+- 急いで戻すときは、先に`aws lambda update-function-configuration --function-name judge-dev-web --runtime nodejs22.x`で切り替え（数秒で終わる）、そのあと`main.tf`を戻してpushする。
+- zipが大きくなった分、コールドスタートが延びる可能性がある。切り替えの後、CloudWatchの`Init Duration`と`Max Memory Used`を切り替え前と比べる。

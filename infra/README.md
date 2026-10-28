@@ -203,6 +203,7 @@ CIはARM64のランナーで、デプロイするzipをそのまま起動する�
 `site_url`がブラウザーで開くHTTPS URLになる。
 Nuxt Lambdaは`provided.al2023`（同梱のBun 1.4.4）、ARM64、512 MiBで動作し、HTML、JavaScript、CSS、KaTeXフォントを配信する。
 同じzipは`nodejs22.x`でも動くため、Bunで問題が起きた場合は`infra/frontend/main.tf`の`runtime`だけを戻せばよい。
+急ぐときは、先に`aws lambda update-function-configuration --function-name judge-dev-web --runtime nodejs22.x`で切り替え、そのあと`main.tf`を戻してpushする。
 予約同時実行は200、HTTP APIのスロットリングは毎秒200リクエスト、バースト500である。
 問題ページはAPIのデータを使ってSSRし、canonical URLも公開先に合わせる。
 API接続先は入力変数で渡し、フロントエンドからAPIのstateを読み取らない。
