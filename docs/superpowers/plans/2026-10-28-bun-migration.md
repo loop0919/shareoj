@@ -44,6 +44,10 @@
 | D16 | ランタイム切り替えのデプロイで、新ランタイムと旧ZIPの組み合わせが数秒〜数十秒できる（providerは設定→コードの順で更新） | ZIPの入れ替え（段階1）とランタイムの切り替え（段階2）を別コミットにする | 段階1のZIPがNode.jsとBunの両方で動く（`test:lambda`とRIE） |
 | D17 | ZIPが大きくなり（約12 MB→約50 MB）、展開後250 MiBの上限に近づく | 展開後のサイズを`package-lambda.py`で検査 | パッケージ時の出力、RIEの初期化時間の比較 |
 | D18 | Bunの版がローカル、CI、Lambdaでずれる | 3か所の一致を`bun_release.py`が検査 | CIとパッケージ時 |
+| D19 | （実装中に発見）BunはテンプレートのASCII以外の文字を`\u`で持ち、`String.raw`の値が変わる | テストとfixtureの`String.raw`をASCIIだけにする。本番のバンドルは該当なし | `math-text.spec.ts`に本文の確認を足してRED→GREEN |
+| D20 | （実装中に発見）PlaywrightをBunで動かすとローダーフックが効かず、Nuxtの`~`と`~~`を解決できない | `tsconfig.json`に`paths` | ブラウザーのPlaywright全件、型検査が誤りを検出すること |
+| D21 | （実装中に発見）BunのResponse.blob()がまれに`Content-Type`を落とし、画像が502になる | 画像の種類をシグネチャで判定 | `test-lambda`の型なしBlobでRED→GREEN、`images.spec.ts`を10回 |
+| D22 | （実装中に発見）`bun test`がPlaywrightのテストを読み込んで失敗する | `bunfig.toml`の`pathIgnorePatterns` | `bun test`でBunのテスト9件 |
 
 ## Review Focus
 

@@ -17,7 +17,7 @@ AWS API や Terraform state との照合は実施していないため、実際�
 API 側にも `api.share-oj.net` の公開入口がある。
 Route 53 の A/AAAA alias、ACM 証明書、REGIONAL カスタムドメインを [domain/main.tf](../../infra/domain/main.tf) が管理する。
 
-Nuxt Lambda は VPC 外で動作し、Node.js 22、arm64、512 MiB、タイムアウト25秒である。
+Nuxt Lambda は VPC 外で動作し、`provided.al2023`（zip に同梱した Bun 1.4.4）、arm64、512 MiB、タイムアウト25秒である。
 Go API Lambda は VPC に接続し、`provided.al2023`、arm64、タイムアウト30秒である。
 API Gateway の `$default` ルートは `authorization_type = "NONE"` であり、Terraform に Gateway JWT Authorizer は定義されていない。
 認証基盤は Cognito User Pool と機密クライアントで、Google IdP と Cognito ドメインは `google_client_id` が空でない場合に作成される。

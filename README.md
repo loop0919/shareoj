@@ -53,7 +53,7 @@ make dev
 ```
 
 Nix 開発環境を読み込み、フロントエンドの依存関係のインストール、Go API のビルド、ローカルPostgreSQLの準備、APIとNuxtの起動を行う。
-依存関係は初回と `web/package.json`、`web/package-lock.json`、Node.js のバージョンが変わったときにインストールする。
+依存関係は初回と `web/package.json`、`web/bun.lock`、Bun のバージョンが変わったときにインストールする。
 初回はツールと依存関係のダウンロードに時間がかかる。
 
 - ホーム: <http://localhost:3000/>
@@ -85,7 +85,8 @@ API_PORT=18080 WEB_PORT=13000 make dev
 ### 開発ツールのみを利用する場合
 
 ルートの`flake.nix`と`flake.lock`で、API、フロントエンド、infraに共通する開発ツールを管理する。
-Go、gopls、gofumpt、golangci-lint、Node.js 22（npmを含む）、PostgreSQL 17、AWS CLI、Terraform、zipを利用できる。
+Go、gopls、gofumpt、golangci-lint、Bun 1.4.4、PostgreSQL 17、AWS CLI、Terraform、zipを利用できる。
+フロントエンドはNode.jsを使わない（[ADR 0035](docs/adr/0035-run-frontend-on-bun.md)）。
 
 リポジトリのルートで開発シェルを起動する。
 
@@ -157,7 +158,7 @@ set +a
 mainへのpush、プルリクエスト、毎日6時17分（日本時間）に実行する。
 修正版のない脆弱性でデプロイを止めないよう、CIとは別にしている。
 Goは`api`と`cli`を、ビルドと同じGoのバージョンで`govulncheck`にかけ、コードから呼ばれる脆弱性があれば失敗する。
-npmは`web`の本番依存を`npm audit`で調べ、highとcriticalがあれば失敗する。
+npmパッケージは`web`の本番依存を`bun audit`（npmレジストリの勧告）で調べ、highとcriticalがあれば失敗する。
 修正版がないものや本番のLambdaバンドルに含まれないものは、理由と見直し日を付けて[web/npm-audit-allowlist.json](web/npm-audit-allowlist.json)に載せる。
 見直し日を過ぎると再び失敗する。
 `judge/runtime/deps/go`と`judge/runtime/deps/additions`は提出コードに提供するライブラリで、提出コードは元から任意のコードとして隔離して実行するため対象外とする。

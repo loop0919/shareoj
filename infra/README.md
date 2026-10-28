@@ -176,13 +176,15 @@ cat /tmp/judge-migration-result.json
 
 ## フロントエンドのデプロイ
 
-Node.js 22とPython 3を使い、NuxtのAWS Lambda用出力をzipにまとめる。
+Bun 1.4.4とPython 3を使い、NuxtのAWS Lambda用出力をzipにまとめる。
 通常のローカル用ビルドは`.output/`、Lambda用は`.output-lambda/`へ出力する。
+zipには、ARM64版Bun（公式リリースを取得し、`web/scripts/bun_release.py`のSHA-256で検証する）と`bootstrap`、Runtime APIの受け口`lambda/runtime.mjs`を入れる（[ADR 0035](../docs/adr/0035-run-frontend-on-bun.md)）。
 
 ```console
-npm --prefix web ci
-npm --prefix web run package:lambda
-npm --prefix web run test:lambda
+bun install --cwd web --frozen-lockfile
+bun run --cwd web package:lambda
+bun run --cwd web test:lambda
+bun run --cwd web test:lambda-image
 terraform -chdir=infra/frontend init \
   -backend-config="bucket=$JUDGE_STATE_BUCKET" \
   -backend-config="key=judge/dev/frontend.tfstate" \
@@ -191,11 +193,16 @@ export TF_VAR_api_endpoint="$(terraform -chdir=infra/api output -raw api_endpoin
 terraform -chdir=infra/frontend plan -out=deploy.tfplan
 terraform -chdir=infra/frontend apply deploy.tfplan
 terraform -chdir=infra/frontend output -raw site_url
-node web/scripts/smoke-frontend.mjs "$(terraform -chdir=infra/frontend output -raw site_url)"
+bun web/scripts/smoke-frontend.mjs "$(terraform -chdir=infra/frontend output -raw site_url)"
 ```
 
+`test:lambda-image`はDockerで、公式の`provided.al2023`イメージとRuntime Interface Emulatorを使ってzipを起動する。
+ARM64以外の環境では同梱のBunを同じ版のx64版に差し替え、それ以外をそのまま確かめる。
+CIはARM64のランナーで、デプロイするzipをそのまま起動する。
+
 `site_url`がブラウザーで開くHTTPS URLになる。
-Nuxt LambdaはNode.js 22、ARM64、512 MiBで動作し、HTML、JavaScript、CSS、KaTeXフォントを配信する。
+Nuxt Lambdaは`provided.al2023`（同梱のBun 1.4.4）、ARM64、512 MiBで動作し、HTML、JavaScript、CSS、KaTeXフォントを配信する。
+同じzipは`nodejs22.x`でも動くため、Bunで問題が起きた場合は`infra/frontend/main.tf`の`runtime`だけを戻せばよい。
 予約同時実行は200、HTTP APIのスロットリングは毎秒200リクエスト、バースト500である。
 問題ページはAPIのデータを使ってSSRし、canonical URLも公開先に合わせる。
 API接続先は入力変数で渡し、フロントエンドからAPIのstateを読み取らない。
@@ -243,7 +250,7 @@ APIの`api_endpoint`、`health_url`、`login_url`出力もこの独自ドメイ�
 切り替え後は次のコマンドで公開ページ、静的ファイル、API接続を確認する。
 
 ```console
-node web/scripts/smoke-frontend.mjs https://www.share-oj.net
+bun web/scripts/smoke-frontend.mjs https://www.share-oj.net
 ```
 
 2026年9月13日のInfracost解析では、ドメイン用構成の固定費は既存ホストゾーンの月$0.50で、費用とタグのポリシー違反は0件だった。
@@ -458,7 +465,7 @@ Lambda Permissionの`statement_id`も既存の値に合わせる。
 外部 API の失敗結果もキャッシュし、障害中の連打による再取得を抑える。
 実行環境の新規起動・終了や件数上限による追い出しでは再取得が発生し、実行環境をまたぐ重複は許容する。
 キャッシュ用の Valkey・Lambda・VPC は作成しない。
-`npm run package:lambda && npm run test:lambda` で、同時取得の共有・キャッシュヒット・期限切れ後の再取得を検証できる。
+`bun run package:lambda && bun run test:lambda` で、同時取得の共有・キャッシュヒット・期限切れ後の再取得を検証できる。
 
 以前の共有キャッシュ構成をデプロイ済みの場合は、`infra/frontend` の削除 plan を確認して適用した後に `infra/deploy-access` を適用する。
 キャッシュの削除に必要なデプロイ権限を先に外さないこと。
