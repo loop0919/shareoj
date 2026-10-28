@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { fullId, shortId } from '../../shared/utils/short-id'
+import { moveContest } from './schedule'
 
 // Teams and the onsite division against the real API (ADR 0024). carol sets the contests; bob, dave, erin and frank
 // take part.
@@ -30,7 +31,6 @@ async function contest(setter: Page, settings: Record<string, unknown>) {
 const join = (page: Page, id: string, data?: unknown) => page.request.post(`/api/my/contests/${id}/participation`, { headers: { origin }, ...data ? { data } : {} })
 
 test('a team forms by its join code, teammates see each other\'s submissions during the contest, and other teams do not', async ({ browser }) => {
-  test.setTimeout(120000)
   const carol = await user(browser, 'carol')
   const bob = await user(browser, 'bob')
   const dave = await user(browser, 'dave')
@@ -90,7 +90,8 @@ test('a team forms by its join code, teammates see each other\'s submissions dur
   await expect(rows.filter({ hasText: 'Rocket' }).locator('.standing-members')).toHaveText('bob、dave')
   await expect(rows.filter({ hasText: 'Comet' }).locator('.standing-members')).toHaveText('erin')
   // Once it starts, bob submits and dave sees it as the team's.
-  await expect.poll(async () => (await (await guest.request.get(`/api/contests/${id}`)).json()).status, { timeout: 60000, intervals: [1000] }).toBe('running')
+  await moveContest(carol.request, id, { startsIn: 0 })
+  expect((await (await guest.request.get(`/api/contests/${id}`)).json()).status).toBe('running')
   const source = '// rocket team\nint main(){}'
   await expect.poll(async () => (await bob.request.post('/api/my/submissions', { headers: { origin }, data: { problemId: problem, contestId: id, runtime: 'cpp23-gcc', source } })).status(), { timeout: 15000 }).toBe(202)
   // The problem page's older link to the team's list opens the contest's, narrowed to the problem (ADR 0034).
@@ -211,7 +212,6 @@ test('the venue passphrase makes participants onsite, a mistake registers nothin
 })
 
 test('team contests take individuals beside teams, who switch to a team on the team page only before the start', async ({ browser }) => {
-  test.setTimeout(180000)
   const carol = await user(browser, 'carol')
   const bob = await user(browser, 'bob')
   const dave = await user(browser, 'dave')
@@ -275,7 +275,8 @@ test('team contests take individuals beside teams, who switch to a team on the t
   await carol.getByRole('button', { name: 'erinをオンサイト参加にする', exact: true }).click()
   await expect(carol.getByRole('region', { name: '参加者の一覧' }).locator('tbody tr').filter({ hasText: 'erin' }).locator('td').first()).toHaveText('オンサイト')
   // Once it starts, erin stays alone: no switch on the overview or the team page, and the server refuses a team.
-  await expect.poll(async () => (await (await guest.request.get(`/api/contests/${id}`)).json()).status, { timeout: 90000, intervals: [1000] }).toBe('running')
+  await moveContest(carol.request, id, { startsIn: 0 })
+  expect((await (await guest.request.get(`/api/contests/${id}`)).json()).status).toBe('running')
   await erin.goto(`/contests/${shortId(id)}`)
   await expect(erin.locator('.participation-state')).toHaveText('参加済みオンサイト参加個人参加')
   await expect(erin.locator('.contest-participation').getByRole('link')).toHaveCount(0)

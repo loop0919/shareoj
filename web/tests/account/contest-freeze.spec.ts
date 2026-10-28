@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { shortId } from '../../shared/utils/short-id'
+import { moveContest } from './schedule'
 
 const origin = 'http://127.0.0.1:13002'
 async function user(browser: Browser, name: string) {
@@ -27,8 +28,7 @@ function freezeText(contest: { startsAt: string, endsAt: string, freezeAt: strin
 }
 
 test('frozen standings hide runs from the public, staff switch to the live table, and only setters and operators publish the results', async ({ browser }) => {
-  // The shortest freeze is one minute, so the contests last one minute and the test waits for their end.
-  test.setTimeout(150000)
+  // The shortest freeze is one minute. Instead of waiting for the start and the end, the test moves them.
   const carol = await user(browser, 'carol')
   const bob = await user(browser, 'bob')
   const alice = await user(browser, 'alice')
@@ -44,6 +44,8 @@ test('frozen standings hide runs from the public, staff switch to the live table
     } })
     expect(response.status()).toBe(200)
     expect((await bob.request.post(`/api/my/contests/${id}/participation`, { headers: { origin } })).status()).toBe(200)
+    // Start now and end within the minute, so that the freeze still covers the whole contest.
+    await moveContest(carol.request, id, { startsIn: -1, endsIn: 58 })
   }
   const contest = await (await guest.request.get(`/api/contests/${pending}`)).json()
   expect(contest).toMatchObject({ freezeMinutes: 1, revealed: false, resultsFinal: false, canViewLiveStandings: false, canRevealResults: false })
@@ -75,7 +77,9 @@ test('frozen standings hide runs from the public, staff switch to the live table
   await expect(carolRow.locator('.standing-frozen')).toHaveCount(0)
   // Nobody publishes the results before the end.
   await expect(carol.getByRole('button', { name: '結果を公開', exact: true })).toHaveCount(0)
-  await expect.poll(async () => (await (await guest.request.get(`/api/contests/${quiet}`)).json()).status, { timeout: 80000, intervals: [2000] }).toBe('ended')
+  // End now: an earlier end could leave bob's run outside the contest.
+  for (const id of [pending, quiet]) await moveContest(carol.request, id, { endsIn: 0 })
+  expect((await (await guest.request.get(`/api/contests/${quiet}`)).json()).status).toBe('ended')
   // The queued run blocks the setter.
   await carol.reload()
   carol.once('dialog', dialog => void dialog.accept())

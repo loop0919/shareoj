@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { expect, test } from '@playwright/test'
 import { shortId } from '../../shared/utils/short-id'
+import { moveContest } from './schedule'
 
 // Partial scoring against the real API (ADR 0025). This fixture has no judge, so scores are covered by the UI tests.
 test('a grouped problem saves through the editor, names what is missing, takes its full score into a contest and is locked from the start', async ({ page }) => {
@@ -82,7 +83,8 @@ test('a grouped problem saves through the editor, names what is missing, takes i
   } })
   expect(created.status()).toBe(200)
   expect(await created.json()).toMatchObject({ partialScoring: true, problems: [{ id, points: 100, partial: true }] })
-  await expect.poll(async () => (await (await page.request.get(`/api/contests/${contestId}`)).json()).status, { timeout: 20000 }).toBe('running')
+  await moveContest(page.request, contestId, { startsIn: 0 })
+  expect((await (await page.request.get(`/api/contests/${contestId}`)).json()).status).toBe('running')
   await page.goto(`/problems/new?problem=${id}`)
   await page.getByRole('button', { name: '採点', exact: true }).click()
   await page.getByLabel('グループ1の配点').fill('40')

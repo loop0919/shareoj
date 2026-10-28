@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -189,7 +190,28 @@ func TestBrowserFixture(t *testing.T) {
 			}
 		}()
 	}
-	handler := newHandler(AuthConfig{Client: cognito, ClientID: "client"}, dependencies)
+	handler := http.NewServeMux()
+	handler.Handle("/", newHandler(AuthConfig{Client: cognito, ClientID: "client"}, dependencies))
+	// Browser tests move a contest's schedule instead of waiting for it. The API decides a contest's
+	// state from these times, so a moved contest goes through the same code as one that waited.
+	handler.HandleFunc("POST /__test/contests/{id}/schedule", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			StartsIn *float64 `json:"startsIn"`
+			EndsIn   *float64 `json:"endsIn"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		tag, err := store.Pool().Exec(r.Context(), `UPDATE contests SET
+ starts_at=COALESCE(clock_timestamp()+make_interval(secs=>$2::float8),starts_at),
+ ends_at=COALESCE(clock_timestamp()+make_interval(secs=>$3::float8),ends_at) WHERE id=$1`, r.PathValue("id"), in.StartsIn, in.EndsIn)
+		if err != nil || tag.RowsAffected() != 1 {
+			http.Error(w, fmt.Sprint("contest not moved: ", err), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	server := &http.Server{Addr: address, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
