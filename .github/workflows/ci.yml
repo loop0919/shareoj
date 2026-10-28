@@ -25,21 +25,21 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v7.0.0
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2.2.0
         with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: web/package-lock.json
+          bun-version-file: web/package.json
+      - name: Keep Node.js out of the build
+        run: echo "$GITHUB_WORKSPACE/web/scripts/no-node" >> "$GITHUB_PATH"
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
       - name: Check types
-        run: npm run typecheck
+        run: bun run typecheck
       - name: Build SSR server
-        run: npm run build
+        run: bun run build
       - name: Read Playwright version
         id: playwright
-        run: node -e 'console.log("version=" + require("./package-lock.json").packages["node_modules/@playwright/test"].version)' >> "$GITHUB_OUTPUT"
+        run: bun -e 'console.log("version=" + require("@playwright/test/package.json").version)' >> "$GITHUB_OUTPUT"
       - name: Archive SSR server
         run: tar -czf .build/ssr.tar.gz .output
       - name: Upload SSR server for browser tests
@@ -54,8 +54,8 @@ jobs:
           overwrite: true
       - name: Build and test frontend Lambda
         run: |
-          npm run package:lambda
-          npm run test:lambda
+          bun run package:lambda
+          bun run test:lambda
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -68,7 +68,7 @@ jobs:
           terraform validate
           terraform test
       - name: Test deployment smoke checks
-        run: node --test scripts/smoke-frontend.test.mjs
+        run: bun test scripts/smoke-frontend.test.mjs
 
       - name: Upload frontend Lambda package
         if: inputs.upload-deploy-artifacts
@@ -125,14 +125,13 @@ jobs:
         with:
           go-version-file: api/go.mod
           cache-dependency-path: api/go.sum
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: web/package-lock.json
+      - name: Set up Bun
+        # The Playwright image has no unzip, which oven-sh/setup-bun needs.
+        run: python3 scripts/bun_release.py install /usr/local/bin
+      - name: Keep Node.js out of the tests
+        run: echo "$GITHUB_WORKSPACE/web/scripts/no-node" >> "$GITHUB_PATH"
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
       - name: Download SSR server
         uses: actions/download-artifact@v8
         with:
@@ -141,7 +140,7 @@ jobs:
       - name: Extract SSR server
         run: tar -xzf .build/ssr.tar.gz
       - name: Run browser tests
-        run: npx playwright test --config ${{ matrix.config }} --shard=${{ matrix.shard }}/2 --reporter=dot,html
+        run: bun --bun playwright test --config ${{ matrix.config }} --shard=${{ matrix.shard }}/2 --reporter=dot,html
       - name: Upload browser report and failure traces
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7

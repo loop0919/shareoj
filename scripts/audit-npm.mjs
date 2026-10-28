@@ -5,22 +5,26 @@ import { readFileSync } from 'node:fs'
 
 const [directory, allowlistPath] = process.argv.slice(2)
 if (!directory || !allowlistPath) {
-  console.error('usage: node scripts/audit-npm.mjs <package directory> <allowlist.json>')
+  console.error('usage: bun scripts/audit-npm.mjs <package directory> <allowlist.json>')
   process.exit(2)
 }
-// npm audit exits non-zero whenever it finds anything, so judge by its JSON report.
-const audit = spawnSync('npm', ['audit', '--omit=dev', '--json'], { cwd: directory, encoding: 'utf8', maxBuffer: 64 << 20 })
+// bun audit reads bun.lock, asks the npm registry, and exits non-zero whenever it finds
+// anything, so judge by its JSON report: package name -> advisories.
+const audit = spawnSync(process.execPath, ['audit', '--omit=dev', '--json'], { cwd: directory, encoding: 'utf8', maxBuffer: 64 << 20 })
 let report
 try { report = JSON.parse(audit.stdout) }
 catch { console.error(audit.stderr || audit.stdout); process.exit(2) }
-if (report.error) { console.error(report.error.summary ?? report.error); process.exit(2) }
+if (!report || typeof report !== 'object' || !Object.values(report).every(Array.isArray)) {
+  console.error(audit.stderr || audit.stdout)
+  process.exit(2)
+}
 
 const advisories = new Map()
-for (const vulnerability of Object.values(report.vulnerabilities ?? {})) {
-  for (const via of vulnerability.via) {
-    if (typeof via !== 'object' || !['high', 'critical'].includes(via.severity)) continue
-    const id = via.url.split('/').pop()
-    advisories.set(id, { severity: via.severity, line: `${via.severity} ${via.name}: ${via.title} ${via.url}` })
+for (const [name, entries] of Object.entries(report)) {
+  for (const advisory of entries) {
+    if (!['high', 'critical'].includes(advisory.severity)) continue
+    const id = advisory.url.split('/').pop()
+    advisories.set(id, { severity: advisory.severity, line: `${advisory.severity} ${name}: ${advisory.title} ${advisory.url}` })
   }
 }
 

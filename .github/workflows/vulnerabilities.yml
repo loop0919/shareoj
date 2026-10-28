@@ -42,8 +42,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7.0.0
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
-          node-version: '22'
+          bun-version-file: web/package.json
       - name: Check high and critical advisories
-        run: node scripts/audit-npm.mjs web web/npm-audit-allowlist.json
+        run: bun scripts/audit-npm.mjs web web/npm-audit-allowlist.json

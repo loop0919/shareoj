@@ -1,0 +1,5 @@
+#!/bin/sh
+# CI puts this directory first on PATH. The frontend runs on Bun, so a call to Node.js
+# means a command would silently test or build with the image's Node.js instead.
+echo "Node.js was called instead of Bun: node $*" >&2
+exit 1

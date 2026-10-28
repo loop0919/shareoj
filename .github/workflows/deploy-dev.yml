@@ -64,10 +64,10 @@ jobs:
           name: frontend-lambda
           path: web/.build
 
-      - name: Set up Node.js for deployment smoke check
-        uses: actions/setup-node@v4
+      - name: Set up Bun for deployment smoke check
+        uses: oven-sh/setup-bun@v2.2.0
         with:
-          node-version: '22'
+          bun-version-file: web/package.json
 
       - name: Validate deployment configuration
         shell: bash
@@ -194,5 +194,5 @@ jobs:
       - name: Verify public frontend
         run: |
           site_url="${TF_VAR_public_site_url:-$(terraform -chdir=infra/frontend output -raw site_url)}"
-          node web/scripts/smoke-frontend.mjs "$site_url"
+          bun web/scripts/smoke-frontend.mjs "$site_url"
           echo "Frontend: $site_url" >> "$GITHUB_STEP_SUMMARY"
