@@ -74,7 +74,19 @@ const profileResponses = new Map([
 ])
 let exchanges = 0
 let expectedVerifier = ''
+const uploadedPNG = Buffer.from('89504e470d0a1a0a0000000d4948445200000001', 'hex')
+const images = new Map([
+  // Bun 1.4.4's Response.blob() sometimes drops the Content-Type of an image the API sent.
+  ['33333333-3333-4333-8333-333333333333', { bytes: uploadedPNG, blobType: '' }],
+  ['55555555-5555-4555-8555-555555555555', { bytes: Buffer.from('<svg onload="alert(1)">'), blobType: 'image/png' }],
+])
 globalThis.fetch = async (input, options) => {
+  const image = images.get(String(input).match(/\/images\/([0-9a-f-]{36})$/)?.[1])
+  if (image) {
+    const response = new Response(image.bytes, { headers: { 'content-type': 'image/png' } })
+    response.blob = async () => new Blob([image.bytes], { type: image.blobType })
+    return response
+  }
   if (profileResponses.has(String(input))) {
     const url = String(input)
     profileCalls.set(url, (profileCalls.get(url) ?? 0) + 1)
@@ -130,6 +142,11 @@ try {
   assert.equal(png.subarray(0, 8).toString('hex'), '89504e470d0a1a0a')
   assert.equal(png.readUInt32BE(16), 1200)
   assert.equal(png.readUInt32BE(20), 630)
+  const uploaded = await invoke('/api/images/33333333-3333-4333-8333-333333333333')
+  assert.equal(uploaded.statusCode, 200, uploaded.body)
+  assert.equal(uploaded.headers['content-type'], 'image/png')
+  assert.deepEqual(Buffer.from(uploaded.body, uploaded.isBase64Encoded ? 'base64' : 'utf8'), uploadedPNG)
+  assert.equal((await invoke('/api/images/55555555-5555-4555-8555-555555555555')).statusCode, 502)
   const runtimes = await invoke('/api/runtimes')
   assert.equal(runtimes.statusCode, 200)
   assert.deepEqual(JSON.parse(runtimes.body), { items: [{ id: 'cpp17', label: 'C++17 (GCC)' }], maintenance: false })
