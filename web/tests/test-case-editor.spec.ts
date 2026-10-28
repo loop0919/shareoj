@@ -65,7 +65,8 @@ test('large test data renders only visible lines and names are unique', async ({
   await scroller.evaluate(element => { element.scrollTop = element.scrollHeight })
   await expect(input).toContainText('199999')
   expect(await page.locator('.test-data-editor').first().locator('.cm-line').count()).toBeLessThan(100)
-  await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
+  // Saving uploads the 1.2 MB file first, which a busy runner can take more than the default 5 s for.
+  await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved', { timeout: 15_000 })
   await input.fill('1\n2\n3')
   await expect(input.locator('.cm-line')).toHaveText(['1', '2', '3'])
   await expect(page.locator('.test-data-editor').first().locator('.pane-heading span')).toContainText('5 / 16,777,216 bytes')
