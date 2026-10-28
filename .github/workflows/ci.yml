@@ -21,7 +21,7 @@ on:
 permissions:
   contents: read
 
-# Each job is kept within 30 seconds: jobs that do not need each other run side by side, test
+# Each job aims to end within 30 seconds: jobs that do not need each other run side by side, test
 # jobs restore what they need from one cache, and the browser suites are split into shards of
 # about equal running time (web/scripts/shard-tests.mjs).
 jobs:

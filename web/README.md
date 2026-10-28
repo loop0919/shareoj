@@ -238,7 +238,7 @@ bun run test --config playwright.account.config.ts
 Cognitoの代わりにテスト用の署名鍵でトークンを発行し、実際のJWT検証、Go API、Nuxt、PostgreSQLを通して保存と再編集を確認する。
 テスト用の認証処理はGoの`_test.go`だけに含まれ、本番バイナリには入らない。
 
-CIは各ジョブを30秒以内に収めるように分けている。
+CIは、各ジョブが30秒以内に終わることを目安に分けている。
 SSRを一度ビルドし、画面テストと実DBテストをそれぞれ多数のジョブに分けて実行する。
 ジョブの数は`.github/workflows/ci.yml`の`browser=`と`account=`で決める。
 分け方は`scripts/shard-tests.mjs`が`tests/durations.json`の所要時間から決め、どのジョブもほぼ同じ時間で終わるようにする。
