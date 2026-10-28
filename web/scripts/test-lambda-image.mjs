@@ -39,9 +39,10 @@ with zipfile.ZipFile(sys.argv[1]) as bundle:
     api.stdout.on('data', chunk => { if (String(chunk).includes('fixture API ready')) resolve() })
     api.once('exit', code => reject(new Error(`Fixture API exited with ${code}`)))
   })
+  // The function's memory size, and the TZ that Lambda sets for every runtime.
   execFileSync('docker', ['run', '--detach', '--rm', '--name', container, '--network', 'host',
-    '--read-only', '--tmpfs', '/tmp', '--user', '993:990', '--volume', `${task}:/var/task:ro`,
-    '--env', '_HANDLER=lambda/index.handler', '--env', 'AWS_LAMBDA_FUNCTION_NAME=judge-dev-web',
+    '--read-only', '--tmpfs', '/tmp', '--user', '993:990', '--volume', `${task}:/var/task:ro`, '--memory', '512m',
+    '--env', 'TZ=:UTC', '--env', '_HANDLER=lambda/index.handler', '--env', 'AWS_LAMBDA_FUNCTION_NAME=judge-dev-web',
     '--env', 'AWS_LAMBDA_FUNCTION_MEMORY_SIZE=512', '--env', 'NODE_ENV=production',
     '--env', 'NUXT_API_BASE_URL=http://127.0.0.1:18080', '--env', 'NUXT_PUBLIC_SITE_URL=https://frontend.example',
     '--entrypoint', '/usr/bin/env', image,
