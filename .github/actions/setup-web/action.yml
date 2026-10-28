@@ -1,33 +1,73 @@
 name: Set up web
-description: Bun from web/package.json, a failing node first on PATH, and the cached frontend dependencies.
+description: Bun from web/package.json, a failing node first on PATH, and the frontend dependencies.
 inputs:
   install:
-    description: Install the frontend dependencies.
-    default: 'true'
+    description: >-
+      install runs bun install --frozen-lockfile from the cache of downloaded packages, which also
+      checks the lockfile. restore restores Bun and web/node_modules as an earlier job installed them,
+      and installs only when that cache misses. none sets up Bun alone.
+    default: install
+  chromium:
+    description: With restore, also restore Playwright's Chromium, and install a Japanese font.
+    default: 'false'
 runs:
   using: composite
   steps:
+    # One cache for everything a test job needs: one download instead of three, and no install.
+    - name: Restore Bun and the installed dependencies
+      id: restored
+      if: inputs.install == 'restore'
+      uses: actions/cache@v6.1.0
+      with:
+        path: |
+          ~/.bun/bin
+          web/node_modules
+          ${{ inputs.chromium == 'true' && '~/.cache/ms-playwright' || '' }}
+        key: web-${{ inputs.chromium == 'true' && 'browser' || 'build' }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('web/bun.lock', 'web/package.json') }}
     # A third-party action in jobs that may assume the deploy role: pin the commit.
     - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      if: steps.restored.outputs.cache-hit != 'true'
       with:
         bun-version-file: web/package.json
+    - name: Keep Bun where the cache restores it
+      shell: bash
+      run: |
+        if [ '${{ steps.restored.outputs.cache-hit }}' = true ]; then
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+        elif [ "$(command -v bun)" != "$HOME/.bun/bin/bun" ]; then
+          mkdir -p ~/.bun/bin
+          cp "$(command -v bun)" ~/.bun/bin/bun
+        fi
     - name: Check the Bun version
       shell: bash
       run: |
-        expected=$(bun -p 'require("./web/package.json").packageManager')
-        actual="bun@$(bun --version)"
-        [ "$actual" = "$expected" ] || { echo "::error::setup-bun installed $actual, but web/package.json pins $expected"; exit 1; }
+        expected=$(~/.bun/bin/bun -p 'require("./web/package.json").packageManager')
+        actual="bun@$(~/.bun/bin/bun --version)"
+        [ "$actual" = "$expected" ] || { echo "::error::Bun is $actual, but web/package.json pins $expected"; exit 1; }
     - name: Keep Node.js out
       shell: bash
       run: echo "$GITHUB_WORKSPACE/web/scripts/no-node" >> "$GITHUB_PATH"
     - name: Restore the Bun install cache
-      if: inputs.install == 'true'
+      if: inputs.install == 'install' || (inputs.install == 'restore' && steps.restored.outputs.cache-hit != 'true')
       uses: actions/cache@v6.1.0
       with:
         path: ~/.bun/install/cache
         key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('web/bun.lock') }}
     - name: Install dependencies
-      if: inputs.install == 'true'
+      if: inputs.install == 'install' || (inputs.install == 'restore' && steps.restored.outputs.cache-hit != 'true')
       shell: bash
       working-directory: web
       run: bun install --frozen-lockfile
+    - name: Install Chromium
+      if: inputs.chromium == 'true' && steps.restored.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: web
+      run: bun --bun playwright install --only-shell chromium
+    - name: Install a Japanese font
+      # The runner has Chrome's libraries but no CJK font; use the font the share images ship.
+      # Fontconfig reads a directory without a cache by itself, so skip fc-cache.
+      if: inputs.chromium == 'true'
+      shell: bash
+      run: |
+        mkdir -p ~/.local/share/fonts
+        cp web/server/assets/fonts/ipaexg.ttf ~/.local/share/fonts/

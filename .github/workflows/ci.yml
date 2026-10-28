@@ -12,15 +12,15 @@ on:
 permissions:
   contents: read
 
-# Jobs that do not need each other run side by side, and the browser suites are split into
-# shards of about equal running time (web/scripts/shard-tests.mjs), so that each job is short.
+# Each job is kept within 30 seconds: jobs that do not need each other run side by side, test
+# jobs restore what they need from one cache, and the browser suites are split into shards of
+# about equal running time (web/scripts/shard-tests.mjs).
 jobs:
   web-ssr:
     name: Build SSR frontend
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
-      playwright-version: ${{ steps.playwright.outputs.version }}
       browser-shards: ${{ steps.build.outputs.browser }}
       account-shards: ${{ steps.build.outputs.account }}
     defaults:
@@ -31,12 +31,14 @@ jobs:
         uses: actions/checkout@v7.0.0
       - name: Set up Bun and dependencies
         uses: ./.github/actions/setup-web
+        with:
+          install: restore
       - name: Build SSR server and split the browser tests
         id: build
         run: |
-          # The shard counts. Each shard is a job, and a run gets at most 20 runners at a time:
-          # these fit beside the other jobs, so no shard waits for a runner.
-          browser=14 account=4
+          # The shard counts: enough that each test job, about 12 s of setup included, ends
+          # within 30 s. A run gets 20 runners at a time, so the shards run in waves.
+          browser=36 account=10
           bun scripts/shard-tests.mjs split playwright.config.ts "$browser" .build/shards/browser & split_browser=$!
           bun scripts/shard-tests.mjs split playwright.account.config.ts "$account" .build/shards/account & split_account=$!
           bun run build
@@ -44,9 +46,6 @@ jobs:
           wait "$split_account"
           echo "browser=[$(seq -s , "$browser")]" >> "$GITHUB_OUTPUT"
           echo "account=[$(seq -s , "$account")]" >> "$GITHUB_OUTPUT"
-      - name: Read Playwright version
-        id: playwright
-        run: bun -e 'console.log("version=" + require("@playwright/test/package.json").version)' >> "$GITHUB_OUTPUT"
       - name: Archive the sources, the SSR server and the shards
         # The test jobs start from this archive instead of a checkout of their own: two dozen
         # clones at once took up to half a minute each. Besides web, the tests read the CLI's
@@ -75,6 +74,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7.0.0
       - name: Set up Bun and dependencies
+        # A full install, so that every run checks the lockfile.
         uses: ./.github/actions/setup-web
       - name: Check types
         run: bun run typecheck
@@ -83,8 +83,8 @@ jobs:
       - name: Test the pinned Bun release
         run: python3 -m unittest discover -s scripts -p 'test_*.py'
 
-  web-lambda:
-    name: Package frontend Lambda
+  web-lambda-build:
+    name: Build frontend Lambda
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     defaults:
@@ -95,13 +95,48 @@ jobs:
         uses: actions/checkout@v7.0.0
       - name: Set up Bun and dependencies
         uses: ./.github/actions/setup-web
+        with:
+          install: restore
+      - name: Build the Lambda server
+        run: |
+          bun run build:lambda
+          tar -czf "$RUNNER_TEMP/lambda-output.tar.gz" .output-lambda
+      - name: Upload the Lambda server for packaging
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-lambda-output
+          path: ${{ runner.temp }}/lambda-output.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+          overwrite: true
+
+  web-lambda:
+    # Packaging is a job of its own, so that the build and the package each stay short.
+    name: Package frontend Lambda
+    needs: web-lambda-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.0
       - name: Restore the Bun release for the Lambda
         uses: actions/cache@v6.1.0
         with:
           path: web/.build/bun-linux-aarch64-*.zip
           key: bun-release-${{ hashFiles('web/scripts/bun_release.py') }}
-      - name: Build and package frontend Lambda
-        run: bun run package:lambda
+      - name: Download the Lambda server
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend-lambda-output
+          path: ${{ runner.temp }}
+      - name: Package frontend Lambda
+        run: |
+          tar -xzf "$RUNNER_TEMP/lambda-output.tar.gz"
+          python3 scripts/package-lambda.py
       - name: Upload frontend Lambda package
         uses: actions/upload-artifact@v7
         with:
@@ -159,7 +194,7 @@ jobs:
       - name: Set up Bun
         uses: ./.github/actions/setup-web
         with:
-          install: 'false'
+          install: none
       - name: Download frontend Lambda package
         uses: actions/download-artifact@v8
         with:
@@ -190,15 +225,16 @@ jobs:
           path: ${{ runner.temp }}
       - name: Extract the sources and the SSR server
         run: tar -xzf "$RUNNER_TEMP/ssr.tar.gz"
-      - name: Set up Bun and dependencies
+      - name: Set up Bun, dependencies and Chromium
         uses: ./.github/actions/setup-web
-      - name: Set up Chromium
-        uses: ./.github/actions/setup-chromium
         with:
-          playwright-version: ${{ needs.web-ssr.outputs.playwright-version }}
+          install: restore
+          chromium: 'true'
       - name: Run browser tests
         working-directory: web
-        run: bun --bun playwright test --test-list .build/shards/browser/${{ matrix.shard }}.txt --reporter=dot,html
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/durations.json
+        run: bun --bun playwright test --test-list .build/shards/browser/${{ matrix.shard }}.txt --reporter=dot,html,json
       - name: Upload browser report and failure traces
         if: failure()
         uses: actions/upload-artifact@v7
@@ -208,6 +244,14 @@ jobs:
             web/playwright-report/
             web/test-results/
           retention-days: 7
+          overwrite: true
+      - name: Upload the test durations
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: durations-browser-${{ matrix.shard }}
+          path: ${{ runner.temp }}/durations.json
+          retention-days: 1
           overwrite: true
 
   web-fixture:
@@ -245,38 +289,35 @@ jobs:
         shard: ${{ fromJSON(needs.web-ssr.outputs.account-shards) }}
     env:
       TEST_DATABASE_URL: postgresql://openoj_test:test-only-password@127.0.0.1:5432/openoj_test?sslmode=disable
-      OPENOJ_BROWSER_FIXTURE: ${{ github.workspace }}/api/.build/browser-fixture
       PLAYWRIGHT_HTML_OPEN: never
     steps:
       - name: Start PostgreSQL
         # In the background, so that the image downloads while the job sets up the rest.
         run: nohup docker run --detach --name postgres --publish 127.0.0.1:5432:5432 --env POSTGRES_USER=openoj_test --env POSTGRES_PASSWORD=test-only-password --env POSTGRES_DB=openoj_test postgres:17 > "$RUNNER_TEMP/postgres.log" 2>&1 &
-      - name: Download the sources and the SSR server
+      - name: Download the sources, the SSR server and the API fixture
         uses: actions/download-artifact@v8
         with:
-          name: frontend-ssr
+          pattern: '{frontend-ssr,browser-fixture}'
+          merge-multiple: true
           path: ${{ runner.temp }}
       - name: Extract the sources and the SSR server
-        run: tar -xzf "$RUNNER_TEMP/ssr.tar.gz"
-      - name: Set up Bun and dependencies
-        uses: ./.github/actions/setup-web
-      - name: Set up Chromium
-        uses: ./.github/actions/setup-chromium
-        with:
-          playwright-version: ${{ needs.web-ssr.outputs.playwright-version }}
-      - name: Download the API fixture
-        uses: actions/download-artifact@v8
-        with:
-          name: browser-fixture
-          path: api/.build
-      - name: Prepare the servers
         run: |
-          chmod +x api/.build/browser-fixture
-          # Over TCP: the image's first start answers only on its socket, then restarts.
-          timeout 90 sh -c 'until docker exec postgres pg_isready --host 127.0.0.1 --username openoj_test --dbname openoj_test > /dev/null 2>&1; do sleep 0.5; done' || { cat "$RUNNER_TEMP/postgres.log"; docker logs postgres; exit 1; }
+          tar -xzf "$RUNNER_TEMP/ssr.tar.gz"
+          chmod +x "$RUNNER_TEMP/browser-fixture"
+      - name: Set up Bun, dependencies and Chromium
+        uses: ./.github/actions/setup-web
+        with:
+          install: restore
+          chromium: 'true'
       - name: Run account tests
         working-directory: web
-        run: bun --bun playwright test --config playwright.account.config.ts --test-list .build/shards/account/${{ matrix.shard }}.txt --reporter=dot,html
+        env:
+          OPENOJ_BROWSER_FIXTURE: ${{ runner.temp }}/browser-fixture
+          PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/durations.json
+        run: |
+          # Over TCP: the image's first start answers only on its socket, then restarts.
+          timeout 90 sh -c 'until docker exec postgres pg_isready --host 127.0.0.1 --username openoj_test --dbname openoj_test > /dev/null 2>&1; do sleep 0.5; done' || { cat "$RUNNER_TEMP/postgres.log"; docker logs postgres; exit 1; }
+          bun --bun playwright test --config playwright.account.config.ts --test-list .build/shards/account/${{ matrix.shard }}.txt --reporter=dot,html,json
       - name: Upload browser report and failure traces
         if: failure()
         uses: actions/upload-artifact@v7
@@ -287,12 +328,20 @@ jobs:
             web/test-results-account/
           retention-days: 7
           overwrite: true
+      - name: Upload the test durations
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: durations-account-${{ matrix.shard }}
+          path: ${{ runner.temp }}/durations.json
+          retention-days: 1
+          overwrite: true
 
   web:
     # Keep the existing required check; every frontend job must succeed before it passes.
     name: Test SSR frontend
     if: ${{ always() }}
-    needs: [web-ssr, web-check, web-lambda, web-infra, web-lambda-boot, web-browser, web-fixture, web-account]
+    needs: [web-ssr, web-check, web-lambda-build, web-lambda, web-infra, web-lambda-boot, web-browser, web-fixture, web-account]
     runs-on: ubuntu-24.04
     timeout-minutes: 1
     steps:
@@ -303,14 +352,14 @@ jobs:
 
   api-test:
     # The handler tests take most of the time. More processes on one runner, which also runs the
-    # database server, were no faster, so two runners with a server each share them.
+    # database server, were no faster, so three runners with a server each share them.
     name: Test API (${{ matrix.part }}/${{ strategy.job-total }})
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2]
+        part: [1, 2, 3]
     env:
       TEST_DATABASE_URL: postgresql://openoj_test:test-only-password@127.0.0.1:5432/openoj_test?sslmode=disable
     steps:
