@@ -1,0 +1,3 @@
+# Do not load .env files implicitly, as Node.js did not. Nuxt still reads web/.env in
+# `nuxt dev` and `nuxt build`; the built server and the tests see only their environment.
+env = false

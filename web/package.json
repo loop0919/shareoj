@@ -2,21 +2,22 @@
   "name": "judge-web",
   "private": true,
   "type": "module",
+  "packageManager": "bun@1.4.4",
   "engines": {
-    "node": "^22.19.0 || ^24.11.0 || >=26.0.0"
+    "bun": ">=1.4.4"
   },
   "scripts": {
-    "dev": "nuxt dev",
-    "build": "nuxt build",
-    "preview": "nuxt preview",
-    "start": "node .output/server/index.mjs",
-    "postinstall": "nuxt prepare",
-    "typecheck": "nuxt typecheck",
-    "test": "playwright test",
-    "build:lambda": "OPENOJ_LAMBDA_BUILD=1 nuxt build",
-    "package:lambda": "npm run build:lambda && python3 scripts/package-lambda.py",
-    "test:lambda": "node scripts/test-lambda.mjs",
-    "docs:screenshots": "playwright test -c playwright.docs.config.ts"
+    "dev": "bun --bun nuxt dev",
+    "build": "bun --bun nuxt build",
+    "preview": "bun --bun nuxt preview",
+    "start": "bun .output/server/index.mjs",
+    "postinstall": "bun --bun nuxt prepare",
+    "typecheck": "bun --bun nuxt typecheck",
+    "test": "bun --bun playwright test",
+    "build:lambda": "OPENOJ_LAMBDA_BUILD=1 bun --bun nuxt build",
+    "package:lambda": "bun run build:lambda && python3 scripts/package-lambda.py",
+    "test:lambda": "python3 -m unittest discover -s scripts -p 'test_*.py' && bun scripts/test-lambda.mjs",
+    "docs:screenshots": "bun --bun playwright test -c playwright.docs.config.ts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.0",
