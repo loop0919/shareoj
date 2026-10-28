@@ -13,6 +13,10 @@ on:
         description: Keep each browser test job's JSON report, for scripts/shard-tests.mjs record
         type: boolean
         default: false
+      upload-deploy-artifacts:
+        description: Upload the Lambda packages as a deploy does, without deploying
+        type: boolean
+        default: false
 
 permissions:
   contents: read
