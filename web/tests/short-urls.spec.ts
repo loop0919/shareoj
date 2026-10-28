@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { shortId } from '../shared/utils/short-id'
 
 const problem = '11111111-1111-4111-8111-111111111111'
@@ -6,6 +6,10 @@ const submission = '22222222-2222-4222-8222-222222222222'
 const running = '88888888-8888-4888-8888-888888888888'
 const scheduled = '99999999-9999-4999-8999-999999999999'
 const post = '77777777-7777-4777-8777-777777777777'
+
+async function visit(page: Page, path: string) {
+  await page.evaluate(to => (window as unknown as { useNuxtApp: () => { $router: { push: (to: string) => Promise<unknown> } } }).useNuxtApp().$router.push(to), path)
+}
 
 for (const [from, to, status] of [
   [`/problems/${problem}?view=editorial`, `/problems/${shortId(problem)}?view=editorial`, 301],
@@ -34,11 +38,19 @@ test('an old contest problem link opens the problem at its letter', async ({ pag
 test('an old link followed inside the app keeps the page it was on in history', async ({ page }) => {
   await page.goto('/users/alice')
   await expect(page.getByRole('heading', { name: 'alice', exact: true })).toBeVisible()
-  await page.evaluate(path => (document.querySelector('#__nuxt') as unknown as { __vue_app__: { config: { globalProperties: { $router: { push: (to: string) => Promise<unknown> } } } } })
-    .__vue_app__.config.globalProperties.$router.push(path), `/problems/${problem}`)
+  await visit(page, `/problems/${problem}`)
   await expect(page).toHaveURL(`/problems/${shortId(problem)}`)
   await page.goBack()
   await expect(page).toHaveURL('/users/alice')
+})
+
+test('an old problem list link followed inside the app keeps the problem page in history', async ({ page }) => {
+  await page.goto(`/contests/${shortId(running)}/A`)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('A - A + B')
+  await visit(page, `/contests/${shortId(running)}/A?view=submissions`)
+  await expect(page).toHaveURL(`/contests/${shortId(running)}?view=submissions&problem=A`)
+  await page.goBack()
+  await expect(page).toHaveURL(`/contests/${shortId(running)}/A`)
 })
 
 for (const path of [`/contests/${shortId(running)}/B`, `/contests/${shortId(running)}/a`, `/contests/${shortId(running)}/problems/${shortId('33333333-3333-4333-8333-333333333333')}`, `/problems/${'z'.repeat(22)}`]) {
