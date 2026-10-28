@@ -12,7 +12,7 @@
 .editor-button:hover:where(:not(:disabled)), .editor-toolbar button:hover { background: var(--color-surface); }
 .editor-button:active:where(:not(:disabled)), .editor-toolbar button:active { transform: translateY(1px); }
 .editor-button.primary, .editor-button[aria-pressed="true"] { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-paper); }
-.editor-button.primary:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
+.editor-button.primary:hover:not(:disabled) { --accent-hover: color-mix(in oklab, var(--color-accent), black 15%); background: var(--accent-hover); border-color: var(--accent-hover); }
 /* A disabled button looks unavailable everywhere, not only inside the problem editor. */
 .editor-button:disabled { opacity: .55; cursor: not-allowed; }
 .editor-button:focus-visible, .editor-toolbar button:focus-visible, .author-page input:focus-visible, .author-page textarea:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 3px; }

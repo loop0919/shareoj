@@ -124,23 +124,31 @@ test('profile and password refusals name their reason', async ({ page }) => {
   await expect(page.getByRole('alert')).toHaveText('外部アカウントでログインしているため、パスワードは変更できません。')
 })
 
-test('buttons are flat: the primary keeps its color on hover and a disabled button stays still', async ({ page }) => {
-  const face = (button: ReturnType<typeof page.getByRole>) => button.evaluate(element => getComputedStyle(element).backgroundColor)
+test('buttons are flat: the primary darkens on hover and a disabled button stays still', async ({ page }) => {
+  // Canvas turns any color syntax, such as the color-mix() result, into comparable RGB.
+  const rgb = (button: ReturnType<typeof page.getByRole>, property: 'backgroundColor' | 'borderTopColor' = 'backgroundColor') => button.evaluate((element, key) => {
+    const context = document.createElement('canvas').getContext('2d')!
+    context.fillStyle = getComputedStyle(element)[key]
+    context.fillRect(0, 0, 1, 1)
+    return [...context.getImageData(0, 0, 1, 1).data.slice(0, 3)]
+  }, property)
+  const lightness = (color: number[]) => color.reduce((a, b) => a + b, 0)
   await page.goto('/my/settings')
   const save = page.getByRole('button', { name: '変更を保存', exact: true })
   await expect(save).toHaveCSS('background-image', 'none')
   await expect(save).toHaveCSS('box-shadow', 'none')
-  const accent = await face(save)
+  const accent = await rgb(save)
   await save.hover()
-  await expect(save).toHaveCSS('text-decoration-line', 'underline')
-  expect(await face(save)).toBe(accent)
+  await expect(save).toHaveCSS('text-decoration-line', 'none')
+  expect(lightness(await rgb(save))).toBeLessThan(lightness(accent))
+  expect(await rgb(save, 'borderTopColor')).toEqual(await rgb(save))
   await page.goto('/my/settings?tab=deletion')
   const remove = page.getByRole('button', { name: 'アカウントを削除', exact: true })
   await expect(remove).toBeDisabled()
-  const paper = await face(remove)
+  const paper = await rgb(remove)
   await remove.hover()
-  await expect(remove).toHaveCSS('background-color', paper)
+  expect(await rgb(remove)).toEqual(paper)
   await page.getByLabel(/確認のため/).fill('ui_test')
   await remove.hover()
-  await expect(remove).not.toHaveCSS('background-color', paper)
+  expect(await rgb(remove)).not.toEqual(paper)
 })
