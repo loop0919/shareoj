@@ -32,6 +32,14 @@ with open(sys.argv[1], 'wb', buffering=0) as file:
                 file.truncate(sandbox.OUTPUT_LIMIT)
             self.assertEqual(len(sandbox.regular_read(output, sandbox.OUTPUT_LIMIT)), sandbox.OUTPUT_LIMIT)
 
+    def test_ruby_runs_do_not_load_bundler(self):
+        for name in ('ruby40-isolate', 'ruby-truffle40-isolate'):
+            runtime = RUNTIMES[name]
+            self.assertFalse(any('bundler' in arg for arg in runtime['run']), name)
+            self.assertFalse(any(env.startswith('BUNDLE_') for env in runtime['env']), name)
+            gem_home = next(env for env in runtime['env'] if env.startswith('GEM_HOME='))
+            self.assertIn('GEM_PATH=' + gem_home.split('=', 1)[1], runtime['env'])
+
     def test_compiled_typescript_is_collected_and_keeps_javascript_suffix(self):
         runtime = RUNTIMES['typescript-node24-isolate']
         with tempfile.TemporaryDirectory() as tmp:

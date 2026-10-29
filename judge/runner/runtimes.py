@@ -58,9 +58,10 @@ RUNTIMES['haskell-ghc910-isolate'] = dict(source='Main.hs',
     env=[*NATIVE_ENV, 'PATH=' + ROOT + '/haskell-deps/bin:/usr/bin:/bin'])
 RUNTIMES['ruby40-isolate'] = dict(source='main.rb', program='main.rb', artifact='source',
     compile=[ROOT + '/ruby/bin/ruby', '-c', '/box/main.rb'],
-    run=[ROOT + '/ruby/bin/ruby', '--yjit', '-rbundler/setup', '/box/main.rb'],
-    env=[*NATIVE_ENV, 'BUNDLE_GEMFILE=' + ROOT + '/ruby-deps/Gemfile',
-         'BUNDLE_PATH=' + ROOT + '/ruby-deps/bundle', 'BUNDLE_FROZEN=true'])
+    run=[ROOT + '/ruby/bin/ruby', '--yjit', '/box/main.rb'],
+    # Every installed gem version is locked at build time; avoid loading Bundler on each run.
+    env=[*NATIVE_ENV, 'GEM_HOME=' + ROOT + '/ruby-deps/bundle/ruby/4.0.0',
+         'GEM_PATH=' + ROOT + '/ruby-deps/bundle/ruby/4.0.0'])
 RUNTIMES['ruby-truffle40-isolate'] = dict(source='main.rb', program='main.rb', artifact='source',
     compile=[ROOT + '/truffleruby/bin/ruby', '-c', '/box/main.rb'],
     run=[ROOT + '/truffleruby/bin/ruby', '--engine.Mode=latency', '/box/main.rb'],

@@ -111,7 +111,8 @@ VMのヒープ設定は提出用とinteractor用で分ける。
 実機には開発用パッケージを入れないため、Haskellがリンクに使うGSL、GLPK、BLAS、LAPACK、GMPの非バージョン付きライブラリ名も配布し、検索先を明示する。
 ネイティブライブラリの実体は`native-library-sha256.json`でも照合し、通常ビルドで変更を検出したら停止する。
 GEOSは`GEOS_LIBRARY_PATH`で固定配布先を指定する。
-TruffleRubyは固定gemディレクトリを直接参照して提出ごとのBundler起動を省き、JITを有効にした`latency`モードで実行する。
+CRubyとTruffleRubyは固定gemディレクトリを`GEM_HOME`と`GEM_PATH`で直接参照し、提出ごとのBundler起動を省く。
+TruffleRubyはJITを有効にした`latency`モードで実行する。
 Node.js／Bun向けTypeScriptの型検査時だけファイル数上限を256とし、実行時の64は維持する。
 
 出力上限は16 MiBのままとする。
