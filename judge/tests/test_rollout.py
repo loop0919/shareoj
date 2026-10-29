@@ -373,6 +373,31 @@ class RolloutTests(unittest.TestCase):
             subprocess.run(['bash', '-n'], input=script, text=True, check=True)
             compile(script.split("<<'PY'\n", 1)[1].rsplit('\nPY\n', 1)[0], '<worker health>', 'exec')
 
+    def test_worker_health_ignores_judge_code_failures_but_not_platform_failures(self):
+        digest = 'sha256:' + 'a' * 64
+        with tempfile.TemporaryDirectory() as name, patch.object(rollout, 'new_run', return_value={}), \
+                patch.object(rollout, 'submit') as submit, patch.object(rollout, 'collect', return_value=0):
+            rollout.healthy_workers(dict(region='test', nodes=['mi-a']), Path(name), digest)
+        code = compile(submit.call_args.args[-1].split("<<'PY'\n", 1)[1].rsplit('\nPY\n', 1)[0], '<worker health>', 'exec')
+
+        def check(*failures):
+            journal = '\n'.join(json.dumps(event) for event in [dict(event='worker_started'), *failures])
+            outputs = {'MainPID': '42\n', 'InvocationID': 'abc\n'}
+            def check_output(args, text=False):
+                return journal if args[0] == 'journalctl' else outputs[args[4]]
+            host = type(sys)('host')
+            host.verify_assets = lambda: digest
+            with patch.dict(sys.modules, host=host), patch.object(sys, 'argv', ['-', digest]), \
+                    patch('subprocess.check_output', side_effect=check_output), patch('subprocess.run'), \
+                    patch.object(Path, 'read_bytes', return_value=b'JUDGE_RUNTIME_DIGEST=' + digest.encode() + b'\0'), \
+                    patch('builtins.print'):
+                exec(code, {'__name__': '__main__'})
+
+        check(dict(event='failure', category='judge_code', reason='checker_execution_failed', verdict='JE'))
+        for category in ('platform', 'unknown'):
+            with self.assertRaisesRegex(SystemExit, 'worker reported failures'):
+                check(dict(event='failure', category=category, reason='x'))
+
 
 class RollingTests(unittest.TestCase):
     first, primary, other = 'i-0123456789abcdef1', 'i-0123456789abcdef0', 'i-0123456789abcdef2'

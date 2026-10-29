@@ -341,7 +341,8 @@ for line in log.splitlines():
     try: events.append(json.loads(line))
     except ValueError: pass
 if not any(e.get('event') == 'worker_started' for e in events): raise SystemExit('worker is not ready')
-if any(e.get('event') == 'failure' for e in events): raise SystemExit('worker reported failures')
+# Judges keep running during a rolling update, so a problem author's failing checker is no worker fault.
+if any(e.get('event') == 'failure' and e.get('category') != 'judge_code' for e in events): raise SystemExit('worker reported failures')
 subprocess.run(['systemctl', 'is-active', '--quiet', 'judge-worker'], check=True)
 print('worker ready')
 PY
