@@ -115,6 +115,12 @@ RUNTIME_ARCHIVE=.build/runtime-goose.tar.gz bash judge/build-assets.sh
 配布は[統合コマンドの手順](deployment-checks.md#通常は統合コマンドを使う)で行い、`rollout.json`の`runtimes`に`goose20263`を加える。
 全言語の実機smokeに合格してから公開する。
 
+2026年10月29日に`rolling`（`judge/.build/rolling-20261029T122648Z`）で全3台へ配布し、公開した。
+先行台と残りの2台の両方で、Gooseを含む28言語の実機smokeに合格した。
+runtime digestは`sha256:5910a1dfcf9f4ad2318da12612ba779a92844f35dd4c20251a0352d428c5edbe`、workerの配布物のSHA-256は`eef1163212f5906e7a1d8db391080735e008fef2c182f11567025188f179eba5`である。
+同じ配布で、CRubyの実行をBundlerなしに変えた（issue #15）。
+本番のHello Worldは、368 msから80 ms以下になった。
+
 ## 依存の固定
 
 対象一覧は[AtCoder 2025年10月一覧](https://img.atcoder.jp/file/language-update/2025-10/language-list.html)から抽出し、`judge/runtime/deps/additions/catalog.json`に保存する。
