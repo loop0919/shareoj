@@ -19,6 +19,7 @@ def failure_program(name):
         'csharp14-isolate': 'class Program { static void Main(){throw new System.Exception();} }',
         'go127-isolate': 'package main\nfunc main(){panic("rejected")}',
         'nim22-isolate': 'doAssert false',
+        'goose20263-isolate': 'fn main() { abort("rejected"); }',
         'haskell-ghc910-isolate': 'main :: IO ()\nmain = error "rejected"',
         'ruby40-isolate': 'raise "rejected"',
         'ruby-truffle40-isolate': 'raise "rejected"',

@@ -520,6 +520,69 @@
       "timeLimitMs": 5000
     }
   ],
+  "goose20263-isolate": [
+    {
+      "name": "stdin",
+      "source": "import std;\nimport os;\n\nfn main() {\n    var text: u8[>..] = [];\n    read_stdin(text);\n    var sum = 0;\n    for w in words(text) {\n        let v, ok = parse_int(w);\n        assert(ok);\n        sum += v;\n    }\n    print(sum);\n}\n",
+      "verdict": "AC",
+      "input": "1 2\n"
+    },
+    {
+      "name": "wrong",
+      "source": "fn main() { print(4); }\n",
+      "verdict": "WA"
+    },
+    {
+      "name": "syntax",
+      "source": "fn main( {\n",
+      "verdict": "CE"
+    },
+    {
+      "name": "exception",
+      "source": "fn main() { abort(\"failure\"); }\n",
+      "verdict": "RE"
+    },
+    {
+      "name": "timeout",
+      "source": "fn main() { loop { } }\n",
+      "verdict": "TLE"
+    },
+    {
+      "name": "output",
+      "source": "fn main() { loop { print(\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"); } }\n",
+      "verdict": "OLE",
+      "timeLimitMs": 5000
+    },
+    {
+      "name": "memory",
+      "source": "fn main() {\n    var a: u8[>..] = [];\n    loop { a.resize(a.len + 16777216, 1); }\n}\n",
+      "verdict": "MLE"
+    },
+    {
+      "name": "stdlib",
+      "source": "import std;\nimport dictionary;\n\nfn main() {\n    var xs: i64[>..] = [3, 1, 2];\n    sort(xs);\n    var d = dictionary<i64, i64> {};\n    for x in xs { d.update(x % 2, 0) { it += x; }; }\n    var odd = 0;\n    d.each() { k, v => if k == 1 { odd = v; } };\n    assert(xs[0] == 1 && xs[2] == 3 && odd == 4);\n    print(odd - 1);\n}\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "cleanup",
+      "source": "import os;\n\nfn main() {\n    assert(!file_exists(\"marker\"));\n    assert(write_file(\"marker\", \"x\"));\n    print(3);\n}\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "interactive",
+      "source": "import std;\nimport os;\n\nfn main() {\n    for n in 10..12 {\n        print(n);\n        flush_stdout();\n        var line: u8[>..] = [];\n        assert(read_line(line));\n        let x, ok = parse_int(trim(line));\n        assert(ok && x == 2 * n);\n    }\n}\n",
+      "verdict": "AC",
+      "input": "20\n22\n",
+      "output": "10\n11\n"
+    },
+    {
+      "name": "response",
+      "source": "import std;\nimport os;\n\nfn main() {\n    for i in 2 {\n        var line: u8[>..] = [];\n        assert(read_line(line));\n        let x, ok = parse_int(trim(line));\n        assert(ok);\n        print(2 * x);\n        flush_stdout();\n    }\n}\n",
+      "verdict": "AC",
+      "input": "10\n11\n",
+      "output": "20\n22\n"
+    }
+  ],
   "javascript-node24-isolate": [
     {
       "name": "stdin",

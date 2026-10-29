@@ -45,6 +45,10 @@ RUNTIMES['nim22-isolate'] = dict(source='main.nim',
              '--skipUserCfg:on', '--skipParentCfg:on', '--skipProjCfg:on', '--noNimblePath', '--nimcache:/box/nimcache', '-o:/box/main', '/box/main.nim'],
     run=['/box/main'], artifact='native',
     env=['LD_LIBRARY_PATH=' + ROOT + '/nim-deps/lib:' + ROOT + '/gcc/lib64'])
+# The runtime is compiled into each program, so no shared object cache outlives the box.
+RUNTIMES['goose20263-isolate'] = dict(source='main.goose', artifact='native',
+    compile=[ROOT + '/goose/goose', 'build', '--standalone', '--cc', GCC + 'gcc', '-O2', '/box/main.goose', '-o', '/box/main'],
+    run=['/box/main'], env=['GOOSE_HOME=/box/goose-home'])
 
 # Module resolution requires the original suffix; dependencies are operator-owned mounts.
 NODE = ROOT + '/node/bin/node'

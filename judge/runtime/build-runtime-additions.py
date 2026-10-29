@@ -267,6 +267,28 @@ def golf():
         shutil.copy2(WORK / name / license, target / (name + '-LICENSE'))
 
 
+def goose():
+    # Verify the input here too, so this step can extend an already deployed runtime tree.
+    item = json.loads((INPUT / 'sources.json').read_text())['files']['goose.tar.gz']
+    with (INPUT / 'goose.tar.gz').open('rb') as f:
+        if hashlib.file_digest(f, 'sha256').hexdigest() != item['sha256']:
+            raise RuntimeError('Goose archive checksum changed')
+    # The release finds its standard library, TinyCC files and built-in packages beside the binary.
+    target = ROOT / 'goose'
+    unpack('goose.tar.gz', target)
+    for name in ('docs', 'samples', 'vscode'):
+        shutil.rmtree(target / name)
+    run('chmod', '-R', 'a+rX', target)
+    # Build a program the way submissions are built, so a release the judge's GCC cannot use stops here.
+    probe = WORK / 'goose-probe'
+    probe.mkdir(exist_ok=True)
+    (probe / 'main.goose').write_text('fn main() { print(3); }\n')
+    run(target / 'goose', 'build', '--standalone', '--cc', ROOT / 'gcc/bin/gcc', '-O2', probe / 'main.goose',
+        '-o', probe / 'main', env=dict(os.environ, GOOSE_HOME=str(probe / 'home')))
+    if subprocess.check_output([probe / 'main'], text=True) != '3\n':
+        raise RuntimeError('Goose probe printed the wrong output')
+
+
 def finish():
     save_lock(INPUT / 'sources.json')
     save_lock(DEPS / 'catalog.json')
@@ -300,6 +322,7 @@ def finish():
         shutil.copyfile(source, native / source.name)
     pending += [ROOT / 'ghc/bin/ghc', ROOT / 'ruby/bin/ruby']
     pending += [ROOT / 'golf' / name for name in ('clay', 'dc', 'tritium', 'wsc', 'nibbles')]
+    pending.append(ROOT / 'goose/goose')
     seen = set()
     while pending:
         path = pending.pop()
@@ -327,17 +350,17 @@ def finish():
     (ROOT / 'build-manifest/additions' / native_lock).write_text(json.dumps(native_hashes, indent=2) + '\n')
     # Keep inventory of vendored native objects and source cache alongside package-manager locks.
     checksums = {}
-    for subtree in ('ruby-deps', 'truffleruby-deps', 'haskell-deps', 'deno-deps', 'addition-native', 'golf'):
+    for subtree in ('ruby-deps', 'truffleruby-deps', 'haskell-deps', 'deno-deps', 'addition-native', 'golf', 'goose'):
         for path in sorted((ROOT / subtree).rglob('*')):
             if path.is_file() and not path.is_symlink():
                 with path.open('rb') as f:
                     checksums[str(path.relative_to(ROOT))] = hashlib.file_digest(f, 'sha256').hexdigest()
     (ROOT / 'build-manifest/additions/content-sha256.json').write_text(json.dumps(checksums, sort_keys=True) + '\n')
     for name in ('node', 'bun', 'deno', 'ghc', 'cabal', 'ruby', 'truffleruby', 'js-deps',
-                 'deno-deps', 'ruby-deps', 'truffleruby-deps', 'haskell-deps', 'addition-native', 'golf'):
+                 'deno-deps', 'ruby-deps', 'truffleruby-deps', 'haskell-deps', 'addition-native', 'golf', 'goose'):
         run('chmod', '-R', 'a+rX', ROOT / name)
 
 
 if __name__ == '__main__':
     {'toolchains': toolchains, 'javascript': javascript, 'ruby-native': ruby_native,
-     'ruby': ruby, 'truffleruby': lambda: ruby(True), 'haskell': haskell, 'golf': golf, 'finish': finish}[sys.argv[1]]()
+     'ruby': ruby, 'truffleruby': lambda: ruby(True), 'haskell': haskell, 'golf': golf, 'goose': goose, 'finish': finish}[sys.argv[1]]()

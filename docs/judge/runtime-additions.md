@@ -67,6 +67,54 @@ smokeのfixtureはACとWAだけを確かめる。
 Textは時間超過も実行時エラーも起こさないためである。
 checker、生成、対話のsmokeは行わない。
 
+## Gooseの追加
+
+`goose20263`は[Goose](https://github.com/aardappel/goose)のv2026.3である。
+公式のLinux x64配布物をSHA-256で固定し、`/opt/judge-runtimes/goose`へ展開する。
+配布物には標準ライブラリ、TinyCCの実行時ファイル、組み込みパッケージのgfxとphysicsが含まれる。
+ドキュメント、サンプル、VS Code拡張は展開後に削除する。
+
+コンパイルは`goose build --standalone --cc /opt/judge-runtimes/gcc/bin/gcc -O2`で行う。
+GooseがCへ変換し、既存のGCC 16.2.0が`-O2 -lm -pthread`でネイティブコードにする。
+`--standalone`で実行時ライブラリを各プログラムへ組み込むため、ボックスの外にキャッシュを残さない。
+中間ファイルは`GOOSE_HOME=/box/goose-home`に置く。
+gitから取得するパッケージは、ボックスにgitもネットワークもないためCEになる。
+
+Gooseは値を置くデータスタックごとに2 GiBのアドレス空間を予約し、使った分だけをコミットする。
+メモリ上限はcgroupの使用量で判定するため、予約だけでは上限に達しない。
+整数の桁あふれは`--debug`なしでは検査せずに折り返し、ゼロ除算と範囲外アクセスは常に停止する。
+
+2026年10月29日のローカル検証では、Ubuntu 24.04のコンテナに固定GCCとGooseを置き、提出と同じコマンドで確認した。
+smokeのfixtureは時間・出力・メモリ超過を除いて合格し、ソースは1件0.2〜0.3秒でコンパイルできた。
+時間超過、出力超過と、512 MiBのcgroupでのメモリ超過も別に確認した。
+Hello Worldは64 MiBの上限でも実行できた。
+これらは実機のisolate内での判定検証や公開判定を代替しない。
+
+配布済みの`runtime-current.tar.gz`へGooseだけを加える手順は次のとおりである。
+既存の処理系はビルドし直さない。
+
+```sh
+python3 judge/runtime/prepare-runtime-inputs.py --additions
+runtime_stage=$(mktemp -d)
+tar -xzf judge/.build/runtime-current.tar.gz -C "$runtime_stage"
+test ! -e "$runtime_stage/judge-runtimes/goose"
+docker run --rm -e DEBIAN_FRONTEND=noninteractive -e OWNER="$(id -u):$(id -g)" -v "$runtime_stage:/opt" \
+  -v "$PWD/judge/.build/addition-inputs:/inputs/additions:ro" \
+  -v "$PWD/judge/runtime/deps/additions:/build/deps:ro" \
+  -v "$PWD/judge/runtime/build-runtime-additions.py:/build/build-runtime-additions.py:ro" \
+  ubuntu:24.04@sha256:224a1869083a311ef3f13648a154ba79832fbef6364d31493642ca03082da254 sh -c \
+  'apt-get update && apt-get install -y --no-install-recommends python3 libc6-dev libmpc3 binutils &&
+   python3 /build/build-runtime-additions.py goose && chown -R "$OWNER" /opt/judge-runtimes/goose'
+tar -C "$runtime_stage" -I 'gzip -1' -cf judge/.build/runtime-goose.tar.gz judge-runtimes
+rm -rf "$runtime_stage"
+sha256sum judge/.build/runtime-goose.tar.gz
+RUNTIME_ARCHIVE=.build/runtime-goose.tar.gz bash judge/build-assets.sh
+```
+
+2026年10月29日にこの手順で作った`runtime-goose.tar.gz`のSHA-256は`3ba427f14ae6b6bcbe2c89ce4bb6c3497045e0e91190df59c85fcdfed4691d3f`である。
+配布は[統合コマンドの手順](deployment-checks.md#通常は統合コマンドを使う)で行い、`rollout.json`の`runtimes`に`goose20263`を加える。
+全言語の実機smokeに合格してから公開する。
+
 ## 依存の固定
 
 対象一覧は[AtCoder 2025年10月一覧](https://img.atcoder.jp/file/language-update/2025-10/language-list.html)から抽出し、`judge/runtime/deps/additions/catalog.json`に保存する。

@@ -22,6 +22,7 @@
 | Java 25 | Temurin 25.0.4.1+1 LTS | `javac --release 25`、プレビュー機能なし |
 | Nim 2.2 | Nim 2.2.10 / GCC 16.2.0 | `nim cpp -d:release --opt:speed --mm:refc` |
 | Go 1.27 | Go 1.27.1 | `go build -mod=vendor`、CGO無効 |
+| Goose 2026.3 | Goose v2026.3 / GCC 16.2.0 | Cへ変換し、`goose build --standalone -O2`でコンパイル |
 | Haskell | GHC 9.10.3 / Stackage LTS 24系列 | `-O2 -threaded`、固定パッケージDB |
 | JavaScript / TypeScript (Node.js) | Node.js 24.21.0 LTS / TypeScript 7.0.2 | JSは構文検査、TSは型検査後にJSを実行 |
 | JavaScript / TypeScript (Deno) | Deno 2.9.7 / TypeScript 6.0.3 | GitHub公式安定版、依存は事前キャッシュ |
@@ -38,6 +39,8 @@
 CとC++は`main`関数、Rustは`fn main()`を含めてください。
 
 Javaは`Main`クラスの`public static void main(String[] args)`から実行します。 C#は`static void Main()`またはトップレベルステートメント、Goは`package main`と`func main()`、Haskellは`main :: IO ()`を含めてください。 C#のusingはソースに記述してください。プロジェクトファイルやモジュール定義の提出は不要です。
+
+Gooseは`fn main()`を含めてください。 標準入力は`import os;`で使える`read_stdin`や`read_line`で読み、インタラクティブ問題では`flush_stdout()`でフラッシュしてください。 整数の桁あふれは検査せずに折り返します。 使えるのは標準ライブラリだけで、gitから取得するパッケージには対応していません。
 
 CPythonとPyPyは実行前に構文検査を行います。 Codonはネイティブコードへコンパイルする環境で、利用できるのはCodonが対応するPythonの機能です。 CPython連携やPyPIパッケージの追加には対応していません。
 

@@ -40,6 +40,13 @@ with open(sys.argv[1], 'wb', buffering=0) as file:
             gem_home = next(env for env in runtime['env'] if env.startswith('GEM_HOME='))
             self.assertIn('GEM_PATH=' + gem_home.split('=', 1)[1], runtime['env'])
 
+    def test_goose_builds_with_the_judge_gcc_and_keeps_its_cache_in_the_box(self):
+        runtime = RUNTIMES['goose20263-isolate']
+        compile = runtime['compile']
+        self.assertIn('--standalone', compile)
+        self.assertEqual(compile[compile.index('--cc') + 1], '/opt/judge-runtimes/gcc/bin/gcc')
+        self.assertEqual([env for env in runtime['env'] if env.startswith('GOOSE_HOME=')], ['GOOSE_HOME=/box/goose-home'])
+
     def test_compiled_typescript_is_collected_and_keeps_javascript_suffix(self):
         runtime = RUNTIMES['typescript-node24-isolate']
         with tempfile.TemporaryDirectory() as tmp:
