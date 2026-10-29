@@ -59,15 +59,20 @@ test('clicking the avatar opens the account menu, whose items lead on', async ({
 test('logout passes through the Cognito logout the server returns', async ({ page }) => {
   const cognito = 'https://example.auth.ap-northeast-1.amazoncognito.com'
   let visited = ''
-  await page.route('**/api/auth/logout', route => route.fulfill({ json: { user: null, logoutUrl: `${cognito}/logout?client_id=c` } }))
+  // The session ends with the logout, and the login page, loaded afresh after Cognito, must see that.
+  // Signed out only from then on, or a session read before the click would close the menu.
+  let loggedOut = false
+  await page.route('**/api/auth/me', route => loggedOut ? route.fulfill({ json: { user: null } }) : route.fallback())
+  await page.route('**/api/auth/logout', route => {
+    loggedOut = true
+    return route.fulfill({ json: { user: null, logoutUrl: `${cognito}/logout?client_id=c` } })
+  })
   await page.route(`${cognito}/**`, route => {
     visited = route.request().url()
     return route.fulfill({ status: 302, headers: { location: 'http://127.0.0.1:13000/login' } })
   })
   await page.goto('/problems')
   await page.locator('.site-header').getByRole('button', { name: 'アカウントメニュー', exact: true }).click()
-  // The login page loads afresh after Cognito, so it must see the signed-out state.
-  await page.route('**/api/auth/me', route => route.fulfill({ json: { user: null } }))
   await page.getByRole('navigation', { name: 'アカウント', exact: true }).getByRole('button', { name: 'ログアウト', exact: true }).click()
   await expect(page).toHaveURL('http://127.0.0.1:13000/login')
   expect(visited).toBe(`${cognito}/logout?client_id=c`)

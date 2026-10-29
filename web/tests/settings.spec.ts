@@ -103,17 +103,22 @@ test('deletion asks for the handle and explains a contest whose results are not 
 test('deletion passes through the Cognito logout the server returns', async ({ page }) => {
   const cognito = 'https://example.auth.ap-northeast-1.amazoncognito.com'
   let visited = ''
-  await page.route('**/api/my/account', route => route.request().method() !== 'DELETE'
-    ? route.fallback()
-    : route.fulfill({ json: { logoutUrl: `${cognito}/logout?client_id=c` } }))
+  // The session ends with the deletion, and the top page, loaded afresh after Cognito, must see that.
+  // Signed out only from then on: the settings page reads the session again after hydration, and an
+  // earlier signed-out answer would send it to the login page before the click.
+  let deleted = false
+  await page.route('**/api/auth/me', route => deleted ? route.fulfill({ json: { user: null } }) : route.fallback())
+  await page.route('**/api/my/account', route => {
+    if (route.request().method() !== 'DELETE') return route.fallback()
+    deleted = true
+    return route.fulfill({ json: { logoutUrl: `${cognito}/logout?client_id=c` } })
+  })
   await page.route(`${cognito}/**`, route => {
     visited = route.request().url()
     return route.fulfill({ status: 302, headers: { location: 'http://127.0.0.1:13000/' } })
   })
   await page.goto('/my/settings?tab=deletion')
   await page.getByLabel(/確認のため/).fill('ui_test')
-  // The top page loads afresh after Cognito, so it must see the signed-out state.
-  await page.route('**/api/auth/me', route => route.fulfill({ json: { user: null } }))
   await page.getByRole('button', { name: 'アカウントを削除', exact: true }).click()
   await expect(page).toHaveURL('http://127.0.0.1:13000/')
   expect(visited).toBe(`${cognito}/logout?client_id=c`)

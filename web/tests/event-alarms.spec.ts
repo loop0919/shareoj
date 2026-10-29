@@ -292,8 +292,13 @@ test('signing out cancels the timers', async ({ page, context, baseURL }) => {
   await prepare(page, context, baseURL!)
   await serve(page, [scheduled(2)])
   await open(page)
-  await page.route('**/api/auth/me', route => route.fulfill({ json: { user: null } }))
-  await page.route('**/api/auth/logout', route => route.fulfill({ json: {} }))
+  // Signed out only once the logout is answered, or a session read before the click would close the menu.
+  let loggedOut = false
+  await page.route('**/api/auth/me', route => loggedOut ? route.fulfill({ json: { user: null } }) : route.fallback())
+  await page.route('**/api/auth/logout', route => {
+    loggedOut = true
+    return route.fulfill({ json: {} })
+  })
   await page.getByRole('button', { name: 'アカウントメニュー' }).click()
   await page.getByRole('navigation', { name: 'アカウント' }).getByRole('button', { name: 'ログアウト', exact: true }).click()
   await expect(page).toHaveURL('/login')
