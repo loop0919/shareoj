@@ -242,208 +242,203 @@ output only問題の答えの提出に使います。
 
 ### C++23（GCC・Clang共通）とcLay
 
-| ライブラリ | バージョン |
-| --- | --- |
-| AtCoder Library | 1.6 |
-| Boost（ヘッダーのみ） | 1.92.0 |
-| testlib | 固定リビジョン `1e4e8a24c79c` |
+| ライブラリ | バージョン | 読み込み例 | リンク |
+| --- | --- | --- | --- |
+| AtCoder Library | 1.6 | `#include <atcoder/all>` | [GitHub](https://github.com/atcoder/ac-library) |
+| Boost（ヘッダーのみ） | 1.92.0 | `#include <boost/multiprecision/cpp_int.hpp>` | [公式サイト](https://www.boost.org/) |
+| testlib | 固定リビジョン `1e4e8a24c79c` | `#include "testlib.h"` | [GitHub](https://github.com/MikeMirzayanov/testlib) |
 
-cLayもC++23と同じヘッダーを利用できます。
-ACLは`#include <atcoder/all>`などで読み込めます。 別途リンクが必要なBoostライブラリは対象外です。
+cLayもC++23と同じヘッダーを利用できます。 別途リンクが必要なBoostライブラリは対象外です。
 
 testlibを使う判定コードの書き方は、[判定方法の設定](/docs/checkers#testlib)を確認してください。
 
 ### CPython・PyPy
 
-| ライブラリ | バージョン | 対応環境 |
-| --- | --- | --- |
-| more-itertools | 11.1.0 | CPython・PyPy |
-| sortedcontainers | 2.4.0 | CPython・PyPy |
-| ac-library-python | 固定リビジョン `27fdbb71cd0d` | CPython・PyPy |
-| NumPy | 2.5.3 | CPythonのみ |
-| SciPy | 1.18.1 | CPythonのみ |
-
-ac-library-pythonは`atcoder`からインポートします。
+| ライブラリ | バージョン | 読み込み例 | リンク |
+| --- | --- | --- | --- |
+| more-itertools | 11.1.0 | `from more_itertools import chunked` | [PyPI](https://pypi.org/project/more-itertools/) |
+| sortedcontainers | 2.4.0 | `from sortedcontainers import SortedList` | [PyPI](https://pypi.org/project/sortedcontainers/) |
+| ac-library-python | 固定リビジョン `27fdbb71cd0d` | `from atcoder.dsu import DSU` | [GitHub](https://github.com/not522/ac-library-python) |
+| NumPy（CPythonのみ） | 2.5.3 | `import numpy as np` | [PyPI](https://pypi.org/project/numpy/) |
+| SciPy（CPythonのみ） | 1.18.1 | `from scipy.fft import fft` | [PyPI](https://pypi.org/project/scipy/) |
 
 ### Rust
 
-| ライブラリ | バージョン |
-| --- | --- |
-| ac-library-rs | 0.2.0 |
-| fixedbitset | 0.5.7 |
-| itertools | 0.15.0 |
-| num | 0.4.3 |
-| proconio | 0.6.0（derive有効） |
-| rand | 0.10.2 |
-| rustc-hash | 2.1.3 |
+| ライブラリ | バージョン | 読み込み例 | リンク |
+| --- | --- | --- | --- |
+| ac-library-rs | 0.2.0 | `use ac_library::Dsu;` | [crates.io](https://crates.io/crates/ac-library-rs) |
+| fixedbitset | 0.5.7 | `use fixedbitset::FixedBitSet;` | [crates.io](https://crates.io/crates/fixedbitset) |
+| itertools | 0.15.0 | `use itertools::Itertools;` | [crates.io](https://crates.io/crates/itertools) |
+| num | 0.4.3 | `use num::BigInt;` | [crates.io](https://crates.io/crates/num) |
+| proconio | 0.6.0（derive有効） | `use proconio::input;` | [crates.io](https://crates.io/crates/proconio) |
+| rand | 0.10.2 | `use rand::RngExt;` | [crates.io](https://crates.io/crates/rand) |
+| rustc-hash | 2.1.3 | `use rustc_hash::FxHashMap;` | [crates.io](https://crates.io/crates/rustc-hash) |
 
-依存関係は設定済みで、`Cargo.toml`の提出は不要です。 たとえば`use ac_library::Dsu;`や`use proconio::input;`で読み込めます。
+依存関係は設定済みで、`Cargo.toml`の提出は不要です。
 
 ### C# 14
 
-| ライブラリ | バージョン | 読み込み例 |
-| --- | --- | --- |
-| MathNet.Numerics | `5.0.0` | `using MathNet.Numerics.LinearAlgebra;` |
-| ac-library-csharp | `4.1.4` | `using AtCoder;` |
+| ライブラリ | バージョン | 読み込み例 | リンク |
+| --- | --- | --- | --- |
+| MathNet.Numerics | 5.0.0 | `using MathNet.Numerics.LinearAlgebra;` | [NuGet](https://www.nuget.org/packages/MathNet.Numerics) |
+| ac-library-csharp | 4.1.4 | `using AtCoder;` | [NuGet](https://www.nuget.org/packages/ac-library-csharp) |
 
 ACLのUnion-Findは`new Dsu(n)`で作成します。MathNet.Numericsはmanaged providerを使います。
 
 ### Java 25
 
-| ライブラリ | バージョン | 読み込み例 |
-| --- | --- | --- |
-| ac-library-java | `2.0.0` | `import ac_library.DSU;` |
+| ライブラリ | バージョン | 読み込み例 | リンク |
+| --- | --- | --- | --- |
+| ac-library-java | 2.0.0 | `import ac_library.DSU;` | [GitHub](https://github.com/ocha98/ac-library-java) |
 
 ### Nim 2.2
 
-| ライブラリ | バージョン | 読み込み例 |
-| --- | --- | --- |
-| AC Library | `v1.5.1` | `<atcoder/dsu>` |
-| Arraymancer | `84af537af1bc1f90229fff2b90abf5e5c1b02616` | `import arraymancer` |
-| Eigen | `3.4.0` | `<Eigen/Dense>` |
-| Nim-ACL | `0.1.0` | `import atcoder/dsu` |
-| bigints | `ca00f6da386af9ad7e3abf603c0201da6a014477` | `import bigints` |
-| bignum_chaemon | `1.0.6` | `import bignum` |
-| boost | `1.88.0` | `<boost/multiprecision/cpp_int.hpp>` |
-| fftw | `3.3.10` | `<fftw3.h>` |
-| gmp | `6.3.0` | `import gmp` |
-| mpfr | `4.2.1` | `<mpfr.h>` |
-| neo | `0.3.5` | `import neo` |
-| nimsimd | `1.3.2` | `import nimsimd/sse2` |
-| regex | `0.26.3` | `import regex` |
-| sat | `faf1617f44d7632ee9601ebc13887644925dcc01` | `import sat/sat` |
+| ライブラリ | バージョン | 読み込み例 | リンク |
+| --- | --- | --- | --- |
+| AC Library | 1.5.1 | `<atcoder/dsu>` | [GitHub](https://github.com/atcoder/ac-library) |
+| Arraymancer | 固定リビジョン `84af537af1bc` | `import arraymancer` | [GitHub](https://github.com/mratsim/Arraymancer) |
+| Eigen | 3.4.0 | `<Eigen/Dense>` | [GitLab](https://gitlab.com/libeigen/eigen) |
+| Nim-ACL | 0.1.0 | `import atcoder/dsu` | [GitHub](https://github.com/zer0-star/Nim-ACL) |
+| bigints | 固定リビジョン `ca00f6da386a` | `import bigints` | [GitHub](https://github.com/nim-lang/bigints) |
+| bignum_chaemon | 1.0.6 | `import bignum` | [GitHub](https://github.com/chaemon/bignum) |
+| boost | 1.88.0 | `<boost/multiprecision/cpp_int.hpp>` | [公式サイト](https://www.boost.org/) |
+| fftw | 3.3.10 | `<fftw3.h>` | [公式サイト](https://www.fftw.org/) |
+| gmp | 6.3.0 | `import gmp` | [公式サイト](https://gmplib.org/) |
+| mpfr | 4.2.1 | `<mpfr.h>` | [公式サイト](https://www.mpfr.org/) |
+| neo | 0.3.5 | `import neo` | [GitHub](https://github.com/andreaferretti/neo) |
+| nimsimd | 1.3.2 | `import nimsimd/sse2` | [GitHub](https://github.com/guzba/nimsimd) |
+| regex | 0.26.3 | `import regex` | [GitHub](https://github.com/nitely/nim-regex) |
+| sat | 固定リビジョン `faf1617f44d7` | `import sat/sat` | [GitHub](https://github.com/nim-lang/sat) |
 
 Nimのメモリ管理は`refc`です。bignumとそのGMPバインディングにはNim 2.2 / refc用の互換パッチを適用しています。 CPU向け機能を提供し、GPUは使用できません。SIMDは実行ホストの対応命令を確認してください。 山括弧の項目はC++ヘッダーで、NimのC++連携から使用します。GMPなどのネイティブライブラリは必要に応じて`{.passL: "-lgmp".}`のようにリンクしてください。
 
 ### Go 1.27
 
-| ライブラリ | バージョン | 読み込み例 |
-| --- | --- | --- |
-| ac-library-go | `v0.0.0-20260106091915-2caa314afb5a` | `github.com/monkukui/ac-library-go/dsu` |
-| gods | `v1.18.1` | `github.com/emirpasic/gods/sets/treeset` |
-| golang_org_x_exp | `v0.0.0-20260908205506-85c1c2202aba` | `golang.org/x/exp/slices` |
-| gonum | `v0.17.0` | `gonum.org/v1/gonum/mat` |
-| gostl | `v1.2.0` | `github.com/liyue201/gostl/ds/queue` |
-| immutable | `v0.4.3` | `github.com/benbjohnson/immutable` |
+| ライブラリ | バージョン | 読み込み例 | リンク |
+| --- | --- | --- | --- |
+| ac-library-go | 固定リビジョン `2caa314afb5a` | `import "github.com/monkukui/ac-library-go/dsu"` | [pkg.go.dev](https://pkg.go.dev/github.com/monkukui/ac-library-go) |
+| gods | 1.18.1 | `import "github.com/emirpasic/gods/sets/treeset"` | [pkg.go.dev](https://pkg.go.dev/github.com/emirpasic/gods) |
+| golang.org/x/exp | 固定リビジョン `85c1c2202aba` | `import "golang.org/x/exp/slices"` | [pkg.go.dev](https://pkg.go.dev/golang.org/x/exp) |
+| gonum | 0.17.0 | `import "gonum.org/v1/gonum/mat"` | [pkg.go.dev](https://pkg.go.dev/gonum.org/v1/gonum) |
+| gostl | 1.2.0 | `import "github.com/liyue201/gostl/ds/queue"` | [pkg.go.dev](https://pkg.go.dev/github.com/liyue201/gostl) |
+| immutable | 0.4.3 | `import "github.com/benbjohnson/immutable"` | [pkg.go.dev](https://pkg.go.dev/github.com/benbjohnson/immutable) |
 
-Goは上記のパッケージを`import`して使用します。モジュール定義は設定済みで、提出時のダウンロードとCGOは無効です。
+モジュール定義は設定済みで、提出時のダウンロードとCGOは無効です。
 
 ### Haskell
 
-| ライブラリ | バージョン |
-| --- | --- |
-| ac-library-hs | 1.5.3.2 |
-| adjunctions | 4.4.4 |
-| attoparsec | 0.14.4 |
-| bifunctors | 5.6.3 |
-| bitvec | 1.1.6.0 |
-| comonad | 5.0.10 |
-| contravariant | 1.5.6 |
-| distributive | 0.6.3 |
-| extra | 1.8.1 |
-| fgl | 5.8.3.1 |
-| flow | 2.0.0.11 |
-| free | 5.2 |
-| hashable | 1.5.1.0 |
-| heaps | 0.4.1 |
-| hmatrix | 0.20.2 |
-| hmatrix-glpk | 0.19.0.0 |
-| hmatrix-gsl | 0.19.0.1 |
-| hmatrix-special | 0.19.0.0 |
-| ilist | 0.3.1.0 |
-| indexed-traversable | 0.1.5 |
-| indexed-traversable-instances | 0.1.2.1 |
-| integer-logarithms | 1.0.5 |
-| kan-extensions | 5.2.8 |
-| lens | 5.3.6 |
-| linear-base | 0.8.1 |
-| list-t | 1.0.5.7 |
-| massiv | 1.0.5.0 |
-| megaparsec | 9.8.2 |
-| monad-memo | 0.5.4 |
-| mono-traversable | 1.0.21.0 |
-| mutable-containers | 0.3.4.1 |
-| mwc-random | 0.15.3.0 |
-| parallel | 3.3.0.0 |
-| parser-combinators | 1.3.1 |
-| primitive | 0.9.1.0 |
-| profunctors | 5.6.3 |
-| psqueues | 0.2.8.3 |
-| QuickCheck | 2.19.0.0 |
-| random | 1.3.1 |
-| reflection | 2.1.9 |
-| regex-tdfa | 1.3.2.6 |
-| safe-exceptions | 0.1.7.4 |
-| scientific | 0.3.8.1 |
-| semialign | 1.4 |
-| semigroupoids | 6.0.2 |
-| split | 0.2.5.1 |
-| strict | 0.5.1 |
-| strict-lens | 0.4.1 |
-| tagged | 0.8.10 |
-| tasty | 1.5.4 |
-| tf-random | 0.5 |
-| these | 1.2.1 |
-| these-lens | 1.0.2 |
-| trifecta | 2.1.4 |
-| unboxing-vector | 0.2.0.0 |
-| unordered-containers | 0.2.21 |
-| utility-ht | 0.0.17.2 |
-| vector | 0.13.2.0 |
-| vector-algorithms | 0.9.1.0 |
-| vector-split | 1.0.0.4 |
-| vector-stream | 0.1.0.1 |
-| vector-th-unbox | 0.2.2 |
-| wide-word | 0.1.9.0 |
-| witherable | 0.5 |
+| ライブラリ | バージョン | 読み込み例 | リンク |
+| --- | --- | --- | --- |
+| ac-library-hs | 1.5.3.2 | `import AtCoder.Dsu` | [Hackage](https://hackage.haskell.org/package/ac-library-hs) |
+| adjunctions | 4.4.4 | `import Data.Functor.Rep` | [Hackage](https://hackage.haskell.org/package/adjunctions) |
+| attoparsec | 0.14.4 | `import Data.Attoparsec.ByteString.Char8` | [Hackage](https://hackage.haskell.org/package/attoparsec) |
+| bifunctors | 5.6.3 | `import Data.Biapplicative` | [Hackage](https://hackage.haskell.org/package/bifunctors) |
+| bitvec | 1.1.6.0 | `import Data.Bit` | [Hackage](https://hackage.haskell.org/package/bitvec) |
+| comonad | 5.0.10 | `import Control.Comonad` | [Hackage](https://hackage.haskell.org/package/comonad) |
+| contravariant | 1.5.6 | `import Data.Functor.Contravariant.Divisible` | [Hackage](https://hackage.haskell.org/package/contravariant) |
+| distributive | 0.6.3 | `import Data.Distributive` | [Hackage](https://hackage.haskell.org/package/distributive) |
+| extra | 1.8.1 | `import Data.List.Extra` | [Hackage](https://hackage.haskell.org/package/extra) |
+| fgl | 5.8.3.1 | `import Data.Graph.Inductive` | [Hackage](https://hackage.haskell.org/package/fgl) |
+| flow | 2.0.0.11 | `import Flow` | [Hackage](https://hackage.haskell.org/package/flow) |
+| free | 5.2 | `import Control.Monad.Free` | [Hackage](https://hackage.haskell.org/package/free) |
+| hashable | 1.5.1.0 | `import Data.Hashable` | [Hackage](https://hackage.haskell.org/package/hashable) |
+| heaps | 0.4.1 | `import Data.Heap` | [Hackage](https://hackage.haskell.org/package/heaps) |
+| hmatrix | 0.20.2 | `import Numeric.LinearAlgebra` | [Hackage](https://hackage.haskell.org/package/hmatrix) |
+| hmatrix-glpk | 0.19.0.0 | `import Numeric.LinearProgramming` | [Hackage](https://hackage.haskell.org/package/hmatrix-glpk) |
+| hmatrix-gsl | 0.19.0.1 | `import Numeric.GSL` | [Hackage](https://hackage.haskell.org/package/hmatrix-gsl) |
+| hmatrix-special | 0.19.0.0 | `import Numeric.GSL.Special` | [Hackage](https://hackage.haskell.org/package/hmatrix-special) |
+| ilist | 0.3.1.0 | `import Data.List.Index` | [Hackage](https://hackage.haskell.org/package/ilist) |
+| indexed-traversable | 0.1.5 | `import Data.Foldable.WithIndex` | [Hackage](https://hackage.haskell.org/package/indexed-traversable) |
+| indexed-traversable-instances | 0.1.2.1 | `import Data.Functor.WithIndex.Instances` | [Hackage](https://hackage.haskell.org/package/indexed-traversable-instances) |
+| integer-logarithms | 1.0.5 | `import Math.NumberTheory.Logarithms` | [Hackage](https://hackage.haskell.org/package/integer-logarithms) |
+| kan-extensions | 5.2.8 | `import Data.Functor.Yoneda` | [Hackage](https://hackage.haskell.org/package/kan-extensions) |
+| lens | 5.3.6 | `import Control.Lens` | [Hackage](https://hackage.haskell.org/package/lens) |
+| linear-base | 0.8.1 | `import Prelude.Linear` | [Hackage](https://hackage.haskell.org/package/linear-base) |
+| list-t | 1.0.5.7 | `import ListT` | [Hackage](https://hackage.haskell.org/package/list-t) |
+| massiv | 1.0.5.0 | `import Data.Massiv.Array` | [Hackage](https://hackage.haskell.org/package/massiv) |
+| megaparsec | 9.8.2 | `import Text.Megaparsec` | [Hackage](https://hackage.haskell.org/package/megaparsec) |
+| monad-memo | 0.5.4 | `import Control.Monad.Memo` | [Hackage](https://hackage.haskell.org/package/monad-memo) |
+| mono-traversable | 1.0.21.0 | `import Data.MonoTraversable` | [Hackage](https://hackage.haskell.org/package/mono-traversable) |
+| mutable-containers | 0.3.4.1 | `import Data.Mutable` | [Hackage](https://hackage.haskell.org/package/mutable-containers) |
+| mwc-random | 0.15.3.0 | `import System.Random.MWC` | [Hackage](https://hackage.haskell.org/package/mwc-random) |
+| parallel | 3.3.0.0 | `import Control.Parallel.Strategies` | [Hackage](https://hackage.haskell.org/package/parallel) |
+| parser-combinators | 1.3.1 | `import Control.Monad.Combinators` | [Hackage](https://hackage.haskell.org/package/parser-combinators) |
+| primitive | 0.9.1.0 | `import Data.Primitive` | [Hackage](https://hackage.haskell.org/package/primitive) |
+| profunctors | 5.6.3 | `import Data.Profunctor` | [Hackage](https://hackage.haskell.org/package/profunctors) |
+| psqueues | 0.2.8.3 | `import Data.IntPSQ` | [Hackage](https://hackage.haskell.org/package/psqueues) |
+| QuickCheck | 2.19.0.0 | `import Test.QuickCheck` | [Hackage](https://hackage.haskell.org/package/QuickCheck) |
+| random | 1.3.1 | `import System.Random` | [Hackage](https://hackage.haskell.org/package/random) |
+| reflection | 2.1.9 | `import Data.Reflection` | [Hackage](https://hackage.haskell.org/package/reflection) |
+| regex-tdfa | 1.3.2.6 | `import Text.Regex.TDFA` | [Hackage](https://hackage.haskell.org/package/regex-tdfa) |
+| safe-exceptions | 0.1.7.4 | `import Control.Exception.Safe` | [Hackage](https://hackage.haskell.org/package/safe-exceptions) |
+| scientific | 0.3.8.1 | `import Data.Scientific` | [Hackage](https://hackage.haskell.org/package/scientific) |
+| semialign | 1.4 | `import Data.Semialign` | [Hackage](https://hackage.haskell.org/package/semialign) |
+| semigroupoids | 6.0.2 | `import Data.Functor.Apply` | [Hackage](https://hackage.haskell.org/package/semigroupoids) |
+| split | 0.2.5.1 | `import Data.List.Split` | [Hackage](https://hackage.haskell.org/package/split) |
+| strict | 0.5.1 | `import Data.Strict` | [Hackage](https://hackage.haskell.org/package/strict) |
+| strict-lens | 0.4.1 | `import Data.Strict.Lens` | [Hackage](https://hackage.haskell.org/package/strict-lens) |
+| tagged | 0.8.10 | `import Data.Tagged` | [Hackage](https://hackage.haskell.org/package/tagged) |
+| tasty | 1.5.4 | `import Test.Tasty` | [Hackage](https://hackage.haskell.org/package/tasty) |
+| tf-random | 0.5 | `import System.Random.TF` | [Hackage](https://hackage.haskell.org/package/tf-random) |
+| these | 1.2.1 | `import Data.These` | [Hackage](https://hackage.haskell.org/package/these) |
+| these-lens | 1.0.2 | `import Data.These.Lens` | [Hackage](https://hackage.haskell.org/package/these-lens) |
+| trifecta | 2.1.4 | `import Text.Trifecta` | [Hackage](https://hackage.haskell.org/package/trifecta) |
+| unboxing-vector | 0.2.0.0 | `import Data.Vector.Unboxing` | [Hackage](https://hackage.haskell.org/package/unboxing-vector) |
+| unordered-containers | 0.2.21 | `import Data.HashMap.Strict` | [Hackage](https://hackage.haskell.org/package/unordered-containers) |
+| utility-ht | 0.0.17.2 | `import Data.List.HT` | [Hackage](https://hackage.haskell.org/package/utility-ht) |
+| vector | 0.13.2.0 | `import qualified Data.Vector.Unboxed as VU` | [Hackage](https://hackage.haskell.org/package/vector) |
+| vector-algorithms | 0.9.1.0 | `import Data.Vector.Algorithms.Intro` | [Hackage](https://hackage.haskell.org/package/vector-algorithms) |
+| vector-split | 1.0.0.4 | `import Data.Vector.Split` | [Hackage](https://hackage.haskell.org/package/vector-split) |
+| vector-stream | 0.1.0.1 | `import Data.Stream.Monadic` | [Hackage](https://hackage.haskell.org/package/vector-stream) |
+| vector-th-unbox | 0.2.2 | `import Data.Vector.Unboxed.Deriving` | [Hackage](https://hackage.haskell.org/package/vector-th-unbox) |
+| wide-word | 0.1.9.0 | `import Data.WideWord` | [Hackage](https://hackage.haskell.org/package/wide-word) |
+| witherable | 0.5 | `import Witherable` | [Hackage](https://hackage.haskell.org/package/witherable) |
 
-GHC付属のパッケージ（`containers`、`bytestring`、`text`など）はGHC 9.10.3の版を使えます。 依存関係は設定済みで、`.cabal`ファイルの提出は不要です。 たとえば`import AtCoder.Dsu`や`import qualified Data.Vector.Unboxed as VU`で読み込めます。
+GHC付属のパッケージ（`containers`、`bytestring`、`text`など）はGHC 9.10.3の版を使えます。 依存関係は設定済みで、`.cabal`ファイルの提出は不要です。
 
 ### JavaScriptとTypeScript
+
+| ライブラリ | バージョン | 読み込み例 | リンク |
+| --- | --- | --- | --- |
+| ac-library-js | 0.1.1 | `import { DSU } from "ac-library-js"` | [npm](https://www.npmjs.com/package/ac-library-js) |
+| data-structure-typed | 2.6.4 | `import { Stack } from "data-structure-typed"` | [npm](https://www.npmjs.com/package/data-structure-typed) |
+| immutable | 5.1.9 | `import { List } from "immutable"` | [npm](https://www.npmjs.com/package/immutable) |
+| lodash | 4.18.1 | `import lodash from "lodash"` | [npm](https://www.npmjs.com/package/lodash) |
+| mathjs | 15.2.0 | `import { add } from "mathjs"` | [npm](https://www.npmjs.com/package/mathjs) |
+| tstl | 3.0.0 | `import { Vector } from "tstl"` | [npm](https://www.npmjs.com/package/tstl) |
+| Deno標準ライブラリ（Denoのみ） | パッケージごとに固定 | `import { assertEquals } from "@std/assert"` | [JSR](https://jsr.io/@std) |
 
 Node.jsとBunでは`node:fs`などのNode互換API、Denoでは`Deno.stdin`などのAPIを利用できます。
 Node.jsのJavaScriptは`require`と`import`の両方に対応します。
 TypeScriptは型エラーをCEとして扱います。
 Node.jsとBun向けのTypeScriptは、`NodeNext`形式でJavaScriptにコンパイルします。
-
-| パッケージ | バージョン |
-| --- | --- |
-| ac-library-js | 0.1.1 |
-| data-structure-typed | 2.6.4 |
-| immutable | 5.1.9 |
-| lodash | 4.18.1 |
-| mathjs | 15.2.0 |
-| tstl | 3.0.0 |
-
-たとえば`import { DSU } from "ac-library-js"`でACLを利用できます。
-Denoでは一覧にある`@std/*`も固定しており、`import { assertEquals } from "@std/assert"`のように読み込みます。
-`@std/encoding/base64`などの公開サブパスもキャッシュしています。
+Denoの標準ライブラリは`@std/encoding/base64`などの公開サブパスもキャッシュしています。
 提出時の依存ダウンロードや自動インストールはできません。
 型定義は`@types/node`、`@types/lodash`を用意し、Bun向けには`@types/bun`も使用します。
 
 ### Ruby
 
-| ライブラリ | バージョン | 対応環境 |
-| --- | --- | --- |
-| ac-library-rb | 1.2.0 | CRuby・TruffleRuby |
-| bit_utils | 0.1.2 | CRuby・TruffleRuby |
-| bitarray | 1.3.2 | CRuby・TruffleRuby |
-| faster_prime | 1.0.2 | CRuby・TruffleRuby |
-| ffi-geos | 2.5.0 | CRuby・TruffleRuby |
-| immutable-ruby | 0.2.0 | CRuby・TruffleRuby |
-| rbtree | 0.4.7 | CRuby・TruffleRuby |
-| rgl | 0.6.7 | CRuby・TruffleRuby |
-| sorted_containers | 1.1.0 | CRuby・TruffleRuby |
-| sorted_set | 1.1.0 | CRuby・TruffleRuby |
-| z3 | 0.0.20260727 | CRuby・TruffleRuby |
-| fast_trie | 0.5.1 | CRubyのみ |
-| numo-linalg | 0.1.7 | CRubyのみ |
-| numo-narray | 0.9.2.1 | CRubyのみ |
-| numo-openblas | 0.5.5 | CRubyのみ |
-| or-tools | 0.18.0 | CRubyのみ |
-| polars-df | 0.27.1 | CRubyのみ |
+| ライブラリ | バージョン | 読み込み例 | リンク |
+| --- | --- | --- | --- |
+| ac-library-rb | 1.2.0 | `require "ac-library-rb/dsu"` | [RubyGems](https://rubygems.org/gems/ac-library-rb) |
+| bit_utils | 0.1.2 | `require "bit_utils"` | [RubyGems](https://rubygems.org/gems/bit_utils) |
+| bitarray | 1.3.2 | `require "bitarray"` | [RubyGems](https://rubygems.org/gems/bitarray) |
+| faster_prime | 1.0.2 | `require "faster_prime"` | [RubyGems](https://rubygems.org/gems/faster_prime) |
+| ffi-geos | 2.5.0 | `require "ffi-geos"` | [RubyGems](https://rubygems.org/gems/ffi-geos) |
+| immutable-ruby | 0.2.0 | `require "immutable"` | [RubyGems](https://rubygems.org/gems/immutable-ruby) |
+| rbtree | 0.4.7 | `require "rbtree"` | [RubyGems](https://rubygems.org/gems/rbtree) |
+| rgl | 0.6.7 | `require "rgl/adjacency"` | [RubyGems](https://rubygems.org/gems/rgl) |
+| sorted_containers | 1.1.0 | `require "sorted_containers"` | [RubyGems](https://rubygems.org/gems/sorted_containers) |
+| sorted_set | 1.1.0 | `require "sorted_set"` | [RubyGems](https://rubygems.org/gems/sorted_set) |
+| z3 | 0.0.20260727 | `require "z3"` | [RubyGems](https://rubygems.org/gems/z3) |
+| fast_trie（CRubyのみ） | 0.5.1 | `require "trie"` | [RubyGems](https://rubygems.org/gems/fast_trie) |
+| numo-linalg（CRubyのみ） | 0.1.7 | `require "numo/linalg"` | [RubyGems](https://rubygems.org/gems/numo-linalg) |
+| numo-narray（CRubyのみ） | 0.9.2.1 | `require "numo/narray"` | [RubyGems](https://rubygems.org/gems/numo-narray) |
+| numo-openblas（CRubyのみ） | 0.5.5 | `require "numo/openblas"` | [RubyGems](https://rubygems.org/gems/numo-openblas) |
+| or-tools（CRubyのみ） | 0.18.0 | `require "or-tools"` | [RubyGems](https://rubygems.org/gems/or-tools) |
+| polars-df（CRubyのみ） | 0.27.1 | `require "polars-df"` | [RubyGems](https://rubygems.org/gems/polars-df) |
 
-ACLのUnion-Findは`require "ac-library-rb/dsu"`で読み込み、`AcLibraryRb::DSU.new(n)`で作成します。
+ACLのUnion-Findは`AcLibraryRb::DSU.new(n)`で作成します。
 
 インタラクティブ問題では、`$stdout.sync = true`または`STDOUT.flush`で出力をフラッシュしてください。 判定コードには入力ファイルなどの引数が渡されるため、引数なしの`gets`は標準入力ではなくそのファイルを読みます。 判定コードで標準入力を読むときは`STDIN.gets`を使ってください。
 
