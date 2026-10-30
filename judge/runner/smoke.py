@@ -73,6 +73,8 @@ with slot():
         ('AC', '#include <unistd.h>\n#include <cstdio>\nint main(){puts(access("/root/.aws/credentials",F_OK)==-1 && access("/opt/judge/worker.env",F_OK)==-1 && access("/etc/shadow",F_OK)==-1?"3":"4");}'),
         ('AC', '#include <sys/socket.h>\n#include <arpa/inet.h>\n#include <cstdio>\nint main(){int s=socket(AF_INET,SOCK_STREAM,0);sockaddr_in a{};a.sin_family=AF_INET;a.sin_port=htons(80);inet_pton(AF_INET,"169.254.169.254",&a.sin_addr);puts(connect(s,(sockaddr*)&a,sizeof(a))==-1?"3":"4");}'),
         ('AC', '#include <sys/socket.h>\n#include <arpa/inet.h>\n#include <cstdio>\nint main(){int s=socket(AF_INET6,SOCK_STREAM,0);sockaddr_in6 a{};a.sin6_family=AF_INET6;a.sin6_port=htons(80);inet_pton(AF_INET6,"fd00:ec2::254",&a.sin6_addr);puts(connect(s,(sockaddr*)&a,sizeof(a))==-1?"3":"4");}'),
+        # A user namespace would grant capabilities over new namespaces; the kernel refuses it inside isolate's chroot.
+        ('AC', '#include <sched.h>\n#include <cstdio>\nint main(){puts(unshare(CLONE_NEWUSER)==-1?"3":"4");}'),
         ('AC', '#include <cstdio>\nint main(){FILE* f=fopen("marker","r");puts(f?"4":"3");if(f)fclose(f);f=fopen("marker","w");if(f)fclose(f);}'),
     ]
     for expected, source in programs:
