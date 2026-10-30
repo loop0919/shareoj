@@ -41,6 +41,7 @@
 | Whitespace (whitespacers 1.3) | whitespacers 1.3.0 | `whitespace13` |
 | Text (cat 9.4) | cat（GNU coreutils 9.4） | `text` |
 
+:::details 言語ごとの注意点
 CとC++は`main`関数、Rustは`fn main()`を含めてください。
 
 Javaは`Main`クラスの`public static void main(String[] args)`から実行します。 C#は`static void Main()`またはトップレベルステートメント、Goは`package main`と`func main()`、Haskellは`main :: IO ()`を含めてください。 C#のusingはソースに記述してください。プロジェクトファイルやモジュール定義の提出は不要です。
@@ -61,6 +62,7 @@ Nibbles、dc、Brainfuck、Whitespaceは、判定コードや生成コードに�
 Textは書いた内容をそのまま標準出力に出し、標準入力は読みません。
 output only問題の答えの提出に使います。
 検証コード、対話のジャッジ、集計コード、入力・出力の生成と検証には使えません。
+:::
 
 ## コンパイルと実行 {#commands}
 
