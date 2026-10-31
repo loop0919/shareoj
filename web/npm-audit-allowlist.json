@@ -22,11 +22,5 @@
     "package": "simple-git",
     "until": "2027-01-10",
     "reason": "@nuxt/devtoolsがnuxt devでだけ使い、本番のLambdaバンドルに含まれない。修正版4.xはnuxt 4.6.1の依存範囲外"
-  },
-  {
-    "id": "GHSA-86w9-cpqp-85rv",
-    "package": "node-forge",
-    "until": "2027-01-10",
-    "reason": "listhenが開発サーバーの自己署名証明書に使い、本番のLambdaバンドルに含まれない。修正版なし"
   }
 ]
