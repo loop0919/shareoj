@@ -343,12 +343,15 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return nil
 	}
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprintln(out, "Usage: shareoj <guide|init|check|pull|push|login|logout|version> [options] [arguments]\nAuthoring with an AI agent? Start with: shareoj guide\nAutomatic discovery: shareoj guide --install-skill <codex|claude|all>\nUse shareoj <command> --help for options.")
+		fmt.Fprintln(out, "Usage: shareoj <guide|init|check|pull|push|login|logout|version|completions> [options] [arguments]\nAuthoring with an AI agent? Start with: shareoj guide\nAutomatic discovery: shareoj guide --install-skill <codex|claude|all>\nShell completion: shareoj completions <bash|zsh|fish>\nUse shareoj <command> --help for options.")
 		return nil
 	}
 	command := args[0]
 	if command == "guide" {
 		return showGuide(args[1:], out)
+	}
+	if command == "completions" {
+		return showCompletions(args[1:], out)
 	}
 	if command != "init" && command != "check" && command != "pull" && command != "push" && command != "login" && command != "logout" {
 		return fmt.Errorf("unknown command: %s", command)

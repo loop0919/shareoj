@@ -78,10 +78,32 @@ MFA の新規登録は Web で行ってください。
 | `push <directory>` | 指定されたファイルを読み、下書きを作成または更新 |
 | `logout` | 接続先のローカル認証情報を削除 |
 | `version` / `--version` | インストール済みのバージョンを表示 |
+| `completions <bash\|zsh\|fish>` | シェルの補完スクリプトを出力 |
 
 `check` はプログラムをコンパイルしたり実行したりしません。
 言語 ID は形式のみを検査し、サーバーで利用可能かどうかや公開条件は判定しません。
 生成器の実行と解答の正しさの検証は、ShareOJ の Web 画面または rime で行ってください。
+
+### シェルの補完
+
+`completions` が出力するスクリプトで、コマンド、オプション、ディレクトリ、`--install-skill` などの値を Tab で補完できます。
+
+```sh
+# bash: ~/.bashrc に追加
+eval "$(shareoj completions bash)"
+
+# zsh: 保存し、~/.zshrc の compinit より前に fpath=(~/.zfunc $fpath) を追加
+mkdir -p ~/.zfunc
+shareoj completions zsh > ~/.zfunc/_shareoj
+
+# fish
+mkdir -p ~/.config/fish/completions
+shareoj completions fish > ~/.config/fish/completions/shareoj.fish
+```
+
+設定後は端末を開き直してください。
+zsh で反映されない場合は `~/.zcompdump` を削除してから開き直します。
+zsh と fish では、CLI の更新でオプションが増えたら同じコマンドで保存し直します。
 
 ## AIエージェントに作問を頼む
 

@@ -23,6 +23,25 @@ Windowsでは、[GitHub Releases](https://github.com/loop0919/shareoj/releases) 
 更新するときは、同じインストールコマンドをもう一度実行します。
 新しい版が出ていると、`login`、`pull`、`push` のあとに案内を表示します。
 
+## シェルの補完 {#completions}
+
+`shareoj completions` が出力するスクリプトで、コマンドやオプションをTabで補完できます。
+
+```sh
+# bash: ~/.bashrc に追加
+eval "$(shareoj completions bash)"
+
+# zsh: 保存し、~/.zshrc の compinit より前に fpath=(~/.zfunc $fpath) を追加
+mkdir -p ~/.zfunc
+shareoj completions zsh > ~/.zfunc/_shareoj
+
+# fish
+mkdir -p ~/.config/fish/completions
+shareoj completions fish > ~/.config/fish/completions/shareoj.fish
+```
+
+設定したら、端末を開き直してください。
+
 ## ログイン {#login}
 
 ```sh

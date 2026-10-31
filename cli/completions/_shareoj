@@ -1,0 +1,66 @@
+#compdef shareoj
+# zsh completion for shareoj. Save it as _shareoj in a directory on $fpath:
+#   mkdir -p ~/.zfunc && shareoj completions zsh > ~/.zfunc/_shareoj
+# and add fpath=(~/.zfunc $fpath) before compinit in ~/.zshrc.
+
+_shareoj() {
+	local context state state_descr line
+	typeset -A opt_args
+	local -a commands=(
+		'guide:print the authoring guide or install the authoring skill'
+		'init:create a problem directory from the template'
+		'check:check the configuration and files of a problem directory'
+		'pull:fetch a draft into a new directory'
+		'push:create or update a draft from a problem directory'
+		'login:sign in and save the tokens'
+		'logout:remove the saved credentials'
+		'version:print the installed version'
+		'completions:print a shell completion script'
+	)
+	_arguments -C \
+		'(- :)--help[show help]' \
+		'(- :)--version[print the installed version]' \
+		': :->command' \
+		'*:: :->argument'
+	case $state in
+	command)
+		_describe -t commands 'shareoj command' commands
+		;;
+	argument)
+		local -a help=('--help[show help]') api=('--api[ShareOJ API URL]:URL:_urls')
+		case $words[1] in
+		guide)
+			_arguments -S $help '--install-skill[install the authoring skill (user scope)]:agent:(codex claude all)'
+			;;
+		init | check)
+			_arguments -S $help ':directory:_files -/'
+			;;
+		pull)
+			_arguments -S $help $api ':problem ID: ' ':directory:_files -/'
+			;;
+		push)
+			_arguments -S $help $api '--expect-version[save against a reviewed remote version after a conflict]:version: ' ':directory:_files -/'
+			;;
+		login)
+			_arguments -S $help $api \
+				'--username[login email address]:email address: ' \
+				'--google[sign in with Google in a browser]' \
+				'--no-browser[print the Google login URL without opening a browser]' \
+				'--site[ShareOJ website origin for Google login]:URL:_urls'
+			;;
+		logout)
+			_arguments -S $help $api
+			;;
+		completions)
+			_arguments -S $help ':shell:(bash zsh fish)'
+			;;
+		esac
+		;;
+	esac
+}
+
+if [[ $funcstack[1] == _shareoj ]]; then
+	_shareoj "$@"
+else
+	compdef _shareoj shareoj
+fi
