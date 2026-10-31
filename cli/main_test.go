@@ -453,7 +453,7 @@ func TestPositionalArguments(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(t, client.credential, "{}")
-	directory := "expected one directory for init/check/push; place options before the directory"
+	directory := "expected one directory for init/check/push"
 	for _, tc := range []struct {
 		args []string
 		want string
@@ -464,8 +464,10 @@ func TestPositionalArguments(t *testing.T) {
 		{[]string{"logout", "foo"}, "logout takes no positional arguments"},
 		{[]string{"init"}, directory},
 		{[]string{"check", "a", "b"}, directory},
+		{[]string{"check", "a", "--", "-b"}, directory},
 		{[]string{"push"}, directory},
-		{[]string{"pull", "id"}, "expected pull <problem-id> <directory>; place options before the problem ID"},
+		{[]string{"push", "a", "--expect-version", "-2"}, "invalid --expect-version"},
+		{[]string{"pull", "id"}, "expected pull <problem-id> <directory>"},
 	} {
 		if err := run(context.Background(), tc.args, io.Discard); err == nil || err.Error() != tc.want {
 			t.Errorf("%v: got %v, want %q", tc.args, err, tc.want)
@@ -474,6 +476,42 @@ func TestPositionalArguments(t *testing.T) {
 	// A rejected logout keeps the saved credentials.
 	if _, err := os.Stat(client.credential); err != nil {
 		t.Fatalf("credentials removed: %v", err)
+	}
+}
+
+// Options may follow the arguments, so a repeated push changes only its last words.
+func TestOptionsAfterArguments(t *testing.T) {
+	t.Setenv("SHAREOJ_CONFIG_DIR", t.TempDir())
+	t.Setenv("SHAREOJ_API_URL", "")
+	t.Setenv("SHAREOJ_ACCESS_TOKEN", "author")
+	ctx := context.Background()
+	var remote problem
+	puts := 0
+	server := fakeDrafts(t, &remote, &puts)
+	dir := example(t)
+	if err := run(ctx, []string{"push", dir, "--api", server.URL}, io.Discard); err != nil || remote.Version != 1 {
+		t.Fatalf("create: %v version=%d", err, remote.Version)
+	}
+	// A web edit moved the remote version, which the author reviewed.
+	remote.Version = 4
+	if err := run(ctx, []string{"push", dir, "--api", server.URL, "--expect-version", "4"}, io.Discard); err != nil || remote.Version != 5 {
+		t.Fatalf("reviewed push: %v version=%d", err, remote.Version)
+	}
+	pulled := filepath.Join(t.TempDir(), "pulled")
+	if err := run(ctx, []string{"pull", remote.ID, pulled, "--api", server.URL}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	var s state
+	if err := readJSON(filepath.Join(pulled, stateName), &s); err != nil || s != (state{API: server.URL, ID: remote.ID, Version: 5}) {
+		t.Fatalf("pulled state: %+v %v", s, err)
+	}
+	// After --, a directory may start with a dash.
+	t.Chdir(t.TempDir())
+	if err := run(ctx, []string{"init", "--", "-p"}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx, []string{"check", "--", "-p"}, io.Discard); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -276,7 +276,7 @@ Web 側で編集されて更新番号が変わっていれば、`push` は停止
 Web の下書きとローカルの内容を比較して必要な変更を取り込んだ後、表示された更新番号を指定して再実行できます。
 
 ```sh
-shareoj push --expect-version 4 a-plus-b
+shareoj push a-plus-b --expect-version 4
 ```
 
 この指定でも、確認した番号からさらに変更されていれば保存を拒否します。
@@ -288,7 +288,8 @@ shareoj push --expect-version 4 a-plus-b
 
 既定の接続先は `https://api.share-oj.net` です。
 `login` / `pull` / `push` / `logout` の `--api`、または環境変数 `SHAREOJ_API_URL` で変更できます。
-オプションはディレクトリ名より前に指定します。
+オプションは問題 ID やディレクトリ名の前にも後にも指定できます。
+`-` で始まるディレクトリ名は `--` の後に書きます。
 
 ```sh
 shareoj login --api http://localhost:8080

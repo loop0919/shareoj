@@ -316,6 +316,27 @@ func terminalPrompt(ctx context.Context, label string, secret bool) (string, err
 	}
 }
 
+// parseArgs lets options follow the arguments, so a repeated push changes only its last words. Arguments after "--"
+// are never options, and flags.Args returns the arguments afterwards.
+func parseArgs(flags *flag.FlagSet, args []string) error {
+	var arguments []string
+	for {
+		if err := flags.Parse(args); err != nil {
+			return err
+		}
+		rest := flags.Args()
+		if n := len(args) - len(rest); n > 0 && args[n-1] == "--" {
+			arguments = append(arguments, rest...)
+			break
+		}
+		if len(rest) == 0 {
+			break
+		}
+		arguments, args = append(arguments, rest[0]), rest[1:]
+	}
+	return flags.Parse(append([]string{"--"}, arguments...))
+}
+
 func run(ctx context.Context, args []string, out io.Writer) error {
 	if len(args) == 1 && (args[0] == "version" || args[0] == "--version") {
 		fmt.Fprintln(out, "shareoj", version)
@@ -357,17 +378,17 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		flags.BoolVar(&noBrowser, "no-browser", false, "Print the Google login URL without opening a browser")
 		flags.StringVar(&site, "site", "", "ShareOJ website origin for Google login")
 	}
-	if err := flags.Parse(args[1:]); err != nil {
+	if err := parseArgs(flags, args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
 		return err
 	}
 	if command == "pull" && flags.NArg() != 2 {
-		return errors.New("expected pull <problem-id> <directory>; place options before the problem ID")
+		return errors.New("expected pull <problem-id> <directory>")
 	}
 	if (command == "init" || command == "check" || command == "push") && flags.NArg() != 1 {
-		return errors.New("expected one directory for init/check/push; place options before the directory")
+		return errors.New("expected one directory for init/check/push")
 	}
 	if (command == "login" || command == "logout") && flags.NArg() != 0 {
 		return fmt.Errorf("%s takes no positional arguments", command)
