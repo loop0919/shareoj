@@ -117,9 +117,8 @@ func TestScoringValidation(t *testing.T) {
 		{strings.Replace(scoringTOML, "points = 30", "points = 1.5", 1), "problem.toml:"},
 		{strings.Replace(strings.Replace(scoringTOML, "points = 30", "points = 0", 1), "points = 70", "points = 0", 1), "the full score (sum of group points) must be 1..1000000, got 0"},
 		{strings.Replace(scoringTOML, "points = 30", "points = 999931", 1), "the full score (sum of group points) must be 1..1000000, got 1000001"},
-		{strings.Replace(scoringTOML, `["01", "02"]`, `["01", "04"]`, 1), `group "小課題1": case "04" does not exist`},
-		{strings.Replace(scoringTOML, `["01", "02"]`, `["01", "01.in"]`, 1), `group "小課題1": case "01.in" does not exist`},
-		{strings.Replace(scoringTOML, `["01", "02"]`, `["01", "01"]`, 1), `group "小課題1" lists case "01" twice`},
+		{strings.Replace(scoringTOML, `["01", "02"]`, `["01", "04"]`, 1), `group "小課題1": no case matches "04"`},
+		{strings.Replace(scoringTOML, `["01", "02"]`, `["01", "01.in"]`, 1), `group "小課題1": no case matches "01.in"`},
 		{strings.Replace(scoringTOML, "points = 30", "points = 30\nscore = 1", 1), "problem.toml:"},
 		{"\n[[tests.groups]]\nname = \"a\"\npoints = 1\ncases = [\"01\"]\n", `[[tests.groups]] requires [scoring]`},
 		{many, "at most 100 [[tests.groups]]"},
@@ -133,6 +132,64 @@ func TestScoringValidation(t *testing.T) {
 	write(t, filepath.Join(dir, "problem.toml"), strings.Split(template, "[tests]")[0]+"[scoring]\nmode = \"groups\"\n")
 	if _, err := loadProblem(dir); err == nil || !strings.Contains(err.Error(), "[scoring] requires [tests]") {
 		t.Fatalf("scoring without tests: %v", err)
+	}
+}
+
+// Samples and group cases are patterns over the file stems, so new files join without editing problem.toml.
+func TestCasePatterns(t *testing.T) {
+	dir := example(t)
+	for _, name := range []string{"sample2", "a1", "a2", "b1"} {
+		write(t, filepath.Join(dir, "tests", name+".in"), name+"\n")
+		write(t, filepath.Join(dir, "tests", name+".out"), name+"\n")
+	}
+	tests := `samples = ["sample*"]
+
+[scoring]
+mode = "groups"
+
+[[tests.groups]]
+name = "A"
+points = 40
+cases = ["a?", "a1"]
+
+[[tests.groups]]
+name = "All"
+points = 60
+cases = ["[ab]*", "sample[^2]"]
+`
+	config := strings.Replace(template, `samples = ["sample1"]`+"\n", tests, 1)
+	write(t, filepath.Join(dir, "problem.toml"), config)
+	d, notes, err := readProblem(dir)
+	if err != nil || len(notes) != 0 {
+		t.Fatal(err, notes)
+	}
+	// A case that two patterns of one group match belongs to it once; sample2 is a sample in no group.
+	if got := caseGroups(t, d); !reflect.DeepEqual(got, map[string][]string{
+		"a1": {"A", "All"}, "a2": {"A", "All"}, "b1": {"All"}, "sample1": {"All"}, "sample2": nil,
+	}) {
+		t.Fatalf("membership: %v", got)
+	}
+	var cases []testCase
+	_ = json.Unmarshal(d["testCases"], &cases)
+	samples := []string{}
+	for _, c := range cases {
+		if c.IsSample {
+			samples = append(samples, c.Name)
+		}
+	}
+	if !reflect.DeepEqual(samples, []string{"sample1", "sample2"}) {
+		t.Fatalf("samples: %v", samples)
+	}
+	// A pattern that matches nothing is likely a typo, so it stops check and push.
+	for _, invalid := range []struct{ old, new, message string }{
+		{`["sample*"]`, `["sample*", "x*"]`, `samples: no case matches "x*"`},
+		{`["a?", "a1"]`, `["a?", "c*"]`, `group "A": no case matches "c*"`},
+		{`["a?", "a1"]`, `["a["]`, `group "A": invalid pattern "a["`},
+	} {
+		write(t, filepath.Join(dir, "problem.toml"), strings.Replace(config, invalid.old, invalid.new, 1))
+		if _, err := loadProblem(dir); err == nil || err.Error() != invalid.message {
+			t.Errorf("want %q, got %v", invalid.message, err)
+		}
 	}
 }
 

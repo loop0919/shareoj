@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -60,7 +61,7 @@ type testConfig struct {
 	Groups    []groupConfig     `toml:"groups,omitempty"`
 }
 
-// groupConfig lists a group's cases by file stem, like samples, because case names may be empty or repeated.
+// groupConfig lists a group's cases by file stem patterns, like samples, because case names may be empty or repeated.
 type groupConfig struct {
 	Name   string   `toml:"name"`
 	Points int      `toml:"points"`
@@ -339,10 +340,9 @@ func loadCases(root *os.Root, c problemConfig) ([]testCase, []string, error) {
 	if !slices.Equal(inputs, outputs) || len(inputs) > 100 {
 		return nil, nil, errors.New("tests require paired input/output files, at most 100 cases")
 	}
-	for _, sample := range t.Samples {
-		if !slices.Contains(inputs, sample) {
-			return nil, nil, fmt.Errorf("sample case %q does not exist", sample)
-		}
+	samples, err := matchCases(inputs, t.Samples)
+	if err != nil {
+		return nil, nil, fmt.Errorf("samples: %w", err)
 	}
 	for name := range t.Names {
 		if !slices.Contains(inputs, name) {
@@ -352,16 +352,14 @@ func loadCases(root *os.Root, c problemConfig) ([]testCase, []string, error) {
 	groups := map[string][]string{}
 	var notes []string
 	for _, g := range t.Groups {
-		listed := map[string]bool{}
-		for _, stem := range g.Cases {
-			if !slices.Contains(inputs, stem) {
-				return nil, nil, fmt.Errorf("group %q: case %q does not exist", g.Name, stem)
+		matched, err := matchCases(inputs, g.Cases)
+		if err != nil {
+			return nil, nil, fmt.Errorf("group %q: %w", g.Name, err)
+		}
+		for _, stem := range inputs {
+			if matched[stem] {
+				groups[stem] = append(groups[stem], g.Name)
 			}
-			if listed[stem] {
-				return nil, nil, fmt.Errorf("group %q lists case %q twice", g.Name, stem)
-			}
-			listed[stem] = true
-			groups[stem] = append(groups[stem], g.Name)
 		}
 		// A group without cases gives its points to every judged submission, so the server refuses to publish it.
 		if len(g.Cases) == 0 {
@@ -371,7 +369,7 @@ func loadCases(root *os.Root, c problemConfig) ([]testCase, []string, error) {
 	if c.Scoring != nil {
 		var ungrouped []string
 		for _, stem := range inputs {
-			if !slices.Contains(t.Samples, stem) && len(groups[stem]) == 0 {
+			if !samples[stem] && len(groups[stem]) == 0 {
 				ungrouped = append(ungrouped, strconv.Quote(stem))
 			}
 		}
@@ -406,9 +404,30 @@ func loadCases(root *os.Root, c problemConfig) ([]testCase, []string, error) {
 		if total > 512<<20 {
 			return nil, nil, errors.New("test data exceeds 512 MiB")
 		}
-		cases = append(cases, testCase{Name: label, IsSample: slices.Contains(t.Samples, name), Input: input, Output: output, Groups: groups[name]})
+		cases = append(cases, testCase{Name: label, IsSample: samples[name], Input: input, Output: output, Groups: groups[name]})
 	}
 	return cases, notes, nil
+}
+
+// matchCases returns the stems that samples or group cases select. Each entry is a path.Match pattern, so a plain stem
+// selects itself, and must match a case, since an entry that selects nothing is likely a typo.
+func matchCases(stems, patterns []string) (map[string]bool, error) {
+	matched := map[string]bool{}
+	for _, pattern := range patterns {
+		if _, err := path.Match(pattern, ""); err != nil {
+			return nil, fmt.Errorf("invalid pattern %q", pattern)
+		}
+		found := false
+		for _, stem := range stems {
+			if ok, _ := path.Match(pattern, stem); ok {
+				matched[stem], found = true, true
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("no case matches %q", pattern)
+		}
+	}
+	return matched, nil
 }
 
 func decodeJSON(data []byte, target any) error {
