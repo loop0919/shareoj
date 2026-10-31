@@ -162,7 +162,6 @@ const inputSnippet = '\n```input\n$N$\n$A_1 \\quad A_2 \\quad \\cdots \\quad A_N
       <div class="editor-main">
     <div class="editor-notices">
       <p v-if="storageError" class="editor-error" role="alert">{{ storageError }}</p>
-      <p v-if="manualSaveOnly"><template v-if="publishedVersion">「保存」を押すと公開内容に反映されます。</template><template v-else-if="scheduledAt">「保存」を押すと予約の公開内容に反映されます。</template><template v-else>「保存」を押すとコンテストの出題・採点内容に反映されます。</template></p>
       <noscript><p class="editor-error">編集と保存には JavaScript を有効にしてください。</p></noscript>
     </div>
     <div v-show="section === 'statement' || section === 'editorial'" class="author-edit-content">
@@ -236,13 +235,15 @@ const inputSnippet = '\n```input\n$N$\n$A_1 \\quad A_2 \\quad \\cdots \\quad A_N
     </section>
       </div>
     </div>
-    <div class="draft-status"><LoadingSpinner v-if="saveState === 'loading'" inline label="問題を読み込み中" /><span v-else role="status" :data-save-state="saveState">{{ status }}</span><span>{{ saveLocation }}</span></div>
+    <div class="draft-status"><LoadingSpinner v-if="saveState === 'loading'" inline label="問題を読み込み中" /><span v-else role="status" :data-save-state="saveState">{{ status }}</span><span v-if="manualSaveOnly" class="manual-save-hint"><template v-if="publishedVersion">「保存」を押すと公開内容に反映されます。</template><template v-else-if="scheduledAt">「保存」を押すと予約の公開内容に反映されます。</template><template v-else>「保存」を押すとコンテストの出題・採点内容に反映されます。</template></span><span>{{ saveLocation }}</span></div>
   </div>
 </template>
 
 <style scoped>
 .publish-button { display: inline-flex; align-items: center; gap: 6px; border-color: var(--color-accent); color: var(--color-accent); font-weight: 600; }
 .publish-button:disabled { opacity: .55; cursor: not-allowed; }
+/* Sits beside the save state; the publication state stays at the right edge. */
+.manual-save-hint { margin-right: auto; }
 .tester-link-row { flex: 1; min-width: 0; }
 .tester-link-row label { display: block; margin-top: 12px; font-size: .75rem; color: var(--color-muted); }
 .tester-link-field { display: flex; gap: 8px; margin-top: 4px; }

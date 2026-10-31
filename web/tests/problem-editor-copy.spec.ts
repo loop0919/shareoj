@@ -47,6 +47,7 @@ for (const mode of ['published', 'scheduled', 'contest'] as const) {
       draft: { title: '文言確認', markdown: '', timeLimitMs: '2000', memoryLimitMb: '512', testCases: [] },
     } }))
     await page.goto(`/problems/new?problem=${id}`)
-    await expect(page.getByText(manualSaveCopy[mode], { exact: true })).toBeVisible()
+    await expect(page.locator('.draft-status').getByText(manualSaveCopy[mode], { exact: true })).toBeVisible()
+    await expect(page.locator('.editor-notices')).not.toContainText('反映されます')
   })
 }
