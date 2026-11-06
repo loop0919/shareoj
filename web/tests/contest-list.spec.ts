@@ -9,13 +9,14 @@ test('the contest page stacks running, upcoming and past contests', async ({ pag
   await expect(titles(page, '開催予定のコンテスト')).toHaveText(['近い予定', '遠い予定'])
   await expect(titles(page, '過去のコンテスト')).toHaveText(['新しい過去', '古い過去'])
   await expect(page.getByRole('columnheader', { name: '状態' })).toHaveCount(0)
+  await expect(page.getByRole('region', { name: '開催中のコンテスト' }).locator('tbody td:nth-child(2)')).toHaveText(['4問', '3問'])
   await page.screenshot({ path: testInfo.outputPath('contest-list.png'), fullPage: true })
 })
 
 test('the stacked tables keep their columns in line', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto('/contests')
-  for (const column of ['開始 (JST)', '終了 (JST)', '作成者']) {
+  for (const column of ['問題数', '開始 (JST)', '終了 (JST)', '作成者']) {
     const starts = await page.getByRole('columnheader', { name: column }).evaluateAll(cells => cells.map(cell => Math.round(cell.getBoundingClientRect().left)))
     expect(new Set(starts).size, column).toBe(1)
   }

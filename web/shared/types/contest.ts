@@ -20,6 +20,8 @@ export type Contest = {
   teamMode?: boolean, maxTeamSize?: number | null, onsiteDivision?: boolean, team?: TeamSummary | null, onsite?: boolean,
   // Whether any problem gives partial scores (ADR 0025), known before the problems are shown.
   partialScoring?: boolean,
+  // The list leaves problems empty and tells how many there are.
+  problemCount: number,
   problems: ContestProblem[],
 }
 // A team as everyone sees it in the standings; members are handles in the order they joined.

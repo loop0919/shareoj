@@ -58,8 +58,8 @@ const complete = computed(() => !offset.value && !draftOffset.value && !!data.va
           <template v-for="section in sections" :key="section.label">
             <h2 v-if="!mine" class="contest-list-heading">{{ section.label }}</h2>
             <div class="content-table-scroll" role="region" :aria-label="section.label" tabindex="0" :aria-busy="status === 'pending'">
-              <table class="content-table"><thead><tr><th scope="col">コンテスト</th><th v-if="mine" scope="col">状態</th><th scope="col">開始 (JST)</th><th scope="col">終了 (JST)</th><th scope="col">作成者</th><th v-if="mine" scope="col">操作</th></tr></thead>
-                <tbody><tr v-for="c in section.items" :key="c.id"><th scope="row"><NuxtLink :to="`/contests/${shortId(c.id)}`">{{ c.title }}</NuxtLink></th><td v-if="mine">{{ contestStatus[c.status] }}</td><td>{{ contestDate(c.startsAt) }}</td><td>{{ contestDate(c.endsAt) }}</td><td><template v-for="(author, index) in contestAuthors(c)" :key="author"><span v-if="index">、</span><UserLink :handle="author" /></template></td><td v-if="mine"><NuxtLink v-if="c.status === 'scheduled'" class="editor-button edit-link" :to="`/my/contests/${shortId(c.id)}`" :aria-label="`${c.title}を編集`" title="編集"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6Z" /><path d="m13 6 5 5" /></svg></NuxtLink><span v-else class="muted">—</span></td></tr></tbody>
+              <table class="content-table"><thead><tr><th scope="col">コンテスト</th><th v-if="mine" scope="col">状態</th><th v-else scope="col">問題数</th><th scope="col">開始 (JST)</th><th scope="col">終了 (JST)</th><th scope="col">作成者</th><th v-if="mine" scope="col">操作</th></tr></thead>
+                <tbody><tr v-for="c in section.items" :key="c.id"><th scope="row"><NuxtLink :to="`/contests/${shortId(c.id)}`">{{ c.title }}</NuxtLink></th><td v-if="mine">{{ contestStatus[c.status] }}</td><td v-else>{{ c.problemCount }}問</td><td>{{ contestDate(c.startsAt) }}</td><td>{{ contestDate(c.endsAt) }}</td><td><template v-for="(author, index) in contestAuthors(c)" :key="author"><span v-if="index">、</span><UserLink :handle="author" /></template></td><td v-if="mine"><NuxtLink v-if="c.status === 'scheduled'" class="editor-button edit-link" :to="`/my/contests/${shortId(c.id)}`" :aria-label="`${c.title}を編集`" title="編集"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6Z" /><path d="m13 6 5 5" /></svg></NuxtLink><span v-else class="muted">—</span></td></tr></tbody>
               </table>
             </div>
           </template>
@@ -73,7 +73,8 @@ const complete = computed(() => !offset.value && !draftOffset.value && !!data.va
 .contest-list-heading { font-size: 1rem; margin: 0 0 12px; }
 .content-table-scroll ~ .contest-list-heading { margin-top: 32px; }
 /* The stacked tables share their column widths, so their columns line up. */
-.catalogue thead th:first-child { width: 46%; }
-.catalogue thead th:nth-child(2), .catalogue thead th:nth-child(3) { width: 19%; }
+.catalogue thead th:first-child { width: 40%; }
+.catalogue thead th:nth-child(2) { width: 8%; }
+.catalogue thead th:nth-child(3), .catalogue thead th:nth-child(4) { width: 18%; }
 .edit-link { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; }
 </style>

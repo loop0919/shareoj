@@ -67,6 +67,8 @@ type Contest struct {
 	CanRevealResults bool `json:"canRevealResults"`
 	// PartialScoring tells whether any problem gives partial scores (ADR 0025), even before the problems are shown.
 	PartialScoring bool `json:"partialScoring"`
+	// ProblemCount is known before the start, like the order and the points, and lists carry it without the problems.
+	ProblemCount int `json:"problemCount"`
 	// TeamMode lets participants form teams, each a row of the standings; those who enter alone keep rows of their own
 	// (ADR 0024). MaxTeamSize is null in individual contests and in team contests without a limit of their own;
 	// MaxTeamMembers still caps every team. OnsiteDivision tells whether the venue passphrase can make participants
@@ -137,12 +139,13 @@ const coSetters = `ARRAY(SELECT su.handle FROM contest_setters s JOIN user_profi
 const fields = `c.id,c.owner_id,u.handle,` + coSetters + `,c.title,c.description,c.starts_at,c.ends_at,c.penalty_minutes,c.freeze_minutes,
  contest_freeze_at(c),c.revealed_at,contest_results_final(c),c.team_mode,c.max_team_size,c.onsite_division,c.version,
  CASE WHEN statement_timestamp()<c.starts_at THEN 'scheduled' WHEN statement_timestamp()<c.ends_at THEN 'running' ELSE 'ended' END,
- EXISTS(SELECT 1 FROM contest_problems cp WHERE cp.contest_id=c.id AND jsonb_typeof(cp.draft->'scoring')='object')`
+ EXISTS(SELECT 1 FROM contest_problems cp WHERE cp.contest_id=c.id AND jsonb_typeof(cp.draft->'scoring')='object'),
+ (SELECT count(*) FROM contest_problems cp WHERE cp.contest_id=c.id)`
 
 func scan(row pgx.Row) (Contest, error) {
 	var c Contest
 	var others []string
-	err := row.Scan(&c.ID, &c.Owner, &c.Author, &others, &c.Title, &c.Description, &c.StartsAt, &c.EndsAt, &c.PenaltyMinutes, &c.FreezeMinutes, &c.FreezeAt, &c.RevealedAt, &c.ResultsFinal, &c.TeamMode, &c.MaxTeamSize, &c.OnsiteDivision, &c.Version, &c.Status, &c.PartialScoring)
+	err := row.Scan(&c.ID, &c.Owner, &c.Author, &others, &c.Title, &c.Description, &c.StartsAt, &c.EndsAt, &c.PenaltyMinutes, &c.FreezeMinutes, &c.FreezeAt, &c.RevealedAt, &c.ResultsFinal, &c.TeamMode, &c.MaxTeamSize, &c.OnsiteDivision, &c.Version, &c.Status, &c.PartialScoring, &c.ProblemCount)
 	c.Revealed = c.RevealedAt != nil
 	c.Authors = append([]string{c.Author}, others...)
 	c.Problems = []Problem{}

@@ -68,7 +68,7 @@ const upcomingContests = () => {
 // The contest list, newest start first as the API sends it, then its second page.
 const listedContest = (number, title, status, startsAt, endsAt) => ({
   id: `c0c0c0c0-c0c0-4c0c-8c0c-c0c0c0c0c00${number}`, author: 'alice', problemAuthors: [], testers: [], title, description: '', startsAt, endsAt,
-  penaltyMinutes: 5, version: 1, status, canEdit: false, participating: false, official: false, canViewSubmissions: false, problems: [],
+  penaltyMinutes: 5, version: 1, status, canEdit: false, participating: false, official: false, canViewSubmissions: false, problems: [], problemCount: number,
 })
 const listedContests = [
   listedContest(1, '遠い予定', 'scheduled', '2099-03-01T12:00:00Z', '2099-03-01T14:00:00Z'),

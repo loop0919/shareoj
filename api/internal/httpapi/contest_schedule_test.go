@@ -101,3 +101,20 @@ func TestUpcomingContestsPostgres(t *testing.T) {
 		t.Fatalf("limit: %v", got)
 	}
 }
+
+func TestContestListCountsProblemsPostgres(t *testing.T) {
+	f := newTeamTest(t, "alice")
+	const (
+		cid = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+		p1  = "11111111-1111-4111-8111-111111111111"
+		p2  = "22222222-2222-4222-8222-222222222222"
+	)
+	f.problem(p1)
+	f.problem(p2)
+	f.create(cid, p1, map[string]any{"problems": []map[string]any{{"id": p1, "points": 100}, {"id": p2, "points": 200}}})
+	var out offsetResponse[contests.Contest]
+	f.decode(f.request("GET", "/contests", "", nil, 200), &out)
+	if len(out.Items) != 1 || out.Items[0].ProblemCount != 2 || len(out.Items[0].Problems) != 0 {
+		t.Fatalf("before the start: %+v", out.Items)
+	}
+}
