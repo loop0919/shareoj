@@ -129,6 +129,38 @@
 .content-table th[scope="row"] { min-width: 10rem; overflow-wrap: anywhere; }
 .content-table td { white-space: nowrap; }
 .content-table tbody tr:hover { background: var(--color-surface); }
+/*
+ * Below 40rem a list reads as one card per row instead of scrolling sideways. The markup stays a table, and the class
+ * on each cell says where it sits: lead and corner share the top line, then the title, the line, inline and end cells,
+ * and the stat and actions cells close the card under a dashed rule. Unclassed lists, like standings, stay tables.
+ */
+@media (max-width: 39.999rem) {
+  .content-table--cards, .content-table--cards thead, .content-table--cards thead tr, .content-table--cards tbody { display: block; }
+  .content-table--cards thead th:not(.select-cell) { display: none; }
+  .content-table--cards thead th.select-cell { display: flex; align-items: center; gap: 8px; width: auto; padding: 0 12px 12px; font-size: .8125rem; }
+  .content-table--cards thead th.select-cell::after { content: "すべて選択"; }
+  .content-table--cards tbody tr { display: flex; flex-wrap: wrap; align-items: center; padding: 12px; border-bottom: 1px solid var(--color-line); }
+  /* Each fills a line, so what follows starts a new one: ::after under the top line, ::before above the stats. */
+  .content-table--cards tbody tr::before, .content-table--cards tbody tr::after { content: ""; flex-basis: 100%; }
+  .content-table--cards tbody tr::before { order: 5; }
+  .content-table--cards tbody tr::after { order: 2; }
+  .content-table--cards tbody th, .content-table--cards tbody td { min-width: 0; padding: 0; border: 0; white-space: normal; }
+  .content-table--cards td.select-cell { width: auto; margin-right: 8px; }
+  .content-table--cards td.lead-cell { order: 1; margin-bottom: 4px; font-size: .8125rem; }
+  .content-table--cards td.corner-cell { order: 2; margin: 0 0 4px auto; color: var(--color-muted); font-size: .8125rem; }
+  .content-table--cards tbody th[scope="row"], .content-table--cards td.title-cell { order: 3; flex-basis: 100%; }
+  .content-table--cards td.line-cell { order: 4; display: flex; flex-basis: 100%; flex-wrap: wrap; align-items: center; margin-top: 2px; font-size: .8125rem; }
+  .content-table--cards td.line-cell::before { content: attr(data-label); margin-right: 6px; color: var(--color-muted); }
+  .content-table--cards td.inline-cell { order: 4; margin-top: 2px; font-size: .8125rem; }
+  .content-table--cards td.inline-cell + td.inline-cell::before { content: "・"; color: var(--color-muted); }
+  .content-table--cards td.end-cell { order: 4; margin: 2px 0 0 auto; font-size: .8125rem; }
+  /* A basis over zero, or the stats would fit beside the full line that ::before leaves. */
+  .content-table--cards td.stat-cell { order: 6; flex: 1 1 1px; align-self: stretch; margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--color-line); font-size: .8125rem; text-align: center; white-space: normal; overflow-wrap: anywhere; }
+  .content-table--cards td.stat-cell::before { content: attr(data-label); display: block; color: var(--color-muted); font-size: .6875rem; }
+  .content-table--cards td.wide-cell { flex-grow: 2; }
+  .content-table--cards td.actions-cell { order: 7; display: flex; flex-basis: 100%; justify-content: flex-end; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--color-line); }
+  .content-table--cards td.actions-cell:has(> .muted) { display: none; }
+}
 .draft-empty { padding-block: 48px; border-block: 1px solid var(--color-line); }
 .draft-empty h2 { font-size: 1.125rem; }
 .draft-library-note { margin-top: 32px; font-size: .8125rem; }

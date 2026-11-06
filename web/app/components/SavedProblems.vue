@@ -88,11 +88,11 @@ onMounted(() => { void loadAccount() })
       <StatusFilter v-if="accountEntries.length" v-model="filter" :options="statusOptions" :counts="nextCursor ? undefined : counts" />
       <EmptyState v-if="accountEntries.length && !visibleEntries.length && !nextCursor && !accountLoading" :kind="testing ? 'testing' : 'problem'" :title="`「${filterLabel}」の問題はありません。`"><button type="button" class="editor-button" @click="filter = ''">すべて表示</button></EmptyState>
       <div v-if="visibleEntries.length" class="content-table-scroll">
-        <table class="content-table" :aria-label="heading">
+        <table class="content-table content-table--cards" :aria-label="heading">
           <thead><tr><th scope="col">タイトル</th><th scope="col">状態</th><th scope="col">更新日時</th><th scope="col">難易度</th><th scope="col">操作</th></tr></thead>
           <tbody><tr v-for="entry in visibleEntries" :key="entry.id">
             <th scope="row">{{ entry.title.trim() || '無題の問題' }}<span v-if="entry.viaContest" class="via-contest">コンテスト「{{ entry.viaContest.title.trim() || '無題のコンテスト' }}」の作成者として</span></th>
-            <td>
+            <td class="line-cell" data-label="状態">
               <span class="problem-state">
                 <ProblemStatus :problem="entry" />
                 <time v-if="entry.scheduledAt" :datetime="entry.scheduledAt">{{ new Date(entry.scheduledAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) }} (JST)</time>
@@ -102,9 +102,9 @@ onMounted(() => { void loadAccount() })
                 </span>
               </span>
             </td>
-            <td><time :datetime="entry.updatedAt">{{ updatedLabel(entry.updatedAt) }}</time></td>
-            <td><DifficultyBadge :level="entry.difficulty" /></td>
-            <td><div class="problem-actions"><ContentActions :title="entry.title.trim() || '無題の問題'" :edit-to="{ path: '/problems/new', query: { problem: entry.id } }" :view-to="`/problems/${shortId(entry.id)}`" :published="!!entry.publishedVersion" can-view />
+            <td class="corner-cell"><time :datetime="entry.updatedAt">{{ updatedLabel(entry.updatedAt) }}</time></td>
+            <td class="lead-cell"><DifficultyBadge :level="entry.difficulty" /></td>
+            <td class="actions-cell"><div class="problem-actions"><ContentActions :title="entry.title.trim() || '無題の問題'" :edit-to="{ path: '/problems/new', query: { problem: entry.id } }" :view-to="`/problems/${shortId(entry.id)}`" :published="!!entry.publishedVersion" can-view />
               <NuxtLink v-if="!testing && entry.scheduledAt" class="editor-button" :to="{ path: '/problems/post', query: { problem: entry.id } }">予約を変更</NuxtLink>
               <button v-if="!testing && entry.featuredPreference" class="editor-button withdraw-featured" :disabled="!!withdrawing" :aria-label="`${entry.title.trim() || '無題の問題'}の定期便応募を取り下げる`" title="定期便応募を取り下げる" @click="confirmWithdraw(entry)">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5-5 5 5 5M4 10h10a6 6 0 0 1 0 12" transform="translate(0 -2)" /></svg>

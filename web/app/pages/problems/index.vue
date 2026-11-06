@@ -77,13 +77,13 @@ useSharePreview({ type: 'website', title: heading, path, description })
     <template v-else>
     <ListToolbar :total="data.total" :page="page" :size="size" unit="問" :link="link" @update:size="resizeProblems" />
     <div class="content-table-scroll" tabindex="0" role="region" aria-label="問題一覧" :aria-busy="status === 'pending'">
-      <table class="content-table">
+      <table class="content-table content-table--cards">
         <thead><tr><th scope="col">公開日</th><th scope="col">タイトル</th><th scope="col">作成者</th><th scope="col"><abbr title="実行時間制限 / メモリ制限">TL / ML</abbr></th><th scope="col">正解者数</th><th scope="col"><abbr title="お気に入り数">Fav</abbr></th><th scope="col">難易度</th></tr></thead>
         <tbody><tr v-for="problem in data.items" :key="problem.id" :class="{ solved: solved.has(problem.id) }">
-          <td><time :datetime="problem.publishedAt">{{ date(problem.publishedAt) }}</time></td>
+          <td class="corner-cell"><time :datetime="problem.publishedAt">{{ date(problem.publishedAt) }}</time></td>
           <th scope="row"><NuxtLink :to="`/problems/${shortId(problem.id)}`" :aria-label="solved.has(problem.id) ? `${problem.title}（AC 済み）` : undefined">{{ problem.title }}</NuxtLink><TagLinks v-if="showTags && problem.tags.length" class="problem-row-tags" :tags="problem.tags" to="/problems" /></th>
-          <td><UserLink :handle="problem.author" /></td><td>{{ problem.timeLimitMs == null ? '—' : `${problem.timeLimitMs / 1000} 秒` }}・{{ problem.memoryLimitMb == null ? '—' : `${problem.memoryLimitMb} MiB` }}</td>
-          <td>{{ problem.solverCount }}</td><td>{{ problem.favoriteCount }}</td><td><DifficultyBadge :level="problem.difficulty" /></td>
+          <td class="line-cell" data-label="作成者"><UserLink :handle="problem.author" /></td><td class="stat-cell wide-cell" data-label="TL / ML">{{ problem.timeLimitMs == null ? '—' : `${problem.timeLimitMs / 1000} 秒` }}・{{ problem.memoryLimitMb == null ? '—' : `${problem.memoryLimitMb} MiB` }}</td>
+          <td class="stat-cell" data-label="正解者数">{{ problem.solverCount }}</td><td class="stat-cell" data-label="Fav">{{ problem.favoriteCount }}</td><td class="lead-cell"><DifficultyBadge :level="problem.difficulty" /></td>
         </tr></tbody>
       </table>
     </div>

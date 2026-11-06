@@ -52,7 +52,8 @@ for (const width of [375, 1280]) {
     await page.goto('/my')
     const problems = page.getByRole('table', { name: '自分の問題' })
     await expect(problems).toBeVisible()
-    await expect(problems.getByRole('columnheader')).toHaveText(['タイトル', '状態', '更新日時', '難易度', '操作'])
+    // A narrow list is one card per row, with no column headings.
+    await expect(problems.getByRole('columnheader')).toHaveText(width < 640 ? [] : ['タイトル', '状態', '更新日時', '難易度', '操作'])
     await expect(problems.locator('tbody tr').nth(0).getByRole('cell').nth(2)).toHaveText('Lv.7')
     await expect(problems.locator('tbody tr').nth(1).getByRole('cell').nth(2)).toHaveText('未設定')
     await expect(page.getByRole('table', { name: '作成した記事' })).toBeHidden()

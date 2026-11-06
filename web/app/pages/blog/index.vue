@@ -27,12 +27,12 @@ useSharePreview({ type: 'website', title: heading, path, description })
     <TagFilter kind="post" :tag="tag" to="/blog" />
     <EmptyState v-if="!current.items.length" kind="post" :title="tag ? `「${tag}」のタグが付いた記事はまだありません。` : '公開された記事はまだありません。'" />
     <div v-else class="content-table-scroll" tabindex="0" role="region" aria-label="記事一覧" :aria-busy="loading">
-      <table class="content-table">
+      <table class="content-table content-table--cards">
         <thead><tr><th scope="col">タイトル</th><th scope="col">投稿者</th><th scope="col">公開日</th></tr></thead>
         <tbody><tr v-for="post in current.items" :key="post.id">
           <th scope="row"><NuxtLink :to="`/blog/${shortId(post.id)}`">{{ post.title }}</NuxtLink><TagLinks v-if="post.tags.length" class="post-row-tags" :tags="post.tags" to="/blog" /></th>
-          <td><UserLink :handle="post.author" /> <span v-if="post.isOperator" class="operator-label">運営</span></td>
-          <td><time v-if="post.publishedAt" :datetime="post.publishedAt">{{ date(post.publishedAt) }}</time><span v-else>—</span></td>
+          <td class="inline-cell"><UserLink :handle="post.author" /> <span v-if="post.isOperator" class="operator-label">運営</span></td>
+          <td class="end-cell"><time v-if="post.publishedAt" :datetime="post.publishedAt">{{ date(post.publishedAt) }}</time><span v-else>—</span></td>
         </tr></tbody>
       </table>
     </div>

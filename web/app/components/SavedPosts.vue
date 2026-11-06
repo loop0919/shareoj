@@ -32,13 +32,13 @@ onMounted(() => { void load() })
     <StatusFilter v-if="posts.length" v-model="filter" :options="statusOptions" :counts="cursor ? undefined : counts" />
     <EmptyState v-if="posts.length && !visible.length && !cursor && !loading" kind="post" :title="`「${filterLabel}」の記事はありません。`"><button type="button" class="editor-button" @click="filter = ''">すべて表示</button></EmptyState>
     <div v-if="visible.length" class="content-table-scroll">
-      <table class="content-table" aria-label="作成した記事">
+      <table class="content-table content-table--cards" aria-label="作成した記事">
         <thead><tr><th scope="col">タイトル</th><th scope="col">公開状態</th><th scope="col">更新日時</th><th scope="col">操作</th></tr></thead>
         <tbody><tr v-for="post in visible" :key="post.id">
           <th scope="row">{{ post.title.trim() || '無題の記事' }}</th>
-          <td>{{ post.publishedVersion ? '公開中' : '下書き' }}</td>
-          <td><time :datetime="post.updatedAt">{{ new Date(post.updatedAt).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }) }}</time></td>
-          <td><ContentActions :title="post.title.trim() || '無題の記事'" :edit-to="{ path: '/blog/new', query: { post: post.id } }" :view-to="`/blog/${shortId(post.id)}`" :published="!!post.publishedVersion" /></td>
+          <td class="lead-cell">{{ post.publishedVersion ? '公開中' : '下書き' }}</td>
+          <td class="corner-cell"><time :datetime="post.updatedAt">{{ new Date(post.updatedAt).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }) }}</time></td>
+          <td class="actions-cell"><ContentActions :title="post.title.trim() || '無題の記事'" :edit-to="{ path: '/blog/new', query: { post: post.id } }" :view-to="`/blog/${shortId(post.id)}`" :published="!!post.publishedVersion" /></td>
         </tr></tbody>
       </table>
     </div>
