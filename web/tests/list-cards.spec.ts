@@ -103,26 +103,62 @@ test('narrow rejudge lists keep the checkbox for the whole page', async ({ page 
   await inWidth(list.getByRole('checkbox', { name: /の提出を選択$/ }), 375)
 })
 
-test('narrow contest submission lists read as cards', async ({ page }) => {
+// The server render reads the fixture API, so a refresh in the browser brings in the routed contest.
+async function openContestView(page: Page, view: string, status: string, problems: Record<string, unknown>[]) {
   const contest = {
-    id: contestId, title: '一覧の表示テスト', author: 'setter', description: '', status: 'running',
+    id: contestId, title: '一覧の表示テスト', author: 'setter', description: '', status,
     startsAt: '2026-09-15T12:00:00Z', endsAt: '2026-09-15T14:00:00Z', penaltyMinutes: 5,
-    version: 1, official: false, canEdit: false, canViewSubmissions: true,
-    problems: [{ id: problemId, title: submission.problemTitle, points: 100 }],
+    version: 1, official: false, canEdit: false, canViewSubmissions: true, problems,
   }
   await page.route(`**/api/contests/${contestId}**`, route => {
     const path = new URL(route.request().url()).pathname
     if (path.includes('/submissions')) return route.fulfill({ json: { items: [submission], hasMore: false } })
     if (path.endsWith('/standings')) return route.fulfill({ json: [] })
+    if (path.endsWith('/editorials')) return route.fulfill({ json: { items: [
+      { problemId, id: contestId, title: 'ユーザー解説の題名が長くても一覧の横幅に収まるかを確かめるための記事', author: 'bob', publishedAt: updatedAt },
+    ] } })
     return route.fulfill({ json: contest })
   })
   await page.goto(`/contests/${contestId}?view=standings`, { waitUntil: 'networkidle' })
   await page.getByRole('button', { name: '今すぐ更新' }).click()
   await expect(page.locator('.site-header')).toContainText(contest.title)
-  await page.evaluate(to => (window as unknown as { useNuxtApp: () => { $router: { push: (to: string) => Promise<unknown> } } }).useNuxtApp().$router.push(to), `/contests/${shortId(contestId)}?view=submissions`)
+  await page.evaluate(to => (window as unknown as { useNuxtApp: () => { $router: { push: (to: string) => Promise<unknown> } } }).useNuxtApp().$router.push(to), `/contests/${shortId(contestId)}?view=${view}`)
+}
+
+test('narrow contest submission lists read as cards', async ({ page }) => {
+  await openContestView(page, 'submissions', 'running', [{ id: problemId, title: submission.problemTitle, points: 100 }])
   const table = page.getByRole('region', { name: '提出一覧のスクロール領域' }).getByRole('table')
   await expect(table.locator('tbody tr')).toHaveCount(1)
   await readsAsCards(page, table, 'contest-submissions')
+})
+
+test('a narrow contest problem list leads each card with the problem letter', async ({ page }) => {
+  await openContestView(page, 'problems', 'running', [
+    { id: problemId, title: submission.problemTitle, points: 100, partial: true, timeLimitMs: '2000', memoryLimitMb: '1024' },
+    { id: contestId, title: 'A + B', points: 200, solved: true, timeLimitMs: '2000', memoryLimitMb: '1024' },
+  ])
+  const table = page.getByRole('region', { name: 'コンテストの問題' }).getByRole('table')
+  await expect(table.locator('tbody tr')).toHaveCount(2)
+  await readsAsCards(page, table, 'contest-problems')
+  const row = table.locator('tbody tr').first()
+  const letter = await row.getByRole('cell', { name: 'A', exact: true }).boundingBox()
+  const title = await row.getByRole('rowheader').boundingBox()
+  expect(letter!.y + letter!.height).toBeLessThanOrEqual(title!.y)
+  await expect(row.getByRole('cell', { name: 'TL / ML 2 秒・1024 MiB', exact: true })).toBeVisible()
+  // The wider table lines the points up at the right; a card lines them up with the other stats.
+  await expect(row.getByRole('cell', { name: /^配点 100 点/ })).toHaveCSS('text-align', 'center')
+})
+
+test('a narrow contest editorial list keeps each user editorial in the card', async ({ page }) => {
+  await openContestView(page, 'editorials', 'ended', [
+    { id: problemId, title: 'A + B', points: 100, hasEditorial: true },
+    { id: contestId, title: 'A - B', points: 200, hasEditorial: false },
+  ])
+  const table = page.getByRole('region', { name: '解説のスクロール領域' }).getByRole('table')
+  await expect(table.getByRole('link', { name: /ユーザー解説の題名/ })).toBeVisible()
+  await readsAsCards(page, table, 'contest-editorials')
+  await inWidth(table.getByRole('link', { name: /ユーザー解説の題名/ }), 375)
+  await expect(table.locator('tbody tr').first().getByRole('cell', { name: /^ユーザー解説 / })).toBeVisible()
 })
 
 test('narrow lists on the my page read as cards', async ({ page }) => {

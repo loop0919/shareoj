@@ -149,7 +149,7 @@
   .content-table--cards td.lead-cell { order: 1; margin-bottom: 4px; font-size: .8125rem; }
   .content-table--cards td.corner-cell { order: 2; margin: 0 0 4px auto; color: var(--color-muted); font-size: .8125rem; }
   .content-table--cards tbody th[scope="row"], .content-table--cards td.title-cell { order: 3; flex-basis: 100%; }
-  .content-table--cards td.line-cell { order: 4; display: flex; flex-basis: 100%; flex-wrap: wrap; align-items: center; margin-top: 2px; font-size: .8125rem; }
+  .content-table--cards td.line-cell { order: 4; display: flex; flex-basis: 100%; flex-wrap: wrap; align-items: center; margin-top: 2px; font-size: .8125rem; overflow-wrap: anywhere; }
   .content-table--cards td.line-cell::before { content: attr(data-label); margin-right: 6px; color: var(--color-muted); }
   .content-table--cards td.inline-cell { order: 4; margin-top: 2px; font-size: .8125rem; }
   .content-table--cards td.inline-cell + td.inline-cell::before { content: "・"; color: var(--color-muted); }
