@@ -169,7 +169,7 @@ const inputSnippet = '\n```input\n$N$\n$A_1 \\quad A_2 \\quad \\cdots \\quad A_N
       <noscript><p class="editor-error">編集と保存には JavaScript を有効にしてください。</p></noscript>
     </div>
     <div v-show="section === 'statement' || section === 'editorial'" class="author-edit-content">
-    <div v-if="section === 'statement'" class="author-fields">
+    <div v-if="section === 'statement'" class="author-fields" :data-mode="mode">
       <div class="title-field">
         <div class="field-heading"><label for="problem-title">問題のタイトル</label><span id="title-error" class="field-error inline-field-error" aria-live="polite">{{ showErrors || touched.title ? errors.title : '' }}</span></div>
         <input id="problem-title" v-model="draft.title" maxlength="120" placeholder="例：A + B" :disabled="!ready || publishing" :aria-invalid="(showErrors || touched.title) && !!errors.title" aria-describedby="title-error" @blur="touched.title = true">
@@ -252,6 +252,8 @@ const inputSnippet = '\n```input\n$N$\n$A_1 \\quad A_2 \\quad \\cdots \\quad A_N
   .editor-topbar, .editor-topbar .author-actions, .editor-save-actions { flex-wrap: nowrap; gap: 2px; }
   .editor-topbar .editor-view-switch { margin-left: 0; }
   .editor-view-switch [aria-pressed="true"] { display: none; }
+  /* The preview repeats the title and limits, and a phone has no room to show them twice. */
+  .author-fields[data-mode="preview"] { display: none; }
   .action-icon { display: block; }
   .action-label { display: none; }
   .back-link, .publish-button { display: inline-flex; align-items: center; justify-content: center; width: var(--editor-control-size); padding: 0; }

@@ -178,3 +178,27 @@ test('a wide screen keeps the words on the actions and every view button', async
   await expect(page.getByRole('button', { name: '保存', exact: true })).toHaveText('保存', { useInnerText: true })
   for (const name of ['編集', '分割', 'プレビュー']) await expect(page.getByRole('button', { name, exact: true })).toBeVisible()
 })
+
+test('a narrow preview leaves out the fields its own heading repeats', async ({ page }) => {
+  await page.setViewportSize({ width: 639, height: 800 })
+  await openSaved(page)
+  await page.getByRole('button', { name: 'プレビュー', exact: true }).click()
+  await expect(page.locator('.preview-title')).toHaveText('保存した下書き')
+  await expect(title(page)).toBeHidden()
+  await expect(page.locator('.problem-settings-toggle')).toBeHidden()
+  await page.getByRole('button', { name: '編集', exact: true }).click()
+  await expect(title(page)).toBeVisible()
+  await expect(title(page)).toHaveValue('保存した下書き')
+})
+
+for (const width of [640, 1280]) {
+  test(`the preview at ${width}px keeps the fields so the page does not jump`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 })
+    await openSaved(page)
+    const before = await title(page).boundingBox()
+    await page.getByRole('button', { name: 'プレビュー', exact: true }).click()
+    await expect(page.locator('.preview-title')).toBeVisible()
+    await expect(title(page)).toBeVisible()
+    expect(await title(page).boundingBox()).toEqual(before)
+  })
+}
