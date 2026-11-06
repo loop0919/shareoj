@@ -1,6 +1,9 @@
 import { expect, test } from './fixtures/account'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
+import { shortId } from '../shared/utils/short-id'
 
+const id = '11111111-1111-4111-8111-111111111111'
+const updatedAt = '2026-09-10T00:00:00Z'
 const title = (page: Page) => page.getByLabel('問題のタイトル')
 const source = (page: Page) => page.locator('#problem-source')
 
@@ -10,6 +13,16 @@ async function open(page: Page) {
   await expect(title(page)).toBeVisible()
 }
 const write = (page: Page) => source(page).tap({ position: { x: 120, y: 40 } })
+
+// A saved draft shows every action in the bar: back, publish and save.
+async function openSaved(page: Page) {
+  const readiness = { publish: [], contest: [], featured: [] }
+  const draft = { title: '保存した下書き', markdown: '問題本文', difficulty: 2, timeLimitMs: '2000', memoryLimitMb: '512', testCases: [] }
+  await page.route(`**/api/my/problems/${id}`, route => route.fulfill({ json: { id, version: 2, updatedAt, author: 'ui_test', draft, readiness } }))
+  await page.route('**/api/my/problems?*', route => route.fulfill({ json: { items: [{ id, title: draft.title, difficulty: 2, updatedAt, readiness }], nextCursor: '' } }))
+  await page.goto(`/problems/new?problem=${id}`)
+  await expect(page.getByRole('button', { name: '公開・応募', exact: true })).toBeVisible()
+}
 
 test.describe('on a phone', () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 667 } })
@@ -83,4 +96,85 @@ test.describe('on a tablet', () => {
     await expect(source(page)).toBeFocused()
     await expect(title(page)).toBeVisible()
   })
+})
+
+async function iconIsCentered(action: Locator) {
+  const box = await action.boundingBox()
+  const icon = await action.locator('svg').boundingBox()
+  expect(Math.abs(icon!.x + icon!.width / 2 - (box!.x + box!.width / 2))).toBeLessThanOrEqual(1)
+  expect(Math.abs(icon!.y + icon!.height / 2 - (box!.y + box!.height / 2))).toBeLessThanOrEqual(1)
+}
+
+test.describe('the top bar on a phone', () => {
+  test.use({ hasTouch: true, isMobile: true })
+
+  for (const width of [312, 320, 375]) {
+    test(`stays one line at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 667 })
+      await openSaved(page)
+      const back = page.getByRole('link', { name: '問題を見る', exact: true })
+      const publish = page.getByRole('button', { name: '公開・応募', exact: true })
+      const save = page.getByRole('button', { name: '保存', exact: true })
+      for (const action of [back, publish]) {
+        await expect(action).toHaveText('', { useInnerText: true })
+        await expect(action.locator('svg:visible')).toHaveCount(1)
+      }
+      await expect(save).toHaveText('保存', { useInnerText: true })
+      const tops = new Set<number>()
+      for (const action of [back, publish, save]) {
+        await expect(action).toBeInViewport({ ratio: 1 })
+        tops.add((await action.boundingBox())!.y)
+      }
+      expect(tops.size).toBe(1)
+      expect((await page.locator('.editor-topbar').boundingBox())!.height).toBeLessThan(60)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      await page.locator('.editor-topbar').screenshot({ path: test.info().outputPath(`topbar-${width}.png`) })
+    })
+  }
+
+  test('one button switches between editing and the preview', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 })
+    await openSaved(page)
+    const edit = page.getByRole('button', { name: '編集', exact: true })
+    const preview = page.getByRole('button', { name: 'プレビュー', exact: true })
+    await expect(edit).toBeHidden()
+    await preview.tap()
+    await expect(page.locator('.preview-document')).toBeVisible()
+    await expect(preview).toBeHidden()
+    await edit.tap()
+    await expect(source(page)).toBeVisible()
+    await expect(edit).toBeHidden()
+    await expect(preview).toBeVisible()
+  })
+
+  test('the back icon appears once there is a saved problem to go back to', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 })
+    await open(page)
+    await expect(page.locator('.back-link')).toHaveCount(0)
+    await openSaved(page)
+    const problem = page.getByRole('link', { name: '問題を見る', exact: true })
+    await expect(problem).toHaveAttribute('href', `/problems/${shortId(id)}`)
+    await iconIsCentered(problem)
+  })
+
+  test('the view button sits on the left with the actions on the right', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 })
+    await openSaved(page)
+    const theme = await page.locator('.editor-topbar .theme-toggle').boundingBox()
+    const view = await page.getByRole('button', { name: 'プレビュー', exact: true }).boundingBox()
+    const back = await page.getByRole('link', { name: '問題を見る', exact: true }).boundingBox()
+    const save = await page.getByRole('button', { name: '保存', exact: true }).boundingBox()
+    expect(view!.x - (theme!.x + theme!.width)).toBeLessThanOrEqual(8)
+    expect(back!.x - (view!.x + view!.width)).toBeGreaterThan(8)
+    expect(375 - (save!.x + save!.width)).toBeLessThanOrEqual(8)
+  })
+})
+
+test('a wide screen keeps the words on the actions and every view button', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await openSaved(page)
+  await expect(page.getByRole('link', { name: '問題を見る', exact: true })).toHaveText('問題を見る', { useInnerText: true })
+  await expect(page.getByRole('button', { name: '公開・応募', exact: true })).toHaveText('公開・応募', { useInnerText: true })
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toHaveText('保存', { useInnerText: true })
+  for (const name of ['編集', '分割', 'プレビュー']) await expect(page.getByRole('button', { name, exact: true })).toBeVisible()
 })

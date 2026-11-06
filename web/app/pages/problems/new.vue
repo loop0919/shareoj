@@ -138,8 +138,8 @@ const inputSnippet = '\n```input\n$N$\n$A_1 \\quad A_2 \\quad \\cdots \\quad A_N
       </div>
       <div class="author-actions">
         <div class="editor-save-actions">
-        <NuxtLink v-if="ready && cloudVersion > 0" class="editor-button" :to="`/problems/${shortId(cloudId)}`">問題を見る</NuxtLink>
-        <button v-if="canPublish" type="button" class="editor-button publish-button" :disabled="saving || publishing" @click="publishChoice?.open()"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0-4.5 4.5M12 4l4.5 4.5M4 20h16" /></svg>公開・応募</button>
+        <NuxtLink v-if="ready && cloudVersion > 0" class="editor-button back-link" :to="`/problems/${shortId(cloudId)}`" aria-label="問題を見る" title="問題を見る"><svg class="editor-icon action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12H4m0 0 6-6m-6 6 6 6" /></svg><span class="action-label">問題を見る</span></NuxtLink>
+        <button v-if="canPublish" type="button" class="editor-button publish-button" :disabled="saving || publishing" aria-label="公開・応募" title="公開・応募" @click="publishChoice?.open()"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m0 0-4.5 4.5M12 4l4.5 4.5M4 20h16" /></svg><span class="action-label">公開・応募</span></button>
         <button type="button" class="editor-button primary save-button" :disabled="!ready || saving || publishing" :aria-busy="saving" :aria-label="saving ? '保存中' : '保存'" title="保存（Ctrl+S / ⌘S）" aria-keyshortcuts="Control+s Meta+s" @click="saveDraft(true)">
           <span :class="{ 'save-label-hidden': saving }">保存</span>
           <span v-if="saving" class="save-spinner" aria-hidden="true" />
@@ -246,6 +246,17 @@ const inputSnippet = '\n```input\n$N$\n$A_1 \\quad A_2 \\quad \\cdots \\quad A_N
 <style scoped>
 .publish-button { display: inline-flex; align-items: center; gap: 6px; border-color: var(--color-accent); color: var(--color-accent); font-weight: 600; }
 .publish-button:disabled { opacity: .55; cursor: not-allowed; }
+.action-icon { display: none; }
+/* A phone keeps the top bar to one line: icons for back and publish, and one button that switches to the other view. */
+@media (max-width: 39.999rem) {
+  .editor-topbar, .editor-topbar .author-actions, .editor-save-actions { flex-wrap: nowrap; gap: 2px; }
+  .editor-topbar .editor-view-switch { margin-left: 0; }
+  .editor-view-switch [aria-pressed="true"] { display: none; }
+  .action-icon { display: block; }
+  .action-label { display: none; }
+  .back-link, .publish-button { display: inline-flex; align-items: center; justify-content: center; width: var(--editor-control-size); padding: 0; }
+}
+@media (max-width: 22.499rem) { .wordmark-beta { display: none; } }
 /* Sits beside the save state; the publication state stays at the right edge. */
 .manual-save-hint { margin-right: auto; }
 .tester-link-row { flex: 1; min-width: 0; }
