@@ -44,6 +44,7 @@ func TestContestRoutesWithoutDatabase(t *testing.T) {
 	h := newHandler(AuthConfig{}, handlerDependencies{Verifier: staticVerifier{}})
 	for _, route := range []string{
 		"GET /contests",
+		"GET /contests/upcoming",
 		"GET /contests/bad",
 		"GET /contests/bad/problems/bad",
 		"GET /contests/bad/problems/bad/submissions",

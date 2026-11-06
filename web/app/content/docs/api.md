@@ -24,6 +24,7 @@ curl https://api.share-oj.net/problems
 | `/problems/{id}/samples` | 公開問題のサンプルケース |
 | `/problems/{id}/submissions` | 公開問題への提出の一覧 |
 | `/contests` | コンテストの一覧 |
+| `/contests/upcoming` | 7日以内に開始するコンテスト（開始が近い順に最大5件） |
 | `/contests/{id}/standings` | コンテストの順位表 |
 | `/featured` | 定期便の出題 |
 | `/posts` | 公開記事の一覧 |

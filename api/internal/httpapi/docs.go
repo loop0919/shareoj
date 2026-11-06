@@ -27,6 +27,7 @@ type (
 	publicTagList               = itemsResponse[tags.Tag]
 	publicContestResponse       = contests.Contest
 	publicContestPage           = offsetResponse[contests.Contest]
+	publicUpcomingContests      = itemsResponse[contests.ScheduledContest]
 	publicContestProblem        = contests.ContestProblem
 	publicStandingsResponse     = []contests.Standing
 	publicSubmissionResponse    = submissions.Submission

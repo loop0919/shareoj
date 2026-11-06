@@ -81,6 +81,14 @@ export function canViewAllSubmissions(contest: Pick<Contest, 'canViewSubmissions
 export function contestDate(value: string) {
   return new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Tokyo' }).format(new Date(value))
 }
+// The time left until a contest starts, in its largest whole unit.
+export function contestCountdown(startsAt: string, now: number) {
+  const minutes = Math.floor((new Date(startsAt).getTime() - now) / 60_000)
+  if (minutes < 1) return 'まもなく'
+  if (minutes < 60) return `あと${minutes}分`
+  if (minutes < 24 * 60) return `あと${Math.floor(minutes / 60)}時間`
+  return `あと${Math.floor(minutes / (24 * 60))}日`
+}
 // When the standings freeze starts, in Japan. A contest that crosses midnight there shows the date as well, since the
 // time alone could mean either day.
 export function contestFreezeTime(contest: Pick<Contest, 'startsAt' | 'endsAt' | 'freezeAt'>) {

@@ -57,6 +57,14 @@ const featuredSchedule = {
     ],
   })),
 }
+// Times follow the clock, so the home page always counts down to these contests.
+const upcomingContests = () => {
+  const after = hours => new Date(Date.now() + hours * 3_600_000).toISOString()
+  return [
+    { id: '99999999-9999-4999-8999-999999999999', title: 'ShareOJ 秋の腕試し', startsAt: after(5.5), endsAt: after(7.5) },
+    { id: '88888888-8888-4888-8888-888888888888', title: '名前がとても長いコンテストでも折り返して読める第3回ShareOJ杯チーム対抗戦', startsAt: after(50), endsAt: after(52) },
+  ]
+}
 const featuredResult = (timeMs = null, wrong = 0) => ({ accepted: timeMs !== null, timeMs, wrong })
 const featuredStandings = {
   round: featured.items[0], closesAt: '2099-09-29T13:00:00Z', closed: false, hasMore: false,
@@ -170,6 +178,7 @@ createServer(async (req, res) => {
     res.end(JSON.stringify({ ...featuredStandings, round }))
   }
   else if (path === '/featured') res.end(JSON.stringify(featured))
+  else if (path === '/contests/upcoming') res.end(JSON.stringify({ items: upcomingContests() }))
   else if (path === '/featured/schedule') res.end(JSON.stringify(featuredSchedule))
   else if (path === `/problems/${featuredProblem.id}`) res.end(JSON.stringify(featuredProblem))
   else if (path === '/tags') res.end(JSON.stringify({ items: tags }))

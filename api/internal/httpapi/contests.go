@@ -88,6 +88,18 @@ func (p contestHandler) contestSchedule(w http.ResponseWriter, r *http.Request, 
 	writeAuthJSON(w, 200, map[string]any{"items": items})
 }
 
+func (p contestHandler) upcomingContests(w http.ResponseWriter, r *http.Request, _ string) {
+	if !p.available(w) {
+		return
+	}
+	items, err := p.Contests.UpcomingContests(r.Context())
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, itemsResponse[contests.ScheduledContest]{Items: items})
+}
+
 func (p contestHandler) contestDetail(w http.ResponseWriter, r *http.Request, owner string) {
 	id, ok := p.contestID(w, r, "contest_not_found")
 	if !ok {

@@ -147,6 +147,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	}
 	public("GET /users/{handle}", profiles.publicProfile, false, publicOperation{Summary: "公開プロフィール", Response: publicProfileResponse{}})
 	public("GET /contests", anonymous(contests.contestList), true, publicOperation{Summary: "コンテスト一覧", Description: "開始日時の降順。各要素のproblemsは空配列です。問題一覧は詳細APIで取得します。", Response: publicContestPage{}, Parameters: offsetParameters()})
+	public("GET /contests/upcoming", anonymous(contests.upcomingContests), false, publicOperation{Summary: "開始が近いコンテスト", Description: "7日以内に開始するコンテストを、開始日時の昇順で最大5件返します。開催中のコンテストは含みません。", Response: publicUpcomingContests{}})
 	public("GET /contests/{id}", anonymous(contests.contestDetail), true, publicOperation{Summary: "コンテスト詳細", Description: "開始前も出題順と配点を公開します。問題ID・タイトル・制限値は作成者と担当の作問者・テスターだけに返します。", Response: publicContestResponse{}})
 	public("GET /contests/{id}/problems/{problem}", anonymous(contests.contestProblem), true, publicOperation{Summary: "コンテストの問題", Description: "開始後に取得可能です。解説は終了後に公開されます。publishedAtはコンテスト終了日時です。authorはコンテストのオーナー、authorsはオーナーを先頭とするコンテストの作成者です。", Response: publicContestProblem{}})
 	public("GET /contests/{id}/problems/{problem}/submissions", anonymous(contests.contestProblemSubmissions), true, publicOperation{Summary: "コンテストの問題別提出一覧", Description: "コンテスト終了後に取得可能です。順位表を凍結したコンテストでは、凍結後の提出を結果の公開まで含みません。ソースコードとケース別結果は含みません。mine=1とmine=teamは認証が必要なため公開APIでは利用できません。", Response: publicSubmissionPage{}, Parameters: onsiteSubmissionParameters(offsetParameter("先頭からスキップする件数。1ページ最大50件。"))})

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -42,5 +43,61 @@ func TestContestSchedulePostgres(t *testing.T) {
 	f.schedule(cid, "ended")
 	if got := list("bob"); len(got) != 0 {
 		t.Fatalf("ended: %+v", got)
+	}
+}
+
+func TestUpcomingContestsPostgres(t *testing.T) {
+	f := newTeamTest(t, "alice")
+	const path = "/contests/upcoming"
+	add := func(id, startsIn string) {
+		t.Helper()
+		problem := strings.ReplaceAll(id, "c", "1")
+		f.problem(problem)
+		f.create(id, problem, nil)
+		f.exec(`UPDATE contests SET starts_at=now()+$2::interval,ends_at=now()+$2::interval+interval '1 hour' WHERE id=$1`, id, startsIn)
+	}
+	ids := func() []string {
+		t.Helper()
+		var out itemsResponse[contests.ScheduledContest]
+		f.decode(f.request("GET", path, "", nil, 200), &out)
+		list := make([]string, len(out.Items))
+		for i, c := range out.Items {
+			list[i] = c.ID
+		}
+		return list
+	}
+	const (
+		first  = "cccccccc-cccc-4ccc-8ccc-cccccccccc01"
+		second = "cccccccc-cccc-4ccc-8ccc-cccccccccc02"
+		third  = "cccccccc-cccc-4ccc-8ccc-cccccccccc03"
+		fourth = "cccccccc-cccc-4ccc-8ccc-cccccccccc04"
+		fifth  = "cccccccc-cccc-4ccc-8ccc-cccccccccc05"
+		sixth  = "cccccccc-cccc-4ccc-8ccc-cccccccccc06"
+		beyond = "cccccccc-cccc-4ccc-8ccc-cccccccccc07"
+	)
+	if got := ids(); len(got) != 0 {
+		t.Fatalf("no contests: %v", got)
+	}
+	add(second, "6 days 23 hours")
+	add(first, "1 hour")
+	add(beyond, "7 days 1 hour")
+	if got := ids(); !slices.Equal(got, []string{first, second}) {
+		t.Fatalf("within a week: %v", got)
+	}
+	f.schedule(first, "running")
+	if got := ids(); !slices.Equal(got, []string{second}) {
+		t.Fatalf("running: %v", got)
+	}
+	f.schedule(first, "ended")
+	if got := ids(); !slices.Equal(got, []string{second}) {
+		t.Fatalf("ended: %v", got)
+	}
+	add(third, "1 day")
+	add(fourth, "2 days")
+	add(fifth, "3 days")
+	add(sixth, "4 days")
+	f.exec(`UPDATE contests SET starts_at=now()+interval '5 days',ends_at=now()+interval '5 days 1 hour' WHERE id=$1`, first)
+	if got := ids(); !slices.Equal(got, []string{third, fourth, fifth, sixth, first}) {
+		t.Fatalf("limit: %v", got)
 	}
 }
