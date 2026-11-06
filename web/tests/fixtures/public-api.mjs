@@ -65,6 +65,20 @@ const upcomingContests = () => {
     { id: '88888888-8888-4888-8888-888888888888', title: '名前がとても長いコンテストでも折り返して読める第3回ShareOJ杯チーム対抗戦', startsAt: after(50), endsAt: after(52) },
   ]
 }
+// The contest list, newest start first as the API sends it, then its second page.
+const listedContest = (number, title, status, startsAt, endsAt) => ({
+  id: `c0c0c0c0-c0c0-4c0c-8c0c-c0c0c0c0c00${number}`, author: 'alice', problemAuthors: [], testers: [], title, description: '', startsAt, endsAt,
+  penaltyMinutes: 5, version: 1, status, canEdit: false, participating: false, official: false, canViewSubmissions: false, problems: [],
+})
+const listedContests = [
+  listedContest(1, '遠い予定', 'scheduled', '2099-03-01T12:00:00Z', '2099-03-01T14:00:00Z'),
+  listedContest(2, '近い予定', 'scheduled', '2099-02-01T12:00:00Z', '2099-02-01T14:00:00Z'),
+  listedContest(3, '後から始まった開催中', 'running', '2026-11-02T12:00:00Z', '2099-01-01T14:00:00Z'),
+  listedContest(4, '先に始まった開催中', 'running', '2026-11-01T12:00:00Z', '2099-01-01T14:00:00Z'),
+  listedContest(5, '新しい過去', 'ended', '2026-10-02T12:00:00Z', '2026-10-02T14:00:00Z'),
+  listedContest(6, '古い過去', 'ended', '2026-10-01T12:00:00Z', '2026-10-01T14:00:00Z'),
+]
+const olderContests = [listedContest(7, '次のページの過去', 'ended', '2026-09-01T12:00:00Z', '2026-09-01T14:00:00Z')]
 const featuredResult = (timeMs = null, wrong = 0) => ({ accepted: timeMs !== null, timeMs, wrong })
 const featuredStandings = {
   round: featured.items[0], closesAt: '2099-09-29T13:00:00Z', closed: false, hasMore: false,
@@ -179,6 +193,10 @@ createServer(async (req, res) => {
   }
   else if (path === '/featured') res.end(JSON.stringify(featured))
   else if (path === '/contests/upcoming') res.end(JSON.stringify({ items: upcomingContests() }))
+  else if (path === '/contests') {
+    const first = new URL(req.url, 'http://localhost').searchParams.get('offset') === '0'
+    res.end(JSON.stringify({ items: first ? listedContests : olderContests, hasMore: first }))
+  }
   else if (path === '/featured/schedule') res.end(JSON.stringify(featuredSchedule))
   else if (path === `/problems/${featuredProblem.id}`) res.end(JSON.stringify(featuredProblem))
   else if (path === '/tags') res.end(JSON.stringify({ items: tags }))

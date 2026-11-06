@@ -1,10 +1,22 @@
 <script setup lang="ts">
-import { contestAuthors, contestDate, contestStatus, type ContestDraftList, type ContestList } from '~~/shared/types/contest'
+import { contestAuthors, contestDate, contestStatus, type Contest, type ContestDraftList, type ContestList } from '~~/shared/types/contest'
 import { shortId } from '~~/shared/utils/short-id'
 const props = defineProps<{ mine?: boolean }>()
 const endpoint = props.mine ? '/api/my/contests' : '/api/contests'
 const offset = ref(0)
 const { data, error, status } = await useFetch<ContestList>(endpoint, { query: { offset }, server: !props.mine })
+// The public page stacks contests by state. The API sends the newest start first, so the contests still running or
+// ahead turn around to read from the earliest start.
+const sections = computed(() => {
+  const items = data.value?.items ?? []
+  if (props.mine) return [{ label: 'コンテスト一覧', items }]
+  const inPhase = (phase: Contest['status']) => items.filter(contest => contest.status === phase)
+  return [
+    { label: '開催中のコンテスト', items: inPhase('running').reverse() },
+    { label: '開催予定のコンテスト', items: inPhase('scheduled').reverse() },
+    { label: '過去のコンテスト', items: inPhase('ended') },
+  ].filter(section => section.items.length)
+})
 // Drafts are private, so only the setters' list asks for them; it includes drafts shared by other owners.
 const draftOffset = ref(0)
 const { data: drafts, status: draftStatus } = await useFetch<ContestDraftList>('/api/my/contests/drafts', { query: { offset: draftOffset }, server: false, immediate: props.mine })
@@ -42,11 +54,16 @@ const complete = computed(() => !offset.value && !draftOffset.value && !!data.va
         <EmptyState v-if="filter && !data.items.length" kind="contest" :title="`「${filterLabel}」のコンテストはありません。`"><button type="button" class="editor-button" @click="filter = ''">すべて表示</button></EmptyState>
         <EmptyState v-else-if="!data.items.length && drafts?.items.length" kind="contest" title="公開したコンテストはまだありません。" description="下書きを開いて「公開」すると、ここに表示されます。" />
         <EmptyState v-else-if="!data.items.length" kind="contest" title="コンテストはまだありません。" :description="mine ? '「新規コンテスト」から作成すると、ここに表示されます。' : ''" />
-        <div v-else class="content-table-scroll" role="region" aria-label="コンテスト一覧" tabindex="0" :aria-busy="status === 'pending'">
-          <table class="content-table"><thead><tr><th scope="col">コンテスト</th><th scope="col">状態</th><th scope="col">開始 (JST)</th><th scope="col">終了 (JST)</th><th scope="col">作成者</th><th v-if="mine" scope="col">操作</th></tr></thead>
-            <tbody><tr v-for="c in data.items" :key="c.id"><th scope="row"><NuxtLink :to="`/contests/${shortId(c.id)}`">{{ c.title }}</NuxtLink></th><td>{{ contestStatus[c.status] }}</td><td>{{ contestDate(c.startsAt) }}</td><td>{{ contestDate(c.endsAt) }}</td><td><template v-for="(author, index) in contestAuthors(c)" :key="author"><span v-if="index">、</span><UserLink :handle="author" /></template></td><td v-if="mine"><NuxtLink v-if="c.status === 'scheduled'" class="editor-button edit-link" :to="`/my/contests/${shortId(c.id)}`" :aria-label="`${c.title}を編集`" title="編集"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6Z" /><path d="m13 6 5 5" /></svg></NuxtLink><span v-else class="muted">—</span></td></tr></tbody>
-          </table>
-        </div>
+        <template v-else>
+          <template v-for="section in sections" :key="section.label">
+            <h2 v-if="!mine" class="contest-list-heading">{{ section.label }}</h2>
+            <div class="content-table-scroll" role="region" :aria-label="section.label" tabindex="0" :aria-busy="status === 'pending'">
+              <table class="content-table"><thead><tr><th scope="col">コンテスト</th><th v-if="mine" scope="col">状態</th><th scope="col">開始 (JST)</th><th scope="col">終了 (JST)</th><th scope="col">作成者</th><th v-if="mine" scope="col">操作</th></tr></thead>
+                <tbody><tr v-for="c in section.items" :key="c.id"><th scope="row"><NuxtLink :to="`/contests/${shortId(c.id)}`">{{ c.title }}</NuxtLink></th><td v-if="mine">{{ contestStatus[c.status] }}</td><td>{{ contestDate(c.startsAt) }}</td><td>{{ contestDate(c.endsAt) }}</td><td><template v-for="(author, index) in contestAuthors(c)" :key="author"><span v-if="index">、</span><UserLink :handle="author" /></template></td><td v-if="mine"><NuxtLink v-if="c.status === 'scheduled'" class="editor-button edit-link" :to="`/my/contests/${shortId(c.id)}`" :aria-label="`${c.title}を編集`" title="編集"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6Z" /><path d="m13 6 5 5" /></svg></NuxtLink><span v-else class="muted">—</span></td></tr></tbody>
+              </table>
+            </div>
+          </template>
+        </template>
         <ContentPagination v-if="data.items.length || offset" :index="offset / 50" :has-next="data.hasMore" :loading="status === 'pending'" @move="direction => offset += direction * 50" />
       </template>
     </template>
@@ -55,5 +72,8 @@ const complete = computed(() => !offset.value && !draftOffset.value && !!data.va
 <style scoped>
 .contest-list-heading { font-size: 1rem; margin: 0 0 12px; }
 .content-table-scroll ~ .contest-list-heading { margin-top: 32px; }
+/* The stacked tables share their column widths, so their columns line up. */
+.catalogue thead th:first-child { width: 46%; }
+.catalogue thead th:nth-child(2), .catalogue thead th:nth-child(3) { width: 19%; }
 .edit-link { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; }
 </style>
