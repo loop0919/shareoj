@@ -237,6 +237,8 @@ test.describe('small touch screens', () => {
       await page.screenshot({ path: testInfo.outputPath('mobile-markdown.png'), fullPage: true })
       await page.getByRole('button', { name: '折りたたみ', exact: true }).click()
       await expect(source).toHaveText(/:::details/, { useInnerText: true })
+      // A phone hides the title while the source has focus.
+      await source.blur()
       await page.getByLabel('問題のタイトル', { exact: true }).fill('スマホの問題')
       await page.getByRole('button', { name: '保存', exact: true }).click()
       await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')

@@ -237,6 +237,13 @@
   .editor-main .title-field { grid-column: 1 / -1; }
 }
 
+/*
+ * The keyboard covers much of a phone's screen, so while the problem source has focus it takes the room of the fields
+ * above it. The toolbar keeps that focus, or the fields would come back under the finger.
+ */
+@media (max-width: 39.999rem) and (pointer: coarse) {
+  .author-edit-content:has(#problem-source:focus) .author-fields, .author-edit-content:has(#problem-source:focus) .source-pane .pane-heading { display: none; }
+}
 /* Validation stays with the field heading, above the input. */
 .field-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; margin-bottom: 2px; min-width: 0; }
 .author-fields .field-heading label { margin: 0; flex-shrink: 0; }
