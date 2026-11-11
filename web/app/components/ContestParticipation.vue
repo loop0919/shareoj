@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Contest, JoinBody } from '~~/shared/types/contest'
 import { shortId } from '~~/shared/utils/short-id'
+import { googleCalendarUrl } from '~/utils/google-calendar'
 import { venuePassphraseBlank, venuePassphraseRule } from '~/utils/venue-passphrase'
 // detailed is the overview page: only it takes the venue passphrase and offers the switch to a team. Team contests join
 // alone here with 「個人参加」; 「チーム参加」 leads to the team page, which forms teams and holds the team panel (ADR 0024).
@@ -13,6 +14,12 @@ const division = computed(() => props.contest.onsiteDivision === true)
 const teamPage = computed(() => `/contests/${shortId(props.contest.id)}/team`)
 // Outside the overview it only offers a way to join; the viewer's settled role (staff, 参加済み) stays on the overview.
 const settled = computed(() => !!user.value && (props.contest.excluded || props.contest.staff || props.contest.participating))
+// Offered once registered and until the start: one press opens Google Calendar with the event filled in (issue #20).
+const config = useRuntimeConfig()
+const calendarUrl = computed(() => googleCalendarUrl({
+  title: props.contest.title, startsAt: props.contest.startsAt, endsAt: props.contest.endsAt,
+  url: new URL(`/contests/${shortId(props.contest.id)}`, config.public.siteUrl).href,
+}))
 const login = (next: string) => ({ path: '/login', query: { next } })
 const { saving, error, send } = useContestJoin(() => props.contest.id)
 const passphrase = ref('')
@@ -46,6 +53,7 @@ function joinAlone(event: MouseEvent) {
     <p v-else-if="user && contest.staff" class="muted">スタッフ（作成者・作問者・テスター）は公式参加の対象外です。</p>
     <template v-else-if="user && contest.participating">
       <ContestParticipationState :contest="contest" />
+      <p v-if="detailed && contest.status === 'scheduled'"><a class="editor-button" :href="calendarUrl" target="_blank" rel="noopener noreferrer">Googleカレンダーに追加<span class="visually-hidden">（新しいタブで開く）</span></a></p>
       <template v-if="detailed && teamMode">
         <template v-if="contest.team"><NuxtLink class="editor-button" :to="teamPage">チームのページ</NuxtLink><p class="muted">メンバーと参加コードは、チームのページで確認できます。</p></template>
         <!-- Once it starts, an individual's submissions are their own and cannot move to a team. -->

@@ -127,6 +127,26 @@ test('an onsite contest takes the venue passphrase on the overview only, keeps i
   await noHorizontalScroll(page)
 })
 
+test('a registered participant adds the contest to Google Calendar until it starts', async ({ page }) => {
+  const state = await routeContest(page, { ...base, participating: true })
+  await open(page)
+  const link = page.getByRole('link', { name: /^Googleカレンダーに追加/ })
+  const url = new URL((await link.getAttribute('href'))!)
+  expect(url.origin + url.pathname).toBe('https://calendar.google.com/calendar/render')
+  expect(Object.fromEntries(url.searchParams)).toEqual({
+    action: 'TEMPLATE', text: title, dates: '20991001T030000Z/20991001T050000Z', details: `https://judge.example/contests/${shortId(id)}`,
+  })
+  await expect(link).toHaveAttribute('target', '_blank')
+  // Other views leave the registration to the overview, and a started contest needs no reminder.
+  await menu(page, 'standings')
+  await expect(link).toHaveCount(0)
+  state.contest = { ...base, participating: true, status: 'running' }
+  await page.getByRole('button', { name: '今すぐ更新' }).click()
+  await menu(page, 'overview')
+  await expect(page.getByRole('status').filter({ hasText: '参加済み' })).toBeVisible()
+  await expect(link).toHaveCount(0)
+})
+
 test('venue passphrase fields guide typing and name the rule for other characters and lengths', async ({ page }) => {
   const contest = { ...base, onsiteDivision: true }
   const state = await routeContest(page, contest)
