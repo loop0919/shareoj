@@ -155,3 +155,113 @@ with open('working-file','wb') as f: f.write(b'x'*(16*1024*1024))
     fork = '#include <unistd.h>\n#include <cstdio>\nint main(){if(fork()==0){sleep(60);return 0;}puts("10");fflush(stdout);int x;return scanf("%d",&x)==1 && x==20 ? 0 : 1;}'
     check('cpp23-gcc-isolate', solution, fork, 'AC')
     check('python314-isolate', private_solution, private, 'AC', submitted='python314-isolate')
+    run_twice(runtime, requested, fixtures, judge)
+
+
+# Run-twice judge (legacy): argv is test-input expected-output submission-source score run handoff.
+# Run 1 asks N, stores the submission's reply in the handoff; run 2 sends the handoff back and wants N.
+# The decoy score 99 in run 1 shows that only run 2 sets the case score (the real score is 6).
+TWICE_JUDGE = '''import sys
+def reply():
+    try:
+        return int(sys.stdin.readline())
+    except ValueError:
+        sys.exit(1)
+n = int(open(sys.argv[1]).read())
+run, handoff = sys.argv[5], sys.argv[6]
+with open(sys.argv[4], 'w') as f:
+    f.write('99' if run == '1' else '6')
+if run == '1':
+    print(n, flush=True)
+    x = reply()
+    with open(handoff, 'w') as f:
+        f.write(str(x))
+    sys.exit(0 if x == n + 1000 else 1)
+h = int(open(handoff).read())
+print(h, flush=True)
+sys.exit(0 if reply() == n else 1)
+'''
+
+# Tells the two runs apart by the value it receives: N in run 1, N + 1000 (the handoff) in run 2.
+TWICE_SUBMISSION = '''x = int(input())
+print(x + 1000 if x < 1000 else x - 1000, flush=True)
+'''
+
+# Records whether a file from another run is visible: 1 if not, 0 if so. The judge accepts only 1, in both runs.
+TWICE_CARRY_SUBMISSION = '''import os
+input()
+seen = os.path.exists('carry')
+open('carry', 'w').close()
+print(0 if seen else 1, flush=True)
+'''
+TWICE_CARRY_JUDGE = '''import sys
+print(0, flush=True)
+try:
+    answer = int(sys.stdin.readline())
+except ValueError:
+    sys.exit(1)
+sys.exit(0 if answer == 1 else 1)
+'''
+
+# testlib: the test input is "0 N" and run 1 writes "1 <reply>" to tout, which is inf of run 2.
+TWICE_TESTLIB_JUDGE = '''#include "testlib.h"
+#include <iostream>
+int main(int argc,char** argv){registerInteraction(argc,argv);
+ int phase=inf.readInt();int n=inf.readInt();int expected=ans.readInt();
+ std::cout<<n<<std::endl;
+ int x=ouf.readInt();
+ if(phase==0){
+  tout<<1<<' '<<x<<std::endl;
+  if(x!=n+1000)quitf(_wa,"first run");
+  FIRST;}
+ if(x!=expected)quitf(_wa,"second run");
+ SECOND;}'''
+
+
+def run_twice(runtime, passed, fixtures, judge):
+    """Run-twice jobs on real boxes: handoff, skipped run 2, fresh box per run, run-2-only scores, both protocols."""
+    if 'python314-isolate' not in passed:
+        return
+    from testlib_smoke import exact_aggregator
+
+    def check(name, source, code, want, *, protocol=None, case=('7\n', '7\n'), scoring=None):
+        judge_code = dict(runtime='python314' if protocol is None else 'cpp23-gcc', source=code)
+        if protocol is not None:
+            judge_code['protocol'] = protocol
+        job = dict(runtime='python314-isolate', runtimeDigest=runtime, source=source, runTwice=judge_code,
+                   timeLimitMs=1000, memoryLimitMb=512, cases=[dict(input=case[0], output=case[1])])
+        if scoring is not None:
+            group, points, aggregator = scoring
+            job['cases'] = [dict(input=case[0], output=case[1], isSample=False, groups=[group])]
+            job['scoring'] = dict(mode='aggregate', groups=[dict(name=group, points=points)],
+                                  aggregator=dict(runtime='cpp23-gcc', source=aggregator))
+        result = judge(job, runtime)
+        assert result['verdict'] == want, (name, want, result)
+        print(name, 'run-twice', want, 'OK', flush=True)
+        return result
+
+    skipped = '2回目: 実行しません'
+    result = check('handoff', TWICE_SUBMISSION, TWICE_JUDGE, 'AC')
+    assert skipped not in result.get('checkerLog', ''), result
+    # A bad reply in run 1 is WA and run 2 does not start.
+    result = check('run 1 wrong', 'input()\nprint("x", flush=True)\n', TWICE_JUDGE, 'WA')
+    assert skipped in result.get('checkerLog', ''), result
+    # A bad reply in run 2 alone is WA, after run 2 started.
+    result = check('run 2 wrong', TWICE_SUBMISSION.replace('x - 1000', 'x - 999'), TWICE_JUDGE, 'WA')
+    assert skipped not in result.get('checkerLog', ''), result
+    # The second run gets a fresh box: the file written by run 1 is gone.
+    check('fresh box', TWICE_CARRY_SUBMISSION, TWICE_CARRY_JUDGE, 'AC')
+    if 'cpp23-gcc-isolate' not in passed:
+        return
+    # Aggregate mode: the case score comes from run 2 (6), not from run 1 (99).
+    result = check('legacy score', TWICE_SUBMISSION, TWICE_JUDGE, 'AC',
+                   scoring=('g', 10, exact_aggregator('1 1\n10\nAC 6 0 1 0\n', '6')))
+    assert result['cases'][0].get('score') == 6 and result['scoring'] == dict(
+        score=600, maxScore=1000, groups=[dict(score=600, maxScore=1000)]), result
+    plain = TWICE_TESTLIB_JUDGE.replace('FIRST', 'quitf(_ok,"first")').replace('SECOND', 'quitf(_ok,"second")')
+    check('testlib', TWICE_SUBMISSION, plain, 'AC', protocol='testlib', case=('0 7\n', '7\n'))
+    points = TWICE_TESTLIB_JUDGE.replace('FIRST', 'quitp(11,"first")').replace('SECOND', 'quitp(37,"second")')
+    result = check('testlib score', TWICE_SUBMISSION, points, 'AC', protocol='testlib', case=('0 7\n', '7\n'),
+                   scoring=('all', 100, exact_aggregator('1 1\n100\nAC 37 0 1 0\n', '37')))
+    assert result['cases'][0].get('score') == 37 and result['scoring'] == dict(
+        score=3700, maxScore=10000, groups=[dict(score=3700, maxScore=10000)]), result
