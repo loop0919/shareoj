@@ -338,31 +338,71 @@ test('余裕の誤りは保存しない', async ({ page }) => {
   expect((await saveWithButton(page)).errorJudge).toEqual(errorJudgeDefaults)
   const writes: unknown[] = []
   page.on('request', request => { if (request.method() === 'PUT' && /^\/api\/my\/problems\/[^/]+$/.test(new URL(request.url()).pathname)) writes.push(request.postDataJSON().draft.errorJudge) })
-  const error = page.getByText('判定の余裕は0〜100の数で、小数は6桁までです。', { exact: true })
+  const message = '判定の余裕は0〜100の数で、小数は6桁までです。'
+  const inline = page.getByRole('region', { name: '判定方法' }).getByText(message, { exact: true })
+  // A refused save says why where other refused saves do.
+  const refusal = page.getByRole('alert').filter({ hasText: message })
+  const state = page.locator('[data-save-state]')
   const open = page.getByRole('button', { name: '問題ページで提出する', exact: true })
   await expect(open).toBeEnabled()
-  for (const value of ['', '101', '0.1.2', '0.1234567', '-1']) {
+  for (const value of ['', '101', '0.1.2', '0.1234567', '-1', '1,5']) {
     await margin.fill(value)
-    await expect(error).toBeVisible()
+    await expect(inline).toBeVisible()
     await expect(margin).toHaveAttribute('aria-invalid', 'true')
     await expect(page.getByText('以下なら正解になります。', { exact: false })).toHaveCount(0)
-    // The draft keeps the last valid margin, so nothing becomes unsaved and the problem page cannot be opened.
-    await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
     await expect(open).toBeDisabled()
   }
+  // The invalid margin is an unsaved edit that the autosave refuses.
+  await expect(state).toHaveAttribute('data-save-state', 'dirty')
+  await expect(refusal).toBeVisible()
+  // Saving by hand, by the button or the shortcut, sends nothing and shows no success.
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await page.keyboard.press('Control+s')
   // Wait beyond the autosave debounce to prove no write occurs.
   await page.waitForTimeout(900)
   expect(writes).toEqual([])
-  // Saving by hand keeps the last valid margin; the invalid one never leaves the page.
-  expect((await saveWithButton(page)).errorJudge).toEqual(errorJudgeDefaults)
-  await expect(margin).toHaveValue('-1')
-  await expect(error).toBeVisible()
+  await expect(state).toHaveAttribute('data-save-state', 'dirty')
+  await expect(refusal).toBeVisible()
+  await expect(page.getByText('保存しました。', { exact: true })).toHaveCount(0)
+  await expect(margin).toHaveValue('1,5')
+  // A corrected margin saves as usual.
   await margin.fill('2.5')
-  await expect(error).toHaveCount(0)
+  await expect(inline).toHaveCount(0)
   await expect(margin).not.toHaveAttribute('aria-invalid', 'true')
   await expect(open).toBeEnabled()
   expect((await saveWithButton(page)).errorJudge).toEqual({ ...errorJudgeDefaults, marginPercent: '2.5' })
-  expect(writes.every(value => (value as { marginPercent: string }).marginPercent !== '-1')).toBe(true)
+  await expect(refusal).toHaveCount(0)
+  expect(writes.length).toBeGreaterThan(0)
+  expect(writes.every(value => (value as { marginPercent: string }).marginPercent === '2.5')).toBe(true)
+  // Going back to the saved margin after an invalid one leaves nothing to save and clears the refusal.
+  const count = writes.length
+  await margin.fill('x')
+  await expect(refusal).toBeVisible()
+  await margin.fill('2.5')
+  await expect(refusal).toHaveCount(0)
+  await expect(state).toHaveAttribute('data-save-state', 'saved')
+  expect(writes.length).toBe(count)
+})
+
+test('余裕の誤りがあるうちは移動の前に確かめる', async ({ page }) => {
+  await page.goto('/problems/new?fresh=1')
+  await page.getByLabel('問題のタイトル').fill('余裕の誤りと移動')
+  await openChecker(page)
+  const { method, margin } = errorJudgeFields(page)
+  await method.selectOption('errorJudge')
+  await saveWithButton(page)
+  let writes = 0
+  page.on('request', request => { if (request.method() === 'PUT' && /^\/api\/my\/problems\/[^/]+$/.test(new URL(request.url()).pathname)) writes++ })
+  await margin.fill('101')
+  await page.getByRole('link', { name: 'ShareOJ マイページ', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: '保存して移動', exact: true }).click()
+  await expect(dialog.getByText('保存できませんでした。編集を続けるか、保存せずに移動してください。', { exact: true })).toBeVisible()
+  expect(writes).toBe(0)
+  await dialog.getByRole('button', { name: '保存せずに移動', exact: true }).click()
+  await expect(page).toHaveURL('/my')
+  expect(writes).toBe(0)
 })
 
 test('誤差ジャッジからほかの判定方法へ切り替えると errorJudge が null になる', async ({ page }) => {

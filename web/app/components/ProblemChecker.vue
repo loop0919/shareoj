@@ -9,6 +9,8 @@ const checker = defineModel<ProblemDraft['checker']>({ required: true })
 const interactor = defineModel<ProblemDraft['interactor']>('interactor', { required: true })
 const runTwice = defineModel<ProblemDraft['runTwice']>('runTwice', { required: true })
 const errorJudge = defineModel<ProblemDraft['errorJudge']>('errorJudge', { required: true })
+// Why a setting typed here cannot go into the draft yet; the page refuses every save while it is set.
+const settingError = defineModel<string>('settingError', { default: '' })
 // In the aggregate mode the score file and testlib's quitp give each case its score (ADR 0025).
 const props = defineProps<{ disabled: boolean, problemId: string, published: boolean, save: () => Promise<boolean>, scoringMode?: 'groups' | 'aggregate' }>()
 const aggregate = computed(() => props.scoringMode === 'aggregate')
@@ -30,9 +32,10 @@ const method = computed({
     errorJudge.value = value === 'errorJudge' ? { mode: 'either', epsilon: '1e-6', marginPercent: defaultMargin } : null
   },
 })
-// The field keeps what the author types, and the draft takes only a valid margin, so no save carries an invalid one.
+// The field keeps what the author types, and the draft takes only a valid margin. It follows the draft whenever the
+// setting is replaced or its margin changes.
 const marginText = ref(errorJudge.value?.marginPercent ?? defaultMargin)
-watch(() => errorJudge.value?.marginPercent, value => { marginText.value = value ?? defaultMargin })
+watch(() => [errorJudge.value, errorJudge.value?.marginPercent] as const, ([value]) => { marginText.value = value?.marginPercent ?? defaultMargin })
 function updateMargin(event: Event) {
   marginText.value = (event.target as HTMLInputElement).value
   if (errorJudge.value && validMargin(marginText.value)) errorJudge.value.marginPercent = marginText.value
@@ -40,6 +43,8 @@ function updateMargin(event: Event) {
 // ε times this factor is what the judge accepts; empty while the margin is invalid.
 const factor = computed(() => validMargin(marginText.value) ? thresholdFactor(marginText.value) : '')
 const marginInvalid = computed(() => !!errorJudge.value && !factor.value)
+const marginMessage = '判定の余裕は0〜100の数で、小数は6桁までです。'
+watch(marginInvalid, invalid => { settingError.value = invalid ? marginMessage : '' }, { immediate: true })
 // 絶対誤差 reads as plain 誤差 in the sentence.
 const errorWording = computed(() => !errorJudge.value || errorJudge.value.mode === 'absolute' ? '誤差' : errorJudgeModeLabel(errorJudge.value.mode))
 const code = computed(() => runTwice.value ?? interactor.value ?? checker.value)
@@ -145,7 +150,7 @@ const error = computed(() => code.value && (!hasSource(code.value.runtime, code.
       </div>
       <div class="error-judge-notes">
         <p id="error-judge-threshold" :class="{ 'field-error': marginInvalid }" aria-live="polite">
-          <template v-if="marginInvalid">判定の余裕は0〜100の数で、小数は6桁までです。</template>
+          <template v-if="marginInvalid">{{ marginMessage }}</template>
           <template v-else-if="factor === '1'">期待出力との{{ errorWording }}が 10<sup>{{ epsilonExponent(errorJudge.epsilon) }}</sup> を少しでも超えると不正解になります。</template>
           <template v-else>期待出力との{{ errorWording }}が <span class="threshold">{{ factor }} × 10<sup>{{ epsilonExponent(errorJudge.epsilon) }}</sup></span> 以下なら正解になります。</template>
         </p>

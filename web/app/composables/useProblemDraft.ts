@@ -65,6 +65,9 @@ export function useProblemDraft() {
   const confirmingDelete = ref(false)
   const deleteError = ref('')
   const errors = computed(() => draftErrors(draft))
+  // Why an editor's setting cannot go into the draft yet, such as an invalid error-judge margin. While it is set, every
+  // save is refused with it, and the edit counts as unsaved.
+  const settingError = ref('')
   const leaveError = ref('')
   let deleted = false
   let resolveLeave: ((leave: boolean) => void) | undefined
@@ -72,6 +75,7 @@ export function useProblemDraft() {
   let allowAutosave = true
   let saveTimer: ReturnType<typeof setTimeout> | undefined
   const fingerprint = () => JSON.stringify(persistedDraft(draft))
+  const unsaved = () => fingerprint() !== saved || !!settingError.value
 
   // Normalizing the draft itself lets the editors show the data as it is saved. Unedited stored files stay as they are.
   function normalizeTestCases() {
@@ -107,7 +111,7 @@ export function useProblemDraft() {
   async function saveDraft(manual = false, updateLocation = true): Promise<boolean> {
     if (disposed || deleted || publishing.value || confirmingDelete.value || !ready.value || (!manual && !allowAutosave)) return false
     if (manual) dismissToast()
-    const testError = testCaseError(draft.testCases) || scoringError(draft)
+    const testError = testCaseError(draft.testCases) || scoringError(draft) || settingError.value
     if (testError) { saveState.value = 'dirty'; storageError.value = testError; return false }
     if (!manual && fingerprint() === saved) {
       // An edit undone before its autosave leaves nothing to save, and an earlier refusal no longer applies. A save in
@@ -156,7 +160,7 @@ export function useProblemDraft() {
         storageError.value = ''
         // Reload must reopen this draft before we announce that saving is complete.
         if (updateLocation && route.query.problem !== id) await router.replace({ path: '/problems/new', query: { problem: id } })
-        saveState.value = fingerprint() === saved ? 'saved' : 'dirty'
+        saveState.value = unsaved() ? 'dirty' : 'saved'
         if (manual && saveState.value === 'saved') showToast('保存しました。')
         return true
       } catch (error) {
@@ -194,7 +198,7 @@ export function useProblemDraft() {
   }
 
   function flushBeforeLeave(event: BeforeUnloadEvent) {
-    if (ready.value && fingerprint() !== saved) {
+    if (ready.value && unsaved()) {
       event.preventDefault()
       event.returnValue = ''
     }
@@ -250,15 +254,18 @@ export function useProblemDraft() {
     clearTimeout(saveTimer)
     if (!manualSaveOnly.value) saveTimer = setTimeout(() => saveDraft(), autosaveDelayMs)
   }
-  watch(draft, () => {
+  function edited() {
     if (!ready.value) return
     saveState.value = 'dirty'
     scheduleAutosave()
-  })
+  }
+  watch(draft, edited)
+  // A setting turning invalid or valid is an edit too: the autosave then says why it cannot save, or clears that.
+  watch(settingError, edited)
 
   onBeforeRouteLeave(() => {
     if (saving.value || publishing.value) return false
-    if (!ready.value || fingerprint() === saved) return true
+    if (!ready.value || !unsaved()) return true
     if (resolveLeave) return false
     clearTimeout(saveTimer)
     leaveError.value = ''
@@ -318,7 +325,7 @@ export function useProblemDraft() {
 
   return {
     user, draft, ready, cloudId, cloudVersion, saving, publishing, publishedVersion, scheduledAt, contestId, readiness, featuredPreference, contestScheduled, manualSaveOnly,
-    author, testers, contestEditors, publicationError, saveLocation, saveState, status, storageError, leaveDialog, leaveError,
+    author, testers, contestEditors, publicationError, saveLocation, saveState, status, storageError, settingError, leaveDialog, leaveError,
     manageDialog, generating, deleteError, errors, saveDraft, unpublishProblem, finishLeave,
     openDeleteConfirmation, closeDeleteConfirmation, removeProblem,
   }
