@@ -183,9 +183,18 @@ test('2ステップ形式の説明に引数が出る', async ({ page }) => {
   await expect(page.getByLabel('判定コードの形式')).toHaveValue('testlib')
   await expect(page.getByText('1回目に tout へ書いた内容が、2回目の入力（inf）になります。', { exact: false })).toBeVisible()
   await expect(page.getByText('各ケースCPU 5秒・256 MiB', { exact: false })).toBeVisible()
+  const example = page.getByRole('link', { name: 'コード例 ↗' })
+  await expect(example).toHaveAttribute('href', '/docs/checkers#run-twice')
   await page.getByLabel('判定コードの形式').selectOption('legacy')
   await expect(page.getByText('何回目か（1か2）、引き継ぎファイルのパス（この順）。', { exact: false })).toBeVisible()
   await expect(page.getByText('引き継ぎファイルは1回目に書き、2回目に読みます。', { exact: false })).toBeVisible()
+  const secondRunScore = page.getByText('読むのは2回目に書いた内容だけです。', { exact: false })
+  await expect(secondRunScore).toBeVisible()
+  // An interactor runs once, so its help keeps the single-run score and the testlib example.
+  await page.getByRole('combobox', { name: '判定方法', exact: true }).selectOption('interactive')
+  await expect(secondRunScore).toHaveCount(0)
+  await page.getByLabel('判定コードの形式').selectOption('testlib')
+  await expect(example).toHaveAttribute('href', '/docs/checkers#testlib')
 })
 
 test('問題ページに2ステップ形式と表示する', async ({ page }) => {

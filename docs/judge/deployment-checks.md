@@ -135,6 +135,9 @@ python3 judge/rollout.py finish --config judge/.build/rollout.json --run-dir "$J
 手順3の後にbridgeを手順1より前の版へ戻すと、部分点の設定がワーカーに届かず、得点のない結果をJEにする安全網も働かない。
 手順3以降にbridgeのコード（結果の確認と保存）を変えた場合は、もう一度`run`で配布する。
 
+[2ステップ形式](run-twice.md#配置)を配布した後にワーカーを2ステップ形式のない版へ戻すと、2ステップ形式の提出はJEになる。
+新しい版へ戻した後に、それらの提出をリジャッジする。
+
 ## コード実行を有効にする配布
 
 [ADR 0031](../adr/0031-run-code-without-problem.md)のコード実行は、`code_runs`の表とジョブの形式を加えるので、次の順で配布する。

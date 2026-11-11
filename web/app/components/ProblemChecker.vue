@@ -90,10 +90,10 @@ const error = computed(() => code.value && (!hasSource(code.value.runtime, code.
             <div><dt>初期情報</dt><dd>テスト入力は自動で送りません。入力ファイルから読み、必要な情報を出力してください。</dd></div>
           </template>
           <div v-else-if="protocol === 'legacy'"><dt>標準入力</dt><dd>提出の出力</dd></div>
-          <div v-if="protocol === 'testlib'"><dt>初期化</dt><dd><code>testlib.h</code> を include し、<code>{{ talking ? 'registerInteraction' : 'registerTestlibCmd' }}(argc, argv)</code> を呼びます。<NuxtLink to="/docs/checkers#testlib" target="_blank" rel="noopener noreferrer">コード例 ↗</NuxtLink></dd></div>
+          <div v-if="protocol === 'testlib'"><dt>初期化</dt><dd><code>testlib.h</code> を include し、<code>{{ talking ? 'registerInteraction' : 'registerTestlibCmd' }}(argc, argv)</code> を呼びます。<NuxtLink :to="runTwice ? '/docs/checkers#run-twice' : '/docs/checkers#testlib'" target="_blank" rel="noopener noreferrer">コード例 ↗</NuxtLink></dd></div>
           <div v-if="protocol === 'legacy' && runTwice"><dt>引数</dt><dd>入力・正解・提出ソース・スコアのファイルパス、何回目か（<code>1</code>か<code>2</code>）、引き継ぎファイルのパス（この順）。引き継ぎファイルは1回目に書き、2回目に読みます。</dd></div>
           <div v-else-if="protocol === 'legacy'"><dt>引数</dt><dd>入力・期待出力・提出ソース・スコアのファイルパス（この順）。期待出力は空でもかまいません。</dd></div>
-          <div v-if="protocol === 'legacy'"><dt>スコア</dt><dd v-if="aggregate">ACかWAのケースで、書いた整数（0〜10<sup>18</sup>）をケースの点として集計コードに渡します。空なら点なしで、それ以外の内容はJEです。</dd><dd v-else>「集計コードで採点する」をオンにした問題でだけ、ケースの点として読みます。</dd></div>
+          <div v-if="protocol === 'legacy'"><dt>スコア</dt><dd v-if="aggregate">ACかWAのケースで、書いた整数（0〜10<sup>18</sup>）をケースの点として集計コードに渡します。空なら点なしで、それ以外の内容はJEです。<template v-if="runTwice">読むのは2回目に書いた内容だけです。</template></dd><dd v-else>「集計コードで採点する」をオンにした問題でだけ、ケースの点として読みます。<template v-if="runTwice">読むのは2回目に書いた内容だけです。</template></dd></div>
           <div v-else-if="runTwice"><dt>引数</dt><dd>入力・tout の書き込み先・正解のファイルパス（この順）。1回目に tout へ書いた内容が、2回目の入力（inf）になります。何回目かは入力の先頭の値などで見分けてください。</dd></div>
           <div v-else-if="interactor"><dt>引数</dt><dd>入力・tout の書き込み先・正解のファイルパス（この順）。tout は通信に使わず、あとから判定もしません。</dd></div>
           <div v-else><dt>引数</dt><dd>入力・提出出力（ouf）・正解（ans）のファイルパス（この順）</dd></div>
