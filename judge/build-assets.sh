@@ -9,7 +9,7 @@ trap 'rm -rf "$build_dir"' EXIT
 curl --fail --location --proto '=https' --tlsv1.2 \
   "https://codeload.github.com/ioi/isolate/tar.gz/$ISOLATE_COMMIT" -o "$build_dir/isolate.tar.gz"
 printf '%s\n' "$ISOLATE_COMMIT" > "$build_dir/isolate-commit"
-cp runner/{host.py,sandbox.py,interactive.py,interactive_smoke.py,testlib_smoke.py,worker.py,telemetry.py,pool.py,smoke.py,fingerprint.py,smoke.sh,runtimes.py,language-smoke.json} "$build_dir/"
+cp runner/{host.py,tolerance.py,sandbox.py,interactive.py,interactive_smoke.py,testlib_smoke.py,worker.py,telemetry.py,pool.py,smoke.py,fingerprint.py,smoke.sh,runtimes.py,language-smoke.json} "$build_dir/"
 cp deploy/{install.sh,judge-worker.service} "$build_dir/"
 : "${RUNTIME_ARCHIVE:=.build/runtime-additions.tar.gz}"
 cp "$RUNTIME_ARCHIVE" "$build_dir/runtime.tar.gz"

@@ -31,7 +31,7 @@ class ReleaseTests(unittest.TestCase):
                            check=True, capture_output=True)
             expected = {
                 name: (ROOT / 'runner' / name).read_bytes()
-                for name in ('host.py', 'sandbox.py', 'interactive.py', 'interactive_smoke.py',
+                for name in ('host.py', 'tolerance.py', 'sandbox.py', 'interactive.py', 'interactive_smoke.py',
                              'testlib_smoke.py', 'worker.py', 'telemetry.py', 'pool.py', 'smoke.py',
                              'fingerprint.py', 'smoke.sh', 'runtimes.py', 'language-smoke.json')
             }
