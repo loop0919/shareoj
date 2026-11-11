@@ -141,6 +141,9 @@ python3 judge/rollout.py finish --config judge/.build/rollout.json --run-dir "$J
 [誤差ジャッジ](error-judge.md#配置)も同じで、配布した後にワーカーを誤差ジャッジのない版へ戻すと、誤差ジャッジの提出はJEになり、`platform`の`unmarked_error_judge_result`が記録される。
 新しい版へ戻した後に、それらの提出をリジャッジする。
 
+誤差ジャッジの比較時間（しきい値ちょうどの100万組を1回の比較で比べたミリ秒）は、`judge/verify.py`が束ねた検証レポートの`hosts.<インスタンスID>.toleranceMillionPairsMs`にある。
+合否には使わない。測れなかったホストでは、このキーがない。
+
 ## コード実行を有効にする配布
 
 [ADR 0031](../adr/0031-run-code-without-problem.md)のコード実行は、`code_runs`の表とジョブの形式を加えるので、次の順で配布する。

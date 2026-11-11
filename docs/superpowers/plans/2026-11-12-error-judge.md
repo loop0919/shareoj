@@ -497,7 +497,7 @@ git commit -m "docs: 誤差ジャッジのADRと仕様と作問ガイドを加�
 
 - [ ] **Step 1: ワーカーを配布する**
 
-[定型コマンド](../../judge/deployment-checks.md)に従い、`judge/rollout.py run`で配布する。完了条件は`state.json`の`status: passed`と`step: complete`。smokeのレポートから100万組の実測値を読み、`docs/judge/error-judge.md`と作問ガイドに書く。5秒を超えていたら、その値を目安として書く。
+[定型コマンド](../../judge/deployment-checks.md)に従い、`judge/rollout.py run`で配布する。完了条件は`state.json`の`status: passed`と`step: complete`。smokeのレポートから100万組の実測値を`hosts.<インスタンスID>.toleranceMillionPairsMs`で読み、`docs/judge/error-judge.md`と作問ガイド（`web/app/content/docs/checkers.md`）の両方に書く。5秒を超えていたら、その値を目安として書く。
 
 - [ ] **Step 2: `main`へ入れてpushする**
 
