@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { contestDate } from '~~/shared/types/contest'
 import { fullId, shortId } from '~~/shared/utils/short-id'
+import { epsilonExponent, errorJudgeModeLabel } from '~/utils/error-judge'
 definePageMeta({ key: route => String(route.params.id) })
 const route = useRoute()
 const config = useRuntimeConfig()
@@ -74,6 +75,7 @@ useSharePreview({ title: () => problem.value!.title, path: () => `/problems/${sh
         <ProblemMarkdown :source="problem.markdown" />
         <p v-if="problem.interactive" class="muted">インタラクティブ問題：標準入出力でジャッジと対話します。応答を待つ前に出力をflushしてください。</p>
         <p v-if="problem.runTwice" class="muted">2ステップ形式（Run-twice）：プログラムは1ケースにつき2回実行されます。応答を待つ前に出力をflushしてください。</p>
+        <p v-if="problem.errorJudge" class="muted">誤差ジャッジ：{{ errorJudgeModeLabel(problem.errorJudge.mode) }}が10<sup>{{ epsilonExponent(problem.errorJudge.epsilon) }}</sup>以下なら正解です。</p>
         <p v-if="problem.specialJudge" class="muted">スペシャルジャッジ問題：提出の出力を検証コードで判定します。</p>
         <SubmissionForm :has-samples="problem.hasSamples" :problem-id="problem.id" />
       </template>

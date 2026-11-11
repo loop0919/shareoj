@@ -1,20 +1,24 @@
 <script setup lang="ts">
-import type { ProblemDraft } from '~~/shared/types/problem-draft'
+import { errorJudgeEpsilons, errorJudgeModes, type ProblemDraft } from '~~/shared/types/problem-draft'
 import { shortId } from '~~/shared/utils/short-id'
 import { judgeCodeRuntimes, preferredRuntime, usableRuntimes } from '~/utils/judge-catalog'
 import { hasSource } from '~/utils/has-source'
+import { epsilonExponent, errorJudgeModeLabel, thresholdFactor, validMargin } from '~/utils/error-judge'
 
 const checker = defineModel<ProblemDraft['checker']>({ required: true })
 const interactor = defineModel<ProblemDraft['interactor']>('interactor', { required: true })
 const runTwice = defineModel<ProblemDraft['runTwice']>('runTwice', { required: true })
+const errorJudge = defineModel<ProblemDraft['errorJudge']>('errorJudge', { required: true })
 // In the aggregate mode the score file and testlib's quitp give each case its score (ADR 0025).
 const props = defineProps<{ disabled: boolean, problemId: string, published: boolean, save: () => Promise<boolean>, scoringMode?: 'groups' | 'aggregate' }>()
 const aggregate = computed(() => props.scoringMode === 'aggregate')
 const { data: catalog, error: catalogError } = useJudgeCatalog()
 const available = computed(() => judgeCodeRuntimes(usableRuntimes(catalog.value, catalogError.value)))
 let previousCode: ProblemDraft['checker'] = null
+// The margin the judge uses when the draft names none.
+const defaultMargin = '0.1'
 const method = computed({
-  get: () => runTwice.value ? 'runTwice' : interactor.value ? 'interactive' : checker.value ? 'special' : 'normal',
+  get: () => errorJudge.value ? 'errorJudge' : runTwice.value ? 'runTwice' : interactor.value ? 'interactive' : checker.value ? 'special' : 'normal',
   set: value => {
     const runtime = preferredRuntime(available.value)
     const previous = runTwice.value ?? interactor.value ?? checker.value ?? previousCode ?? { runtime, source: '', protocol: runtime === 'cpp23-gcc' ? 'testlib' : 'legacy' }
@@ -22,8 +26,22 @@ const method = computed({
     checker.value = value === 'special' ? previous : null
     interactor.value = value === 'interactive' ? previous : null
     runTwice.value = value === 'runTwice' ? previous : null
+    // The error judge has settings and no code, so like 通常判定 it sets the code aside. It starts from its defaults.
+    errorJudge.value = value === 'errorJudge' ? { mode: 'either', epsilon: '1e-6', marginPercent: defaultMargin } : null
   },
 })
+// The field keeps what the author types, and the draft takes only a valid margin, so no save carries an invalid one.
+const marginText = ref(errorJudge.value?.marginPercent ?? defaultMargin)
+watch(() => errorJudge.value?.marginPercent, value => { marginText.value = value ?? defaultMargin })
+function updateMargin(event: Event) {
+  marginText.value = (event.target as HTMLInputElement).value
+  if (errorJudge.value && validMargin(marginText.value)) errorJudge.value.marginPercent = marginText.value
+}
+// ε times this factor is what the judge accepts; empty while the margin is invalid.
+const factor = computed(() => validMargin(marginText.value) ? thresholdFactor(marginText.value) : '')
+const marginInvalid = computed(() => !!errorJudge.value && !factor.value)
+// 絶対誤差 reads as plain 誤差 in the sentence.
+const errorWording = computed(() => !errorJudge.value || errorJudge.value.mode === 'absolute' ? '誤差' : errorJudgeModeLabel(errorJudge.value.mode))
 const code = computed(() => runTwice.value ?? interactor.value ?? checker.value)
 // Both modes talk to the judge over stdin/stdout, with the same limits and testlib entry point.
 const talking = computed(() => !!(interactor.value ?? runTwice.value))
@@ -39,7 +57,7 @@ const opening = ref(false)
 const openError = ref('')
 // Submissions run on the problem page; saving first keeps the draft judge in sync with this editor.
 async function openProblem() {
-  if (opening.value || props.disabled || error.value) return
+  if (opening.value || props.disabled || error.value || marginInvalid.value) return
   opening.value = true
   openError.value = ''
   try {
@@ -62,6 +80,7 @@ const error = computed(() => code.value && (!hasSource(code.value.runtime, code.
           <option value="special">スペシャルジャッジ</option>
           <option value="interactive">インタラクティブ（対話形式）</option>
           <option value="runTwice">2ステップ形式（Run-twice）</option>
+          <option value="errorJudge">誤差ジャッジ</option>
         </select>
       </div>
       <template v-if="code">
@@ -105,10 +124,39 @@ const error = computed(() => code.value && (!hasSource(code.value.runtime, code.
       <SourceCodeEditor v-model="code.source" :runtime="code.runtime" :label="codeLabel" :disabled="disabled" />
       <p v-if="error" class="editor-error" role="alert">{{ error }}</p>
     </template>
+    <template v-else-if="errorJudge">
+      <div class="error-judge-fields">
+        <div>
+          <label for="error-judge-mode">種類</label>
+          <select id="error-judge-mode" v-model="errorJudge.mode" :disabled="disabled">
+            <option v-for="mode in errorJudgeModes" :key="mode" :value="mode">{{ errorJudgeModeLabel(mode) }}</option>
+          </select>
+        </div>
+        <div>
+          <label for="error-judge-epsilon">許容誤差</label>
+          <select id="error-judge-epsilon" v-model="errorJudge.epsilon" :disabled="disabled">
+            <option v-for="epsilon in errorJudgeEpsilons" :key="epsilon" :value="epsilon">10^{{ epsilonExponent(epsilon) }}</option>
+          </select>
+        </div>
+        <div>
+          <label for="error-judge-margin">判定の余裕</label>
+          <span class="margin-input"><input id="error-judge-margin" :value="marginText" inputmode="decimal" autocomplete="off" :disabled="disabled" :aria-invalid="marginInvalid" aria-describedby="error-judge-threshold" @input="updateMargin"> %</span>
+        </div>
+      </div>
+      <div class="error-judge-notes">
+        <p id="error-judge-threshold" :class="{ 'field-error': marginInvalid }" aria-live="polite">
+          <template v-if="marginInvalid">判定の余裕は0〜100の数で、小数は6桁までです。</template>
+          <template v-else-if="factor === '1'">期待出力との{{ errorWording }}が 10<sup>{{ epsilonExponent(errorJudge.epsilon) }}</sup> を少しでも超えると不正解になります。</template>
+          <template v-else>期待出力との{{ errorWording }}が <span class="threshold">{{ factor }} × 10<sup>{{ epsilonExponent(errorJudge.epsilon) }}</sup></span> 以下なら正解になります。</template>
+        </p>
+        <p v-if="factor !== '1'">想定解の出力も真の値からわずかにずれるので、その分だけ広げて比べます。</p>
+        <p>数として読めるトークンだけを誤差で比べ、それ以外は完全一致で比べます。<NuxtLink to="/docs/checkers#error-judge" target="_blank" rel="noopener noreferrer">誤差ジャッジの説明 ↗</NuxtLink></p>
+      </div>
+    </template>
     <div class="checker-trial">
       <p v-if="published">「保存」を押すと、編集した設定が以後の提出の採点に反映されます。</p>
       <p v-else>問題ページから解答を提出すると、保存した下書きで採点します。</p>
-      <button type="button" class="editor-button" :disabled="disabled || !!error || opening" @click="openProblem">{{ opening ? '保存しています…' : '問題ページで提出する' }}</button>
+      <button type="button" class="editor-button" :disabled="disabled || !!error || marginInvalid || opening" @click="openProblem">{{ opening ? '保存しています…' : '問題ページで提出する' }}</button>
       <p v-if="openError" class="editor-error" role="alert">{{ openError }}</p>
     </div>
   </section>
@@ -119,7 +167,17 @@ const error = computed(() => code.value && (!hasSource(code.value.runtime, code.
 .checker-options { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
 .checker-option { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: 100%; }
 label { font-size: .75rem; }
-select { max-width: 100%; min-height: 36px; padding: 4px 8px; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-paper); color: var(--color-ink); }
+select, input { max-width: 100%; min-height: 36px; padding: 4px 8px; border: 1px solid var(--color-line); border-radius: 4px; background: var(--color-paper); color: var(--color-ink); }
+/* The settings sit in rows with their names in a column, as in the code spec. */
+.error-judge-fields { display: grid; gap: 8px; margin-top: 16px; }
+.error-judge-fields > div { display: grid; grid-template-columns: 5.5em minmax(0, max-content); align-items: center; gap: 12px; }
+.margin-input { display: inline-flex; align-items: center; gap: 6px; font-size: .8125rem; }
+.margin-input input { box-sizing: border-box; width: 7em; font: inherit; font-variant-numeric: tabular-nums; }
+.margin-input input[aria-invalid="true"] { border-color: var(--color-error); }
+.error-judge-notes { max-width: 1000px; margin-top: 16px; }
+.error-judge-notes p { margin: 4px 0; }
+.threshold { white-space: nowrap; }
+@media (max-width: 39.999rem) { .margin-input input { font-size: 1rem; } }
 .checker-settings :deep(.source-code-editor) { max-width: 1000px; margin-block: 12px; }
 .checker-trial { max-width: 1000px; margin-top: 20px; }
 .checker-trial button { min-height: 40px; margin-top: 4px; }

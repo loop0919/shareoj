@@ -25,6 +25,8 @@ export default defineEventHandler(async event => {
       id, editorialHidden: false, editorialRevealAt: undefined as string | undefined, difficultyDistribution: Array<number>(10).fill(0), difficultyAverage: null, difficultyVoteCount: 0, difficulty: draft.difficulty, favoriteCount: 0, title: draft.title.trim() || '無題の問題', markdown: draft.markdown, editorial: draft.editorial, tags: draft.tags,
       timeLimitMs: Number(draft.timeLimitMs), memoryLimitMb: Number(draft.memoryLimitMb),
       hasSamples: draft.testCases.some(test => test.isSample), author: parsed.data.author, testers: parsed.data.testers, isPrivate: true, specialJudge: draft.checker !== null, interactive: draft.interactor !== null, runTwice: draft.runTwice !== null,
+      // Like the public problem, readers learn the kind and ε of the error judge, never the margin.
+      errorJudge: draft.errorJudge ? { mode: draft.errorJudge.mode, epsilon: draft.errorJudge.epsilon } : null,
       // Like the public problem, readers learn the points, never the mode or the aggregator (ADR 0025).
       scoring: draft.scoring ? { fullScore: draft.scoring.groups.reduce((total, group) => total + group.points, 0), groups: draft.scoring.groups.map(({ name, points }) => ({ name, points })) } : undefined,
     }

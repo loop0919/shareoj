@@ -20,6 +20,12 @@ const runTwiceContest = {
   status: 'running', canEdit: false, official: true, participating: false, canViewSubmissions: false,
   problems: [{ id: runTwiceProblem.id, title: runTwiceProblem.title, points: 100 }],
 }
+// An error-judge problem, on its own and in a contest of its own. The public API never returns the margin.
+const errorJudgeProblem = { ...problem, id: 'afafafaf-afaf-4faf-8faf-afafafafafaf', title: '誤差ジャッジの問題', errorJudge: { mode: 'either', epsilon: '1e-6' } }
+const errorJudgeContest = {
+  ...runTwiceContest, id: 'b0b0b0b0-b0b0-4b0b-8b0b-b0b0b0b0b0b0', title: '誤差ジャッジのコンテスト',
+  problems: [{ id: errorJudgeProblem.id, title: errorJudgeProblem.title, points: 100 }],
+}
 // The list tagged pagination, newest first, paged by offset and limit (ADR 0028).
 const pagedProblems = Array.from({ length: 120 }, (_, i) => ({
   id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`, title: `問題 ${String(i + 1).padStart(3, '0')}`, author: 'alice', publishedAt: '2026-09-10T00:00:00Z',
@@ -144,6 +150,11 @@ createServer(async (req, res) => {
       id: '55555555-5555-4555-8555-555555555555', version: 1, publishedVersion: 0, updatedAt: '2026-09-10T00:00:00Z',
       draft: { title: '非公開の練習問題', markdown: '保存済みの問題文', editorial: '非公開の解説', timeLimitMs: '2000', memoryLimitMb: '512', testCases: [{ input: 'secret-input', output: 'secret-output' }] },
     }))
+    // An unpublished error-judge problem; its preview leaves the margin out.
+    if (path === '/my/problems/b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1') return res.end(JSON.stringify({
+      id: 'b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1', version: 1, publishedVersion: 0, updatedAt: '2026-09-10T00:00:00Z',
+      draft: { title: '非公開の誤差ジャッジ', markdown: '保存済みの問題文', timeLimitMs: '2000', memoryLimitMb: '512', errorJudge: { mode: 'relative', epsilon: '1e-9', marginPercent: '0.5' } },
+    }))
     // The fixture session is alice, the author of the featured problem whose editorial is still hidden.
     if (path === `/my/problems/${featuredProblem.id}/publication`) return res.end(JSON.stringify({ ...featuredProblem, editorial: '定期便の解説本文' }))
     if (path === `/my/problems/${featuredProblem.id}/submissions`) return res.end(JSON.stringify({ items: [{ ...submission, id: '33333333-3333-4333-8333-333333333333', problemId: featuredProblem.id, problemTitle: featuredProblem.title, author: 'carol' }], hasMore: false }))
@@ -225,6 +236,9 @@ createServer(async (req, res) => {
   else if (path === `/problems/${runTwiceProblem.id}`) res.end(JSON.stringify(runTwiceProblem))
   else if (path === `/contests/${runTwiceContest.id}`) res.end(JSON.stringify(runTwiceContest))
   else if (path === `/contests/${runTwiceContest.id}/problems/${runTwiceProblem.id}`) res.end(JSON.stringify(runTwiceProblem))
+  else if (path === `/problems/${errorJudgeProblem.id}`) res.end(JSON.stringify(errorJudgeProblem))
+  else if (path === `/contests/${errorJudgeContest.id}`) res.end(JSON.stringify(errorJudgeContest))
+  else if (path === `/contests/${errorJudgeContest.id}/problems/${errorJudgeProblem.id}`) res.end(JSON.stringify(errorJudgeProblem))
   else if (path === `/contests/${partialContest.id}`) res.end(JSON.stringify(partialContest))
   else if (path === `/contests/${partialContest.id}/standings`) res.end('[]')
   else if (path === `/contests/${partialContest.id}/problems/${partialProblem.id}`) res.end(JSON.stringify(partialProblem))

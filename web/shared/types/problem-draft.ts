@@ -12,6 +12,17 @@ const judgeCodeSchema = generatorSchema.extend({ protocol: z.enum(['legacy', 'te
   code => code.protocol !== 'testlib' || ['cpp23-gcc', 'cpp23-clang'].includes(code.runtime),
   { message: 'testlib形式ではC++23のGCCまたはClangを選んでください。' },
 )
+// The error judge compares the numeric tokens of the output within an error and carries no code. It accepts an error up
+// to ε × (1 + m/100), where m is the margin in percent of ε: 0.1 when marginPercent is absent.
+export const errorJudgeModes = ['absolute', 'relative', 'either'] as const
+export const errorJudgeEpsilons = ['1e-1', '1e-2', '1e-3', '1e-4', '1e-5', '1e-6', '1e-7', '1e-8', '1e-9', '1e-10', '1e-11', '1e-12'] as const
+// From 0 to 100 with at most six decimals, as the API checks it.
+export const marginPercentSchema = z.string().regex(/^[0-9]{1,3}(\.[0-9]{1,6})?$/).refine(value => {
+  const [whole = '', fraction = ''] = value.split('.')
+  return Number(whole) < 100 || (Number(whole) === 100 && !/[1-9]/.test(fraction))
+})
+export const errorJudgeSchema = z.object({ mode: z.enum(errorJudgeModes), epsilon: z.enum(errorJudgeEpsilons), marginPercent: marginPercentSchema.optional() })
+export type ErrorJudge = z.infer<typeof errorJudgeSchema>
 export const generatorsSchema = z.object({ input: generatorSchema, output: generatorSchema, validation: generatorSchema.default({ runtime: 'cpp23-gcc', source: '' }) })
 export type Generators = z.infer<typeof generatorsSchema>
 export const emptyGenerators = (): Generators => ({ input: { runtime: 'cpp23-gcc', source: '' }, output: { runtime: 'cpp23-gcc', source: '' }, validation: { runtime: 'cpp23-gcc', source: '' } })
@@ -34,6 +45,7 @@ export const problemDraftSchema = z.object({
   checker: judgeCodeSchema.nullable().default(null),
   interactor: judgeCodeSchema.nullable().default(null),
   runTwice: judgeCodeSchema.nullable().default(null),
+  errorJudge: errorJudgeSchema.nullable().default(null),
   generators: generatorsSchema.default(emptyGenerators),
   scoring: scoringSchema.nullable().default(null),
   title: z.string().max(120),

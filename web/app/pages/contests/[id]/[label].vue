@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { contestAuthors, contestProblemPath, contestProblemTitle, labelIndex, type ContestProblemDetail } from '~~/shared/types/contest'
 import { fullId, shortId } from '~~/shared/utils/short-id'
+import { epsilonExponent, errorJudgeModeLabel } from '~/utils/error-judge'
 definePageMeta({ key: route => route.path, middleware: 'contest-problem-lists' })
 useResponseHeader('Cache-Control').value = 'no-store'
 useResponseHeader('Vary').value = 'Cookie'
@@ -39,7 +40,7 @@ useSharePreview({ title: () => title.value, path: problemPath, description: () =
     <header class="problem-header"><p v-if="showingEditorial" class="eyebrow editorial-eyebrow">解説</p><h1><ContestProblemTitle :index="index" :title="problem.title" /></h1><div class="problem-summary"><div class="problem-meta muted"><p>作成者 <template v-for="(author, index) in contestAuthors(problem)" :key="author"><span v-if="index">、</span><UserLink :handle="author" /></template></p><p v-if="problem.testers?.length">テスター <template v-for="(tester, index) in problem.testers" :key="tester"><span v-if="index">、</span><UserLink :handle="tester" /></template></p><p v-if="!problem.scoring">配点 {{ contest.problems.find(p => p.id === problem!.id)?.points }} 点</p></div></div><dl class="limits"><div><dt>実行時間制限</dt><dd>{{ Number(problem.timeLimitMs) / 1000 }} 秒</dd></div><div><dt>メモリ制限</dt><dd>{{ problem.memoryLimitMb }} MiB</dd></div></dl><ProblemScoring v-if="problem.scoring" :scoring="problem.scoring" /></header>
     <article class="problem-body">
       <template v-if="showingEditorial"><ProblemMarkdown v-if="problem.editorial" :source="problem.editorial" /><p v-else class="muted">解説は終了後に公開されます。終了後も表示されない場合は未登録です。</p><UserEditorials v-if="contest.status === 'ended'" :problem-id="problem.id" /></template>
-      <template v-else><ProblemMarkdown :source="problem.markdown" /><p v-if="problem.interactive" class="muted">インタラクティブ問題：応答を待つ前に出力をflushしてください。</p><p v-if="problem.runTwice" class="muted">2ステップ形式（Run-twice）：プログラムは1ケースにつき2回実行されます。応答を待つ前に出力をflushしてください。</p><p v-if="problem.specialJudge" class="muted">スペシャルジャッジ問題です。</p><ContestParticipation :contest="contest" @joined="value => contest = value" /><SubmissionForm v-if="canSubmit" :has-samples="problem.hasSamples" :problem-id="problem.id" :contest-id="contest.id" :team="team" /></template>
+      <template v-else><ProblemMarkdown :source="problem.markdown" /><p v-if="problem.interactive" class="muted">インタラクティブ問題：応答を待つ前に出力をflushしてください。</p><p v-if="problem.runTwice" class="muted">2ステップ形式（Run-twice）：プログラムは1ケースにつき2回実行されます。応答を待つ前に出力をflushしてください。</p><p v-if="problem.errorJudge" class="muted">誤差ジャッジ：{{ errorJudgeModeLabel(problem.errorJudge.mode) }}が10<sup>{{ epsilonExponent(problem.errorJudge.epsilon) }}</sup>以下なら正解です。</p><p v-if="problem.specialJudge" class="muted">スペシャルジャッジ問題です。</p><ContestParticipation :contest="contest" @joined="value => contest = value" /><SubmissionForm v-if="canSubmit" :has-samples="problem.hasSamples" :problem-id="problem.id" :contest-id="contest.id" :team="team" /></template>
     </article>
   </div>
 </template>

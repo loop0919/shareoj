@@ -206,3 +206,219 @@ test('問題ページに2ステップ形式と表示する', async ({ page }) =>
   await page.goto(`/problems/${shortId('11111111-1111-4111-8111-111111111111')}`)
   await expect(page.getByText('2ステップ形式', { exact: false })).toHaveCount(0)
 })
+
+// Saves the draft with the save button and returns the draft the request carried.
+async function saveWithButton(page: Page) {
+  const saved = page.waitForResponse(response => response.url().includes('/api/my/problems/') && response.request().method() === 'PUT')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  const body = (await saved).request().postDataJSON()
+  await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
+  return body.draft
+}
+// The judging methods a draft sets; at most one of the four.
+const judges = (draft: Record<string, unknown>) => ['checker', 'interactor', 'runTwice', 'errorJudge'].filter(key => draft[key] !== null)
+const errorJudgeDefaults = { mode: 'either', epsilon: '1e-6', marginPercent: '0.1' }
+
+function errorJudgeFields(page: Page) {
+  return {
+    method: page.getByRole('combobox', { name: '判定方法', exact: true }),
+    kind: page.getByRole('combobox', { name: '種類', exact: true }),
+    epsilon: page.getByRole('combobox', { name: '許容誤差', exact: true }),
+    margin: page.getByRole('textbox', { name: '判定の余裕', exact: true }),
+  }
+}
+
+test('誤差ジャッジを選ぶと下書きに errorJudge が入る', async ({ page }) => {
+  await page.route('**/api/runtimes', route => route.fulfill({ json: { items: runtimes } }))
+  await Promise.all([page.waitForResponse('**/api/runtimes'), page.goto('/problems/new?fresh=1')])
+  await page.getByLabel('問題のタイトル').fill('誤差ジャッジの問題')
+  await openChecker(page)
+  const { method, kind, epsilon, margin } = errorJudgeFields(page)
+  await method.selectOption({ label: '誤差ジャッジ' })
+  await expect(kind).toHaveValue('either')
+  await expect(kind.locator('option')).toHaveText(['絶対誤差', '相対誤差', '絶対誤差または相対誤差'])
+  await expect(epsilon).toHaveValue('1e-6')
+  await expect(epsilon.locator('option')).toHaveText(Array.from({ length: 12 }, (_, index) => `10^-${index + 1}`))
+  await expect(margin).toHaveValue('0.1')
+  await expect(page.getByText('%', { exact: true })).toBeVisible()
+  // No author code: neither the language, the protocol, the code nor its spec shows.
+  for (const label of ['検証コード', '検証コードの言語', '判定コードの形式']) await expect(page.getByLabel(label, { exact: true })).toHaveCount(0)
+  await expect(page.getByText('検証コードの仕様', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('数として読めるトークンだけを誤差で比べ、それ以外は完全一致で比べます。', { exact: false })).toBeVisible()
+  await expect(page.getByRole('link', { name: '誤差ジャッジの説明 ↗' })).toHaveAttribute('href', '/docs/checkers#error-judge')
+  let draft = await saveWithButton(page)
+  expect(draft.errorJudge).toEqual(errorJudgeDefaults)
+  expect(draft.checker).toBeNull()
+  expect(draft.interactor).toBeNull()
+  expect(draft.runTwice).toBeNull()
+  await kind.selectOption({ label: '相対誤差' })
+  await epsilon.selectOption({ label: '10^-9' })
+  await margin.fill('0.5')
+  draft = await saveWithButton(page)
+  expect(draft.errorJudge).toEqual({ mode: 'relative', epsilon: '1e-9', marginPercent: '0.5' })
+  await page.reload()
+  await openChecker(page)
+  await expect(method).toHaveValue('errorJudge')
+  await expect(kind).toHaveValue('relative')
+  await expect(epsilon).toHaveValue('1e-9')
+  await expect(margin).toHaveValue('0.5')
+  // A draft without the margin, as the CLI may save it, shows the default the judge uses.
+  const id = new URL(page.url()).searchParams.get('problem')!
+  await page.evaluate(async id => {
+    const stored = await (await fetch(`/api/my/problems/${id}`)).json()
+    const draft = { ...stored.draft, errorJudge: { mode: 'absolute', epsilon: '1e-3' } }
+    await fetch(`/api/my/problems/${id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: stored.version, draft }) })
+  }, id)
+  await page.reload()
+  await openChecker(page)
+  await expect(margin).toHaveValue('0.1')
+  await expect(page.getByText('期待出力との誤差が 1.001 × 10-3 以下なら正解になります。', { exact: true })).toBeVisible()
+})
+
+test('しきい値の説明が入力に合わせて変わる', async ({ page }) => {
+  await page.goto('/problems/new?fresh=1')
+  await openChecker(page)
+  const { method, kind, epsilon, margin } = errorJudgeFields(page)
+  await method.selectOption('errorJudge')
+  const line = (text: string) => page.getByText(text, { exact: true })
+  const widened = line('想定解の出力も真の値からわずかにずれるので、その分だけ広げて比べます。')
+  const comparison = page.getByText('数として読めるトークンだけを誤差で比べ、それ以外は完全一致で比べます。', { exact: false })
+  // The default kind is 絶対誤差または相対誤差.
+  const initial = line('期待出力との絶対誤差または相対誤差が 1.001 × 10-6 以下なら正解になります。')
+  await expect(initial).toBeVisible()
+  await expect(initial.locator('sup')).toHaveText('-6')
+  await expect(widened).toBeVisible()
+  await expect(comparison).toBeVisible()
+  await kind.selectOption('absolute')
+  await expect(line('期待出力との誤差が 1.001 × 10-6 以下なら正解になります。')).toBeVisible()
+  await epsilon.selectOption('1e-9')
+  await margin.fill('0.5')
+  await expect(line('期待出力との誤差が 1.005 × 10-9 以下なら正解になります。')).toBeVisible()
+  await kind.selectOption('relative')
+  const relative = line('期待出力との相対誤差が 1.005 × 10-9 以下なら正解になります。')
+  await expect(relative).toBeVisible()
+  await expect(relative.locator('sup')).toHaveText('-9')
+  for (const [value, factor] of [['12.345678', '1.12345678'], ['100', '2'], ['0.000001', '1.00000001']]) {
+    await margin.fill(value)
+    await expect(line(`期待出力との相対誤差が ${factor} × 10-9 以下なら正解になります。`)).toBeVisible()
+  }
+  // Without a margin the two lines become one, for each kind, and the power of ten stands alone.
+  await margin.fill('0')
+  for (const [value, phrase] of [['relative', '相対誤差が'], ['absolute', '誤差が'], ['either', '絶対誤差または相対誤差が']] as const) {
+    await kind.selectOption(value)
+    const strict = line(`期待出力との${phrase} 10-9 を少しでも超えると不正解になります。`)
+    await expect(strict).toBeVisible()
+    await expect(strict.locator('sup')).toHaveText('-9')
+    await expect(page.getByText('以下なら正解になります。', { exact: false })).toHaveCount(0)
+    await expect(widened).toHaveCount(0)
+    await expect(comparison).toBeVisible()
+  }
+  await kind.selectOption('absolute')
+  // An invalid margin replaces the threshold line with the error, for each kind.
+  await margin.fill('101')
+  for (const value of ['absolute', 'relative', 'either']) {
+    await kind.selectOption(value)
+    await expect(line('判定の余裕は0〜100の数で、小数は6桁までです。')).toBeVisible()
+    await expect(page.getByText('以下なら正解になります。', { exact: false })).toHaveCount(0)
+    await expect(page.getByText('を少しでも超えると不正解になります。', { exact: false })).toHaveCount(0)
+    await expect(widened).toBeVisible()
+    await expect(comparison).toBeVisible()
+  }
+  await margin.fill('0.1')
+  await expect(line('期待出力との絶対誤差または相対誤差が 1.001 × 10-9 以下なら正解になります。')).toBeVisible()
+  await expect(line('判定の余裕は0〜100の数で、小数は6桁までです。')).toHaveCount(0)
+})
+
+test('余裕の誤りは保存しない', async ({ page }) => {
+  await page.goto('/problems/new?fresh=1')
+  await page.getByLabel('問題のタイトル').fill('余裕の誤り')
+  await openChecker(page)
+  const { method, margin } = errorJudgeFields(page)
+  await method.selectOption('errorJudge')
+  expect((await saveWithButton(page)).errorJudge).toEqual(errorJudgeDefaults)
+  const writes: unknown[] = []
+  page.on('request', request => { if (request.method() === 'PUT' && /^\/api\/my\/problems\/[^/]+$/.test(new URL(request.url()).pathname)) writes.push(request.postDataJSON().draft.errorJudge) })
+  const error = page.getByText('判定の余裕は0〜100の数で、小数は6桁までです。', { exact: true })
+  const open = page.getByRole('button', { name: '問題ページで提出する', exact: true })
+  await expect(open).toBeEnabled()
+  for (const value of ['', '101', '0.1.2', '0.1234567', '-1']) {
+    await margin.fill(value)
+    await expect(error).toBeVisible()
+    await expect(margin).toHaveAttribute('aria-invalid', 'true')
+    await expect(page.getByText('以下なら正解になります。', { exact: false })).toHaveCount(0)
+    // The draft keeps the last valid margin, so nothing becomes unsaved and the problem page cannot be opened.
+    await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
+    await expect(open).toBeDisabled()
+  }
+  // Wait beyond the autosave debounce to prove no write occurs.
+  await page.waitForTimeout(900)
+  expect(writes).toEqual([])
+  // Saving by hand keeps the last valid margin; the invalid one never leaves the page.
+  expect((await saveWithButton(page)).errorJudge).toEqual(errorJudgeDefaults)
+  await expect(margin).toHaveValue('-1')
+  await expect(error).toBeVisible()
+  await margin.fill('2.5')
+  await expect(error).toHaveCount(0)
+  await expect(margin).not.toHaveAttribute('aria-invalid', 'true')
+  await expect(open).toBeEnabled()
+  expect((await saveWithButton(page)).errorJudge).toEqual({ ...errorJudgeDefaults, marginPercent: '2.5' })
+  expect(writes.every(value => (value as { marginPercent: string }).marginPercent !== '-1')).toBe(true)
+})
+
+test('誤差ジャッジからほかの判定方法へ切り替えると errorJudge が null になる', async ({ page }) => {
+  await page.route('**/api/runtimes', route => route.fulfill({ json: { items: runtimes } }))
+  await Promise.all([page.waitForResponse('**/api/runtimes'), page.goto('/problems/new?fresh=1')])
+  await page.getByLabel('問題のタイトル').fill('判定方法の切り替え')
+  await openChecker(page)
+  const { method, kind, margin } = errorJudgeFields(page)
+  await method.selectOption('errorJudge')
+  await method.selectOption('special')
+  await expect(page.getByLabel('検証コード', { exact: true })).toBeVisible()
+  await expect(kind).toHaveCount(0)
+  await expect(margin).toHaveCount(0)
+  await page.getByLabel('検証コードの言語').selectOption('python314')
+  await page.getByLabel('検証コード', { exact: true }).fill('print(1)')
+  let draft = await saveWithButton(page)
+  expect(judges(draft)).toEqual(['checker'])
+  expect(draft.errorJudge).toBeNull()
+  expect(draft.checker).toEqual({ runtime: 'python314', source: 'print(1)', protocol: 'legacy' })
+  // Back to the error judge, which starts from its defaults; the code is set aside, as for 通常判定.
+  await method.selectOption('errorJudge')
+  await expect(page.getByLabel('検証コード', { exact: true })).toHaveCount(0)
+  await expect(page.getByLabel('検証コードの言語')).toHaveCount(0)
+  await expect(kind).toHaveValue('either')
+  draft = await saveWithButton(page)
+  expect(judges(draft)).toEqual(['errorJudge'])
+  expect(draft.errorJudge).toEqual(errorJudgeDefaults)
+  for (const [value, key, label] of [['interactive', 'interactor', '対話用ジャッジ'], ['runTwice', 'runTwice', runTwiceLabel], ['special', 'checker', '検証コード']] as const) {
+    await method.selectOption(value)
+    await expect(page.getByLabel(label, { exact: true })).toHaveText('print(1)')
+    draft = await saveWithButton(page)
+    expect(judges(draft)).toEqual([key])
+    await method.selectOption('errorJudge')
+    draft = await saveWithButton(page)
+    expect(judges(draft)).toEqual(['errorJudge'])
+  }
+  await method.selectOption('normal')
+  draft = await saveWithButton(page)
+  expect(judges(draft)).toEqual([])
+})
+
+test('問題ページに誤差ジャッジの条件を表示する', async ({ page, context }) => {
+  const notice = '誤差ジャッジ：絶対誤差または相対誤差が10-6以下なら正解です。'
+  await page.goto(`/problems/${shortId('afafafaf-afaf-4faf-8faf-afafafafafaf')}`)
+  await expect(page.getByText(notice, { exact: true })).toBeVisible()
+  await expect(page.getByText(notice, { exact: true }).locator('sup')).toHaveText('-6')
+  await page.goto(`/contests/${shortId('b0b0b0b0-b0b0-4b0b-8b0b-b0b0b0b0b0b0')}/A`)
+  await expect(page.getByText(notice, { exact: true })).toBeVisible()
+  await expect(page.getByText(notice, { exact: true }).locator('sup')).toHaveText('-6')
+  await page.goto(`/problems/${shortId('11111111-1111-4111-8111-111111111111')}`)
+  await expect(page.getByText('誤差ジャッジ', { exact: false })).toHaveCount(0)
+  // The author's preview of an unpublished problem shows the condition too, and never the margin.
+  const draftId = 'b1b1b1b1-b1b1-4b1b-8b1b-b1b1b1b1b1b1'
+  await context.addCookies([{ name: 'openoj_access', value: 'valid-access', url: 'http://127.0.0.1:13000' }])
+  await page.goto(`/problems/${shortId(draftId)}`)
+  await expect(page.getByText('誤差ジャッジ：相対誤差が10-9以下なら正解です。', { exact: true })).toBeVisible()
+  const preview = await (await context.request.get(`/api/problems/${draftId}`)).json()
+  expect(preview.errorJudge).toEqual({ mode: 'relative', epsilon: '1e-9' })
+})
