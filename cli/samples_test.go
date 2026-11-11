@@ -59,7 +59,7 @@ func TestSamplesCommand(t *testing.T) {
 	input, _ := os.ReadFile(filepath.Join(dir, "tests", "sample1.in"))
 	output, _ := os.ReadFile(filepath.Join(dir, "tests", "sample1.out"))
 	block := func(in, out string) string {
-		return "<!-- shareoj-sample-start: sample1 -->\n\n## サンプル 1\n\n### 入力\n```text\n" + in + "```\n\n### 出力\n```text\n" + out + "```\n\n<!-- shareoj-sample-end: sample1 -->\n"
+		return "<!-- sample-begin: sample1 -->\n\n## サンプル 1\n\n### 入力\n```text\n" + in + "```\n\n### 出力\n```text\n" + out + "```\n\n<!-- sample-end: sample1 -->\n"
 	}
 	if out := command("samples"); out != "Updated statement.md: 0 sample(s) rewritten, 1 added\n" || read() != "## 問題文\n\n\n"+block(string(input), string(output)) {
 		t.Fatalf("%s\n%q", out, read())

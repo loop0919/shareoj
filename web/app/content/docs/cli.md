@@ -123,13 +123,13 @@ shareoj samples a-plus-b
 `samples` は、サンプルのテストケースの入出力を問題文のファイルに書き込みます。
 
 ```md
-<!-- shareoj-sample-start: sample1 -->
+<!-- sample-begin: sample1 -->
 
 ## サンプル 1
 
 （入力と出力。ここは毎回作り直される）
 
-<!-- shareoj-sample-end: sample1 -->
+<!-- sample-end: sample1 -->
 
 サンプルの説明は、終わりのマーカーの後に書く。
 ```

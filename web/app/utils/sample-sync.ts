@@ -1,12 +1,12 @@
 // Samples in a statement, kept in step with the test cases (issue #18). A sample with a name sits between
-//   <!-- shareoj-sample-start: NAME -->  and  <!-- shareoj-sample-end: NAME -->
+//   <!-- sample-begin: NAME -->  and  <!-- sample-end: NAME -->
 // and everything between the two is rewritten from the test case; notes on a sample go after the end marker.
 // cli/samples.go implements the same rules, and cli/testdata/sample-sync.json holds the cases both must pass.
 export interface SampleText { name?: string, input: string, output: string }
 
-const startMarker = /<!-- shareoj-sample-start: (.+?) -->/g
+const startMarker = /<!-- sample-begin: (.+?) -->/g
 const heading = /^## サンプル (\d{1,6})\s*$/m
-const endMarker = (name: string) => `<!-- shareoj-sample-end: ${name} -->`
+const endMarker = (name: string) => `<!-- sample-end: ${name} -->`
 
 // A name that can sit in a marker and be found again.
 export const syncableSampleName = (name?: string): name is string => !!name && name.trim() === name && !/-->|[\r\n]/.test(name)
@@ -47,7 +47,7 @@ export function syncSamples(text: string, samples: SampleText[]) {
     const name = syncableSampleName(sample.name) ? sample.name : undefined
     if (name !== undefined && seen.has(name)) continue
     const block = body(++next, sample)
-    blocks.push(name === undefined ? block : `<!-- shareoj-sample-start: ${name} -->\n\n${block}\n${endMarker(name)}\n`)
+    blocks.push(name === undefined ? block : `<!-- sample-begin: ${name} -->\n\n${block}\n${endMarker(name)}\n`)
     if (name !== undefined) seen.add(name)
   }
   if (blocks.length) out += (out ? '\n\n' : '') + blocks.join('\n')

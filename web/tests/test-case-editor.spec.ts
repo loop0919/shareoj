@@ -424,7 +424,7 @@ test('named samples are rewritten in place between their markers', async ({ page
   await append.click()
   const toast = page.locator('.toast').getByRole('status')
   await expect(toast).toHaveText('1件のサンプルを問題文の末尾に追加しました。')
-  const block = (input: string, output: string) => `<!-- shareoj-sample-start: sample1 -->\n\n## サンプル 1\n\n### 入力\n\`\`\`text\n${input}\n\`\`\`\n\n### 出力\n\`\`\`text\n${output}\n\`\`\`\n\n<!-- shareoj-sample-end: sample1 -->\n`
+  const block = (input: string, output: string) => `<!-- sample-begin: sample1 -->\n\n## サンプル 1\n\n### 入力\n\`\`\`text\n${input}\n\`\`\`\n\n### 出力\n\`\`\`text\n${output}\n\`\`\`\n\n<!-- sample-end: sample1 -->\n`
   await page.getByRole('button', { name: '問題文', exact: true }).click()
   await expect(page.locator('#problem-source')).toHaveText('## 問題文\n\n\n' + block('3 5', '8'), { useInnerText: true })
   // Notes written after the end marker stay; the sample between the markers follows the test case.
@@ -461,7 +461,7 @@ test('append samples preserves the statement, excludes private cases, and saves 
   await expect(page.locator('.toast').getByRole('status')).toHaveText('2件のサンプルを問題文の末尾に追加しました。')
   await page.getByRole('button', { name: '問題文', exact: true }).click()
   // New cases are named case_NNN.txt, and a named sample sits between markers (issue #18).
-  const marked = (name: string, body: string) => `<!-- shareoj-sample-start: ${name} -->\n\n${body}\n<!-- shareoj-sample-end: ${name} -->\n`
+  const marked = (name: string, body: string) => `<!-- sample-begin: ${name} -->\n\n${body}\n<!-- sample-end: ${name} -->\n`
   const expected = original + '\n\n' + marked('case_002.txt', '## サンプル 2\n\n### 入力\n````text\n3 5\n```\n$literal$\n````\n\n### 出力\n```text\n8\n```\n') + '\n' + marked('case_003.txt', '## サンプル 3\n\n### 入力\n```text\n```\n\n### 出力\n```text\n```\n')
   await expect(page.locator('#problem-source')).toHaveText(expected, { useInnerText: true })
   await expect(page.getByRole('status').filter({ hasText: /^保存済み$/ })).toBeVisible()

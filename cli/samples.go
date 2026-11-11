@@ -12,7 +12,7 @@ import (
 
 // Samples in a statement, kept in step with the test cases. A sample sits between
 //
-//	<!-- shareoj-sample-start: NAME -->  and  <!-- shareoj-sample-end: NAME -->
+//	<!-- sample-begin: NAME -->  and  <!-- sample-end: NAME -->
 //
 // and everything between the two is rewritten from the test case; notes on a sample go after the end marker.
 // web/app/utils/sample-sync.ts implements the same rules, and testdata/sample-sync.json holds the cases both pass.
@@ -23,11 +23,11 @@ type sampleText struct {
 	Output string `json:"output"`
 }
 
-var sampleStart = regexp.MustCompile(`<!-- shareoj-sample-start: (.+?) -->`)
+var sampleStart = regexp.MustCompile(`<!-- sample-begin: (.+?) -->`)
 var sampleHeading = regexp.MustCompile(`(?m)^## サンプル (\d{1,6})\s*$`)
 var backticks = regexp.MustCompile("`+")
 
-func sampleEnd(name string) string { return "<!-- shareoj-sample-end: " + name + " -->" }
+func sampleEnd(name string) string { return "<!-- sample-end: " + name + " -->" }
 
 // syncableSampleName tells whether a name can sit in a marker and be found again.
 func syncableSampleName(name string) bool {
@@ -103,7 +103,7 @@ func syncSamples(text string, samples []sampleText) (out string, updated, added 
 		next++
 		block := sampleBody(next, s)
 		if marked {
-			block = "<!-- shareoj-sample-start: " + s.Name + " -->\n\n" + block + "\n" + sampleEnd(s.Name) + "\n"
+			block = "<!-- sample-begin: " + s.Name + " -->\n\n" + block + "\n" + sampleEnd(s.Name) + "\n"
 			seen[s.Name] = true
 		}
 		blocks = append(blocks, block)
