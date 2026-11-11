@@ -116,6 +116,7 @@ CLIはファイル名順に取り込み、空白と空ファイルを保持し�
 取得後にケースを削除するときは、対応する `names`、`samples`、`[[tests.groups]]` の `cases` の項目も更新してください。
 
 `check` はコンパイルも実行もしません。
+テストケースがサンプルだけのときは、`check` が警告します。
 想定解と入力検証器を手元またはrimeで実行し、必要ならWebの「生成と検証」も使います。
 CLIはrimeを実行せず、`PROJECT`、`PROBLEM`、`TESTSET` も読みません。
 rimeの生成済みファイルを使う場合は、実際の出力先を `tests.directory` に指定し、`output_suffix = ".diff"` にします。

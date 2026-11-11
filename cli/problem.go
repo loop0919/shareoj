@@ -406,6 +406,10 @@ func loadCases(root *os.Root, c problemConfig) ([]testCase, []string, error) {
 		}
 		cases = append(cases, testCase{Name: label, IsSample: samples[name], Input: input, Output: output, Groups: groups[name]})
 	}
+	// Nothing refuses this one: samples are public, so judging on them alone is usually a forgotten test set.
+	if len(cases) > 0 && !slices.ContainsFunc(cases, func(c testCase) bool { return !c.IsSample }) {
+		notes = append(notes, "every test case is a sample; add non-sample cases unless the samples are the whole test set")
+	}
 	return cases, notes, nil
 }
 

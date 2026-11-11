@@ -401,3 +401,23 @@ func TestScoringPushMerge(t *testing.T) {
 		t.Fatalf("invalid remote generators: %v puts=%d uploads=%d", err, puts-beforePuts, uploads-beforeUploads)
 	}
 }
+
+// Issue #17: a test set of samples alone is usually a forgotten upload, so check says so.
+func TestCheckWarnsWhenEveryCaseIsASample(t *testing.T) {
+	dir := example(t)
+	check := func() string {
+		var out strings.Builder
+		if err := run(context.Background(), []string{"check", dir}, &out); err != nil {
+			t.Fatal(err)
+		}
+		return out.String()
+	}
+	if out := check(); !strings.Contains(out, "warning: every test case is a sample") || !strings.Contains(out, "OK:") {
+		t.Fatalf("missing warning: %s", out)
+	}
+	write(t, filepath.Join(dir, "tests", "01.in"), "1\n")
+	write(t, filepath.Join(dir, "tests", "01.out"), "1\n")
+	if out := check(); strings.Contains(out, "warning:") {
+		t.Fatalf("unexpected warning: %s", out)
+	}
+}

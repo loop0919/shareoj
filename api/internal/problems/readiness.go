@@ -32,6 +32,8 @@ const (
 	IssueScheduled         Issue = "scheduled"
 	IssueFeaturedLimit     Issue = "featured_limit"
 	IssueFeaturedApplied   Issue = "featured_applied"
+	// Warnings: worth a second look, but nothing waits for them.
+	IssueOnlySampleTestCases Issue = "test_cases_only_samples"
 )
 
 const featuredApplicationsPerAuthor = 3
@@ -51,6 +53,17 @@ type Readiness struct {
 	Publish  []Issue `json:"publish"`
 	Contest  []Issue `json:"contest"`
 	Featured []Issue `json:"featured"`
+	// Warnings never block a destination: the author may mean it.
+	Warnings []Issue `json:"warnings,omitempty"`
+}
+
+// ContentWarnings lists what looks like an oversight in a draft that still passes every check.
+func ContentWarnings(d Draft) []Issue {
+	// Samples are public, so a problem judged on them alone accepts any answer that hard-codes them.
+	if len(d.TestCases) > 0 && !slices.ContainsFunc(d.TestCases, func(c TestCase) bool { return !c.IsSample }) {
+		return []Issue{IssueOnlySampleTestCases}
+	}
+	return nil
 }
 
 // ContentIssues lists what the draft misses for any destination: publication, a contest and 定期便 share one bar.
@@ -135,7 +148,7 @@ func scoringIssues(d Draft) []Issue {
 // The content is judged once; destinations differ only in what the problem's state rules out.
 func Assess(d Draft, s ProblemState, knownRuntimes, enabledRuntimes []string) Readiness {
 	content := ContentIssues(d, knownRuntimes, enabledRuntimes)
-	r := Readiness{Publish: slices.Clone(content), Contest: slices.Clone(content), Featured: slices.Clone(content)}
+	r := Readiness{Publish: slices.Clone(content), Contest: slices.Clone(content), Featured: slices.Clone(content), Warnings: ContentWarnings(d)}
 	if s.ContestScheduled {
 		r.Publish = append(r.Publish, IssueInContest)
 	}

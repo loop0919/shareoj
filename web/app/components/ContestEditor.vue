@@ -237,6 +237,11 @@ function problemIssue(problemId: string) {
   const code = issues(problemId)[0]
   return code && issueMessage(code, 'contest')
 }
+// A warning never stops the save; it names an oversight such as a problem judged on its samples alone.
+function problemWarning(problemId: string) {
+  const code = summaries.value.get(problemId)?.readiness?.warnings[0]
+  return code ? `注意：${issueMessage(code)}` : ''
+}
 // Another setter's problem names its author, as the candidates mark the ones this setter tests.
 function problemOwner(problemId: string) {
   const author = contestAuthorOf.get(problemId)
@@ -576,7 +581,7 @@ async function save() {
                   <li v-for="(p, index) in selected" :key="p.id" :data-id="p.id" :class="{ dragging: drag?.from === index }" :style="rowStyle(index)">
                     <button type="button" class="drag-handle" :aria-label="`${problemName(p.title)}を並べ替え`" aria-describedby="reorder-hint" title="ドラッグで並べ替え" @pointerdown="startDrag($event, index)" @pointermove="updateDrag($event.clientY)" @pointerup="endDrag(true)" @pointercancel="endDrag(false)" @lostpointercapture="endDrag(false)" @keydown="moveWithKeyboard($event, index)"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="6" r="1" /><circle cx="15" cy="6" r="1" /><circle cx="9" cy="12" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="9" cy="18" r="1" /><circle cx="15" cy="18" r="1" /></svg></button>
                     <span class="problem-label">{{ problemLabel(slot(index)) }}</span>
-                    <div class="problem-entry"><span><strong>{{ problemName(p.title) }}</strong><span v-if="problemOwner(p.id)" class="problem-role">作者 {{ problemOwner(p.id) }}</span></span><code class="problem-uuid">{{ p.id }}</code><p v-if="problemIssue(p.id)" class="problem-issue">{{ problemIssue(p.id) }}</p></div>
+                    <div class="problem-entry"><span><strong>{{ problemName(p.title) }}</strong><span v-if="problemOwner(p.id)" class="problem-role">作者 {{ problemOwner(p.id) }}</span></span><code class="problem-uuid">{{ p.id }}</code><p v-if="problemIssue(p.id)" class="problem-issue">{{ problemIssue(p.id) }}</p><p v-if="problemWarning(p.id)" class="problem-warning">{{ problemWarning(p.id) }}</p></div>
                     <div class="selected-controls">
                       <span v-if="fullScoreOf(p.id) !== undefined" class="points-field points-fixed" :title="partialNote">配点 <span class="points-value">{{ fullScoreOf(p.id) || '—' }}</span> 点<span class="points-note">（満点）</span></span>
                       <label v-else class="points-field" :for="`points-${p.id}`">配点 <input :id="`points-${p.id}`" v-model.number="p.points" type="number" min="1" max="1000000" step="1" required> 点</label>
@@ -595,7 +600,7 @@ async function save() {
                   <p class="muted search-count" role="status">{{ candidates.length }} 件{{ query.trim() ? 'が一致' : '' }}{{ matches.length > candidates.length ? `（追加済み・追加できない ${matches.length - candidates.length} 件を非表示）` : '' }}</p>
                   <ul id="problem-candidates" class="candidates">
                     <li v-for="p in candidates" :key="p.id">
-                      <div class="problem-entry"><span>{{ problemName(p.title) }}<span v-if="tested.has(p.id)" class="problem-role">テスター</span><span v-else-if="problemOwner(p.id)" class="problem-role">作者 {{ problemOwner(p.id) }}</span></span><code class="problem-uuid">{{ p.id }}</code><p v-if="problemIssue(p.id)" class="problem-issue">{{ problemIssue(p.id) }}</p></div>
+                      <div class="problem-entry"><span>{{ problemName(p.title) }}<span v-if="tested.has(p.id)" class="problem-role">テスター</span><span v-else-if="problemOwner(p.id)" class="problem-role">作者 {{ problemOwner(p.id) }}</span></span><code class="problem-uuid">{{ p.id }}</code><p v-if="problemIssue(p.id)" class="problem-issue">{{ problemIssue(p.id) }}</p><p v-if="problemWarning(p.id)" class="problem-warning">{{ problemWarning(p.id) }}</p></div>
                       <button class="editor-button" type="button" :disabled="!addable(p.id)" :aria-label="`${problemName(p.title)}${isSelected(p.id) ? 'は追加済み' : 'を追加'}`" @click="add(p)">{{ isSelected(p.id) ? '追加済み' : '追加' }}</button>
                     </li>
                   </ul>
@@ -716,6 +721,7 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .problem-uuid { color: var(--color-muted); font-size: .75rem; overflow-wrap: anywhere; }
 .problem-role { margin-inline-start: 8px; padding: 1px 6px; border: 1px solid var(--color-line); border-radius: 4px; color: var(--color-muted); font-size: .75rem; white-space: nowrap; }
 .problem-issue { margin: 4px 0 0; color: var(--color-error); }
+.problem-warning { margin: 4px 0 0; color: var(--color-muted); font-size: .875rem; }
 .selected-controls { grid-area: controls; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
 .points-field { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 .points-fixed { gap: 4px; }

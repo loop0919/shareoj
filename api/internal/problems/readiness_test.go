@@ -46,6 +46,11 @@ func TestAssessListsEveryReason(t *testing.T) {
 	}{
 		{"ready everywhere", ready, ProblemState{}, Readiness{Publish: []Issue{}, Contest: []Issue{}, Featured: []Issue{}}},
 		{
+			"only samples warns without blocking", with(func(d *Draft) { d.TestCases[0].IsSample = true }),
+			ProblemState{},
+			Readiness{Publish: []Issue{}, Contest: []Issue{}, Featured: []Issue{}, Warnings: []Issue{IssueOnlySampleTestCases}},
+		},
+		{
 			"blank statement and title", with(func(d *Draft) { d.Title, d.Markdown = " ", "" }),
 			ProblemState{},
 			Readiness{

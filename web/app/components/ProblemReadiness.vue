@@ -7,6 +7,8 @@ const sectionNames: Record<EditorSection, string> = { statement: '問題文', te
 const status = computed(() => problemStatus(props.problem))
 // What the author can fix, whatever the problem's state: publishing an update needs it too.
 const issues = computed(() => status.value.kind === 'featured' ? status.value.issues : contentIssues(props.problem.readiness))
+// Oversights the server noticed in content that still passes; nothing waits for them.
+const warnings = computed(() => props.problem.readiness?.warnings ?? [])
 // Where the problem already is limits other destinations; say so once per message.
 const notes = computed(() => {
   const readiness = props.problem.readiness
@@ -30,6 +32,12 @@ const notes = computed(() => {
         </li>
       </ul>
       <p v-else-if="status.kind === 'ready'">公開・コンテスト・定期便のどれにも出せます。</p>
+      <ul v-if="warnings.length" class="readiness-issues readiness-cautions" aria-label="注意">
+        <li v-for="code in warnings" :key="code">
+          <span>注意：{{ issueMessage(code) }}</span>
+          <button v-if="issueSection(code)" type="button" class="editor-button" @click="emit('jump', issueSection(code)!)">{{ sectionNames[issueSection(code)!] }}を開く</button>
+        </li>
+      </ul>
       <ul v-if="notes.length" class="readiness-notes" aria-label="提出先の制限">
         <li v-for="note in notes" :key="note">{{ note }}</li>
       </ul>
@@ -46,5 +54,6 @@ const notes = computed(() => {
 .readiness-issues { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .readiness-issues li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; border: 1px solid var(--color-line); border-radius: 4px; min-width: 0; }
 .readiness-issues li > span { min-width: 0; overflow-wrap: anywhere; }
+.readiness-cautions li { border-style: dashed; }
 .readiness-notes { margin: 0; padding-left: 1.2em; color: var(--color-muted); font-size: .8125rem; }
 </style>

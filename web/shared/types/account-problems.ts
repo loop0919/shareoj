@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { problemDraftSchema } from './problem-draft'
 
 // Per destination, the server's reasons why the saved problem cannot go there; empty means it can.
-export const readinessSchema = z.object({ publish: z.array(z.string()), contest: z.array(z.string()), featured: z.array(z.string()) })
+export const readinessSchema = z.object({ publish: z.array(z.string()), contest: z.array(z.string()), featured: z.array(z.string()), warnings: z.array(z.string()).default([]) })
 export type Readiness = z.infer<typeof readinessSchema>
 
 // Setters of the published contest holding the problem edit it like testers until the results are final (ADR 0022).

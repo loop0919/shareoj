@@ -414,7 +414,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		// Drafts are saved with these, but publishing and unfinished contests refuse them.
+		// Drafts are saved with these; publishing and unfinished contests refuse most of them.
 		for _, note := range notes {
 			fmt.Fprintln(out, "warning:", note)
 		}
