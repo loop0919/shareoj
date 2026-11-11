@@ -438,6 +438,12 @@ func TestProblemValidationAndRime(t *testing.T) {
 	if d, err := loadProblem(dir); err != nil || string(d["errorJudge"]) != `{"mode":"absolute","epsilon":"1e-12","marginPercent":"0.5"}` {
 		t.Fatalf("error_judge margin: %v %s", err, d["errorJudge"])
 	}
+	for _, margin := range []string{"099", "000"} {
+		write(t, filepath.Join(dir, "problem.toml"), rimeConfig+"\n[error_judge]\nmode = 'either'\nepsilon = '1e-6'\nmargin_percent = '"+margin+"'\n")
+		if d, err := loadProblem(dir); err != nil || string(d["errorJudge"]) != `{"mode":"either","epsilon":"1e-6","marginPercent":"`+margin+`"}` {
+			t.Fatalf("error_judge margin %s: %v %s", margin, err, d["errorJudge"])
+		}
+	}
 	for _, bad := range []struct{ body, key string }{
 		{"mode = 'both'\nepsilon = '1e-6'\n", "mode"},
 		{"epsilon = '1e-6'\n", "mode"},

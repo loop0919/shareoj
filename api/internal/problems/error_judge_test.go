@@ -22,6 +22,8 @@ func TestErrorJudgeShape(t *testing.T) {
 		{"margin 0.5", ErrorJudge{Mode: "either", Epsilon: "1e-6", MarginPercent: marginPtr("0.5")}, true},
 		{"margin 100", ErrorJudge{Mode: "either", Epsilon: "1e-6", MarginPercent: marginPtr("100")}, true},
 		{"margin 100.0", ErrorJudge{Mode: "either", Epsilon: "1e-6", MarginPercent: marginPtr("100.000000")}, true},
+		{"margin 099", ErrorJudge{Mode: "either", Epsilon: "1e-6", MarginPercent: marginPtr("099")}, true},
+		{"margin 000", ErrorJudge{Mode: "either", Epsilon: "1e-6", MarginPercent: marginPtr("000")}, true},
 		{"margin 12.345678", ErrorJudge{Mode: "either", Epsilon: "1e-6", MarginPercent: marginPtr("12.345678")}, true},
 		{"mode both", ErrorJudge{Mode: "both", Epsilon: "1e-6"}, false},
 		{"mode empty", ErrorJudge{Epsilon: "1e-6"}, false},
