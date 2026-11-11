@@ -117,7 +117,7 @@ func TestPullLifecycle(t *testing.T) {
 				}
 			}
 			var saved state
-			if err := readJSON(filepath.Join(dir, stateName), &saved); err != nil || saved != (state{API: server.URL, ID: id, Version: 7}) {
+			if err := readJSON(filepath.Join(dir, stateName), &saved); err != nil || !reflect.DeepEqual(saved, state{API: server.URL, ID: id, Version: 7}) {
 				t.Fatalf("state: %+v %v", saved, err)
 			}
 			before := requests

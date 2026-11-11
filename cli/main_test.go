@@ -502,7 +502,7 @@ func TestOptionsAfterArguments(t *testing.T) {
 		t.Fatal(err)
 	}
 	var s state
-	if err := readJSON(filepath.Join(pulled, stateName), &s); err != nil || s != (state{API: server.URL, ID: remote.ID, Version: 5}) {
+	if err := readJSON(filepath.Join(pulled, stateName), &s); err != nil || !reflect.DeepEqual(s, state{API: server.URL, ID: remote.ID, Version: 5}) {
 		t.Fatalf("pulled state: %+v %v", s, err)
 	}
 	// After --, a directory may start with a dash.

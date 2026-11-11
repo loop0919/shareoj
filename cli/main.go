@@ -30,6 +30,8 @@ type state struct {
 	API     string `json:"api"`
 	ID      string `json:"id"`
 	Version int64  `json:"version"`
+	// Images maps the SHA-256 of an uploaded local image to its URL, so push sends each image once.
+	Images map[string]string `json:"images,omitempty"`
 }
 
 type problem struct {
@@ -102,8 +104,33 @@ func push(ctx context.Context, directory string, c *apiClient, expected int64) (
 		return s, fmt.Errorf("version conflict: local %d, remote %d; review the web draft before using --expect-version %d", version, remote.Version, remote.Version)
 	}
 	d := remote.Draft
+	texts := []string{}
+	for _, key := range []string{"markdown", "editorial"} {
+		if local[key] != nil {
+			texts = append(texts, key)
+		}
+	}
 	if err := mergeDraft(local, d); err != nil {
 		return s, err
+	}
+	// Only the texts this directory provides: a remote text kept by omission names no local file.
+	if s.Images == nil {
+		s.Images = map[string]string{}
+	}
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return s, err
+	}
+	defer root.Close()
+	for _, key := range texts {
+		var text string
+		if err := decodeJSON(d[key], &text); err != nil {
+			return s, err
+		}
+		if text, err = c.uploadImages(ctx, root, text, s.Images); err != nil {
+			return s, err
+		}
+		d.set(key, text)
 	}
 	if local["testCases"] != nil {
 		var cases []testCase

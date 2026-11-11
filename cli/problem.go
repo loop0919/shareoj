@@ -197,6 +197,7 @@ func buildDraft(root *os.Root, c problemConfig) (draft, []string, error) {
 	if c.Difficulty != nil {
 		d.set("difficulty", *c.Difficulty)
 	}
+	var imageWarnings []string
 	texts := map[string]string{"markdown": c.Statement}
 	if c.Editorial != nil {
 		texts["editorial"] = *c.Editorial
@@ -209,8 +210,14 @@ func buildDraft(root *os.Root, c problemConfig) (draft, []string, error) {
 		if !validText(value, 100000) {
 			return nil, nil, fmt.Errorf("%s: exceeds 100000 characters", name)
 		}
+		notes, err := imageNotes(root, name, value)
+		if err != nil {
+			return nil, nil, err
+		}
+		imageWarnings = append(imageWarnings, notes...)
 		d.set(key, value)
 	}
+	slices.Sort(imageWarnings)
 	generators := map[string]program{}
 	for role, config := range c.Generators {
 		if !slices.Contains([]string{"input", "output", "validation"}, role) {
@@ -246,14 +253,14 @@ func buildDraft(root *os.Root, c problemConfig) (draft, []string, error) {
 	} else if c.Tests != nil && len(c.Tests.Groups) > 0 {
 		return nil, nil, errors.New(`[[tests.groups]] requires [scoring] with mode = "groups" or "aggregate"`)
 	}
-	var notes []string
+	notes := imageWarnings
 	if c.Tests != nil {
 		cases, caseNotes, err := loadCases(root, c)
 		if err != nil {
 			return nil, nil, err
 		}
 		d.set("testCases", cases)
-		notes = caseNotes
+		notes = append(notes, caseNotes...)
 	}
 	if c.Scoring != nil && c.Scoring.Mode == "aggregate" && c.Scoring.Aggregator == nil {
 		notes = append(notes, `mode = "aggregate" without [scoring.aggregator]: push keeps the remote aggregator, and publishing needs one`)
