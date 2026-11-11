@@ -2,48 +2,98 @@
   {
     "name": "appends marked samples after the highest number",
     "statement": "## 問題文\n\n本文\n\n## サンプル 1\n",
-    "samples": [{ "name": "sample1", "input": "3 5\n", "output": "8\n" }, { "name": "sample2", "input": "", "output": "x" }],
-    "want": "## 問題文\n\n本文\n\n## サンプル 1\n\n\n<!-- sample-begin: sample1 -->\n\n## サンプル 2\n\n### 入力\n```text\n3 5\n```\n\n### 出力\n```text\n8\n```\n\n<!-- sample-end: sample1 -->\n\n<!-- sample-begin: sample2 -->\n\n## サンプル 3\n\n### 入力\n```text\n```\n\n### 出力\n```text\nx\n```\n\n<!-- sample-end: sample2 -->\n",
+    "samples": [
+      {
+        "name": "sample1",
+        "input": "3 5\n",
+        "output": "8\n"
+      },
+      {
+        "name": "sample2",
+        "input": "",
+        "output": "x"
+      }
+    ],
+    "want": "## 問題文\n\n本文\n\n## サンプル 1\n\n\n<!-- sample-begin: sample1 -->\n## サンプル 2\n### 入力\n```text\n3 5\n```\n### 出力\n```text\n8\n```\n<!-- sample-end: sample1 -->\n\n<!-- sample-begin: sample2 -->\n## サンプル 3\n### 入力\n```text\n```\n### 出力\n```text\nx\n```\n<!-- sample-end: sample2 -->\n",
     "updated": 0,
     "added": 2
   },
   {
     "name": "rewrites a marked sample in place and keeps its number and the notes after it",
     "statement": "前\n\n<!-- sample-begin: sample1 -->\n\n## サンプル 7\n\n古い内容\n\n<!-- sample-end: sample1 -->\n\n説明は残る。\n",
-    "samples": [{ "name": "sample1", "input": "1\n", "output": "2\n" }],
-    "want": "前\n\n<!-- sample-begin: sample1 -->\n\n## サンプル 7\n\n### 入力\n```text\n1\n```\n\n### 出力\n```text\n2\n```\n\n<!-- sample-end: sample1 -->\n\n説明は残る。\n",
+    "samples": [
+      {
+        "name": "sample1",
+        "input": "1\n",
+        "output": "2\n"
+      }
+    ],
+    "want": "前\n\n<!-- sample-begin: sample1 -->\n## サンプル 7\n### 入力\n```text\n1\n```\n### 出力\n```text\n2\n```\n<!-- sample-end: sample1 -->\n\n説明は残る。\n",
     "updated": 1,
     "added": 0
   },
   {
     "name": "a synced statement does not change",
-    "statement": "<!-- sample-begin: a -->\n\n## サンプル 1\n\n### 入力\n```text\n1\n```\n\n### 出力\n```text\n2\n```\n\n<!-- sample-end: a -->\n",
-    "samples": [{ "name": "a", "input": "1\n", "output": "2\n" }],
-    "want": "<!-- sample-begin: a -->\n\n## サンプル 1\n\n### 入力\n```text\n1\n```\n\n### 出力\n```text\n2\n```\n\n<!-- sample-end: a -->\n",
+    "statement": "<!-- sample-begin: a -->\n## サンプル 1\n### 入力\n```text\n1\n```\n### 出力\n```text\n2\n```\n<!-- sample-end: a -->\n",
+    "samples": [
+      {
+        "name": "a",
+        "input": "1\n",
+        "output": "2\n"
+      }
+    ],
+    "want": "<!-- sample-begin: a -->\n## サンプル 1\n### 入力\n```text\n1\n```\n### 出力\n```text\n2\n```\n<!-- sample-end: a -->\n",
     "updated": 0,
     "added": 0
   },
   {
     "name": "an empty marker gets the next number, and backticks widen the fence",
     "statement": "## サンプル 4\n\n<!-- sample-begin: 例 1 --><!-- sample-end: 例 1 -->",
-    "samples": [{ "name": "例 1", "input": "a\n```\nb", "output": "````\n" }],
-    "want": "## サンプル 4\n\n<!-- sample-begin: 例 1 -->\n\n## サンプル 5\n\n### 入力\n````text\na\n```\nb\n````\n\n### 出力\n`````text\n````\n`````\n\n<!-- sample-end: 例 1 -->",
+    "samples": [
+      {
+        "name": "例 1",
+        "input": "a\n```\nb",
+        "output": "````\n"
+      }
+    ],
+    "want": "## サンプル 4\n\n<!-- sample-begin: 例 1 -->\n## サンプル 5\n### 入力\n````text\na\n```\nb\n````\n### 出力\n`````text\n````\n`````\n<!-- sample-end: 例 1 -->",
     "updated": 1,
     "added": 0
   },
   {
     "name": "markers without a sample or without an end stay, and a name unfit for a marker is appended bare",
     "statement": "<!-- sample-begin: gone -->\n残す\n<!-- sample-end: gone -->\n<!-- sample-begin: open -->\n",
-    "samples": [{ "name": "open", "input": "1", "output": "1" }, { "name": "a --> b", "input": "2", "output": "2" }, { "input": "3", "output": "3" }],
-    "want": "<!-- sample-begin: gone -->\n残す\n<!-- sample-end: gone -->\n<!-- sample-begin: open -->\n\n\n<!-- sample-begin: open -->\n\n## サンプル 1\n\n### 入力\n```text\n1\n```\n\n### 出力\n```text\n1\n```\n\n<!-- sample-end: open -->\n\n## サンプル 2\n\n### 入力\n```text\n2\n```\n\n### 出力\n```text\n2\n```\n\n## サンプル 3\n\n### 入力\n```text\n3\n```\n\n### 出力\n```text\n3\n```\n",
+    "samples": [
+      {
+        "name": "open",
+        "input": "1",
+        "output": "1"
+      },
+      {
+        "name": "a --> b",
+        "input": "2",
+        "output": "2"
+      },
+      {
+        "input": "3",
+        "output": "3"
+      }
+    ],
+    "want": "<!-- sample-begin: gone -->\n残す\n<!-- sample-end: gone -->\n<!-- sample-begin: open -->\n\n\n<!-- sample-begin: open -->\n## サンプル 1\n### 入力\n```text\n1\n```\n### 出力\n```text\n1\n```\n<!-- sample-end: open -->\n\n## サンプル 2\n### 入力\n```text\n2\n```\n### 出力\n```text\n2\n```\n\n## サンプル 3\n### 入力\n```text\n3\n```\n### 出力\n```text\n3\n```\n",
     "updated": 0,
     "added": 3
   },
   {
     "name": "an empty statement starts with the samples",
     "statement": "",
-    "samples": [{ "name": "s", "input": "1\n", "output": "1\n" }],
-    "want": "<!-- sample-begin: s -->\n\n## サンプル 1\n\n### 入力\n```text\n1\n```\n\n### 出力\n```text\n1\n```\n\n<!-- sample-end: s -->\n",
+    "samples": [
+      {
+        "name": "s",
+        "input": "1\n",
+        "output": "1\n"
+      }
+    ],
+    "want": "<!-- sample-begin: s -->\n## サンプル 1\n### 入力\n```text\n1\n```\n### 出力\n```text\n1\n```\n<!-- sample-end: s -->\n",
     "updated": 0,
     "added": 1
   }

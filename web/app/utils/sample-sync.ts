@@ -17,7 +17,8 @@ function fenced(value: string) {
   const fence = '`'.repeat(length)
   return `${fence}text\n${value}${value && !value.endsWith('\n') ? '\n' : ''}${fence}`
 }
-const body = (number: number, sample: SampleText) => `## サンプル ${number}\n\n### 入力\n${fenced(sample.input)}\n\n### 出力\n${fenced(sample.output)}\n`
+// No blank lines: a gap between the markers invites notes that the next sync would erase.
+const body = (number: number, sample: SampleText) => `## サンプル ${number}\n### 入力\n${fenced(sample.input)}\n### 出力\n${fenced(sample.output)}\n`
 
 // Rewrites the marked samples in place and appends the rest in order. A marked sample keeps its number; a sample
 // whose name cannot sit in a marker is appended bare, so it is appended again by the next call. A marker that names
@@ -35,7 +36,7 @@ export function syncSamples(text: string, samples: SampleText[]) {
     if (from < position || !sample || to < 0) continue
     const inner = text.slice(from, to)
     const number = heading.exec(inner)
-    const fresh = `\n\n${body(number ? Number(number[1]) : ++next, sample)}\n`
+    const fresh = `\n${body(number ? Number(number[1]) : ++next, sample)}`
     if (fresh !== inner) updated++
     out += text.slice(position, from) + fresh
     position = to
@@ -47,7 +48,7 @@ export function syncSamples(text: string, samples: SampleText[]) {
     const name = syncableSampleName(sample.name) ? sample.name : undefined
     if (name !== undefined && seen.has(name)) continue
     const block = body(++next, sample)
-    blocks.push(name === undefined ? block : `<!-- sample-begin: ${name} -->\n\n${block}\n${endMarker(name)}\n`)
+    blocks.push(name === undefined ? block : `<!-- sample-begin: ${name} -->\n${block}${endMarker(name)}\n`)
     if (name !== undefined) seen.add(name)
   }
   if (blocks.length) out += (out ? '\n\n' : '') + blocks.join('\n')

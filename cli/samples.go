@@ -46,7 +46,8 @@ func sampleBody(number int, s sampleText) string {
 		}
 		return fence + "text\n" + value + fence
 	}
-	return fmt.Sprintf("## サンプル %d\n\n### 入力\n%s\n\n### 出力\n%s\n", number, fenced(s.Input), fenced(s.Output))
+	// No blank lines: a gap between the markers invites notes that the next sync would erase.
+	return fmt.Sprintf("## サンプル %d\n### 入力\n%s\n### 出力\n%s\n", number, fenced(s.Input), fenced(s.Output))
 }
 
 // syncSamples rewrites the marked samples in place and appends the rest in order. A marked sample keeps its number;
@@ -84,7 +85,7 @@ func syncSamples(text string, samples []sampleText) (out string, updated, added 
 			next++
 			number = next
 		}
-		fresh := "\n\n" + sampleBody(number, s) + "\n"
+		fresh := "\n" + sampleBody(number, s)
 		if fresh != inner {
 			updated++
 		}
@@ -103,7 +104,7 @@ func syncSamples(text string, samples []sampleText) (out string, updated, added 
 		next++
 		block := sampleBody(next, s)
 		if marked {
-			block = "<!-- sample-begin: " + s.Name + " -->\n\n" + block + "\n" + sampleEnd(s.Name) + "\n"
+			block = "<!-- sample-begin: " + s.Name + " -->\n" + block + sampleEnd(s.Name) + "\n"
 			seen[s.Name] = true
 		}
 		blocks = append(blocks, block)
