@@ -110,6 +110,13 @@ samples = ["sample1"]
 `protocol = "legacy"` または `protocol = "testlib"` を指定できるのは、この3種類だけです。
 `testlib` は `cpp23-gcc` と `cpp23-clang` に対応します。
 生成器には `protocol` を指定しません。
+
+誤差ジャッジを使う場合は、コードを書かずに `[error_judge]` を指定します。
+`[checker]`、`[interactor]`、`[run_twice]` と同時には設定できません。
+`mode` は `absolute`、`relative`、`either` のいずれかで、`epsilon` は `"1e-1"` から `"1e-12"` までのいずれかです。
+`margin_percent` は判定の余裕（パーセント）で、省略すると 0.1 になります。
+値はすべて文字列で書きます。
+例は `[error_judge]` に `mode = "either"`、`epsilon = "1e-6"`、`margin_percent = "0.5"` を並べた形です。
 判定器を実装する前に、Webの判定方法ガイドで入出力や終了コードの仕様を確認してください。
 
 ## テストの配置と検証

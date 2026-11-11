@@ -215,6 +215,20 @@ samples = ["sample1"]
 これらのテーブルだけ `protocol = "legacy"` または `protocol = "testlib"` を指定できます。
 `testlib` は `cpp23-gcc` と `cpp23-clang` に対応し、生成器には `protocol` を指定しません。
 
+数値の出力を誤差を許して比較する「誤差ジャッジ」は、コードを書かずに `[error_judge]` で設定します。
+`[checker]`、`[interactor]`、`[run_twice]` と同時には指定できません。
+`mode` は `absolute`、`relative`、`either` のいずれかです。
+`epsilon` は `"1e-1"` から `"1e-12"` までのいずれかです。
+`margin_percent` は判定の余裕（パーセント）で、省略すると 0.1 になります。
+値はすべて文字列で書きます。
+
+```toml
+[error_judge]
+mode = "either"
+epsilon = "1e-6"
+margin_percent = "0.5"
+```
+
 部分点を付ける問題では、`[scoring]` に採点方式を、`[[tests.groups]]` にグループの名前、配点、ケースを指定します。
 
 ```toml

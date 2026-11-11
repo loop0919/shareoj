@@ -175,6 +175,41 @@ func TestPullLifecycle(t *testing.T) {
 			t.Fatalf("run_twice: %s %v", got["runTwice"], err)
 		}
 	}
+	// An error judge is written to [error_judge] without a code file.
+	for _, margin := range []string{"", "0.5"} {
+		variant := draft{}
+		for key, value := range d {
+			variant[key] = value
+		}
+		delete(variant, "checker")
+		judge := map[string]string{"mode": "relative", "epsilon": "1e-9"}
+		if margin != "" {
+			judge["marginPercent"] = margin
+		}
+		variant.set("errorJudge", judge)
+		remote.Draft = variant
+		dir := filepath.Join(t.TempDir(), "error-judge")
+		if _, err := pull(ctx, id, dir, client); err != nil {
+			t.Fatal(err)
+		}
+		got, err := loadProblem(dir)
+		want := `{"mode":"relative","epsilon":"1e-9"}`
+		if margin != "" {
+			want = `{"mode":"relative","epsilon":"1e-9","marginPercent":"0.5"}`
+		}
+		if err != nil || string(got["errorJudge"]) != want || got["checker"] != nil {
+			t.Fatalf("error_judge %q: %s %v", margin, got["errorJudge"], err)
+		}
+		text, _ := os.ReadFile(filepath.Join(dir, "problem.toml"))
+		if strings.Contains(string(text), "margin_percent") != (margin != "") {
+			t.Fatalf("margin_percent in problem.toml: %s", text)
+		}
+		for _, name := range []string{"error_judge.txt", "checker.txt", "interactor.txt", "run_twice.txt"} {
+			if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+				t.Fatalf("unexpected file %s", name)
+			}
+		}
+	}
 	remote.Draft = d
 	for _, invalid := range []struct {
 		key   string

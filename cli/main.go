@@ -176,7 +176,7 @@ func push(ctx context.Context, directory string, c *apiClient, expected int64) (
 }
 
 // mergeDraft applies the update rules of cli/README.md to remote: set fields replace remote ones, omitted optional
-// fields keep them, generators are replaced per role, and a checker, an interactor and a run_twice judge replace one another. The scoring
+// fields keep them, generators are replaced per role, and a checker, an interactor, a run_twice judge and an error_judge replace one another. The scoring
 // and generator merges read remote values that the copy from local overwrites, so they run first and write their
 // results into local, which is modified too. push calls it before uploading test files, so that a refusal uploads or
 // saves nothing and the uploaded references then replace the inline cases copied from local.
@@ -202,10 +202,11 @@ func mergeDraft(local, remote draft) error {
 	for key, value := range local {
 		remote[key] = value
 	}
-	// A draft holds one kind of judge, so the one problem.toml sets deletes the other two.
-	for _, kind := range []string{"checker", "interactor", "runTwice"} {
+	// A draft holds one kind of judge, so the one problem.toml sets deletes the other three.
+	kinds := []string{"checker", "interactor", "runTwice", "errorJudge"}
+	for _, kind := range kinds {
 		if local[kind] != nil {
-			for _, other := range []string{"checker", "interactor", "runTwice"} {
+			for _, other := range kinds {
 				if other != kind {
 					delete(remote, other)
 				}

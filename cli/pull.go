@@ -86,6 +86,7 @@ func exportDraft(ctx context.Context, root *os.Root, remote problem, c *apiClien
 		Generators                 map[string]program
 		Checker, Interactor        *program
 		RunTwice                   *program
+		ErrorJudge                 *errorJudgeDraft
 		Scoring                    *scoring
 		TestCases                  []testCase
 	}
@@ -143,6 +144,12 @@ func exportDraft(ctx context.Context, root *os.Root, remote problem, c *apiClien
 			config.Interactor = &code
 		default:
 			config.RunTwice = &code
+		}
+	}
+	if d.ErrorJudge != nil {
+		config.ErrorJudge = &errorJudgeConfig{Mode: d.ErrorJudge.Mode, Epsilon: d.ErrorJudge.Epsilon}
+		if d.ErrorJudge.MarginPercent != "" {
+			config.ErrorJudge.MarginPercent = &d.ErrorJudge.MarginPercent
 		}
 	}
 	if len(d.TestCases) > 100 {

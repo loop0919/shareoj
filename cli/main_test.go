@@ -323,6 +323,40 @@ func TestPushMergeRules(t *testing.T) {
 	if _, ok := remote.Draft["runTwice"]; ok || string(remote.Draft["interactor"]) != interactor {
 		t.Fatalf("interactor over run_twice: %s %s", remote.Draft["interactor"], remote.Draft["runTwice"])
 	}
+	// An error judge replaces every remote program judge, is kept when nothing is specified, and is replaced by any of them.
+	errorJudge := `{"mode":"either","epsilon":"1e-6"}`
+	remote.Draft.set("checker", program{Runtime: "python3", Source: "print(4)\n"})
+	remote.Draft.set("runTwice", program{Runtime: "python3", Source: "print(3)\n"})
+	write(t, filepath.Join(dir, "problem.toml"), template+"\n[error_judge]\nmode = \"either\"\nepsilon = \"1e-6\"\n")
+	mustPush()
+	for _, key := range []string{"checker", "interactor", "runTwice"} {
+		if _, ok := remote.Draft[key]; ok {
+			t.Fatalf("error_judge kept remote %s", key)
+		}
+	}
+	if string(remote.Draft["errorJudge"]) != errorJudge {
+		t.Fatalf("error_judge: %s", remote.Draft["errorJudge"])
+	}
+	write(t, filepath.Join(dir, "problem.toml"), template)
+	mustPush()
+	if string(remote.Draft["errorJudge"]) != errorJudge {
+		t.Fatalf("omitted error_judge: %s", remote.Draft["errorJudge"])
+	}
+	for _, block := range []string{
+		"\n[checker]\nsource = \"checker.cpp\"\nruntime = \"cpp23-gcc\"\nprotocol = \"testlib\"\n",
+		"\n[interactor]\nsource = \"interactor.py\"\nruntime = \"python3\"\nprotocol = \"legacy\"\n",
+		"\n[run_twice]\nsource = \"run_twice.py\"\nruntime = \"python3\"\n",
+	} {
+		remote.Draft["errorJudge"] = json.RawMessage(errorJudge)
+		write(t, filepath.Join(dir, "problem.toml"), template+block)
+		mustPush()
+		if _, ok := remote.Draft["errorJudge"]; ok {
+			t.Fatalf("errorJudge kept over %s", block)
+		}
+	}
+	remote.Draft.set("interactor", program{Runtime: "python3", Source: "print(2)\n", Protocol: "legacy"})
+	delete(remote.Draft, "checker")
+	delete(remote.Draft, "runTwice")
 	// Fields that problem.toml omits, including ones it cannot express, keep their remote values.
 	remote.Draft.set("difficulty", 3)
 	remote.Draft.set("tags", []string{"graph"})
@@ -388,10 +422,36 @@ func TestProblemValidationAndRime(t *testing.T) {
 	checkerBlock := "\n[checker]\nsource = 'input.cpp'\nruntime = 'cpp23-gcc'\n"
 	interactorBlock := "\n[interactor]\nsource = 'input.cpp'\nruntime = 'cpp23-gcc'\n"
 	runTwiceBlock := "\n[run_twice]\nsource = 'input.cpp'\nruntime = 'cpp23-gcc'\n"
-	for _, blocks := range []string{checkerBlock + interactorBlock, checkerBlock + runTwiceBlock, interactorBlock + runTwiceBlock, checkerBlock + interactorBlock + runTwiceBlock} {
+	errorJudgeBlock := "\n[error_judge]\nmode = 'either'\nepsilon = '1e-6'\n"
+	for _, blocks := range []string{checkerBlock + interactorBlock, checkerBlock + runTwiceBlock, interactorBlock + runTwiceBlock, checkerBlock + interactorBlock + runTwiceBlock,
+		checkerBlock + errorJudgeBlock, interactorBlock + errorJudgeBlock, runTwiceBlock + errorJudgeBlock, checkerBlock + interactorBlock + runTwiceBlock + errorJudgeBlock} {
 		write(t, filepath.Join(dir, "problem.toml"), rimeConfig+blocks)
-		if _, err := loadProblem(dir); err == nil || err.Error() != "choose one of checker, interactor or run_twice" {
+		if _, err := loadProblem(dir); err == nil || err.Error() != "choose one of checker, interactor, run_twice or error_judge" {
 			t.Fatalf("two judge kinds: %v", err)
+		}
+	}
+	write(t, filepath.Join(dir, "problem.toml"), rimeConfig+errorJudgeBlock)
+	if d, err := loadProblem(dir); err != nil || string(d["errorJudge"]) != `{"mode":"either","epsilon":"1e-6"}` || d["checker"] != nil {
+		t.Fatalf("error_judge: %v %s", err, d["errorJudge"])
+	}
+	write(t, filepath.Join(dir, "problem.toml"), rimeConfig+"\n[error_judge]\nmode = 'absolute'\nepsilon = '1e-12'\nmargin_percent = '0.5'\n")
+	if d, err := loadProblem(dir); err != nil || string(d["errorJudge"]) != `{"mode":"absolute","epsilon":"1e-12","marginPercent":"0.5"}` {
+		t.Fatalf("error_judge margin: %v %s", err, d["errorJudge"])
+	}
+	for _, bad := range []struct{ body, key string }{
+		{"mode = 'both'\nepsilon = '1e-6'\n", "mode"},
+		{"epsilon = '1e-6'\n", "mode"},
+		{"mode = 'either'\nepsilon = '1e-13'\n", "epsilon"},
+		{"mode = 'either'\nepsilon = '1e-0'\n", "epsilon"},
+		{"mode = 'either'\n", "epsilon"},
+		{"mode = 'either'\nepsilon = '1e-6'\nmargin_percent = '101'\n", "margin_percent"},
+		{"mode = 'either'\nepsilon = '1e-6'\nmargin_percent = '1.1234567'\n", "margin_percent"},
+		{"mode = 'either'\nepsilon = '1e-6'\nmargin_percent = '-1'\n", "margin_percent"},
+		{"mode = 'either'\nepsilon = '1e-6'\nmargin_percent = ''\n", "margin_percent"},
+	} {
+		write(t, filepath.Join(dir, "problem.toml"), rimeConfig+"\n[error_judge]\n"+bad.body)
+		if _, err := loadProblem(dir); err == nil || !strings.Contains(err.Error(), bad.key) {
+			t.Fatalf("error_judge %q: %v", bad.body, err)
 		}
 	}
 	write(t, filepath.Join(dir, "problem.toml"), rimeConfig+runTwiceBlock)

@@ -33,6 +33,44 @@ type codeConfig struct {
 	Protocol string `toml:"protocol"`
 }
 
+// errorJudgeConfig holds the settings of the error judge, which compares numeric tokens and has no code file.
+type errorJudgeConfig struct {
+	Mode          string  `toml:"mode"`
+	Epsilon       string  `toml:"epsilon"`
+	MarginPercent *string `toml:"margin_percent,omitempty"`
+}
+
+type errorJudgeDraft struct {
+	Mode          string `json:"mode"`
+	Epsilon       string `json:"epsilon"`
+	MarginPercent string `json:"marginPercent,omitempty"`
+}
+
+var marginPercentText = regexp.MustCompile(`^[0-9]{1,3}(\.[0-9]{1,6})?$`)
+
+// loadErrorJudge mirrors the server's rules for errorJudge so that a malformed value is refused before anything is sent.
+func loadErrorJudge(c errorJudgeConfig) (errorJudgeDraft, error) {
+	if !slices.Contains([]string{"absolute", "relative", "either"}, c.Mode) {
+		return errorJudgeDraft{}, errors.New(`error_judge.mode must be "absolute", "relative" or "either"`)
+	}
+	epsilons := make([]string, 0, 12)
+	for i := 1; i <= 12; i++ {
+		epsilons = append(epsilons, "1e-"+strconv.Itoa(i))
+	}
+	if !slices.Contains(epsilons, c.Epsilon) {
+		return errorJudgeDraft{}, errors.New(`error_judge.epsilon must be one of "1e-1" to "1e-12"`)
+	}
+	margin := ""
+	if c.MarginPercent != nil {
+		margin = *c.MarginPercent
+		value, err := strconv.ParseFloat(margin, 64)
+		if !marginPercentText.MatchString(margin) || err != nil || value > 100 {
+			return errorJudgeDraft{}, errors.New(`error_judge.margin_percent must be a decimal from 0 to 100 with up to 6 decimal places`)
+		}
+	}
+	return errorJudgeDraft{Mode: c.Mode, Epsilon: c.Epsilon, MarginPercent: margin}, nil
+}
+
 type problemConfig struct {
 	Title      string                `toml:"title"`
 	Statement  string                `toml:"statement"`
@@ -44,6 +82,7 @@ type problemConfig struct {
 	Checker    *codeConfig           `toml:"checker"`
 	Interactor *codeConfig           `toml:"interactor"`
 	RunTwice   *codeConfig           `toml:"run_twice"`
+	ErrorJudge *errorJudgeConfig     `toml:"error_judge"`
 	Scoring    *scoringConfig        `toml:"scoring"`
 	Tests      *testConfig           `toml:"tests"`
 }
@@ -249,8 +288,18 @@ func buildDraft(root *os.Root, c problemConfig) (draft, []string, error) {
 			chosen++
 		}
 	}
+	if c.ErrorJudge != nil {
+		chosen++
+	}
 	if chosen > 1 {
-		return nil, nil, errors.New("choose one of checker, interactor or run_twice")
+		return nil, nil, errors.New("choose one of checker, interactor, run_twice or error_judge")
+	}
+	if c.ErrorJudge != nil {
+		e, err := loadErrorJudge(*c.ErrorJudge)
+		if err != nil {
+			return nil, nil, err
+		}
+		d.set("errorJudge", e)
 	}
 	for role, config := range judges {
 		if config != nil {

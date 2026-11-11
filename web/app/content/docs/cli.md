@@ -114,6 +114,17 @@ samples = ["sample1"]
 testlib形式の判定コードでは、`protocol = "testlib"` も指定します。
 判定コードの書き方は[判定方法の設定](/docs/checkers)を見てください。
 
+誤差ジャッジはコードを書かず、`[error_judge]` に `mode`、`epsilon`、`margin_percent` を文字列で書きます。
+`[checker]`、`[interactor]`、`[run_twice]` と同時には指定できません。
+`margin_percent` は判定の余裕（パーセント）で、省略すると 0.1 になります。
+
+```toml
+[error_judge]
+mode = "either"
+epsilon = "1e-6"
+margin_percent = "0.5"
+```
+
 ## 問題文のサンプル {#samples}
 
 ```sh
