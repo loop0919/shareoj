@@ -317,6 +317,18 @@ def sample_preview(data, limit):
     return dict(text=text[:limit].decode('utf-8', errors='ignore'), truncated=len(text) > limit)
 
 
+def runs_preview(logs, limits):
+    """Join the head-cut logs of a case's runs, each within its own limit. A cut run still ends its line, so the
+    next run's heading starts one."""
+    previews = []
+    for index, (log, limit) in enumerate(zip(logs, limits)):
+        preview = sample_preview(bytes(log), limit)
+        if preview['truncated'] and index + 1 < len(logs):
+            preview = dict(text=sample_preview(bytes(log), limit - 1)['text'] + '\n', truncated=True)
+        previews.append(preview)
+    return dict(text=''.join(p['text'] for p in previews), truncated=any(p['truncated'] for p in previews))
+
+
 def prepare_cgroup():
     # The systemd unit delegates this subtree and caps its aggregate memory/pids.
     relative = next(line[3:] for line in Path('/proc/self/cgroup').read_text().splitlines() if line.startswith('0::'))
@@ -361,7 +373,9 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
     started = time.monotonic()
     deadline = started + JOB_DEADLINE
     generated_bytes = job.get('generationBaseBytes', 0)
-    result = dict(verdict='AC', passed=0, total=len(job['cases']), cases=[])
+    # A worker without run-twice judges such a job as a plain one, so the bridge stores an unmarked result as JE (ADR 0036).
+    marker = dict(runTwice=True) if job.get('runTwice') else {}
+    result = dict(verdict='AC', passed=0, total=len(job['cases']), cases=[], **marker)
     tle_count = 0
     checker = job.get('checker')
     conversation = job.get('interactor') or job.get('runTwice')
@@ -393,7 +407,7 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
             progress('PREPARING', 0, result['total'])
         compiled = sandbox.execute(dict(source=job['source'], runtime=job['runtime']), True)
         if not compiled['compiled']:
-            failed = dict(verdict='CE', passed=0, total=len(job['cases']), compileLog=compiled['compileLog'])
+            failed = dict(verdict='CE', passed=0, total=len(job['cases']), compileLog=compiled['compileLog'], **marker)
             if scoring is not None:
                 failed['scoring'] = scoring_result(job, [0] * len(scoring['groups']))
             return failed
@@ -433,16 +447,20 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
                 case[key] = normalize_test_data(case[key])
             if conversation is not None:
                 diagnostic(f"ケース{index + 1}:\n")
-                case_log = bytearray()
                 log_limit = min(4096, (24 * 1024) // len(job['cases']))
+                # Each run of a run-twice case keeps half, so a long run 1 never hides run 2 or why it did not run.
+                limits = [log_limit // 2, log_limit - log_limit // 2] if job.get('runTwice') else [log_limit]
+                case_logs = [bytearray()]
                 def case_diagnostic(message):
                     diagnostic(message)
+                    if len(case_logs) < len(limits) and message.startswith(interactive.SECOND_RUN):
+                        case_logs.append(bytearray())
                     data = message.encode()
-                    case_log.extend(data[:max(0, log_limit + 1 - len(case_log))])
+                    case_logs[-1].extend(data[:max(0, limits[len(case_logs) - 1] + 1 - len(case_logs[-1]))])
                 run = interactive.execute_twice if job.get('runTwice') else interactive.execute
                 item = run(job, case, checker_artifact, case_diagnostic, score_file=points)
                 if job.get('easyTest'):
-                    item['checkerLog'] = sample_preview(bytes(case_log), log_limit)
+                    item['checkerLog'] = runs_preview(case_logs, limits)
                 item['name'] = case.get('name') or f'ケース{index + 1}'
                 if item['verdict'] == 'JE':
                     if item.get('reason'):
@@ -560,7 +578,7 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
 def validate_code_run(job, runtime):
     if job.get('runtimeDigest') != runtime or job.get('runtime') not in RUNTIMES:
         raise telemetry.PlatformError('runtime_mismatch')
-    if job.get('codeRun') is not True or any(key in job for key in ('cases', 'checker', 'interactor', 'scoring', 'generate', 'validate')):
+    if job.get('codeRun') is not True or any(key in job for key in ('cases', 'checker', 'interactor', 'runTwice', 'scoring', 'generate', 'validate')):
         raise ValueError('code run mode')
     source = job.get('source')
     if not isinstance(source, str) or not 0 < len(source.encode()) <= sandbox.SOURCE_LIMIT or '\0' in source:

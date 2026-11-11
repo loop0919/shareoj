@@ -263,6 +263,50 @@ class RunTwiceHostTests(unittest.TestCase):
             self.assertNotIn('sampleDetails', case)
             self.assertIn('1回目:\n履歴\n2回目: 実行しません（1回目の判定: WA）\n', case['checkerLog']['text'])
 
+    def test_sample_log_keeps_the_second_run_after_a_long_first_run(self):
+        skipped = '2回目: 実行しません（1回目の判定: WA）\n'
+
+        def dialogue(diagnostic):
+            diagnostic('1回目:\n')
+            diagnostic('提出 → ジャッジ: ' + 'あ' * 2000 + '\n')
+            diagnostic(skipped)
+        request = twice_job(easyTest=True, cases=[dict(input='1\n', output='1\n')])
+        result, _, _, _ = self.judge(request, lambda *args, **kwargs: dialogue(args[3]) or ok() | dict(verdict='WA'))
+        log = result['cases'][0]['checkerLog']
+        self.assertTrue(log['truncated'])
+        self.assertTrue(log['text'].startswith('1回目:\n提出 → ジャッジ: あ'))
+        self.assertTrue(log['text'].endswith('\n' + skipped), log['text'][-80:])
+        self.assertLessEqual(len(log['text'].encode()), 4096)
+        # An interactor keeps one budget for the whole case, cut from the head as before.
+        from test_scoring import Judge
+        request['interactor'] = request.pop('runTwice')
+        interactor = Judge(self)
+        messages = []
+        interactor.interact = lambda job, case, artifact, diagnostic, score_file=False: dialogue(
+            lambda message: messages.append(message) or diagnostic(message)) or ok() | dict(verdict='WA')
+        log = interactor(request)['cases'][0]['checkerLog']
+        self.assertEqual(log, host.sample_preview(''.join(messages).encode()[:4097], 4096))
+        self.assertNotIn('2回目', log['text'])
+
+    def test_results_of_a_run_twice_job_carry_the_marker(self):
+        from test_scoring import Judge, finished
+        for verdict in ('AC', 'WA'):
+            with self.subTest(verdict=verdict):
+                result, _, _, _ = self.judge(twice_job(), lambda *args, **kwargs: ok() | dict(verdict=verdict))
+                self.assertEqual((result['verdict'], result.get('runTwice')), (verdict, True))
+        result = Judge(self, compiled={'submitted source': False})(twice_job())
+        self.assertEqual((result['verdict'], result.get('runTwice')), ('CE', True))
+        # Plain, checker and interactor jobs keep their result shape.
+        plain = twice_job(cases=[dict(input='1', output='')])
+        del plain['runTwice']
+        code = dict(runtime='python314', source='x')
+        for request in (plain, dict(plain, checker=code), dict(plain, interactor=code)):
+            for compiled in ({}, {'submitted source': False}):
+                with self.subTest(job=sorted(request), compiled=compiled):
+                    result = Judge(self, checker=lambda _: finished(), interactor=lambda _: ok(), compiled=compiled)(request)
+                    self.assertEqual(result['verdict'], 'CE' if compiled else 'AC')
+                    self.assertNotIn('runTwice', result)
+
     def test_local_runner_rejects_run_twice_jobs(self):
         import io
         import json

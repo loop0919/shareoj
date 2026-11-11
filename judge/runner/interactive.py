@@ -11,6 +11,8 @@ import sandbox
 from runtimes import RUNTIMES
 
 BUFFER_LIMIT = 65536
+# execute_twice alone starts a diagnostic message with this heading; the host splits a sample log there.
+SECOND_RUN = '2回目:'
 
 
 def relay(processes, observe, wall, diagnostic, protocol='legacy', points=False):
@@ -189,7 +191,7 @@ def execute_twice(job, case, artifact, diagnostic, score_file=False):
     diagnostic('1回目:\n')
     first = execute(job, case, artifact, diagnostic, score_file, code=code, run=1)
     if first['verdict'] != 'AC':
-        diagnostic(f"2回目: 実行しません（1回目の判定: {first['verdict']}）\n")
+        diagnostic(f"{SECOND_RUN} 実行しません（1回目の判定: {first['verdict']}）\n")
         first.pop('handoff', None)
         if score_file and code.get('protocol', 'legacy') == 'legacy':
             # Points come from run 2 only; the testlib result file carries just the verdict and message.
@@ -197,7 +199,7 @@ def execute_twice(job, case, artifact, diagnostic, score_file=False):
         return first
     if first['handoff'] is None:
         return dict(verdict='JE', reason='引き継ぎファイルを読めません（16 MiB以下の通常のファイルにしてください）\n')
-    diagnostic('2回目:\n')
+    diagnostic(SECOND_RUN + '\n')
     second = execute(job, case, artifact, diagnostic, score_file, code=code, run=2, handoff=first['handoff'])
     second.update(cpuTimeMs=max(first['cpuTimeMs'], second['cpuTimeMs']),
                   wallTimeMs=first['wallTimeMs'] + second['wallTimeMs'],

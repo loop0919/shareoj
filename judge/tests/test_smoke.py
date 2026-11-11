@@ -107,8 +107,18 @@ class RunTwiceSmokeTests(unittest.TestCase):
         self.assertIn('sys.argv[5]', legacy['runTwice']['source'])
         self.assertNotEqual(first_bad['source'], legacy['source'])
         self.assertNotEqual(second_bad['source'], legacy['source'])
-        # A file the submission wrote in run 1 must not reach run 2.
-        self.assertIn("open('carry', 'w')", carry['source'])
+        # Run 2 must not open the handoff for writing.
+        self.assertIn("open(handoff, 'a')", legacy['runTwice']['source'])
+        # A file the submission wrote in run 1 must not reach run 2 from any writable place, and the submission's box
+        # must not hold the judge's files. The judge sends the run number and puts any other answer on stderr.
+        for place in ('os.getcwd()', "'/tmp'", "'/var/tmp'", "'/dev/shm'", "'/dev/mqueue'", "'/box/handoff'", "'/box/test-input'"):
+            self.assertIn(place, carry['source'])
+        self.assertIn('os.remove(path)', carry['source'])
+        self.assertIn('print(sys.argv[5]', carry['runTwice']['source'])
+        self.assertIn("answer != 'clean'", carry['runTwice']['source'])
+        self.assertIn('file=sys.stderr', carry['runTwice']['source'])
+        for source in (legacy['source'], legacy['runTwice']['source'], carry['source'], carry['runTwice']['source']):
+            compile(source, 'smoke', 'exec')
         # Aggregate legacy: run 1 writes a decoy score, so only run 2 may set the case score.
         self.assertEqual(legacy_score['scoring']['mode'], 'aggregate')
         self.assertIn("'99'", legacy_score['runTwice']['source'])

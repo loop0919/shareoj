@@ -161,6 +161,7 @@ with open('working-file','wb') as f: f.write(b'x'*(16*1024*1024))
 # Run-twice judge (legacy): argv is test-input expected-output submission-source score run handoff.
 # Run 1 asks N, stores the submission's reply in the handoff; run 2 sends the handoff back and wants N.
 # The decoy score 99 in run 1 shows that only run 2 sets the case score (the real score is 6).
+# Run 2 must not be able to open the handoff for writing.
 TWICE_JUDGE = '''import sys
 def reply():
     try:
@@ -178,6 +179,13 @@ if run == '1':
         f.write(str(x))
     sys.exit(0 if x == n + 1000 else 1)
 h = int(open(handoff).read())
+try:
+    open(handoff, 'a').close()
+except OSError:
+    pass
+else:
+    print('run 2 could write the handoff', file=sys.stderr, flush=True)
+    sys.exit(1)
 print(h, flush=True)
 sys.exit(0 if reply() == n else 1)
 '''
@@ -187,20 +195,39 @@ TWICE_SUBMISSION = '''x = int(input())
 print(x + 1000 if x < 1000 else x - 1000, flush=True)
 '''
 
-# Records whether a file from another run is visible: 1 if not, 0 if so. The judge accepts only 1, in both runs.
+# The judge sends the run number. In run 1 the submission leaves a marker wherever it can write; a place it cannot
+# write is no channel. In run 2 it answers "clean", or the places whose marker survived (deleted, so a later smoke
+# starts clean) and the judge's files it can see in its own box.
 TWICE_CARRY_SUBMISSION = '''import os
-input()
-seen = os.path.exists('carry')
-open('carry', 'w').close()
-print(0 if seen else 1, flush=True)
+marker = 'shareoj-run-twice-carry'
+places = [os.getcwd(), '/tmp', '/var/tmp', '/dev/shm', '/dev/mqueue']
+if input() == '1':
+    for place in places:
+        try:
+            open(os.path.join(place, marker), 'w').close()
+        except OSError:
+            pass
+    print('clean', flush=True)
+else:
+    leaks = []
+    for place in places:
+        path = os.path.join(place, marker)
+        if os.path.lexists(path):
+            leaks.append(place)
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+    leaks += [path for path in ('/box/handoff', '/box/test-input') if os.path.lexists(path)]
+    print(' '.join(leaks) or 'clean', flush=True)
 '''
+# Any answer but "clean" goes to stderr, so the leaking places reach checkerLog and the smoke's failure message.
 TWICE_CARRY_JUDGE = '''import sys
-print(0, flush=True)
-try:
-    answer = int(sys.stdin.readline())
-except ValueError:
+print(sys.argv[5], flush=True)
+answer = sys.stdin.readline().strip()
+if answer != 'clean':
+    print('carried over:', answer or '(no answer)', file=sys.stderr, flush=True)
     sys.exit(1)
-sys.exit(0 if answer == 1 else 1)
 '''
 
 # testlib: the test input is "0 N" and run 1 writes "1 <reply>" to tout, which is inf of run 2.
@@ -249,7 +276,8 @@ def run_twice(runtime, passed, fixtures, judge):
     # A bad reply in run 2 alone is WA, after run 2 started.
     result = check('run 2 wrong', TWICE_SUBMISSION.replace('x - 1000', 'x - 999'), TWICE_JUDGE, 'WA')
     assert skipped not in result.get('checkerLog', ''), result
-    # The second run gets a fresh box: the file written by run 1 is gone.
+    # Nothing the submission writes in run 1 reaches run 2, and its box never holds the judge's files.
+    # A failure names the places in the result's checkerLog, which the assertion message includes.
     check('fresh box', TWICE_CARRY_SUBMISSION, TWICE_CARRY_JUDGE, 'AC')
     if 'cpp23-gcc-isolate' not in passed:
         return

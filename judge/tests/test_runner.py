@@ -728,7 +728,8 @@ class RunnerTests(unittest.TestCase):
     def test_code_run_rejects_invalid_jobs(self):
         b64 = lambda data: base64.b64encode(data).decode()
         invalid = [dict(timeLimitMs=1000), dict(memoryLimitMb=256), dict(stdin='***'), dict(stdin=b64(b'x' * 1048577)),
-                   dict(stdin=b64(b'a\0b')), dict(cases=[]), dict(checker=dict(runtime='cpp23-gcc', source='x')), dict(generate=True)]
+                   dict(stdin=b64(b'a\0b')), dict(cases=[]), dict(checker=dict(runtime='cpp23-gcc', source='x')), dict(generate=True),
+                   dict(runTwice=dict(runtime='python314', source='x'))]
         for changes in invalid:
             with self.subTest(changes=list(changes)), patch.object(sandbox, 'execute') as execute:
                 with self.assertRaises(ValueError):
