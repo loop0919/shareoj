@@ -167,10 +167,14 @@ func TestUnsendableSubmissionBecomesJEAndDispatchContinues(t *testing.T) {
 func TestConflictingJudgeModesBecomeJE(t *testing.T) {
 	code := &problems.Generator{Runtime: "python314", Source: "print(1)"}
 	cases := []submissions.Case{{Input: "1", Output: "1"}}
+	errorJudge := &problems.ErrorJudge{Mode: "absolute", Epsilon: "1e-6"}
 	for name, job := range map[string]submissions.Job{
-		"checker and run twice":    {Checker: code, RunTwice: code},
-		"interactor and run twice": {Interactor: code, RunTwice: code},
-		"checker and interactor":   {Checker: code, Interactor: code},
+		"checker and error judge":    {Checker: code, ErrorJudge: errorJudge},
+		"interactor and error judge": {Interactor: code, ErrorJudge: errorJudge},
+		"run twice and error judge":  {RunTwice: code, ErrorJudge: errorJudge},
+		"checker and run twice":      {Checker: code, RunTwice: code},
+		"interactor and run twice":   {Interactor: code, RunTwice: code},
+		"checker and interactor":     {Checker: code, Interactor: code},
 	} {
 		t.Run(name, func(t *testing.T) {
 			job.Image, job.TimeLimitMS, job.MemoryLimitMB, job.Cases = testDigest, 1000, 256, cases
@@ -184,6 +188,35 @@ func TestConflictingJudgeModesBecomeJE(t *testing.T) {
 			}
 			if got := f.failures(); fmt.Sprint(got) != fmt.Sprint([]string{"platform/conflicting_judge_modes/" + f.ids[0]}) {
 				t.Fatalf("failure logs: %v", got)
+			}
+		})
+	}
+}
+
+func TestErrorJudgeSettingsReachTheWorker(t *testing.T) {
+	margin := "5"
+	for name, errorJudge := range map[string]*problems.ErrorJudge{
+		"with margin":    {Mode: "either", Epsilon: "1e-9", MarginPercent: &margin},
+		"without margin": {Mode: "absolute", Epsilon: "1e-6"},
+		"plain job":      nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			raw, _ := json.Marshal(submissions.Job{Image: testDigest, TimeLimitMS: 1000, MemoryLimitMB: 256, Cases: []submissions.Case{{Input: "1", Output: "1"}}, ErrorJudge: errorJudge})
+			f := newDispatchFixture(t, "", raw)
+			if err := f.b.dispatch(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if len(f.sent) != 1 || len(f.puts) != 1 {
+				t.Fatalf("not sent: %v", f.sent)
+			}
+			var request map[string]json.RawMessage
+			if err := json.Unmarshal(f.puts[0], &request); err != nil {
+				t.Fatal(err)
+			}
+			want, _ := json.Marshal(errorJudge)
+			got, present := request["errorJudge"]
+			if errorJudge == nil && present || errorJudge != nil && string(got) != string(want) {
+				t.Fatalf("errorJudge in the request: %s (want %s)", got, want)
 			}
 		})
 	}

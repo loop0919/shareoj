@@ -14,8 +14,8 @@ func (s *Store) Finish(ctx context.Context, id string, result Result) error {
 }
 
 // FinishAttempt registers generated files and completes only the current attempt, atomically. It stores nothing and
-// returns ErrUnscored when a partial-scoring job comes back without scores, or ErrUnmarkedRunTwice when a run-twice
-// job comes back without the worker's mark, so that the caller records a JE instead.
+// returns ErrUnscored when a partial-scoring job comes back without scores, or ErrUnmarkedRunTwice (ErrUnmarkedErrorJudge) when a
+// run-twice (error-judge) job comes back without the worker's mark, so that the caller records a JE instead.
 func (s *Store) FinishAttempt(ctx context.Context, id, attempt string, result Result) error {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
@@ -38,6 +38,9 @@ func (s *Store) FinishAttempt(ctx context.Context, id, attempt string, result Re
 		return err
 	}
 	if err = runTwiceMark(job, &result); err != nil {
+		return err
+	}
+	if err = errorJudgeMark(job, &result); err != nil {
 		return err
 	}
 	result.Interactive = job.Interactor != nil || job.RunTwice != nil
@@ -121,5 +124,18 @@ func runTwiceMark(job Job, r *Result) error {
 		return ErrUnmarkedRunTwice
 	}
 	r.RunTwice = false
+	return nil
+}
+
+// errorJudgeMark does the same for the error-judge mark. A worker older than the error judge compares the output
+// exactly, which would fail a correct answer with rounding noise; only a judge error may come without the mark.
+func errorJudgeMark(job Job, r *Result) error {
+	if job.ErrorJudge == nil && r.ErrorJudge {
+		return testfiles.ErrInvalid
+	}
+	if job.ErrorJudge != nil && !r.ErrorJudge && r.Verdict != "JE" {
+		return ErrUnmarkedErrorJudge
+	}
+	r.ErrorJudge = false
 	return nil
 }

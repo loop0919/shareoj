@@ -236,6 +236,10 @@ func (b bridge) results(ctx context.Context, event events.SQSEvent) events.SQSEv
 				// A judge older than ADR 0036 judged a run-twice job as a plain problem, so the submission becomes JE
 				// rather than accepted by a single run.
 				reason = "unmarked_run_twice_result"
+			case errors.Is(err, submissions.ErrUnmarkedErrorJudge):
+				// A judge older than the error judge compared an error-judge job exactly, so the submission becomes JE
+				// rather than failing a correct answer with rounding noise.
+				reason = "unmarked_error_judge_result"
 			}
 			if reason != "" {
 				observe("failure", "platform", reason, e.ID, e.Attempt)

@@ -69,7 +69,7 @@ func (s *Store) Rejudge(ctx context.Context, in RejudgeInput) (int64, error) {
   dispatched_at=NULL,started_at=NULL,finished_at=NULL,rejudged_at=clock_timestamp(),
   problem_version=t.version,problem_title=t.draft->>'title',
   job=jsonb_build_object('privateDraft',COALESCE(s.job->'privateDraft','false'::jsonb),'image',$4::text,'easyTest',false,
-    'cases',t.draft->'testCases','checker',t.draft->'checker','interactor',t.draft->'interactor','runTwice',t.draft->'runTwice',
+    'cases',t.draft->'testCases','checker',t.draft->'checker','interactor',t.draft->'interactor','runTwice',t.draft->'runTwice','errorJudge',t.draft->'errorJudge',
     'timeLimitMs',(t.draft->>'timeLimitMs')::int,'memoryLimitMb',(t.draft->>'memoryLimitMb')::int)
     || CASE WHEN COALESCE(t.draft->'scoring','null'::jsonb) <> 'null'::jsonb
       THEN jsonb_build_object('scoring',t.draft->'scoring') ELSE '{}'::jsonb END

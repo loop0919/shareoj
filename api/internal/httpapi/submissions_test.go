@@ -916,6 +916,141 @@ func TestSubmissionsPostgres(t *testing.T) {
 			}
 		})
 	})
+	t.Run("error judge settings are pinned and the job stays a plain comparison", func(t *testing.T) {
+		const errorID = "88888888-8888-4888-8888-88888888888a"
+		margin := "5"
+		edraft := problems.Draft{Title: "Error judge", Markdown: "Real numbers", TimeLimitMS: "1000", MemoryLimitMB: "512", ErrorJudge: &problems.ErrorJudge{Mode: "relative", Epsilon: "1e-6", MarginPercent: &margin}, TestCases: []problems.TestCase{{Input: "1", Output: "0.5"}}}
+		ep, err := store.Save(ctx, "alice", errorID, 0, edraft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ebody := fmt.Sprintf(`{"problemId":%q,"runtime":"cpp23-gcc","source":"int main(){}"}`, errorID)
+		var esub submissions.Submission
+		if err = json.Unmarshal([]byte(request("POST", "/my/submissions", "alice", ebody, 202)), &esub); err != nil {
+			t.Fatal(err)
+		}
+		edraft.ErrorJudge.Epsilon = "1e-2"
+		if ep, err = store.Save(ctx, "alice", errorID, ep.Version, edraft); err != nil {
+			t.Fatal(err)
+		}
+		var raw []byte
+		if err = store.Pool().QueryRow(ctx, `SELECT job FROM submissions WHERE id=$1`, esub.ID).Scan(&raw); err != nil {
+			t.Fatal(err)
+		}
+		var pinned submissions.Job
+		if err = json.Unmarshal(raw, &pinned); err != nil || pinned.ErrorJudge == nil || pinned.ErrorJudge.Mode != "relative" || pinned.ErrorJudge.Epsilon != "1e-6" ||
+			pinned.ErrorJudge.MarginPercent == nil || *pinned.ErrorJudge.MarginPercent != "5" || len(pinned.Cases) != 1 {
+			t.Fatalf("error judge snapshot: %s %v", raw, err)
+		}
+		if _, err = store.Publish(ctx, "alice", errorID, ep.Version, true); err != nil {
+			t.Fatal(err)
+		}
+		// The submission rate limit counts the owner's recent submissions, which these checks would exceed.
+		relax := func() {
+			if _, err := store.Pool().Exec(ctx, `UPDATE submissions SET created_at=created_at-interval '1 hour' WHERE owner_id='alice' AND created_at>clock_timestamp()-interval '30 minutes'`); err != nil {
+				t.Fatal(err)
+			}
+		}
+		create := func(runtime string) error {
+			relax()
+			_, err := queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: newSubmissionID(), ProblemID: errorID, Source: "source", Image: image, Runtime: runtime, CheckerRuntimes: []string{"cpp23-gcc"}})
+			return err
+		}
+		for _, runtime := range []string{"cpp17-local", "cpp23-gcc-local", "python314-local"} {
+			if err = create(runtime); !errors.Is(err, submissions.ErrNotReady) {
+				t.Fatal("local worker accepted error judge job", runtime, err)
+			}
+		}
+		if err = create("cpp17-isolate"); err != nil {
+			t.Fatal("valid error judge draft refused", err)
+		}
+		clear := `UPDATE problem_drafts SET published_draft=published_draft-'checker'-'interactor'-'runTwice' WHERE id=$1`
+		// A draft with two judge modes is never accepted, from either side.
+		for name, patch := range map[string]string{
+			"error judge with checker":    `{"checker":{"runtime":"cpp23-gcc","source":"x"}}`,
+			"error judge with interactor": `{"interactor":{"runtime":"cpp23-gcc","source":"x"}}`,
+			"error judge with run twice":  `{"runTwice":{"runtime":"cpp23-gcc","source":"x"}}`,
+		} {
+			if _, err = store.Pool().Exec(ctx, `UPDATE problem_drafts SET published_draft=published_draft||$2::jsonb WHERE id=$1`, errorID, patch); err != nil {
+				t.Fatal(err)
+			}
+			if err = create("cpp17-isolate"); !errors.Is(err, submissions.ErrNotReady) {
+				t.Fatalf("%s accepted: %v", name, err)
+			}
+			if _, err = store.Pool().Exec(ctx, clear, errorID); err != nil {
+				t.Fatal(err)
+			}
+		}
+		t.Run("rejudge keeps the settings", func(t *testing.T) {
+			if _, err := store.Pool().Exec(ctx, `UPDATE problem_drafts SET published_draft=jsonb_set(published_draft,'{errorJudge,epsilon}','"1e-9"') WHERE id=$1`, errorID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.Pool().Exec(ctx, `UPDATE submissions SET status='DONE',result='{"verdict":"AC","passed":1,"total":1}' WHERE id=$1`, esub.ID); err != nil {
+				t.Fatal(err)
+			}
+			n, err := queue.Rejudge(ctx, submissions.RejudgeInput{Actor: "alice", ProblemID: errorID, SubmissionIDs: []string{esub.ID}, Image: image, Runtimes: submissions.IsolateRuntimeIDs(), CheckerRuntimes: []string{"cpp23-gcc"}})
+			if err != nil || n != 1 {
+				t.Fatal("rejudge", n, err)
+			}
+			var epsilon string
+			if err = store.Pool().QueryRow(ctx, `SELECT COALESCE(job->'errorJudge'->>'epsilon','') FROM submissions WHERE id=$1`, esub.ID).Scan(&epsilon); err != nil || epsilon != "1e-9" {
+				t.Fatalf("rejudged job lost its error judge settings: %q %v", epsilon, err)
+			}
+		})
+		t.Run("finish needs the worker's mark and keeps sample details", func(t *testing.T) {
+			start := func(problemID string, easy bool) (string, string) {
+				relax()
+				id := newSubmissionID()
+				if _, err := queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: id, ProblemID: problemID, Source: "source", Image: image, Runtime: "cpp17-isolate", CheckerRuntimes: []string{"cpp23-gcc"}}); err != nil {
+					t.Fatal(err)
+				}
+				var attempt string
+				if err := store.Pool().QueryRow(ctx, `UPDATE submissions SET job=jsonb_set(job,'{easyTest}',to_jsonb($2::boolean)) WHERE id=$1 RETURNING judge_attempt::text`, id, easy).Scan(&attempt); err != nil {
+					t.Fatal(err)
+				}
+				return id, attempt
+			}
+			caseName := ""
+			id, attempt := start(errorID, true)
+			if err := queue.FinishAttempt(ctx, id, attempt, submissions.Result{Verdict: "AC", Passed: 1, Total: 1, ErrorJudge: true, Cases: []submissions.CaseResult{{Name: caseName, Verdict: "AC", SampleDetails: &submissions.SampleDetails{}}}}); err != nil {
+				t.Fatal("sample details rejected for error judge", err)
+			}
+			var kept string
+			if err := store.Pool().QueryRow(ctx, `SELECT (result->'cases'->0->'sampleDetails' IS NOT NULL)::text||'/'||COALESCE(result->>'interactive','')||'/'||COALESCE(result->>'errorJudge','') FROM submissions WHERE id=$1`, id).Scan(&kept); err != nil || kept != "true//" {
+				t.Fatal("details not stored as a plain comparison, or the worker's mark stored", kept, err)
+			}
+			id, attempt = start(errorID, true)
+			if err := queue.FinishAttempt(ctx, id, attempt, submissions.Result{Verdict: "AC", Passed: 1, Total: 1, ErrorJudge: true, Cases: []submissions.CaseResult{{Name: caseName, Verdict: "AC", CheckerLog: &submissions.TextPreview{Text: "log"}}}}); !errors.Is(err, testfiles.ErrInvalid) {
+				t.Fatal("checker log accepted for error judge", err)
+			}
+			// A worker without error judge compares exactly and does not mark its result.
+			for _, verdict := range []string{"AC", "WA", "CE"} {
+				r := submissions.Result{Verdict: verdict, Total: 1}
+				if verdict != "CE" {
+					one, memory := 1.0, int64(1)
+					r.Cases = []submissions.CaseResult{{Name: caseName, Verdict: verdict, CPUTimeMS: &one, WallTimeMS: &one, MemoryBytes: &memory}}
+					if verdict == "AC" {
+						r.Passed = 1
+					}
+				}
+				if err := queue.FinishAttempt(ctx, id, attempt, r); !errors.Is(err, submissions.ErrUnmarkedErrorJudge) {
+					t.Fatal("unmarked result for an error judge job", verdict, err)
+				}
+			}
+			if err := queue.FinishAttempt(ctx, id, attempt, submissions.Result{Verdict: "JE"}); err != nil {
+				t.Fatal("unmarked judge error rejected", err)
+			}
+			// The mark on a plain job's result is invalid.
+			const plainID = "88888888-8888-4888-8888-88888888888b"
+			if _, err := store.Save(ctx, "alice", plainID, 0, problems.Draft{Title: "Plain", Markdown: "Exact", TimeLimitMS: "1000", MemoryLimitMB: "512", TestCases: []problems.TestCase{{Input: "1", Output: "1"}}}); err != nil {
+				t.Fatal(err)
+			}
+			id, attempt = start(plainID, false)
+			if err := queue.FinishAttempt(ctx, id, attempt, submissions.Result{Verdict: "AC", Passed: 1, Total: 1, ErrorJudge: true}); !errors.Is(err, testfiles.ErrInvalid) {
+				t.Fatal("marked result for a plain job", err)
+			}
+		})
+	})
 	t.Run("generation rejects a draft edited after job construction", func(t *testing.T) {
 		const owner = "generation-version"
 		if _, err := store.Pool().Exec(ctx, `INSERT INTO user_profiles(owner_id,handle) VALUES($1,'generation_version')`, owner); err != nil {

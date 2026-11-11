@@ -207,6 +207,9 @@ func (b bridge) sendSubmission(ctx context.Context, tx pgx.Tx, id, attempt, sour
 			judgeModes++
 		}
 	}
+	if job.ErrorJudge != nil {
+		judgeModes++
+	}
 	if judgeModes > 1 {
 		stage = "finish_je"
 		return finishAsJE(ctx, tx, "conflicting_judge_modes", id, attempt)
@@ -218,6 +221,9 @@ func (b bridge) sendSubmission(ctx context.Context, tx pgx.Tx, id, attempt, sour
 	}
 	if job.RunTwice != nil {
 		request["runTwice"] = job.RunTwice
+	}
+	if job.ErrorJudge != nil {
+		request["errorJudge"] = job.ErrorJudge
 	}
 	if job.AcceptPoints {
 		request["acceptPoints"] = true

@@ -25,6 +25,10 @@ var ErrUnscored = errors.New("partial-scoring result without scores")
 // 0036 sends after judging the job as a plain problem.
 var ErrUnmarkedRunTwice = errors.New("run-twice result without the worker's mark")
 
+// ErrUnmarkedErrorJudge reports a result without the error-judge mark for an error-judge job, which a worker older
+// than the error judge sends after comparing the output exactly.
+var ErrUnmarkedErrorJudge = errors.New("error-judge result without the worker's mark")
+
 type Case = problems.TestCase
 
 const GenerationOutputLimit = 512 << 20
@@ -34,6 +38,7 @@ type Job struct {
 	EasyTest            bool                                                      `json:"easyTest,omitempty"`
 	Interactor          *problems.Generator                                       `json:"interactor,omitempty"`
 	RunTwice            *problems.Generator                                       `json:"runTwice,omitempty"`
+	ErrorJudge          *problems.ErrorJudge                                      `json:"errorJudge,omitempty"`
 	Checker             *problems.Generator                                       `json:"checker,omitempty"`
 	GenerationBaseBytes int64                                                     `json:"generationBaseBytes,omitempty"`
 	GenerationPrefix    string                                                    `json:"generationPrefix,omitempty"`
@@ -95,6 +100,9 @@ type Result struct {
 	// RunTwice is the worker's mark on every non-JE result of a run-twice job (ADR 0036). FinishAttempt checks it
 	// against the job and never stores it.
 	RunTwice bool `json:"runTwice,omitempty" hidden:"true"`
+	// ErrorJudge is the worker's mark on every non-JE result of an error-judge job. FinishAttempt checks it against the
+	// job and never stores it.
+	ErrorJudge bool `json:"errorJudge,omitempty" hidden:"true"`
 }
 
 // MaxCaseScore bounds a case score, so that raw scores such as query counts reach the aggregator as they are.
@@ -197,7 +205,8 @@ type RunInput struct {
 func judgeReady(draft, runtime, checkerRuntimes, sampleCheck string) string {
 	return `(` + draft + `->>'memoryLimitMb')::int BETWEEN 64 AND 512
   AND (COALESCE(` + draft + `->'checker','null'::jsonb) = 'null'::jsonb OR
-    (` + draft + `->'checker'->>'runtime'=ANY(` + checkerRuntimes + `) AND
+    (COALESCE(` + draft + `->'errorJudge','null'::jsonb) = 'null'::jsonb AND
+     ` + draft + `->'checker'->>'runtime'=ANY(` + checkerRuntimes + `) AND
      length(btrim(` + draft + `->'checker'->>'source', E' \t\r\n'))>0 AND
      (` + runtime + ` <> 'cpp17-local' OR ` + draft + `->'checker'->>'runtime'='cpp17')))
   AND (` + runtime + ` NOT IN ('cpp23-gcc-local','python314-local') OR
@@ -206,13 +215,20 @@ func judgeReady(draft, runtime, checkerRuntimes, sampleCheck string) string {
   AND (COALESCE(` + draft + `->'interactor','null'::jsonb) = 'null'::jsonb OR
     (` + runtime + ` NOT IN ('cpp17-local','cpp23-gcc-local','python314-local') AND COALESCE(` + draft + `->'checker','null'::jsonb) = 'null'::jsonb AND
      COALESCE(` + draft + `->'runTwice','null'::jsonb) = 'null'::jsonb AND
+     COALESCE(` + draft + `->'errorJudge','null'::jsonb) = 'null'::jsonb AND
      ` + draft + `->'interactor'->>'runtime'=ANY(` + checkerRuntimes + `) AND
      length(btrim(` + draft + `->'interactor'->>'source', E' \t\r\n'))>0))
   AND (COALESCE(` + draft + `->'runTwice','null'::jsonb) = 'null'::jsonb OR
     (` + runtime + ` NOT IN ('cpp17-local','cpp23-gcc-local','python314-local') AND COALESCE(` + draft + `->'checker','null'::jsonb) = 'null'::jsonb AND
      COALESCE(` + draft + `->'interactor','null'::jsonb) = 'null'::jsonb AND
+     COALESCE(` + draft + `->'errorJudge','null'::jsonb) = 'null'::jsonb AND
      ` + draft + `->'runTwice'->>'runtime'=ANY(` + checkerRuntimes + `) AND
      length(btrim(` + draft + `->'runTwice'->>'source', E' \t\r\n'))>0))
+  AND (COALESCE(` + draft + `->'errorJudge','null'::jsonb) = 'null'::jsonb OR
+    (` + runtime + ` NOT IN ('cpp17-local','cpp23-gcc-local','python314-local') AND
+     COALESCE(` + draft + `->'checker','null'::jsonb) = 'null'::jsonb AND
+     COALESCE(` + draft + `->'interactor','null'::jsonb) = 'null'::jsonb AND
+     COALESCE(` + draft + `->'runTwice','null'::jsonb) = 'null'::jsonb))
   AND (` + sampleCheck + ` OR COALESCE(` + draft + `->'scoring','null'::jsonb) = 'null'::jsonb OR
     (CASE WHEN jsonb_typeof(` + draft + `->'scoring'->'groups')='array' THEN jsonb_array_length(` + draft + `->'scoring'->'groups') ELSE 0 END > 0 AND
      (` + draft + `->'scoring'->>'mode' <> 'aggregate' OR
@@ -268,7 +284,7 @@ func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) 
  INSERT INTO submissions
   (id,owner_id,problem_id,problem_version,problem_title,runtime,source,contest_id,created_at,job)
   SELECT $1,$2,id,selected_version,selected_draft->>'title',$6,$4,NULLIF($9,'')::uuid,moment.now,
-  jsonb_build_object('privateDraft',($9='' AND NOT EXISTS(SELECT 1 FROM problem_drafts p WHERE p.id=$3 AND p.published_draft IS NOT NULL)),'image',$5::text,'easyTest',$8::boolean,'cases',selected_cases,'checker',selected_draft->'checker','interactor',selected_draft->'interactor','runTwice',selected_draft->'runTwice',
+  jsonb_build_object('privateDraft',($9='' AND NOT EXISTS(SELECT 1 FROM problem_drafts p WHERE p.id=$3 AND p.published_draft IS NOT NULL)),'image',$5::text,'easyTest',$8::boolean,'cases',selected_cases,'checker',selected_draft->'checker','interactor',selected_draft->'interactor','runTwice',selected_draft->'runTwice','errorJudge',selected_draft->'errorJudge',
   'timeLimitMs',(selected_draft->>'timeLimitMs')::int,
   'memoryLimitMb',(selected_draft->>'memoryLimitMb')::int)
   || CASE WHEN COALESCE(selected_draft->'scoring','null'::jsonb) = 'null'::jsonb THEN '{}'::jsonb
