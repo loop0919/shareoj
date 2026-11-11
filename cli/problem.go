@@ -172,15 +172,23 @@ func readProblem(directory string) (draft, []string, error) {
 		return nil, nil, err
 	}
 	defer root.Close()
-	data, err := readText(root, "problem.toml", 65536)
+	c, err := readConfig(root)
 	if err != nil {
 		return nil, nil, err
 	}
-	c := problemConfig{TimeMS: 2000, MemoryMB: 512}
-	if err := toml.NewDecoder(strings.NewReader(data)).DisallowUnknownFields().Decode(&c); err != nil {
-		return nil, nil, fmt.Errorf("problem.toml: %w", err)
-	}
 	return buildDraft(root, c)
+}
+
+func readConfig(root *os.Root) (problemConfig, error) {
+	c := problemConfig{TimeMS: 2000, MemoryMB: 512}
+	data, err := readText(root, "problem.toml", 65536)
+	if err != nil {
+		return c, err
+	}
+	if err := toml.NewDecoder(strings.NewReader(data)).DisallowUnknownFields().Decode(&c); err != nil {
+		return c, fmt.Errorf("problem.toml: %w", err)
+	}
+	return c, nil
 }
 
 func buildDraft(root *os.Root, c problemConfig) (draft, []string, error) {
@@ -261,6 +269,13 @@ func buildDraft(root *os.Root, c problemConfig) (draft, []string, error) {
 		}
 		d.set("testCases", cases)
 		notes = append(notes, caseNotes...)
+		// Only a statement that already uses the markers has asked to be kept in step.
+		if text, err := readText(root, c.Statement, 400000); err == nil && sampleStart.MatchString(text) {
+			samples, _ := markedSamples(cases)
+			if synced, _, _ := syncSamples(text, samples); synced != text {
+				notes = append(notes, c.Statement+": the marked samples differ from the sample test cases; run shareoj samples <directory>")
+			}
+		}
 	}
 	if c.Scoring != nil && c.Scoring.Mode == "aggregate" && c.Scoring.Aggregator == nil {
 		notes = append(notes, `mode = "aggregate" without [scoring.aggregator]: push keeps the remote aggregator, and publishing needs one`)

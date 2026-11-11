@@ -410,6 +410,36 @@ test('sample checkbox controls the blue flag, survives rename and reload, and ca
   await expect(flag).toHaveCount(0)
 })
 
+// Issue #18: a named sample sits between markers, so pressing the button again rewrites it instead of adding a copy.
+test('named samples are rewritten in place between their markers', async ({ page }) => {
+  await page.goto('/problems/new')
+  await page.locator('#problem-source').fill('## 問題文\n')
+  await page.getByRole('button', { name: 'テストケース', exact: true }).click()
+  const append = page.getByRole('button', { name: 'サンプルを問題文に追加', exact: true })
+  await page.getByRole('button', { name: 'テストケースを追加' }).click()
+  await page.getByLabel('テストケース名 1', { exact: true }).fill('sample1')
+  await page.getByRole('checkbox', { name: 'サンプルケースにする' }).check()
+  await page.getByLabel('入力', { exact: true }).fill('3 5')
+  await page.getByLabel('出力', { exact: true }).fill('8')
+  await append.click()
+  const toast = page.locator('.toast').getByRole('status')
+  await expect(toast).toHaveText('1件のサンプルを問題文の末尾に追加しました。')
+  const block = (input: string, output: string) => `<!-- shareoj-sample-start: sample1 -->\n\n## サンプル 1\n\n### 入力\n\`\`\`text\n${input}\n\`\`\`\n\n### 出力\n\`\`\`text\n${output}\n\`\`\`\n\n<!-- shareoj-sample-end: sample1 -->\n`
+  await page.getByRole('button', { name: '問題文', exact: true }).click()
+  await expect(page.locator('#problem-source')).toHaveText('## 問題文\n\n\n' + block('3 5', '8'), { useInnerText: true })
+  // Notes written after the end marker stay; the sample between the markers follows the test case.
+  await page.locator('#problem-source').fill('## 問題文\n\n\n' + block('3 5', '8') + '\n3 + 5 = 8 です。\n')
+  await page.getByRole('button', { name: 'テストケース', exact: true }).click()
+  await append.click()
+  await expect(toast).toHaveText('問題文のサンプルは最新です。')
+  await page.getByLabel('入力', { exact: true }).fill('10 20')
+  await page.getByLabel('出力', { exact: true }).fill('30')
+  await append.click()
+  await expect(toast).toHaveText('1件のサンプルを問題文で更新しました。')
+  await page.getByRole('button', { name: '問題文', exact: true }).click()
+  await expect(page.locator('#problem-source')).toHaveText('## 問題文\n\n\n' + block('10 20', '30') + '\n3 + 5 = 8 です。\n', { useInnerText: true })
+})
+
 test('append samples preserves the statement, excludes private cases, and saves literal data', async ({ page }) => {
   await page.goto('/problems/new')
   await expect(page.locator('#problem-source')).not.toHaveText(/^## サンプル/m, { useInnerText: true })
@@ -430,7 +460,9 @@ test('append samples preserves the statement, excludes private cases, and saves 
   await append.click()
   await expect(page.locator('.toast').getByRole('status')).toHaveText('2件のサンプルを問題文の末尾に追加しました。')
   await page.getByRole('button', { name: '問題文', exact: true }).click()
-  const expected = original + '\n\n## サンプル 2\n\n### 入力\n````text\n3 5\n```\n$literal$\n````\n\n### 出力\n```text\n8\n```\n\n## サンプル 3\n\n### 入力\n```text\n```\n\n### 出力\n```text\n```\n'
+  // New cases are named case_NNN.txt, and a named sample sits between markers (issue #18).
+  const marked = (name: string, body: string) => `<!-- shareoj-sample-start: ${name} -->\n\n${body}\n<!-- shareoj-sample-end: ${name} -->\n`
+  const expected = original + '\n\n' + marked('case_002.txt', '## サンプル 2\n\n### 入力\n````text\n3 5\n```\n$literal$\n````\n\n### 出力\n```text\n8\n```\n') + '\n' + marked('case_003.txt', '## サンプル 3\n\n### 入力\n```text\n```\n\n### 出力\n```text\n```\n')
   await expect(page.locator('#problem-source')).toHaveText(expected, { useInnerText: true })
   await expect(page.getByRole('status').filter({ hasText: /^保存済み$/ })).toBeVisible()
   await page.reload()

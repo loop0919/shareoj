@@ -453,7 +453,7 @@ func TestPositionalArguments(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(t, client.credential, "{}")
-	directory := "expected one directory for init/check/push"
+	directory := "expected one directory for init/check/samples/push"
 	for _, tc := range []struct {
 		args []string
 		want string

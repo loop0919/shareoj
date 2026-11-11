@@ -370,7 +370,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return nil
 	}
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprintln(out, "Usage: shareoj <guide|init|check|pull|push|login|logout|version|completions> [options] [arguments]\nAuthoring with an AI agent? Start with: shareoj guide\nAutomatic discovery: shareoj guide --install-skill <codex|claude|all>\nShell completion: shareoj completions <bash|zsh|fish>\nUse shareoj <command> --help for options.")
+		fmt.Fprintln(out, "Usage: shareoj <guide|init|check|samples|pull|push|login|logout|version|completions> [options] [arguments]\nAuthoring with an AI agent? Start with: shareoj guide\nAutomatic discovery: shareoj guide --install-skill <codex|claude|all>\nShell completion: shareoj completions <bash|zsh|fish>\nUse shareoj <command> --help for options.")
 		return nil
 	}
 	command := args[0]
@@ -380,7 +380,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	if command == "completions" {
 		return showCompletions(args[1:], out)
 	}
-	if command != "init" && command != "check" && command != "pull" && command != "push" && command != "login" && command != "logout" {
+	if command != "init" && command != "check" && command != "samples" && command != "pull" && command != "push" && command != "login" && command != "logout" {
 		return fmt.Errorf("unknown command: %s", command)
 	}
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
@@ -417,8 +417,8 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	if command == "pull" && flags.NArg() != 2 {
 		return errors.New("expected pull <problem-id> <directory>")
 	}
-	if (command == "init" || command == "check" || command == "push") && flags.NArg() != 1 {
-		return errors.New("expected one directory for init/check/push")
+	if (command == "init" || command == "check" || command == "samples" || command == "push") && flags.NArg() != 1 {
+		return errors.New("expected one directory for init/check/samples/push")
 	}
 	if (command == "login" || command == "logout") && flags.NArg() != 0 {
 		return fmt.Errorf("%s takes no positional arguments", command)
@@ -446,6 +446,12 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 			fmt.Fprintln(out, "warning:", note)
 		}
 		fmt.Fprintln(out, "OK: configuration and files checked; code was not compiled or executed")
+	case "samples":
+		summary, err := writeSamples(directory)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(out, summary)
 	default:
 		client, err := newClient(api)
 		if err != nil {

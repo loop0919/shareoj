@@ -7,7 +7,7 @@ _shareoj() {
 		if [[ $cur == -* ]]; then
 			COMPREPLY=($(compgen -W '--help --version' -- "$cur"))
 		else
-			COMPREPLY=($(compgen -W 'guide init check pull push login logout version completions' -- "$cur"))
+			COMPREPLY=($(compgen -W 'guide init check samples pull push login logout version completions' -- "$cur"))
 		fi
 		return
 	fi
@@ -32,7 +32,7 @@ _shareoj() {
 		return
 	fi
 	case ${COMP_WORDS[1]} in
-	init | check | pull | push)
+	init | check | samples | pull | push)
 		# Adds a slash to directories; bash 3.2 on macOS has no compopt.
 		compopt -o filenames 2>/dev/null
 		COMPREPLY=($(compgen -d -- "$cur"))

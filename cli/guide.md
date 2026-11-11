@@ -11,6 +11,7 @@ ShareOJへの保存まで依頼されている場合は、以下の手順で下�
 | `shareoj init <directory>` | 問題の雛形を新しいディレクトリに作る |
 | `shareoj pull <problem-id> <directory>` | 作者または参加済みテスターとして、全テストを含む下書きを新しいディレクトリへ取得する |
 | `shareoj check <directory>` | 設定、ファイル、文字コード、容量、入出力の対応を検査する |
+| `shareoj samples <directory>` | 問題文のサンプルを、サンプルのテストケースの内容に書き換える |
 | `shareoj push <directory>` | 下書きを作成または更新する |
 | `shareoj login --google` | ユーザーがブラウザーでGoogleログインする |
 | `shareoj login` | ユーザーが端末でメールアドレスとパスワードを入力する |
@@ -74,7 +75,10 @@ samples = ["sample1"]
 
 `statement.md` に問題文、制約、入出力形式、サンプルを記述します。
 `editorial.md` には解法、正しさの根拠、計算量を記述します。
-問題文中のサンプルは `tests/sample1.in` と `tests/sample1.out` にも用意し、内容を一致させます。
+問題文中のサンプルは `tests/sample1.in` と `tests/sample1.out` を正とし、`shareoj samples <directory>` で問題文に反映します。
+このコマンドは `statement.md` を書き換えます。サンプルごとに `<!-- shareoj-sample-start: ケース名 -->` と `<!-- shareoj-sample-end: ケース名 -->` で囲んだ節を作り、問題文にない分は末尾に追加します。
+マーカーの間は毎回作り直すため、サンプルの説明は終わりのマーカーの後に書きます。
+マーカーのある問題文がテストケースとずれていると、`check` が警告します。
 タイトルは120文字まで、問題文と解説はそれぞれ100,000文字までです。
 時間制限は100〜5,000 msの100 ms刻み、メモリ制限は64〜512 MiBです。
 難易度を指定する場合は1〜10です。

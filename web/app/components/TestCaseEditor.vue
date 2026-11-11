@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ProblemDraft } from '~~/shared/types/problem-draft'
 import { testCaseError, type TestCase } from '~/utils/problem-draft'
+import { syncSamples } from '~/utils/sample-sync'
 import { downloadTestFile } from '~/utils/test-files'
 import { importTestCaseFiles, mergeTestCases } from '~/utils/import-test-cases'
 const cases = defineModel<TestCase[]>({ required: true })
@@ -36,19 +37,13 @@ async function appendSamples() {
       }
     }
     if (!mounted || props.disabled) return
-    let number = 0
-    for (const match of markdown.value.matchAll(/^## サンプル (\d+)\s*$/gm)) number = Math.max(number, Number(match[1]))
-    const block = (value: string) => {
-      let length = 3
-      for (const match of value.matchAll(/`+/g)) length = Math.max(length, match[0].length + 1)
-      const fence = '`'.repeat(length)
-      return `${fence}text\n${value}${value && !value.endsWith('\n') ? '\n' : ''}${fence}`
-    }
-    const content = samples.map(item => `## サンプル ${++number}\n\n### 入力\n${block(item.input)}\n\n### 出力\n${block(item.output)}\n`).join('\n')
-    const next = markdown.value + (markdown.value ? '\n\n' : '') + content
-    if (next.length > 100_000) throw new Error('追加すると問題文が100,000文字を超えます。サンプルを小さくしてください。')
-    markdown.value = next
-    showToast(`${samples.length}件のサンプルを問題文の末尾に追加しました。`)
+    // Named samples sit between markers and are rewritten in place from now on; the rest are appended as before.
+    const result = syncSamples(markdown.value, samples)
+    if (result.text.length > 100_000) throw new Error('追加すると問題文が100,000文字を超えます。サンプルを小さくしてください。')
+    markdown.value = result.text
+    showToast(result.updated
+      ? `${result.updated}件のサンプルを問題文で更新しました。${result.added ? `${result.added}件を末尾に追加しました。` : ''}`
+      : result.added ? `${result.added}件のサンプルを問題文の末尾に追加しました。` : '問題文のサンプルは最新です。')
   } catch (error) {
     appendError.value = error instanceof Error && error.message.includes('100,000') ? error.message : 'サンプルの読み込みに失敗しました。もう一度お試しください。'
   } finally {

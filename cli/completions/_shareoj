@@ -10,6 +10,7 @@ _shareoj() {
 		'guide:print the authoring guide or install the authoring skill'
 		'init:create a problem directory from the template'
 		'check:check the configuration and files of a problem directory'
+		'samples:rewrite the samples of the statement from the sample test cases'
 		'pull:fetch a draft into a new directory'
 		'push:create or update a draft from a problem directory'
 		'login:sign in and save the tokens'
@@ -32,7 +33,7 @@ _shareoj() {
 		guide)
 			_arguments -S $help '--install-skill[install the authoring skill (user scope)]:agent:(codex claude all)'
 			;;
-		init | check)
+		init | check | samples)
 			_arguments -S $help ':directory:_files -/'
 			;;
 		pull)
