@@ -80,7 +80,8 @@ def points_note(job):
     return 'testlibの部分点（_points）は、「集計コードで採点する」をオンにした問題でだけ使えます。\n'
 
 
-def execute(job, case, artifact, diagnostic, score_file=False):
+def execute(job, case, artifact, diagnostic, score_file=False, *, code=None, run=None, handoff=b''):
+    code = job['interactor'] if code is None else code
     wall = 3 * (job['timeLimitMs'] / 1000 + 5) + 1
     boxes, metas, processes = [], [], []
     replies = [None, None]
@@ -89,7 +90,7 @@ def execute(job, case, artifact, diagnostic, score_file=False):
         # Prepare both boxes before starting either clock.
         commands = []
         for i, (name, binary) in enumerate([(job['runtime'], sandbox.ARTIFACT),
-                                           (job['interactor']['runtime'] + '-isolate', artifact)]):
+                                           (code['runtime'] + '-isolate', artifact)]):
             init = sandbox.invoke(['--init'], box_id=i)
             if init.returncode:
                 raise telemetry.PlatformError('isolate_init_failed')
@@ -102,8 +103,9 @@ def execute(job, case, artifact, diagnostic, score_file=False):
                                         'expected-output': case['output'].encode(),
                                         'submission-source': job['source'].encode()}
             command = sandbox.prepare_program(box, RUNTIMES[name], binary, files,
-                                              protocol=job['interactor'].get('protocol', 'legacy') if i else 'legacy', interactive=True,
-                                              result_file=score_file and i == 1)
+                                              protocol=code.get('protocol', 'legacy') if i else 'legacy', interactive=True,
+                                              result_file=score_file and i == 1,
+                                              run=run if i else None, handoff=handoff)
             memory = job['memoryLimitMb'] if i == 0 else 256
             if RUNTIMES[name]['artifact'] == 'java':
                 command = sandbox.java_heap(command, memory, interactor=i == 1)
@@ -134,7 +136,7 @@ def execute(job, case, artifact, diagnostic, score_file=False):
                 return dict(status='', exitCode=0, signal=0, oom=False, overflow=True)
             return None
 
-        protocol = job['interactor'].get('protocol', 'legacy')
+        protocol = code.get('protocol', 'legacy')
         verdict = relay(processes, observe, wall, diagnostic, protocol, points=score_file)
         # Capture natural exits before signalling the still-running peer.
         observed = [observe(i) for i in range(2)]
@@ -146,13 +148,21 @@ def execute(job, case, artifact, diagnostic, score_file=False):
         if observed[0] is None or 'cpuTimeMs' not in observed[0]:
             observed[0] = sandbox.metadata(metas[0].read_text())
         diagnostic('対話判定: ' + verdict + '\nジャッジ標準エラー:\n' + stderr[1][:65536].decode(errors='replace') + '\n')
-        if job['interactor'].get('protocol') == 'testlib' and observed[1] and observed[1]['exitCode'] == 7 and not score_file:
+        if code.get('protocol') == 'testlib' and observed[1] and observed[1]['exitCode'] == 7 and not score_file:
             diagnostic(points_note(job))
         item = dict(verdict=verdict, **{key: observed[0][key] for key in ('cpuTimeMs', 'wallTimeMs', 'memoryBytes')})
         if score_file:
             # Both programs have stopped, so the file can no longer change.
             item.update(scoreFile=sandbox.read_judge_file(boxes[1], protocol),
                         judgeExitCode=observed[1]['exitCode'] if observed[1] and 'exitCode' in observed[1] else None)
+        if run == 1 and verdict == 'AC':
+            # Both programs have stopped; run 1's output is the handoff, or None if unusable.
+            try:
+                data = sandbox.regular_read(boxes[1] / ('test-output' if protocol == 'testlib' else 'handoff'),
+                                            sandbox.HANDOFF_LIMIT)
+            except (OSError, ValueError):
+                data = None
+            item['handoff'] = data if data is not None and len(data) <= sandbox.HANDOFF_LIMIT else None
         return item
     finally:
         for process in processes:
@@ -171,3 +181,22 @@ def execute(job, case, artifact, diagnostic, score_file=False):
             meta.unlink(missing_ok=True)
         if failed_cleanup:
             raise telemetry.FatalPlatformError('isolate_cleanup_failed')
+
+
+def execute_twice(job, case, artifact, diagnostic, score_file=False):
+    """Run the submission twice against job['runTwice']; run 1 hands a file to run 2, which alone decides points."""
+    code = job['runTwice']
+    diagnostic('1回目:\n')
+    first = execute(job, case, artifact, diagnostic, score_file, code=code, run=1)
+    if first['verdict'] != 'AC':
+        diagnostic(f"2回目: 実行しません（1回目の判定: {first['verdict']}）\n")
+        first.pop('handoff', None)
+        return first
+    if first['handoff'] is None:
+        return dict(verdict='JE', reason='引き継ぎファイルを読めません（16 MiB以下の通常のファイルにしてください）\n')
+    diagnostic('2回目:\n')
+    second = execute(job, case, artifact, diagnostic, score_file, code=code, run=2, handoff=first['handoff'])
+    second.update(cpuTimeMs=max(first['cpuTimeMs'], second['cpuTimeMs']),
+                  wallTimeMs=first['wallTimeMs'] + second['wallTimeMs'],
+                  memoryBytes=max(first['memoryBytes'], second['memoryBytes']))
+    return second

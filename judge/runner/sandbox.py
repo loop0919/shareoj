@@ -20,6 +20,8 @@ ARTIFACT = Path('/run/judge/main')
 OUTPUT_LIMIT = 16 * 1024 * 1024
 # Source validation (host.validate_job, compile phase) and reading an interpreted source back share this limit.
 SOURCE_LIMIT = 128 * 1024
+# What run 1 hands to run 2 (Run-twice problems).
+HANDOFF_LIMIT = OUTPUT_LIMIT
 SCORE_FILE_LIMIT = 4096
 # testlib caps a message at 32,000 bytes before XML escaping, which can grow it sixfold.
 RESULT_FILE_LIMIT = 256 * 1024
@@ -212,7 +214,8 @@ def prepare_dependencies(box, runtime):
             path.chmod(0o777 if path.is_dir() else 0o666)
 
 
-def prepare_program(box, runtime, artifact, files=None, *, protocol='legacy', interactive=False, result_file=False):
+def prepare_program(box, runtime, artifact, files=None, *, protocol='legacy', interactive=False, result_file=False,
+                    run=None, handoff=b''):
     prepare_dependencies(box, runtime)
     program = runtime.get('program', 'main.dll' if runtime['artifact'] == 'dotnet' else 'main')
     shutil.copyfile(artifact, box / program)
@@ -224,7 +227,8 @@ def prepare_program(box, runtime, artifact, files=None, *, protocol='legacy', in
     if files is not None:
         names = ('test-input', 'expected-output') if protocol == 'testlib' else ('test-input', 'expected-output', 'submission-source')
         for name in names:
-            (box / name).write_bytes(files[name])
+            # Run 2 of a testlib Run-twice problem reads run 1's output in place of the test input.
+            (box / name).write_bytes(handoff if protocol == 'testlib' and run == 2 and name == 'test-input' else files[name])
             (box / name).chmod(0o444)
         if protocol == 'testlib':
             output = 'test-output' if interactive else 'submission-output'
@@ -240,6 +244,10 @@ def prepare_program(box, runtime, artifact, files=None, *, protocol='legacy', in
             (box / 'score').write_bytes(b'')
             (box / 'score').chmod(0o666)
             command += ['/box/test-input', '/box/expected-output', '/box/submission-source', '/box/score']
+            if run is not None:
+                (box / 'handoff').write_bytes(handoff if run == 2 else b'')
+                (box / 'handoff').chmod(0o444 if run == 2 else 0o666)
+                command += [str(run), '/box/handoff']
         if runtime['artifact'] == 'java':
             command.insert(1, '-ea')
     return command
