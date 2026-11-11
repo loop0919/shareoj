@@ -100,6 +100,7 @@ func (d Draft) PublicScoring() *ScoringSummary {
 type Draft struct {
 	Difficulty    *int        `json:"difficulty"`
 	Interactor    *Generator  `json:"interactor,omitempty"`
+	RunTwice      *Generator  `json:"runTwice,omitempty"`
 	Checker       *Generator  `json:"checker,omitempty"`
 	Generators    *Generators `json:"generators,omitempty"`
 	Scoring       *Scoring    `json:"scoring,omitempty"`

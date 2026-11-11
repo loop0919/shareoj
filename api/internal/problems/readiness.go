@@ -17,6 +17,8 @@ const (
 	IssueCheckerRuntime    Issue = "checker_runtime_unavailable"
 	IssueInteractorSource  Issue = "interactor_source_missing"
 	IssueInteractorRuntime Issue = "interactor_runtime_unavailable"
+	IssueRunTwiceSource    Issue = "run_twice_source_missing"
+	IssueRunTwiceRuntime   Issue = "run_twice_runtime_unavailable"
 	IssueTestCases         Issue = "test_cases_missing"
 	// Partial scoring (ADR 0025).
 	IssueScoringGroups     Issue = "scoring_groups_missing"
@@ -85,7 +87,7 @@ func ContentIssues(d Draft, knownRuntimes, enabledRuntimes []string) []Issue {
 	for _, judge := range []struct {
 		code             *Generator
 		source, language Issue
-	}{{d.Checker, IssueCheckerSource, IssueCheckerRuntime}, {d.Interactor, IssueInteractorSource, IssueInteractorRuntime}} {
+	}{{d.Checker, IssueCheckerSource, IssueCheckerRuntime}, {d.Interactor, IssueInteractorSource, IssueInteractorRuntime}, {d.RunTwice, IssueRunTwiceSource, IssueRunTwiceRuntime}} {
 		if judge.code == nil {
 			continue
 		}

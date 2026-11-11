@@ -23,6 +23,7 @@ type PublicProblem struct {
 	FavoriteCount          int64      `json:"favoriteCount"`
 	HasSamples             bool       `json:"hasSamples"`
 	Interactive            bool       `json:"interactive,omitempty"`
+	RunTwice               bool       `json:"runTwice,omitempty"`
 	SpecialJudge           bool       `json:"specialJudge,omitempty"`
 	// Scoring is set for a partially scored problem (ADR 0025) and left out of lists.
 	Scoring       *ScoringSummary `json:"scoring,omitempty"`
@@ -141,6 +142,7 @@ func (p *PublicProblem) SetStatement(d Draft) {
 	p.MemoryLimitMB = d.MemoryLimitMB
 	p.SpecialJudge = d.Checker != nil
 	p.Interactive = d.Interactor != nil
+	p.RunTwice = d.RunTwice != nil
 	p.HasSamples = d.HasSamples()
 	p.Scoring = d.PublicScoring()
 }
