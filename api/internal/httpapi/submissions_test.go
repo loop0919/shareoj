@@ -810,10 +810,9 @@ func TestSubmissionsPostgres(t *testing.T) {
 		if !strings.Contains(string(raw), `"private-run-twice"`) || !strings.Contains(string(raw), `"runTwice": {`) || strings.Contains(string(raw), "edited-run-twice") || !strings.Contains(string(raw), `"cases"`) {
 			t.Fatal(string(raw))
 		}
-		if rp, err = store.Publish(ctx, "alice", runTwiceID, rp.Version, true); err != nil {
+		if _, err = store.Publish(ctx, "alice", runTwiceID, rp.Version, true); err != nil {
 			t.Fatal(err)
 		}
-		_ = rp
 		for _, owner := range []string{"alice", "bob"} {
 			if err = json.Unmarshal([]byte(request("POST", "/my/submissions", owner, rbody, 202)), &rsub); err != nil {
 				t.Fatal(err)
@@ -839,7 +838,7 @@ func TestSubmissionsPostgres(t *testing.T) {
 			t.Fatal("valid run twice draft refused", err)
 		}
 		for name, patch := range map[string]string{
-			"blank source":       `{"runTwice":{"runtime":"python314","source":" \n"}}`,
+			"blank source":        `{"runTwice":{"runtime":"python314","source":" \n"}}`,
 			"unpublished runtime": `{"runTwice":{"runtime":"java24","source":"x"}}`,
 			"with checker":        `{"checker":{"runtime":"python314","source":"x"}}`,
 			"with interactor":     `{"interactor":{"runtime":"python314","source":"x"}}`,
@@ -854,6 +853,51 @@ func TestSubmissionsPostgres(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+		t.Run("rejudge keeps the run twice code", func(t *testing.T) {
+			if _, err := store.Pool().Exec(ctx, `UPDATE submissions SET status='DONE',job=jsonb_set(job,'{easyTest}','false'),result='{"verdict":"AC","passed":1,"total":1}' WHERE id=$1`, rsub.ID); err != nil {
+				t.Fatal(err)
+			}
+			n, err := queue.Rejudge(ctx, submissions.RejudgeInput{Actor: "alice", ProblemID: runTwiceID, SubmissionIDs: []string{rsub.ID}, Image: image, Runtimes: submissions.IsolateRuntimeIDs(), CheckerRuntimes: []string{"python314"}})
+			if err != nil || n != 1 {
+				t.Fatal("rejudge", n, err)
+			}
+			var source string
+			if err = store.Pool().QueryRow(ctx, `SELECT COALESCE(job->'runTwice'->>'source','') FROM submissions WHERE id=$1`, rsub.ID).Scan(&source); err != nil || source != "ok" {
+				t.Fatalf("rejudged job lost its run twice code: %q %v", source, err)
+			}
+		})
+		t.Run("finish keeps sample logs only for sample checks", func(t *testing.T) {
+			start := func(easy bool) (string, string) {
+				id := newSubmissionID()
+				if _, err := queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: id, ProblemID: runTwiceID, Source: "source", Image: image, Runtime: "cpp17-isolate", CheckerRuntimes: []string{"python314"}}); err != nil {
+					t.Fatal(err)
+				}
+				var attempt string
+				if err := store.Pool().QueryRow(ctx, `UPDATE submissions SET job=jsonb_set(job,'{easyTest}',to_jsonb($2::boolean)) WHERE id=$1 RETURNING judge_attempt::text`, id, easy).Scan(&attempt); err != nil {
+					t.Fatal(err)
+				}
+				return id, attempt
+			}
+			caseName := ""
+			log := &submissions.TextPreview{Text: "dialogue"}
+			id, attempt := start(true)
+			if err := queue.FinishAttempt(ctx, id, attempt, submissions.Result{Verdict: "AC", Passed: 1, Total: 1, Cases: []submissions.CaseResult{{Name: caseName, Verdict: "AC", CheckerLog: log}}}); err != nil {
+				t.Fatal("sample check log rejected", err)
+			}
+			var kept string
+			if err := store.Pool().QueryRow(ctx, `SELECT COALESCE(result->'cases'->0->'checkerLog'->>'text','')||'/'||COALESCE(result->>'interactive','') FROM submissions WHERE id=$1`, id).Scan(&kept); err != nil || kept != "dialogue/true" {
+				t.Fatal("log or interactive flag not stored", kept, err)
+			}
+			details := &submissions.SampleDetails{}
+			id, attempt = start(true)
+			if err := queue.FinishAttempt(ctx, id, attempt, submissions.Result{Verdict: "AC", Passed: 1, Total: 1, Cases: []submissions.CaseResult{{Name: caseName, Verdict: "AC", SampleDetails: details}}}); !errors.Is(err, testfiles.ErrInvalid) {
+				t.Fatal("sample details accepted for run twice", err)
+			}
+			id, attempt = start(false)
+			if err := queue.FinishAttempt(ctx, id, attempt, submissions.Result{Verdict: "AC", Passed: 1, Total: 1, Cases: []submissions.CaseResult{{Name: caseName, Verdict: "AC", CheckerLog: log}}}); !errors.Is(err, testfiles.ErrInvalid) {
+				t.Fatal("log accepted outside a sample check", err)
+			}
+		})
 	})
 	t.Run("generation rejects a draft edited after job construction", func(t *testing.T) {
 		const owner = "generation-version"
