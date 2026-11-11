@@ -164,6 +164,31 @@ func TestUnsendableSubmissionBecomesJEAndDispatchContinues(t *testing.T) {
 	}
 }
 
+func TestConflictingJudgeModesBecomeJE(t *testing.T) {
+	code := &problems.Generator{Runtime: "python314", Source: "print(1)"}
+	cases := []submissions.Case{{Input: "1", Output: "1"}}
+	for name, job := range map[string]submissions.Job{
+		"checker and run twice":    {Checker: code, RunTwice: code},
+		"interactor and run twice": {Interactor: code, RunTwice: code},
+		"checker and interactor":   {Checker: code, Interactor: code},
+	} {
+		t.Run(name, func(t *testing.T) {
+			job.Image, job.TimeLimitMS, job.MemoryLimitMB, job.Cases = testDigest, 1000, 256, cases
+			raw, _ := json.Marshal(job)
+			f := newDispatchFixture(t, "", raw)
+			if err := f.b.dispatch(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if got := f.state(f.ids[0]); got != "DONE/JE/true/false" || len(f.sent) != 0 {
+				t.Fatalf("conflicting judge modes: %s sent=%v", got, f.sent)
+			}
+			if got := f.failures(); fmt.Sprint(got) != fmt.Sprint([]string{"platform/conflicting_judge_modes/" + f.ids[0]}) {
+				t.Fatalf("failure logs: %v", got)
+			}
+		})
+	}
+}
+
 func TestDispatchLeavesInfrastructureFailuresForRetry(t *testing.T) {
 	// A submission cannot become DONE, so the update that makes it JE fails.
 	const refuseDone = `CREATE FUNCTION refuse_done() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'refused'; END$$;

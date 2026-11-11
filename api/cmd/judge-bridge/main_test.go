@@ -250,9 +250,12 @@ func TestScoringResultValidation(t *testing.T) {
 }
 
 func TestOutboxAndResultIdempotency(t *testing.T) {
-	for _, runtime := range []string{"cpp17-isolate", "rust2024-isolate"} {
+	for _, tc := range []struct {
+		name, runtime string
+		runTwice      bool
+	}{{"cpp17-isolate", "cpp17-isolate", false}, {"rust2024-isolate", "rust2024-isolate", false}, {"cpp17-isolate run twice", "cpp17-isolate", true}} {
 		for _, memory := range []int{64, 315, 512} {
-			t.Run(fmt.Sprintf("%s/%dMiB", runtime, memory), func(t *testing.T) { checkOutboxAndResultIdempotency(t, runtime, memory) })
+			t.Run(fmt.Sprintf("%s/%dMiB", tc.name, memory), func(t *testing.T) { checkOutboxAndResultIdempotency(t, tc.runtime, memory, tc.runTwice) })
 		}
 	}
 }
@@ -296,7 +299,7 @@ func migratedDB(t *testing.T) *pgxpool.Pool {
 	return db
 }
 
-func checkOutboxAndResultIdempotency(t *testing.T, runtime string, memory int) {
+func checkOutboxAndResultIdempotency(t *testing.T, runtime string, memory int, runTwice bool) {
 	ctx := context.Background()
 	db := migratedDB(t)
 	var err error
@@ -316,6 +319,9 @@ func checkOutboxAndResultIdempotency(t *testing.T, runtime string, memory int) {
 	job := submissions.Job{Checker: &problems.Generator{Runtime: "python314", Source: "checker-secret"}, Image: digest, TimeLimitMS: 1000, MemoryLimitMB: memory, Cases: []submissions.Case{{Input: "input-secret", Output: "", OutputFile: &problems.TestFile{ID: fileID, Size: 12, SHA256: fileDigest}}}}
 	if runtime == "rust2024-isolate" {
 		job.Interactor, job.Checker = job.Checker, nil
+	}
+	if runTwice {
+		job.RunTwice, job.Checker = job.Checker, nil
 	}
 	raw, _ := json.Marshal(job)
 	_, err = db.Exec(ctx, `INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,judge_attempt)
@@ -417,6 +423,9 @@ func checkOutboxAndResultIdempotency(t *testing.T, runtime string, memory int) {
 	if job.Interactor != nil {
 		field = "interactor"
 	}
+	if job.RunTwice != nil {
+		field = "runTwice"
+	}
 	if !bytes.Contains(jobs[0], []byte(`"`+field+`":{"runtime":"python314","source":"checker-secret"}`)) {
 		t.Fatal("checker was not preserved in dispatch")
 	}
@@ -472,6 +481,10 @@ func checkOutboxAndResultIdempotency(t *testing.T, runtime string, memory int) {
 	var verdict string
 	if err = db.QueryRow(ctx, `SELECT result->>'verdict' FROM submissions WHERE id=$1`, id).Scan(&verdict); err != nil || verdict != "CE" {
 		t.Fatal("final result overwritten", verdict, err)
+	}
+	var interactive bool
+	if err = db.QueryRow(ctx, `SELECT COALESCE((result->>'interactive')::boolean,false) FROM submissions WHERE id=$1`, id).Scan(&interactive); err != nil || interactive != (job.Interactor != nil || job.RunTwice != nil) {
+		t.Fatal("interactive flag", interactive, err)
 	}
 	checkDeployment(0, 0)
 }

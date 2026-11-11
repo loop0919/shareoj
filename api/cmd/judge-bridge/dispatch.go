@@ -201,10 +201,23 @@ func (b bridge) sendSubmission(ctx context.Context, tx pgx.Tx, id, attempt, sour
 		stage = "finish_je"
 		return finishAsJE(ctx, tx, "runtime_mismatch", id, attempt)
 	}
+	judgeModes := 0
+	for _, code := range []*problems.Generator{job.Checker, job.Interactor, job.RunTwice} {
+		if code != nil {
+			judgeModes++
+		}
+	}
+	if judgeModes > 1 {
+		stage = "finish_je"
+		return finishAsJE(ctx, tx, "conflicting_judge_modes", id, attempt)
+	}
 	request := map[string]any{"submissionId": id, "attemptId": attempt, "runtime": runtime, "runtimeDigest": job.Image, "source": source, "checker": job.Checker, "interactor": job.Interactor, "easyTest": job.EasyTest, "generate": job.Generate, "validate": job.Validate, "generationBaseBytes": job.GenerationBaseBytes, "generationPrefix": job.GenerationPrefix, "cases": job.Cases, "timeLimitMs": job.TimeLimitMS, "memoryLimitMb": job.MemoryLimitMB}
 	// Only a partial-scoring job carries the key, so other jobs reach the worker exactly as before ADR 0025.
 	if job.Scoring != nil {
 		request["scoring"] = job.Scoring
+	}
+	if job.RunTwice != nil {
+		request["runTwice"] = job.RunTwice
 	}
 	if job.AcceptPoints {
 		request["acceptPoints"] = true

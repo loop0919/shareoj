@@ -36,7 +36,7 @@ func (s *Store) FinishAttempt(ctx context.Context, id, attempt string, result Re
 	if err = json.Unmarshal(raw, &job); err != nil {
 		return err
 	}
-	result.Interactive = job.Interactor != nil
+	result.Interactive = job.Interactor != nil || job.RunTwice != nil
 	if err = scoreResult(job, &result); err != nil {
 		return err
 	}
@@ -50,10 +50,10 @@ func (s *Store) FinishAttempt(ctx context.Context, id, attempt string, result Re
 	result.Cases = append([]CaseResult(nil), result.Cases...)
 	for i := range result.Cases {
 		c := &result.Cases[i]
-		if c.SampleDetails != nil && (!job.EasyTest || job.Interactor != nil || job.Generate || job.Validate || i >= len(job.Cases) || c.Name != job.Cases[i].Name) {
+		if c.SampleDetails != nil && (!job.EasyTest || job.Interactor != nil || job.RunTwice != nil || job.Generate || job.Validate || i >= len(job.Cases) || c.Name != job.Cases[i].Name) {
 			return testfiles.ErrInvalid
 		}
-		if c.CheckerLog != nil && (!job.EasyTest || job.Interactor == nil || i >= len(job.Cases) || c.SampleDetails != nil) {
+		if c.CheckerLog != nil && (!job.EasyTest || (job.Interactor == nil && job.RunTwice == nil) || i >= len(job.Cases) || c.SampleDetails != nil) {
 			return testfiles.ErrInvalid
 		}
 		if !job.Generate {

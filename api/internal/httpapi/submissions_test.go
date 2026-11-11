@@ -787,6 +787,74 @@ func TestSubmissionsPostgres(t *testing.T) {
 			}
 		}
 	})
+	t.Run("run twice judge code is pinned and shown like an interactor", func(t *testing.T) {
+		const runTwiceID = "88888888-8888-4888-8888-888888888889"
+		rdraft := problems.Draft{Title: "Run twice", Markdown: "Two steps", TimeLimitMS: "1000", MemoryLimitMB: "512", RunTwice: &problems.Generator{Runtime: "cpp23-gcc", Protocol: "testlib", Source: "private-run-twice"}, TestCases: []problems.TestCase{{Input: "secret", Output: ""}}}
+		rp, err := store.Save(ctx, "alice", runTwiceID, 0, rdraft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rbody := fmt.Sprintf(`{"problemId":%q,"runtime":"cpp23-gcc","source":"int main(){}"}`, runTwiceID)
+		var rsub submissions.Submission
+		if err = json.Unmarshal([]byte(request("POST", "/my/submissions", "alice", rbody, 202)), &rsub); err != nil {
+			t.Fatal(err)
+		}
+		rdraft.RunTwice.Source = "edited-run-twice"
+		if rp, err = store.Save(ctx, "alice", runTwiceID, rp.Version, rdraft); err != nil {
+			t.Fatal(err)
+		}
+		var raw []byte
+		if err = store.Pool().QueryRow(ctx, `SELECT job FROM submissions WHERE id=$1`, rsub.ID).Scan(&raw); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), `"private-run-twice"`) || !strings.Contains(string(raw), `"runTwice": {`) || strings.Contains(string(raw), "edited-run-twice") || !strings.Contains(string(raw), `"cases"`) {
+			t.Fatal(string(raw))
+		}
+		if rp, err = store.Publish(ctx, "alice", runTwiceID, rp.Version, true); err != nil {
+			t.Fatal(err)
+		}
+		_ = rp
+		for _, owner := range []string{"alice", "bob"} {
+			if err = json.Unmarshal([]byte(request("POST", "/my/submissions", owner, rbody, 202)), &rsub); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = store.Pool().Exec(ctx, `UPDATE submissions SET status='DONE',result='{"verdict":"AC","passed":1,"total":1,"checkerLog":"private-two-step-log"}' WHERE id=$1`, rsub.ID); err != nil {
+				t.Fatal(err)
+			}
+			detail := request("GET", "/my/submissions/"+rsub.ID, owner, "", 200)
+			if strings.Contains(detail, "private-two-step-log") != (owner == "alice") {
+				t.Fatal("run twice log authorization", detail)
+			}
+			if _, err = store.Pool().Exec(ctx, `UPDATE submissions SET job=jsonb_set(job,'{easyTest}','true') WHERE id=$1`, rsub.ID); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(request("GET", "/my/submissions/"+rsub.ID, owner, "", 200), "private-two-step-log") {
+				t.Fatal("sample log unavailable to submitter")
+			}
+		}
+		if _, err = queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: "99999999-9999-4999-8999-999999999990", ProblemID: runTwiceID, Source: "source", Image: image, Runtime: "cpp17-local", CheckerRuntimes: []string{"cpp23-gcc"}}); !errors.Is(err, submissions.ErrNotReady) {
+			t.Fatal("local worker accepted run twice job", err)
+		}
+		if _, err = queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: newSubmissionID(), ProblemID: runTwiceID, Source: "source", Image: image, Runtime: "cpp17-isolate", CheckerRuntimes: []string{"cpp23-gcc"}}); err != nil {
+			t.Fatal("valid run twice draft refused", err)
+		}
+		for name, patch := range map[string]string{
+			"blank source":       `{"runTwice":{"runtime":"python314","source":" \n"}}`,
+			"unpublished runtime": `{"runTwice":{"runtime":"java24","source":"x"}}`,
+			"with checker":        `{"checker":{"runtime":"python314","source":"x"}}`,
+			"with interactor":     `{"interactor":{"runtime":"python314","source":"x"}}`,
+		} {
+			if _, err = store.Pool().Exec(ctx, `UPDATE problem_drafts SET published_draft=published_draft||$2::jsonb WHERE id=$1`, runTwiceID, patch); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = queue.CreateRun(ctx, submissions.RunInput{Owner: "alice", ID: newSubmissionID(), ProblemID: runTwiceID, Source: "source", Image: image, Runtime: "cpp17-isolate", CheckerRuntimes: []string{"cpp23-gcc"}}); !errors.Is(err, submissions.ErrNotReady) {
+				t.Fatalf("%s accepted: %v", name, err)
+			}
+			if _, err = store.Pool().Exec(ctx, `UPDATE problem_drafts SET published_draft=(published_draft||'{"runTwice":{"runtime":"python314","source":"ok"}}'::jsonb)-'checker'-'interactor' WHERE id=$1`, runTwiceID); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
 	t.Run("generation rejects a draft edited after job construction", func(t *testing.T) {
 		const owner = "generation-version"
 		if _, err := store.Pool().Exec(ctx, `INSERT INTO user_profiles(owner_id,handle) VALUES($1,'generation_version')`, owner); err != nil {

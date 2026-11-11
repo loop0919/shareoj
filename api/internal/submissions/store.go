@@ -29,6 +29,7 @@ type Job struct {
 	Runtime             string                                                    `json:"-"` // Set from the immutable submission row by the local worker.
 	EasyTest            bool                                                      `json:"easyTest,omitempty"`
 	Interactor          *problems.Generator                                       `json:"interactor,omitempty"`
+	RunTwice            *problems.Generator                                       `json:"runTwice,omitempty"`
 	Checker             *problems.Generator                                       `json:"checker,omitempty"`
 	GenerationBaseBytes int64                                                     `json:"generationBaseBytes,omitempty"`
 	GenerationPrefix    string                                                    `json:"generationPrefix,omitempty"`
@@ -197,8 +198,14 @@ func judgeReady(draft, runtime, checkerRuntimes, sampleCheck string) string {
     ` + draft + `->'checker'->>'runtime' IN ('cpp23-gcc','python314'))
   AND (COALESCE(` + draft + `->'interactor','null'::jsonb) = 'null'::jsonb OR
     (` + runtime + ` NOT IN ('cpp17-local','cpp23-gcc-local','python314-local') AND COALESCE(` + draft + `->'checker','null'::jsonb) = 'null'::jsonb AND
+     COALESCE(` + draft + `->'runTwice','null'::jsonb) = 'null'::jsonb AND
      ` + draft + `->'interactor'->>'runtime'=ANY(` + checkerRuntimes + `) AND
      length(btrim(` + draft + `->'interactor'->>'source', E' \t\r\n'))>0))
+  AND (COALESCE(` + draft + `->'runTwice','null'::jsonb) = 'null'::jsonb OR
+    (` + runtime + ` NOT IN ('cpp17-local','cpp23-gcc-local','python314-local') AND COALESCE(` + draft + `->'checker','null'::jsonb) = 'null'::jsonb AND
+     COALESCE(` + draft + `->'interactor','null'::jsonb) = 'null'::jsonb AND
+     ` + draft + `->'runTwice'->>'runtime'=ANY(` + checkerRuntimes + `) AND
+     length(btrim(` + draft + `->'runTwice'->>'source', E' \t\r\n'))>0))
   AND (` + sampleCheck + ` OR COALESCE(` + draft + `->'scoring','null'::jsonb) = 'null'::jsonb OR
     (CASE WHEN jsonb_typeof(` + draft + `->'scoring'->'groups')='array' THEN jsonb_array_length(` + draft + `->'scoring'->'groups') ELSE 0 END > 0 AND
      (` + draft + `->'scoring'->>'mode' <> 'aggregate' OR
@@ -254,7 +261,7 @@ func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) 
  INSERT INTO submissions
   (id,owner_id,problem_id,problem_version,problem_title,runtime,source,contest_id,created_at,job)
   SELECT $1,$2,id,selected_version,selected_draft->>'title',$6,$4,NULLIF($9,'')::uuid,moment.now,
-  jsonb_build_object('privateDraft',($9='' AND NOT EXISTS(SELECT 1 FROM problem_drafts p WHERE p.id=$3 AND p.published_draft IS NOT NULL)),'image',$5::text,'easyTest',$8::boolean,'cases',selected_cases,'checker',selected_draft->'checker','interactor',selected_draft->'interactor',
+  jsonb_build_object('privateDraft',($9='' AND NOT EXISTS(SELECT 1 FROM problem_drafts p WHERE p.id=$3 AND p.published_draft IS NOT NULL)),'image',$5::text,'easyTest',$8::boolean,'cases',selected_cases,'checker',selected_draft->'checker','interactor',selected_draft->'interactor','runTwice',selected_draft->'runTwice',
   'timeLimitMs',(selected_draft->>'timeLimitMs')::int,
   'memoryLimitMb',(selected_draft->>'memoryLimitMb')::int)
   || CASE WHEN COALESCE(selected_draft->'scoring','null'::jsonb) = 'null'::jsonb THEN '{}'::jsonb
@@ -290,7 +297,7 @@ func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) 
 
 func (s *Store) Get(ctx context.Context, owner, id string) (Submission, error) {
 	// Checker diagnostics can contain private tests and checker source.
-	privateColumns := strings.Replace(columns, "result,", `CASE WHEN (COALESCE((job->>'easyTest')::boolean,false) AND job->'interactor' IS NOT NULL AND job->'interactor' <> 'null'::jsonb) OR EXISTS(SELECT 1 FROM problem_drafts p WHERE p.id=submissions.problem_id AND can_manage_problem(p.id,$2)) THEN result ELSE result-'checkerLog' END,`, 1)
+	privateColumns := strings.Replace(columns, "result,", `CASE WHEN (COALESCE((job->>'easyTest')::boolean,false) AND ((job->'interactor' IS NOT NULL AND job->'interactor' <> 'null'::jsonb) OR (job->'runTwice' IS NOT NULL AND job->'runTwice' <> 'null'::jsonb))) OR EXISTS(SELECT 1 FROM problem_drafts p WHERE p.id=submissions.problem_id AND can_manage_problem(p.id,$2)) THEN result ELSE result-'checkerLog' END,`, 1)
 	return scan(s.Pool.QueryRow(ctx, `SELECT `+privateColumns+` FROM submissions WHERE id=$1 AND owner_id=$2`, id, owner))
 }
 
