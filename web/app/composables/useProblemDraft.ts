@@ -185,7 +185,7 @@ export function useProblemDraft() {
       cloudVersion.value = result.version
       applyServerState(result)
       writeProblemCache(cloudOwner, result)
-      saveState.value = fingerprint() === saved ? 'unpublished' : 'dirty'
+      saveState.value = unsaved() ? 'dirty' : 'unpublished'
     } catch (error) { publicationError.value = accountError(error) }
     finally { publishing.value = false }
   }

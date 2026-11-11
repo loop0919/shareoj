@@ -35,13 +35,21 @@ const method = computed({
 // The field keeps what the author types, and the draft takes only a valid margin. It follows the draft whenever the
 // setting is replaced or its margin changes.
 const marginText = ref(errorJudge.value?.marginPercent ?? defaultMargin)
-watch(() => [errorJudge.value, errorJudge.value?.marginPercent] as const, ([value]) => { marginText.value = value?.marginPercent ?? defaultMargin })
+const marginFocused = ref(false)
+watch(() => [errorJudge.value, errorJudge.value?.marginPercent] as const, ([value]) => {
+  marginText.value = value?.marginPercent ?? defaultMargin
+  if (!value) marginFocused.value = false
+})
 function updateMargin(event: Event) {
   marginText.value = (event.target as HTMLInputElement).value
   if (errorJudge.value && validMargin(marginText.value)) errorJudge.value.marginPercent = marginText.value
 }
+// A decimal typed key by key passes through a bare trailing dot ("0."). While the field has focus that is unfinished,
+// not wrong: the draft keeps the last valid margin, and the line below keeps describing it.
+const marginIncomplete = computed(() => marginFocused.value && /^[0-9]{1,3}\.$/.test(marginText.value))
 // ε times this factor is what the judge accepts; empty while the margin is invalid.
-const factor = computed(() => validMargin(marginText.value) ? thresholdFactor(marginText.value) : '')
+const factor = computed(() => validMargin(marginText.value) ? thresholdFactor(marginText.value)
+  : marginIncomplete.value && errorJudge.value ? thresholdFactor(errorJudge.value.marginPercent ?? defaultMargin) : '')
 const marginInvalid = computed(() => !!errorJudge.value && !factor.value)
 const marginMessage = '判定の余裕は0〜100の数で、小数は6桁までです。'
 watch(marginInvalid, invalid => { settingError.value = invalid ? marginMessage : '' }, { immediate: true })
@@ -145,7 +153,7 @@ const error = computed(() => code.value && (!hasSource(code.value.runtime, code.
         </div>
         <div>
           <label for="error-judge-margin">判定の余裕</label>
-          <span class="margin-input"><input id="error-judge-margin" :value="marginText" inputmode="decimal" autocomplete="off" :disabled="disabled" :aria-invalid="marginInvalid" aria-describedby="error-judge-threshold" @input="updateMargin"> %</span>
+          <span class="margin-input"><input id="error-judge-margin" :value="marginText" inputmode="decimal" autocomplete="off" :disabled="disabled" :aria-invalid="marginInvalid" aria-describedby="error-judge-threshold" @input="updateMargin" @focus="marginFocused = true" @blur="marginFocused = false"> %</span>
         </div>
       </div>
       <div class="error-judge-notes">
