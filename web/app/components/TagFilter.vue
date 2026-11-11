@@ -3,7 +3,8 @@ import { normalizeTag, tagListSchema, type Tag } from '~~/shared/types/tag'
 import { canonicalTag } from '~/utils/tag-search'
 
 // Narrows a public list to one tag. The choices are the tags that list actually uses.
-const props = defineProps<{ kind: 'problem' | 'post', tag: string, to: '/problems' | '/blog' }>()
+// keep carries the list's other filters across a change of tag.
+const props = defineProps<{ kind: 'problem' | 'post', tag: string, to: '/problems' | '/blog', keep?: Record<string, string> }>()
 const known = ref<Tag[]>([])
 const text = ref(props.tag)
 onMounted(async () => {
@@ -14,7 +15,7 @@ const id = computed(() => `${props.kind}-tag-filter`)
 async function apply() {
   const value = normalizeTag(text.value)
   const next = value ? canonicalTag(choices.value, value) : ''
-  if (next !== props.tag) await navigateTo(next ? { path: props.to, query: { tag: next } } : props.to)
+  if (next !== props.tag) await navigateTo({ path: props.to, query: { ...props.keep, ...next ? { tag: next } : {} } })
 }
 // Picking a suggestion applies it at once; typed text waits for Enter.
 function picked(event: Event) {
@@ -27,7 +28,7 @@ function picked(event: Event) {
     <div class="tag-filter-field">
       <input :id="id" v-model="text" :class="{ clearable: tag }" :list="`${id}-options`" aria-label="タグで絞り込む" placeholder="タグで絞り込む" autocomplete="off" enterkeyhint="search" @input="picked">
       <datalist :id="`${id}-options`"><option v-for="choice in choices" :key="choice.name" :value="choice.name" /></datalist>
-      <NuxtLink v-if="tag" class="tag-filter-clear" :to="to" aria-label="絞り込みを解除" title="絞り込みを解除"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></NuxtLink>
+      <NuxtLink v-if="tag" class="tag-filter-clear" :to="{ path: to, query: keep }" aria-label="絞り込みを解除" title="絞り込みを解除"><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></NuxtLink>
     </div>
     <button type="submit" class="editor-button" :disabled="!text.trim() && !tag">絞り込む</button>
   </form>

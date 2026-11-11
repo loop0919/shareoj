@@ -101,7 +101,13 @@ func (p problemHandler) publishedProblems(w http.ResponseWriter, r *http.Request
 		authError(w, 400, "invalid_request")
 		return
 	}
-	filter := problems.ListFilter{Author: author, Tag: tag}
+	// Problems a contest set aim at ranking rather than at a pleasant solve, so a viewer may want only one kind.
+	contest := r.URL.Query().Get("contest")
+	if contest != "" && contest != problems.ContestOnly && contest != problems.ContestExclude {
+		authError(w, 400, "invalid_contest")
+		return
+	}
+	filter := problems.ListFilter{Author: author, Tag: tag, Contest: contest}
 	list, err := p.Store.PublicList(ctx, cursor, offset, limit, filter)
 	if err != nil {
 		problemError(w, err)

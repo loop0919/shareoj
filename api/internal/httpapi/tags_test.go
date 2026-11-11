@@ -169,6 +169,28 @@ func TestTagsPostgres(t *testing.T) {
 		t.Fatal("author and tag filter", got)
 	}
 	request("GET", "/problems?tag=a,b", "", nil, 400)
+
+	// contest= keeps or drops the problems a contest set (issue #21); the total follows the filter.
+	const contest = "c0c0c0c0-c0c0-4c0c-8c0c-c0c0c0c0c0c0"
+	exec(`INSERT INTO contests(id,owner_id,title,description,starts_at,ends_at,released) VALUES ($1,'alice','c','d',now()-interval '2 hours',now()-interval '1 hour',true)`, contest)
+	exec(`INSERT INTO contest_problems(contest_id,problem_id,position,points,draft,problem_version) SELECT $1,id,0,100,draft,version FROM problem_drafts WHERE id=$2`, contest, featured)
+	if got := listed("/problems?contest=only"); !slices.Equal(got, []string{featured}) {
+		t.Fatal("contest problems only", got)
+	}
+	if got := listed("/problems?contest=exclude"); !slices.Equal(got, []string{public}) {
+		t.Fatal("without contest problems", got)
+	}
+	if got := listed("/problems?contest=exclude&tag=DP"); !slices.Equal(got, []string{public}) {
+		t.Fatal("contest and tag filter", got)
+	}
+	var counted struct{ Total int }
+	decode(request("GET", "/problems?contest=only", "", nil, 200), &counted)
+	if counted.Total != 1 {
+		t.Fatal("contest filter total", counted.Total)
+	}
+	request("GET", "/problems?contest=yes", "", nil, 400)
+	exec(`DELETE FROM contest_problems WHERE contest_id=$1`, contest)
+	exec(`DELETE FROM contests WHERE id=$1`, contest)
 	request("GET", "/posts?tag="+url.QueryEscape("ＤＰ"), "", nil, 400)
 
 	// A revival round also hides an old problem's tags until the round's editorial time.

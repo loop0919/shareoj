@@ -209,7 +209,8 @@ createServer(async (req, res) => {
       if (!(offset <= 1000000)) return res.writeHead(400).end(JSON.stringify({ error: 'invalid_offset' }))
       return res.end(JSON.stringify({ items: pagedProblems.slice(offset, offset + limit), nextCursor: '', total: pagedProblems.length }))
     }
-    const matches = (!query.get('author') || query.get('author') === 'alice') && (!query.get('tag') || problem.tags.includes(query.get('tag')))
+    // The fixture problem was set by no contest.
+    const matches = query.get('contest') !== 'only' && (!query.get('author') || query.get('author') === 'alice') && (!query.get('tag') || problem.tags.includes(query.get('tag')))
     res.end(JSON.stringify({ items: matches ? [problem] : [], nextCursor: '', total: matches ? 1 : 0 }))
   }
   else if (path === `/problems/${problem.id}`) res.end(JSON.stringify(problem))

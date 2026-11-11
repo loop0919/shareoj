@@ -2,8 +2,8 @@
 import { clampPage, lastPage, pageOffset } from '~/utils/pagination'
 import type { PageSize } from '~/composables/usePageSize'
 import { shortId } from '~~/shared/utils/short-id'
-// Each tag gets a fresh list and pagination.
-definePageMeta({ key: route => `problems:${typeof route.query.tag === 'string' ? route.query.tag : ''}` })
+// Each tag and each contest filter gets a fresh list and pagination.
+definePageMeta({ key: route => `problems:${typeof route.query.tag === 'string' ? route.query.tag : ''}:${typeof route.query.contest === 'string' ? route.query.contest : ''}` })
 const { user } = useAccount()
 const solved = ref(new Set<string>())
 const solvedMessage = ref('')
@@ -32,6 +32,14 @@ useResponseHeader('Vary').value = 'Cookie'
 // Problem tags can give away the solution, so each visit starts with them hidden until the viewer turns them on.
 const showTags = ref(false)
 const tag = typeof route.query.tag === 'string' ? route.query.tag : ''
+// Contest problems aim at ranking, the others at the solve itself; a viewer may want only one kind (issue #21).
+const contestChoices = { '': 'すべての問題', only: 'コンテストの問題のみ', exclude: 'コンテストの問題を除く' }
+const contest = route.query.contest === 'only' || route.query.contest === 'exclude' ? route.query.contest : ''
+const filters = { ...tag ? { tag } : {}, ...contest ? { contest } : {} }
+const pickContest = (event: Event) => {
+  const value = (event.target as HTMLSelectElement).value
+  return navigateTo({ path: '/problems', query: { ...tag ? { tag } : {}, ...value ? { contest: value } : {} } })
+}
 // The page is in the URL and the page size in a cookie, so the server renders the rows the viewer sees (ADR 0028).
 const { requested, link, resize } = usePageQuery()
 const size = usePageSize('problems')
@@ -39,7 +47,7 @@ const offset = computed(() => pageOffset(requested.value, size.value))
 // A fixed key, so useFetch reloads once a move has set both the offset and the size: a key made of them is watched
 // synchronously and would load the old page at the new size in between. The route catching up with a page already
 // requested leaves the offset, and so the list, as it is.
-const { data, error, status, refresh } = await useFetch('/api/problems', { key: `problem-list:${tag}`, query: computed(() => ({ ...tag ? { tag } : {}, offset: offset.value, limit: size.value })) })
+const { data, error, status, refresh } = await useFetch('/api/problems', { key: `problem-list:${tag}:${contest}`, query: computed(() => ({ ...filters, offset: offset.value, limit: size.value })) })
 if (error.value?.statusCode === 400) throw createError({ statusCode: 404, statusMessage: 'Tag not found', fatal: true })
 if (error.value || !data.value) throw createError({ statusCode: 502, statusMessage: 'Problem service unavailable', fatal: true })
 const last = computed(() => lastPage(data.value?.total ?? 0, size.value))
@@ -52,7 +60,7 @@ const resizeProblems = (to: PageSize) => resize(size, page.value, to)
 const date = (value: string) => new Date(value).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' })
 // The canonical is the page on screen; the first page leaves out page.
 const path = computed(() => {
-  const query = new URLSearchParams({ ...tag ? { tag } : {}, ...page.value > 1 ? { page: String(page.value) } : {} })
+  const query = new URLSearchParams({ ...filters, ...page.value > 1 ? { page: String(page.value) } : {} })
   return query.size ? `/problems?${query}` : '/problems'
 })
 const canonical = computed(() => new URL(path.value, config.public.siteUrl).href)
@@ -69,11 +77,12 @@ useSharePreview({ type: 'website', title: heading, path, description })
     <div class="catalogue-tools">
       <InlineSwitch v-model="showTags" class="tags-switch" :describedby="showTags ? undefined : 'problem-tags-hint'">タグを表示</InlineSwitch>
       <span v-if="!showTags" id="problem-tags-hint" class="tags-hint">解法のヒントになることがあります。</span>
-      <TagFilter v-if="showTags || tag" kind="problem" :tag="tag" to="/problems" />
+      <TagFilter v-if="showTags || tag" kind="problem" :tag="tag" to="/problems" :keep="contest ? { contest } : undefined" />
+      <select class="contest-filter" aria-label="コンテストの問題で絞り込む" :value="contest" @change="pickContest"><option v-for="(label, value) in contestChoices" :key="value" :value="value">{{ label }}</option></select>
     </div>
     <!-- A page that fails after the first one hides the rows it would replace. -->
     <p v-if="error" role="alert">一覧を取得できませんでした。もう一度お試しください。 <button type="button" class="editor-button" @click="refresh()">再試行</button></p>
-    <EmptyState v-else-if="!data?.total" kind="problem" :title="tag ? `「${tag}」のタグが付いた問題はまだありません。` : '公開された問題はまだありません。'" />
+    <EmptyState v-else-if="!data?.total" kind="problem" :title="contest ? '条件に合う問題はまだありません。' : tag ? `「${tag}」のタグが付いた問題はまだありません。` : '公開された問題はまだありません。'" />
     <template v-else>
     <ListToolbar :total="data.total" :page="page" :size="size" unit="問" :link="link" @update:size="resizeProblems" />
     <div class="content-table-scroll" tabindex="0" role="region" aria-label="問題一覧" :aria-busy="status === 'pending'">
@@ -97,6 +106,10 @@ useSharePreview({ type: 'website', title: heading, path, description })
 .catalogue-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 20px; }
 .catalogue-tools > .tag-filter { margin-bottom: 0; }
 .tags-switch { font-size: .875rem; }
+.contest-filter { min-height: 36px; margin-left: auto; padding: 2px 8px; border: 1px solid var(--color-line); border-radius: 4px; font: inherit; font-size: .875rem; cursor: pointer; }
+.contest-filter:hover { border-color: var(--color-muted); }
+.contest-filter:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
+@media (max-width: 39.999rem) { .contest-filter { margin-left: 0; font-size: 1rem; } }
 .tags-hint { color: var(--color-muted); font-size: .8125rem; }
 .content-table tr.solved { background: var(--color-accent-soft); }
 .problem-row-tags { margin-top: 6px; }

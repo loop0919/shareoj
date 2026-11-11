@@ -40,7 +40,14 @@ type PublicProblem struct {
 type ListFilter struct {
 	Author string
 	Tag    string
+	// Contest is ContestOnly or ContestExclude; a problem belongs to at most one contest, which published it at its end.
+	Contest string
 }
+
+const (
+	ContestOnly    = "only"
+	ContestExclude = "exclude"
+)
 
 func (s *Store) Publish(ctx context.Context, owner, id string, version int64, publish bool) (Problem, error) {
 	tx, err := s.pool.Begin(ctx)
@@ -146,6 +153,12 @@ func publicFilter(filter ListFilter) (string, []any) {
 	if filter.Tag != "" {
 		args = append(args, filter.Tag)
 		where += fmt.Sprintf(` AND d.published_draft->'tags' @> jsonb_build_array($%d::text) AND NOT problem_tags_hidden(d.id)`, len(args))
+	}
+	switch filter.Contest {
+	case ContestOnly:
+		where += ` AND EXISTS (SELECT 1 FROM contest_problems cp WHERE cp.problem_id=d.id)`
+	case ContestExclude:
+		where += ` AND NOT EXISTS (SELECT 1 FROM contest_problems cp WHERE cp.problem_id=d.id)`
 	}
 	return where, args
 }

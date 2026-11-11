@@ -474,6 +474,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 
 - `GET /tags`: 公開中の問題と記事のタグを、使われている数の多い順に最大1000件返す。`problemCount`と`postCount`を含む。
 - `GET /problems?tag=`、`GET /posts?tag=`: タグの完全一致で絞り込む。`author`と併用できる。不正なタグは`400 invalid_tag`。
+- `GET /problems?contest=only|exclude`: コンテストで出題された問題だけ、またはそれ以外だけに絞り込む。`author`、`tag`と併用できる。ほかの値は`400 invalid_contest`。
 - `GET /problems/{id}`、`GET /problems`、`GET /posts/{id}`、`GET /posts`の`tags`: 公開版のタグ。
 
 定期便の回に含まれる問題は、新作・復刻を問わず、その回の解説公開までタグを返しません。

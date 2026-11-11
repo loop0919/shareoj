@@ -97,6 +97,7 @@ func catalogueParameters() []*huma.Param {
 // problemParameters are the parameters of the public problem list.
 func problemParameters() []*huma.Param {
 	return append(catalogueParameters(),
+		&huma.Param{Name: "contest", In: "query", Description: "コンテストで出題された問題の扱い。onlyはその問題だけ、excludeはそれ以外だけを返します。省略するとすべて返します。", Schema: &huma.Schema{Type: "string", Enum: []any{"only", "exclude"}}},
 		&huma.Param{Name: "offset", In: "query", Description: "先頭からスキップする件数。cursorと同時には指定できません。", Schema: &huma.Schema{Type: "integer", Minimum: floatPointer(0), Maximum: floatPointer(1000000), Default: 0}},
 		limitParameter())
 }

@@ -191,3 +191,32 @@ test('solved highlighting retries after failure and is absent when signed out', 
   await expect(page.locator('tr.solved')).toHaveCount(0)
   expect(requests).toBe(before)
 })
+
+// Issue #21: contest problems and the rest serve different readers, so the list narrows to either.
+test('the problem list narrows to contest problems or to the rest', async ({ page }) => {
+  await page.goto('/problems')
+  const filter = page.getByRole('combobox', { name: 'コンテストの問題で絞り込む' })
+  await expect(filter).toHaveValue('')
+  const rows = page.getByRole('table').locator('tbody tr')
+  await expect(rows).toHaveCount(1)
+  // The fixture's only problem was set by no contest.
+  await filter.selectOption({ label: 'コンテストの問題のみ' })
+  await expect(page).toHaveURL('/problems?contest=only')
+  await expect(page.getByText('条件に合う問題はまだありません。')).toBeVisible()
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://judge.example/problems?contest=only')
+  // The choice stays reachable on an empty list, and a reload keeps it.
+  await page.reload()
+  await expect(filter).toHaveValue('only')
+  await filter.selectOption({ label: 'コンテストの問題を除く' })
+  await expect(page).toHaveURL('/problems?contest=exclude')
+  await expect(rows).toHaveCount(1)
+  // A tag keeps the contest filter, and anything else in contest= means no filter.
+  await page.goto('/problems?contest=exclude&tag=DP')
+  await expect(filter).toHaveValue('exclude')
+  await expect(rows).toHaveCount(1)
+  await page.getByRole('link', { name: '絞り込みを解除' }).click()
+  await expect(page).toHaveURL('/problems?contest=exclude')
+  await page.goto('/problems?contest=yes')
+  await expect(filter).toHaveValue('')
+  await expect(rows).toHaveCount(1)
+})
