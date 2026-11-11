@@ -147,7 +147,7 @@ shareoj push ./my-problem
 ```
 
 問題文、解説、生成器、チェッカーまたはインタラクター、非公開を含む全テストケースを取得します。
-コードは `input.txt`、`output.txt`、`validation.txt`、`checker.txt`、`interactor.txt`、`aggregator.txt` に保存し、実行言語は `problem.toml` に保持します。
+コードは `input.txt`、`output.txt`、`validation.txt`、`checker.txt`、`interactor.txt`、`run_twice.txt`、`aggregator.txt` に保存し、実行言語は `problem.toml` に保持します。
 テストファイルは `tests/case001.in` / `case001.out` のような連番で保存します。
 元のケース名（空の名前を含む）は `[tests.names]` に記録し、ケースの順序とサンプル指定も保持します。
 `samples` は元のケース名ではなく `case001` のようなファイル名の幹を指定します。
@@ -210,8 +210,8 @@ samples = ["sample1"]
 入力検証器は入力を読み、妥当なら終了コード 0 を返します。
 詳細は [生成器ガイド](../web/app/content/docs/generator.md) を参照してください。
 
-カスタム判定器は `[checker]`、対話プログラムは `[interactor]` に同じ `source` と `runtime` を指定します。
-両方の同時指定はできません。
+カスタム判定器は `[checker]`、対話プログラムは `[interactor]`、2ステップ用ジャッジは `[run_twice]` に同じ `source` と `runtime` を指定します。
+3つのうち2つ以上は同時に指定できません。
 これらのテーブルだけ `protocol = "legacy"` または `protocol = "testlib"` を指定できます。
 `testlib` は `cpp23-gcc` と `cpp23-clang` に対応し、生成器には `protocol` を指定しません。
 

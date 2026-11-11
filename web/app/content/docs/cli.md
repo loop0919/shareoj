@@ -109,8 +109,8 @@ output_suffix = ".out"
 samples = ["sample1"]
 ```
 
-スペシャルジャッジは `[checker]`、インタラクティブは `[interactor]` に `source` と `runtime` を書きます。
-2つを同時には指定できません。
+スペシャルジャッジは `[checker]`、インタラクティブは `[interactor]`、2ステップ形式の2ステップ用ジャッジは `[run_twice]` に `source` と `runtime` を書きます。
+3つのうち2つ以上は同時に指定できません。
 testlib形式の判定コードでは、`protocol = "testlib"` も指定します。
 判定コードの書き方は[判定方法の設定](/docs/checkers)を見てください。
 

@@ -105,9 +105,9 @@ samples = ["sample1"]
 ケース番号を乱数のシードにすると、同じケース番号から同じ入力を再現できます。
 出力生成器の答えは、手計算できる例や独立した愚直解と照合します。
 
-スペシャルジャッジを使う場合は `[checker]` に、対話形式を使う場合は `[interactor]` に `source` と `runtime` を指定します。
-`[checker]` と `[interactor]` は同時に設定できません。
-`protocol = "legacy"` または `protocol = "testlib"` を指定できるのは、この2種類だけです。
+スペシャルジャッジを使う場合は `[checker]` に、対話形式を使う場合は `[interactor]` に、2ステップ形式を使う場合は `[run_twice]` に `source` と `runtime` を指定します。
+`[checker]`、`[interactor]`、`[run_twice]` は2つ以上を同時に設定できません。
+`protocol = "legacy"` または `protocol = "testlib"` を指定できるのは、この3種類だけです。
 `testlib` は `cpp23-gcc` と `cpp23-clang` に対応します。
 生成器には `protocol` を指定しません。
 判定器を実装する前に、Webの判定方法ガイドで入出力や終了コードの仕様を確認してください。

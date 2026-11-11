@@ -43,6 +43,7 @@ type problemConfig struct {
 	Generators map[string]codeConfig `toml:"generators"`
 	Checker    *codeConfig           `toml:"checker"`
 	Interactor *codeConfig           `toml:"interactor"`
+	RunTwice   *codeConfig           `toml:"run_twice"`
 	Scoring    *scoringConfig        `toml:"scoring"`
 	Tests      *testConfig           `toml:"tests"`
 }
@@ -240,16 +241,28 @@ func buildDraft(root *os.Root, c problemConfig) (draft, []string, error) {
 	if len(generators) > 0 {
 		d.set("generators", generators)
 	}
-	if c.Checker != nil && c.Interactor != nil {
-		return nil, nil, errors.New("choose checker or interactor, not both")
+	// Keys are the problem.toml table names; the draft key for run_twice is runTwice.
+	judges := map[string]*codeConfig{"checker": c.Checker, "interactor": c.Interactor, "run_twice": c.RunTwice}
+	chosen := 0
+	for _, config := range judges {
+		if config != nil {
+			chosen++
+		}
 	}
-	for role, config := range map[string]*codeConfig{"checker": c.Checker, "interactor": c.Interactor} {
+	if chosen > 1 {
+		return nil, nil, errors.New("choose one of checker, interactor or run_twice")
+	}
+	for role, config := range judges {
 		if config != nil {
 			p, err := loadProgram(root, *config, true)
 			if err != nil {
 				return nil, nil, fmt.Errorf("%s: %w", role, err)
 			}
-			d.set(role, p)
+			key := role
+			if role == "run_twice" {
+				key = "runTwice"
+			}
+			d.set(key, p)
 		}
 	}
 	if c.Scoring != nil {

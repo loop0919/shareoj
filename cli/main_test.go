@@ -295,6 +295,34 @@ func TestPushMergeRules(t *testing.T) {
 	if _, ok := remote.Draft["checker"]; ok || string(remote.Draft["interactor"]) != interactor {
 		t.Fatalf("interactor: %s checker: %s", remote.Draft["interactor"], remote.Draft["checker"])
 	}
+	// A run_twice judge replaces a remote checker and interactor, and is replaced by either of them.
+	runTwice := `{"runtime":"python3","source":"print(3)\n"}`
+	remote.Draft.set("checker", program{Runtime: "python3", Source: "print(4)\n"})
+	write(t, filepath.Join(dir, "run_twice.py"), "print(3)\n")
+	write(t, filepath.Join(dir, "problem.toml"), template+"\n[run_twice]\nsource = \"run_twice.py\"\nruntime = \"python3\"\n")
+	mustPush()
+	_, hasChecker := remote.Draft["checker"]
+	_, hasInteractor := remote.Draft["interactor"]
+	if hasChecker || hasInteractor || string(remote.Draft["runTwice"]) != runTwice {
+		t.Fatalf("run_twice: %s checker: %s interactor: %s", remote.Draft["runTwice"], remote.Draft["checker"], remote.Draft["interactor"])
+	}
+	// Omitting all three keeps the remote run_twice judge.
+	write(t, filepath.Join(dir, "problem.toml"), template)
+	mustPush()
+	if string(remote.Draft["runTwice"]) != runTwice {
+		t.Fatalf("omitted run_twice: %s", remote.Draft["runTwice"])
+	}
+	write(t, filepath.Join(dir, "problem.toml"), template+"\n[checker]\nsource = \"checker.cpp\"\nruntime = \"cpp23-gcc\"\nprotocol = \"testlib\"\n")
+	mustPush()
+	if _, ok := remote.Draft["runTwice"]; ok || remote.Draft["checker"] == nil {
+		t.Fatalf("checker over run_twice: %s %s", remote.Draft["checker"], remote.Draft["runTwice"])
+	}
+	remote.Draft.set("runTwice", program{Runtime: "python3", Source: "print(3)\n"})
+	write(t, filepath.Join(dir, "problem.toml"), template+"\n[interactor]\nsource = \"interactor.py\"\nruntime = \"python3\"\nprotocol = \"legacy\"\n")
+	mustPush()
+	if _, ok := remote.Draft["runTwice"]; ok || string(remote.Draft["interactor"]) != interactor {
+		t.Fatalf("interactor over run_twice: %s %s", remote.Draft["interactor"], remote.Draft["runTwice"])
+	}
 	// Fields that problem.toml omits, including ones it cannot express, keep their remote values.
 	remote.Draft.set("difficulty", 3)
 	remote.Draft.set("tags", []string{"graph"})
@@ -356,6 +384,19 @@ func TestProblemValidationAndRime(t *testing.T) {
 		if _, err := loadProblem(dir); err == nil {
 			t.Fatal("unknown key accepted")
 		}
+	}
+	checkerBlock := "\n[checker]\nsource = 'input.cpp'\nruntime = 'cpp23-gcc'\n"
+	interactorBlock := "\n[interactor]\nsource = 'input.cpp'\nruntime = 'cpp23-gcc'\n"
+	runTwiceBlock := "\n[run_twice]\nsource = 'input.cpp'\nruntime = 'cpp23-gcc'\n"
+	for _, blocks := range []string{checkerBlock + interactorBlock, checkerBlock + runTwiceBlock, interactorBlock + runTwiceBlock, checkerBlock + interactorBlock + runTwiceBlock} {
+		write(t, filepath.Join(dir, "problem.toml"), rimeConfig+blocks)
+		if _, err := loadProblem(dir); err == nil || err.Error() != "choose one of checker, interactor or run_twice" {
+			t.Fatalf("two judge kinds: %v", err)
+		}
+	}
+	write(t, filepath.Join(dir, "problem.toml"), rimeConfig+runTwiceBlock)
+	if d, err := loadProblem(dir); err != nil || d["runTwice"] == nil || d["checker"] != nil || d["interactor"] != nil {
+		t.Fatalf("run_twice: %v %s", err, d["runTwice"])
 	}
 	write(t, filepath.Join(dir, "problem.toml"), strings.Replace(rimeConfig, `statement = "statement.md"`, `statement = "../outside.md"`, 1))
 	write(t, filepath.Join(filepath.Dir(dir), "outside.md"), "private")

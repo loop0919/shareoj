@@ -154,6 +154,27 @@ func TestPullLifecycle(t *testing.T) {
 			t.Fatal("optional fields changed", err)
 		}
 	}
+	// A run_twice judge is written to run_twice.txt and read back from [run_twice].
+	{
+		variant := draft{}
+		for key, value := range d {
+			variant[key] = value
+		}
+		delete(variant, "checker")
+		variant.set("runTwice", program{Runtime: "python3", Source: "print('twice')"})
+		remote.Draft = variant
+		dir := filepath.Join(t.TempDir(), "run-twice")
+		if _, err := pull(ctx, id, dir, client); err != nil {
+			t.Fatal(err)
+		}
+		if text, err := os.ReadFile(filepath.Join(dir, "run_twice.txt")); err != nil || string(text) != "print('twice')" {
+			t.Fatalf("run_twice.txt: %q %v", text, err)
+		}
+		got, err := loadProblem(dir)
+		if err != nil || string(got["runTwice"]) != string(variant["runTwice"]) {
+			t.Fatalf("run_twice: %s %v", got["runTwice"], err)
+		}
+	}
 	remote.Draft = d
 	for _, invalid := range []struct {
 		key   string

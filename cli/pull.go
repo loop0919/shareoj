@@ -85,6 +85,7 @@ func exportDraft(ctx context.Context, root *os.Root, remote problem, c *apiClien
 		Difficulty                 *int
 		Generators                 map[string]program
 		Checker, Interactor        *program
+		RunTwice                   *program
 		Scoring                    *scoring
 		TestCases                  []testCase
 	}
@@ -127,7 +128,7 @@ func exportDraft(ctx context.Context, root *os.Root, remote problem, c *apiClien
 		}
 		config.Generators[role] = code
 	}
-	for role, p := range map[string]*program{"checker": d.Checker, "interactor": d.Interactor} {
+	for role, p := range map[string]*program{"checker": d.Checker, "interactor": d.Interactor, "run_twice": d.RunTwice} {
 		if p == nil {
 			continue
 		}
@@ -135,10 +136,13 @@ func exportDraft(ctx context.Context, root *os.Root, remote problem, c *apiClien
 		if err != nil {
 			return err
 		}
-		if role == "checker" {
+		switch role {
+		case "checker":
 			config.Checker = &code
-		} else {
+		case "interactor":
 			config.Interactor = &code
+		default:
+			config.RunTwice = &code
 		}
 	}
 	if len(d.TestCases) > 100 {
