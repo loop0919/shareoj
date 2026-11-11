@@ -145,7 +145,7 @@ func TestPublicDocumentation(t *testing.T) {
 			t.Fatal("private scoring documented")
 		}
 		for _, name := range []string{"Result", "CaseResult"} {
-			for _, hidden := range []string{"checkerLog", "compileLog", "sampleDetails", "outputFile", "output"} {
+			for _, hidden := range []string{"checkerLog", "compileLog", "sampleDetails", "outputFile", "output", "runTwice"} {
 				if _, ok := doc.Components.Schemas[name].Properties[hidden]; ok {
 					t.Fatal("private field documented", name, hidden)
 				}

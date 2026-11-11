@@ -14,7 +14,8 @@ func (s *Store) Finish(ctx context.Context, id string, result Result) error {
 }
 
 // FinishAttempt registers generated files and completes only the current attempt, atomically. It stores nothing and
-// returns ErrUnscored when a partial-scoring job comes back without scores, so that the caller records a JE instead.
+// returns ErrUnscored when a partial-scoring job comes back without scores, or ErrUnmarkedRunTwice when a run-twice
+// job comes back without the worker's mark, so that the caller records a JE instead.
 func (s *Store) FinishAttempt(ctx context.Context, id, attempt string, result Result) error {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
@@ -34,6 +35,9 @@ func (s *Store) FinishAttempt(ctx context.Context, id, attempt string, result Re
 	}
 	var job Job
 	if err = json.Unmarshal(raw, &job); err != nil {
+		return err
+	}
+	if err = runTwiceMark(job, &result); err != nil {
 		return err
 	}
 	result.Interactive = job.Interactor != nil || job.RunTwice != nil
@@ -104,4 +108,18 @@ func (s *Store) FinishAttempt(ctx context.Context, id, attempt string, result Re
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// runTwiceMark checks the worker's run-twice mark against the job and removes it, so that results are stored and
+// shown without it (ADR 0036). A worker older than run-twice judges a run-twice job as a plain problem, where a
+// program that prints nothing can pass an empty expected output; only a judge error may come without the mark.
+func runTwiceMark(job Job, r *Result) error {
+	if job.RunTwice == nil && r.RunTwice {
+		return testfiles.ErrInvalid
+	}
+	if job.RunTwice != nil && !r.RunTwice && r.Verdict != "JE" {
+		return ErrUnmarkedRunTwice
+	}
+	r.RunTwice = false
+	return nil
 }

@@ -226,10 +226,19 @@ func (b bridge) results(ctx context.Context, event events.SQSEvent) events.SQSEv
 		} else {
 			store := &submissions.Store{Pool: b.db}
 			err = store.FinishAttempt(ctx, e.ID, e.Attempt, *e.Result)
-			if errors.Is(err, submissions.ErrUnscored) {
+			reason := ""
+			switch {
+			case errors.Is(err, submissions.ErrUnscored):
 				// A judge older than ADR 0025 judged a partial-scoring job as all-or-nothing. Its verdict says nothing
 				// about the score, so the submission becomes JE rather than silently all-or-nothing.
-				observe("failure", "platform", "unscored_result", e.ID, e.Attempt)
+				reason = "unscored_result"
+			case errors.Is(err, submissions.ErrUnmarkedRunTwice):
+				// A judge older than ADR 0036 judged a run-twice job as a plain problem, so the submission becomes JE
+				// rather than accepted by a single run.
+				reason = "unmarked_run_twice_result"
+			}
+			if reason != "" {
+				observe("failure", "platform", reason, e.ID, e.Attempt)
 				e.Result = &submissions.Result{Verdict: "JE"}
 				err = store.FinishAttempt(ctx, e.ID, e.Attempt, *e.Result)
 			}

@@ -881,21 +881,38 @@ func TestSubmissionsPostgres(t *testing.T) {
 			caseName := ""
 			log := &submissions.TextPreview{Text: "dialogue"}
 			id, attempt := start(true)
-			if err := queue.FinishAttempt(ctx, id, attempt, submissions.Result{Verdict: "AC", Passed: 1, Total: 1, Cases: []submissions.CaseResult{{Name: caseName, Verdict: "AC", CheckerLog: log}}}); err != nil {
+			if err := queue.FinishAttempt(ctx, id, attempt, submissions.Result{Verdict: "AC", Passed: 1, Total: 1, RunTwice: true, Cases: []submissions.CaseResult{{Name: caseName, Verdict: "AC", CheckerLog: log}}}); err != nil {
 				t.Fatal("sample check log rejected", err)
 			}
 			var kept string
-			if err := store.Pool().QueryRow(ctx, `SELECT COALESCE(result->'cases'->0->'checkerLog'->>'text','')||'/'||COALESCE(result->>'interactive','') FROM submissions WHERE id=$1`, id).Scan(&kept); err != nil || kept != "dialogue/true" {
-				t.Fatal("log or interactive flag not stored", kept, err)
+			if err := store.Pool().QueryRow(ctx, `SELECT COALESCE(result->'cases'->0->'checkerLog'->>'text','')||'/'||COALESCE(result->>'interactive','')||'/'||COALESCE(result->>'runTwice','') FROM submissions WHERE id=$1`, id).Scan(&kept); err != nil || kept != "dialogue/true/" {
+				t.Fatal("log or interactive flag not stored, or the worker's mark stored", kept, err)
 			}
 			details := &submissions.SampleDetails{}
 			id, attempt = start(true)
-			if err := queue.FinishAttempt(ctx, id, attempt, submissions.Result{Verdict: "AC", Passed: 1, Total: 1, Cases: []submissions.CaseResult{{Name: caseName, Verdict: "AC", SampleDetails: details}}}); !errors.Is(err, testfiles.ErrInvalid) {
+			if err := queue.FinishAttempt(ctx, id, attempt, submissions.Result{Verdict: "AC", Passed: 1, Total: 1, RunTwice: true, Cases: []submissions.CaseResult{{Name: caseName, Verdict: "AC", SampleDetails: details}}}); !errors.Is(err, testfiles.ErrInvalid) {
 				t.Fatal("sample details accepted for run twice", err)
 			}
 			id, attempt = start(false)
-			if err := queue.FinishAttempt(ctx, id, attempt, submissions.Result{Verdict: "AC", Passed: 1, Total: 1, Cases: []submissions.CaseResult{{Name: caseName, Verdict: "AC", CheckerLog: log}}}); !errors.Is(err, testfiles.ErrInvalid) {
+			if err := queue.FinishAttempt(ctx, id, attempt, submissions.Result{Verdict: "AC", Passed: 1, Total: 1, RunTwice: true, Cases: []submissions.CaseResult{{Name: caseName, Verdict: "AC", CheckerLog: log}}}); !errors.Is(err, testfiles.ErrInvalid) {
 				t.Fatal("log accepted outside a sample check", err)
+			}
+			// A worker without run-twice judges the job as a plain problem and does not mark its result.
+			for _, verdict := range []string{"AC", "WA", "CE"} {
+				r := submissions.Result{Verdict: verdict, Total: 1}
+				if verdict != "CE" {
+					one, memory := 1.0, int64(1)
+					r.Cases = []submissions.CaseResult{{Name: caseName, Verdict: verdict, CPUTimeMS: &one, WallTimeMS: &one, MemoryBytes: &memory}}
+					if verdict == "AC" {
+						r.Passed = 1
+					}
+				}
+				if err := queue.FinishAttempt(ctx, id, attempt, r); !errors.Is(err, submissions.ErrUnmarkedRunTwice) {
+					t.Fatal("unmarked result for a run twice job", verdict, err)
+				}
+			}
+			if err := queue.FinishAttempt(ctx, id, attempt, submissions.Result{Verdict: "JE"}); err != nil {
+				t.Fatal("unmarked judge error rejected", err)
 			}
 		})
 	})

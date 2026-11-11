@@ -475,7 +475,7 @@ func checkOutboxAndResultIdempotency(t *testing.T, runtime string, memory int, r
 	if err != nil || current.Progress == nil || current.Progress.Verdict != "TLE" {
 		t.Fatalf("early verdict lost: %+v %v", current, err)
 	}
-	final(attempt, submissions.Result{Verdict: "CE", Total: 1, CompileLog: "compiler diagnostic"})
+	final(attempt, submissions.Result{Verdict: "CE", Total: 1, CompileLog: "compiler diagnostic", RunTwice: runTwice})
 	progress(attempt, "JUDGING", 1, 1)
 	final(attempt, submissions.Result{Verdict: "JE"})
 	var verdict string

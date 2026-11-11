@@ -21,6 +21,10 @@ var ErrNotReady = errors.New("problem is not ready for judging")
 // ErrUnscored reports a result without scores for a partial-scoring job, which a judge older than ADR 0025 sends.
 var ErrUnscored = errors.New("partial-scoring result without scores")
 
+// ErrUnmarkedRunTwice reports a result without the run-twice mark for a run-twice job, which a worker older than ADR
+// 0036 sends after judging the job as a plain problem.
+var ErrUnmarkedRunTwice = errors.New("run-twice result without the worker's mark")
+
 type Case = problems.TestCase
 
 const GenerationOutputLimit = 512 << 20
@@ -88,6 +92,9 @@ type Result struct {
 	CompileLog  string       `json:"compileLog,omitempty" hidden:"true"`
 	// Scoring is present only for a partial-scoring problem. Results without it are all-or-nothing (ADR 0025).
 	Scoring *SubmissionScore `json:"scoring,omitempty"`
+	// RunTwice is the worker's mark on every non-JE result of a run-twice job (ADR 0036). FinishAttempt checks it
+	// against the job and never stores it.
+	RunTwice bool `json:"runTwice,omitempty" hidden:"true"`
 }
 
 // MaxCaseScore bounds a case score, so that raw scores such as query counts reach the aggregator as they are.
