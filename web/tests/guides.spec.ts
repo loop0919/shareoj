@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { docPages, legacyDocPaths } from '../shared/docs'
 
-for (const [slug, codeBlocks, tables] of [['generator', 3, 1], ['checkers', 4, 1], ['languages', 0, 11]] as const) {
+for (const [slug, codeBlocks, tables] of [['generator', 3, 1], ['checkers', 7, 2], ['languages', 0, 11]] as const) {
   test(`${slug} renders Markdown, highlighted code and stable section links`, async ({ page, request }, testInfo) => {
     const path = `/docs/${slug}`
     const response = await request.get(path)
@@ -11,10 +11,11 @@ for (const [slug, codeBlocks, tables] of [['generator', 3, 1], ['checkers', 4, 1
     const body = page.locator('article .markdown-body')
     await expect(body.locator('pre.highlighted-code')).toHaveCount(codeBlocks)
     await expect(body.locator('table')).toHaveCount(tables)
+    // The run-twice examples on the checkers page are in Python; every other example is C++.
     for (const code of await body.locator('pre code').all()) {
-      await expect(code).toHaveClass('language-cpp')
+      await expect(code).toHaveClass(/^language-(cpp|python)$/)
       expect(await code.locator('[class^="hljs-"]').count()).toBeGreaterThan(0)
-      await expect(code).toContainText('#include')
+      await expect(code).toContainText((await code.getAttribute('class')) === 'language-cpp' ? '#include' : 'import')
     }
     await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', `https://judge.example${path}`)
     for (const link of await page.getByRole('navigation', { name: 'ガイドの一覧' }).getByRole('list', { name: 'このページの目次' }).getByRole('link').all()) {
