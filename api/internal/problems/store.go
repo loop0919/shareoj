@@ -97,10 +97,19 @@ func (d Draft) PublicScoring() *ScoringSummary {
 	return &ScoringSummary{FullScore: d.Scoring.FullScore(), Groups: append([]ScoringGroup{}, d.Scoring.Groups...)}
 }
 
+// ErrorJudge is the setting of the judging mode that compares numeric tokens within an error. Unlike the other
+// judging methods it carries no code. A nil MarginPercent means the default of 0.1, which is not stored.
+type ErrorJudge struct {
+	Mode          string  `json:"mode"`
+	Epsilon       string  `json:"epsilon"`
+	MarginPercent *string `json:"marginPercent,omitempty"`
+}
+
 type Draft struct {
 	Difficulty    *int        `json:"difficulty"`
 	Interactor    *Generator  `json:"interactor,omitempty"`
 	RunTwice      *Generator  `json:"runTwice,omitempty"`
+	ErrorJudge    *ErrorJudge `json:"errorJudge,omitempty"`
 	Checker       *Generator  `json:"checker,omitempty"`
 	Generators    *Generators `json:"generators,omitempty"`
 	Scoring       *Scoring    `json:"scoring,omitempty"`

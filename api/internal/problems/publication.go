@@ -10,6 +10,12 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// PublicErrorJudge is the part of ErrorJudge that readers see.
+type PublicErrorJudge struct {
+	Mode    string `json:"mode"`
+	Epsilon string `json:"epsilon"`
+}
+
 type PublicProblem struct {
 	EditorialHidden        bool       `json:"editorialHidden"`
 	EditorialRevealAt      *time.Time `json:"editorialRevealAt,omitempty"`
@@ -25,6 +31,8 @@ type PublicProblem struct {
 	Interactive            bool       `json:"interactive,omitempty"`
 	RunTwice               bool       `json:"runTwice,omitempty"`
 	SpecialJudge           bool       `json:"specialJudge,omitempty"`
+	// ErrorJudge shows the error condition to readers without the margin the author keeps.
+	ErrorJudge *PublicErrorJudge `json:"errorJudge,omitempty"`
 	// Scoring is set for a partially scored problem (ADR 0025) and left out of lists.
 	Scoring       *ScoringSummary `json:"scoring,omitempty"`
 	ID            string          `json:"id"`
@@ -143,6 +151,10 @@ func (p *PublicProblem) SetStatement(d Draft) {
 	p.SpecialJudge = d.Checker != nil
 	p.Interactive = d.Interactor != nil
 	p.RunTwice = d.RunTwice != nil
+	p.ErrorJudge = nil
+	if d.ErrorJudge != nil {
+		p.ErrorJudge = &PublicErrorJudge{Mode: d.ErrorJudge.Mode, Epsilon: d.ErrorJudge.Epsilon}
+	}
 	p.HasSamples = d.HasSamples()
 	p.Scoring = d.PublicScoring()
 }

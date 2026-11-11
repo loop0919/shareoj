@@ -16,6 +16,32 @@ var (
 	testFileDigest = regexp.MustCompile(`^[a-f0-9]{64}$`)
 )
 
+var marginPercentPattern = regexp.MustCompile(`^[0-9]{1,3}(\.[0-9]{1,6})?$`)
+
+// Valid reports whether the mode, the epsilon (1e-1 to 1e-12) and the margin (0 to 100 percent) are acceptable.
+func (e *ErrorJudge) Valid() bool {
+	if e == nil || !slices.Contains([]string{"absolute", "relative", "either"}, e.Mode) {
+		return false
+	}
+	ok := false
+	for i := 1; i <= 12; i++ {
+		ok = ok || e.Epsilon == "1e-"+strconv.Itoa(i)
+	}
+	if !ok {
+		return false
+	}
+	if e.MarginPercent == nil {
+		return true
+	}
+	m := *e.MarginPercent
+	if !marginPercentPattern.MatchString(m) {
+		return false
+	}
+	whole, fraction, _ := strings.Cut(m, ".")
+	n, _ := strconv.Atoi(whole)
+	return n < 100 || (n == 100 && strings.Trim(fraction, "0") == "")
+}
+
 func ValidID(id string) bool { return problemID.MatchString(id) }
 
 // Whitespace programs consist of spaces, tabs and newlines, so trimming loses the program.
@@ -40,6 +66,12 @@ func ValidDraft(d Draft, knownRuntimes []string) bool {
 	for _, code := range []*Generator{d.Checker, d.Interactor, d.RunTwice} {
 		if code != nil {
 			judgeCodes++
+		}
+	}
+	if d.ErrorJudge != nil {
+		judgeCodes++
+		if !d.ErrorJudge.Valid() {
+			return false
 		}
 	}
 	if judgeCodes > 1 || !tags.Valid(d.Tags) {
