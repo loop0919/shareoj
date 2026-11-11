@@ -110,12 +110,11 @@ samples = ["sample1"]
 ```
 
 スペシャルジャッジは `[checker]`、インタラクティブは `[interactor]`、2ステップ形式の2ステップ用ジャッジは `[run_twice]` に `source` と `runtime` を書きます。
-3つのうち2つ以上は同時に指定できません。
 testlib形式の判定コードでは、`protocol = "testlib"` も指定します。
 判定コードの書き方は[判定方法の設定](/docs/checkers)を見てください。
 
 誤差ジャッジはコードを書かず、`[error_judge]` に `mode`、`epsilon`、`margin_percent` を文字列で書きます。
-`[checker]`、`[interactor]`、`[run_twice]` と同時には指定できません。
+`[checker]`、`[interactor]`、`[run_twice]`、`[error_judge]` の4つのうち、2つ以上は同時に指定できません。
 `margin_percent` は判定の余裕（パーセント）で、省略すると 0.1 になります。
 
 ```toml

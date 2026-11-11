@@ -106,13 +106,12 @@ samples = ["sample1"]
 出力生成器の答えは、手計算できる例や独立した愚直解と照合します。
 
 スペシャルジャッジを使う場合は `[checker]` に、対話形式を使う場合は `[interactor]` に、2ステップ形式を使う場合は `[run_twice]` に `source` と `runtime` を指定します。
-`[checker]`、`[interactor]`、`[run_twice]` は2つ以上を同時に設定できません。
 `protocol = "legacy"` または `protocol = "testlib"` を指定できるのは、この3種類だけです。
 `testlib` は `cpp23-gcc` と `cpp23-clang` に対応します。
 生成器には `protocol` を指定しません。
 
 誤差ジャッジを使う場合は、コードを書かずに `[error_judge]` を指定します。
-`[checker]`、`[interactor]`、`[run_twice]` と同時には設定できません。
+`[checker]`、`[interactor]`、`[run_twice]`、`[error_judge]` の4つのうち、2つ以上は同時に設定できません。
 `mode` は `absolute`、`relative`、`either` のいずれかで、`epsilon` は `"1e-1"` から `"1e-12"` までのいずれかです。
 `margin_percent` は判定の余裕（パーセント）で、省略すると 0.1 になります。
 値はすべて文字列で書きます。

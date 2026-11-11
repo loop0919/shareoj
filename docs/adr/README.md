@@ -46,3 +46,4 @@ Architecture Decision Record（ADR）は、採用した設計だけでなく、�
 | [0034](0034-list-contest-problem-submissions-in-contest.md) | Accepted | コンテストの問題ページからタブをなくし、提出一覧を問題で絞り込む |
 | [0035](0035-run-frontend-on-bun.md) | Accepted | フロントエンドをBunで動かし、LambdaのSSRもBunにする |
 | [0036](0036-support-run-twice-judge.md) | Accepted（実機検証は未実施） | 提出を1ケースにつき2回実行する2ステップ形式を加える |
+| [0037](0037-support-error-judge.md) | Accepted（実機検証は未実施） | 出力の数を誤差の条件で比べる誤差ジャッジを加える |

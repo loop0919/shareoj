@@ -211,12 +211,11 @@ samples = ["sample1"]
 詳細は [生成器ガイド](../web/app/content/docs/generator.md) を参照してください。
 
 カスタム判定器は `[checker]`、対話プログラムは `[interactor]`、2ステップ用ジャッジは `[run_twice]` に同じ `source` と `runtime` を指定します。
-3つのうち2つ以上は同時に指定できません。
 これらのテーブルだけ `protocol = "legacy"` または `protocol = "testlib"` を指定できます。
 `testlib` は `cpp23-gcc` と `cpp23-clang` に対応し、生成器には `protocol` を指定しません。
 
 数値の出力を誤差を許して比較する「誤差ジャッジ」は、コードを書かずに `[error_judge]` で設定します。
-`[checker]`、`[interactor]`、`[run_twice]` と同時には指定できません。
+`[checker]`、`[interactor]`、`[run_twice]`、`[error_judge]` の4つのうち、2つ以上は同時に指定できません。
 `mode` は `absolute`、`relative`、`either` のいずれかです。
 `epsilon` は `"1e-1"` から `"1e-12"` までのいずれかです。
 `margin_percent` は判定の余裕（パーセント）で、省略すると 0.1 になります。

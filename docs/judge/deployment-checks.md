@@ -138,6 +138,9 @@ python3 judge/rollout.py finish --config judge/.build/rollout.json --run-dir "$J
 [2ステップ形式](run-twice.md#配置)を配布した後にワーカーを2ステップ形式のない版へ戻すと、2ステップ形式の提出はJEになる。
 新しい版へ戻した後に、それらの提出をリジャッジする。
 
+[誤差ジャッジ](error-judge.md#配置)も同じで、配布した後にワーカーを誤差ジャッジのない版へ戻すと、誤差ジャッジの提出はJEになり、`platform`の`unmarked_error_judge_result`が記録される。
+新しい版へ戻した後に、それらの提出をリジャッジする。
+
 ## コード実行を有効にする配布
 
 [ADR 0031](../adr/0031-run-code-without-problem.md)のコード実行は、`code_runs`の表とジョブの形式を加えるので、次の順で配布する。
