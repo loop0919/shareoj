@@ -15,6 +15,7 @@ import uuid
 import sandbox
 import telemetry
 import interactive
+import tolerance
 from runtimes import RUNTIMES, ROOT
 
 ASSETS = Path('/opt/judge/assets')
@@ -56,8 +57,12 @@ def validate_job(job, runtime):
     # Text only echoes its source, so it cannot produce or validate test data.
     if job['runtime'] == 'text-isolate' and (job.get('generate') or job.get('validate')):
         raise ValueError('generation mode')
-    if sum(job.get(field) is not None for field in ('checker', 'interactor', 'runTwice')) > 1:
+    if sum(job.get(field) is not None for field in ('checker', 'interactor', 'runTwice', 'errorJudge')) > 1:
         raise ValueError('conflicting judge modes')
+    if job.get('errorJudge') is not None:
+        tolerance.validate(job['errorJudge'])
+        if job.get('generate') or job.get('validate'):
+            raise ValueError('judge code runtime or mode')
     for field in ('checker', 'interactor', 'runTwice'):
         code = job.get(field)
         if code is None:
@@ -269,7 +274,7 @@ def number(value, maximum):
     return value
 
 
-def case_result(reply, index, case, generate=False, validate=False):
+def case_result(reply, index, case, generate=False, validate=False, error_judge=None):
     if reply.get('index') != index or reply.get('status') not in ('', 'RE', 'SG', 'TO'):
         raise ValueError('invalid case response')
     for key in ('oom', 'overflow'):
@@ -286,7 +291,13 @@ def case_result(reply, index, case, generate=False, validate=False):
         raise ValueError('output limit')
     verdict = sandbox.failure_verdict(reply)
     if verdict is None:
-        if not generate and not validate and re.findall(rb'[^ \t\n\r\v\f]+', output) != re.findall(rb'[^ \t\n\r\v\f]+', case['output'].encode()):
+        if generate or validate:
+            differs = False
+        elif error_judge is not None:
+            differs = not tolerance.matches(output, case['output'].encode(), error_judge)
+        else:
+            differs = re.findall(rb'[^ \t\n\r\v\f]+', output) != re.findall(rb'[^ \t\n\r\v\f]+', case['output'].encode())
+        if differs:
             verdict = 'WA'
         else:
             verdict = 'AC'
@@ -374,7 +385,7 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
     deadline = started + JOB_DEADLINE
     generated_bytes = job.get('generationBaseBytes', 0)
     # A worker without run-twice judges such a job as a plain one, so the bridge stores an unmarked result as JE (ADR 0036).
-    marker = dict(runTwice=True) if job.get('runTwice') else {}
+    marker = dict(runTwice=True) if job.get('runTwice') else dict(errorJudge=True) if job.get('errorJudge') is not None else {}
     result = dict(verdict='AC', passed=0, total=len(job['cases']), cases=[], **marker)
     tle_count = 0
     checker = job.get('checker')
@@ -483,7 +494,8 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
                 reply = sandbox.execute(dict(runtime=job['runtime'], input=base64.b64encode(case['input'].encode()).decode(),
                                              timeLimitMs=job['timeLimitMs'], memoryLimitMb=job['memoryLimitMb']))
                 reply['index'] = index
-                item = case_result(reply, index, case, job.get('generate', False), job.get('validate', False) or checker is not None)
+                item = case_result(reply, index, case, job.get('generate', False), job.get('validate', False) or checker is not None,
+                                   job.get('errorJudge'))
                 if checker is not None and item['verdict'] == 'AC':
                     protocol = checker.get('protocol', 'legacy')
                     checked = sandbox.execute(dict(runtime=checker['runtime'] + '-isolate', input=reply['output'], protocol=protocol,
@@ -578,7 +590,7 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
 def validate_code_run(job, runtime):
     if job.get('runtimeDigest') != runtime or job.get('runtime') not in RUNTIMES:
         raise telemetry.PlatformError('runtime_mismatch')
-    if job.get('codeRun') is not True or any(key in job for key in ('cases', 'checker', 'interactor', 'runTwice', 'scoring', 'generate', 'validate')):
+    if job.get('codeRun') is not True or any(key in job for key in ('cases', 'checker', 'interactor', 'runTwice', 'errorJudge', 'scoring', 'generate', 'validate')):
         raise ValueError('code run mode')
     source = job.get('source')
     if not isinstance(source, str) or not 0 < len(source.encode()) <= sandbox.SOURCE_LIMIT or '\0' in source:

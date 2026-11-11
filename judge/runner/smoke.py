@@ -5,6 +5,8 @@ import json
 import os
 from pathlib import Path
 from runtimes import RUNTIMES
+import time
+import tolerance
 from interactive_smoke import failure_program
 
 
@@ -54,6 +56,49 @@ int main(int argc,char** argv){int n,y;std::ifstream(argv[1])>>n;printf("%d\n",n
     result = judge(scored, digest)
     assert result['verdict'] == 'AC' and result['cases'][0]['score'] == 6 and result['scoring']['score'] == 600, result
     print('scoring aggregate OK', flush=True)
+
+
+# (mode, expected, printed, verdict) at epsilon 1e-6 with the default margin 0.1 %, so T = 1e-6 * 1.001 = 1.001e-6 exactly.
+# absolute: |a-b| <= T. relative: |a-b| <= T*|b|. either: one of the two. The comparison is exact decimal arithmetic.
+ERROR_JUDGE_CASES = [
+    # |a-b| = 0.000001001 = T: on the threshold.
+    ('absolute', '0', '0.000001001', 'AC'),
+    # |a-b| = 0.0000010011 > T by one digit.
+    ('absolute', '0', '0.0000010011', 'WA'),
+    # |a-b| = 0.001001 and T*|b| = 1.001e-6 * 1000 = 0.001001: on the threshold.
+    ('relative', '1000', '1000.001001', 'AC'),
+    # |a-b| = 0.0010011 > 0.001001.
+    ('relative', '1000', '1000.0010011', 'WA'),
+    # Absolute branch: b = 0 gives a relative threshold of 0, and |a-b| = T.
+    ('either', '0', '0.000001001', 'AC'),
+    # Relative branch: |a-b| = 0.001001 exceeds T = 1.001e-6 but equals T*1000.
+    ('either', '1000', '1000.001001', 'AC'),
+    # Both branches fail: |a-b| = 0.0000010011 > T, and T*0 = 0.
+    ('either', '0', '0.0000010011', 'WA'),
+    # |a-b| = 0.0010011 > T*1000 = 0.001001 and > T.
+    ('either', '1000', '1000.0010011', 'WA'),
+]
+
+
+def error_judge_smoke(digest, passed):
+    """Each mode accepts a value exactly on its threshold and rejects one a digit beyond (誤差ジャッジ)."""
+    if 'python314-isolate' not in passed:
+        return
+    for mode, expected, printed, verdict in ERROR_JUDGE_CASES:
+        job = dict(runtime='python314-isolate', runtimeDigest=digest, source=f'print("{printed}")', timeLimitMs=1000, memoryLimitMb=512,
+                   errorJudge=dict(mode=mode, epsilon='1e-6'), cases=[dict(name='boundary', input='', output=expected)])
+        result = judge(job, digest)
+        assert result['verdict'] == verdict and result.get('errorJudge') is True, (mode, expected, printed, verdict, result)
+        print('error judge', mode, expected, printed, verdict, 'OK', flush=True)
+
+
+def tolerance_timing():
+    """Milliseconds for one million comparisons; recorded in the report and never a pass condition."""
+    config = dict(mode='absolute', epsilon='1e-6')
+    started = time.perf_counter()
+    for _ in range(1_000_000):
+        tolerance.matches(b'0.000001001', b'0', config)
+    return round((time.perf_counter() - started) * 1000)
 
 
 with slot():
@@ -182,11 +227,17 @@ int main(int argc,char** argv){
         import testlib_smoke
         testlib_smoke.run(runtime, passed, judge)
         scoring_smoke(runtime, passed)
+        error_judge_smoke(runtime, passed)
     except Exception as error:
         # An incomplete role/isolation test can never authorize publication.
         print('judge role smoke FAILED', repr(error), flush=True)
         failed.extend(passed)
         passed = []
-    print(json.dumps({'runtimeDigest': runtime, 'passedRuntimes': passed, 'failedRuntimes': failed}), flush=True)
+    report = {'runtimeDigest': runtime, 'passedRuntimes': passed, 'failedRuntimes': failed}
+    try:
+        report['toleranceMillionPairsMs'] = tolerance_timing()
+    except Exception as error:
+        print('tolerance timing skipped', repr(error), flush=True)
+    print(json.dumps(report), flush=True)
     if failed:
         raise SystemExit(1)

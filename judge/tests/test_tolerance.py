@@ -3,6 +3,7 @@ import re
 import sys
 import time
 import tracemalloc
+import base64
 import unittest
 from fractions import Fraction
 from pathlib import Path
@@ -312,6 +313,88 @@ class ToleranceTests(unittest.TestCase):
         self.assertIs(tolerance.matches(actual, expected, ABSOLUTE_6), True)
         elapsed = time.perf_counter() - started
         self.assertLess(elapsed, 30, f'{elapsed:.2f}s')
+
+
+
+class ErrorJudgeHostTests(unittest.TestCase):
+    """The worker compares with tolerance.matches only for jobs that carry errorJudge."""
+
+    def run_job(self, printed, expected='0.5\n', error_judge=None, **changes):
+        from test_scoring import Judge, finished
+        request = dict(runtime='cpp23-gcc-isolate', runtimeDigest='sha256:test', source='submitted source',
+                       memoryLimitMb=256, timeLimitMs=1000, cases=[dict(name='c0', input='0', output=expected)])
+        if error_judge is not None:
+            request['errorJudge'] = error_judge
+        request.update(changes)
+        reply = finished(output=base64.b64encode(printed.encode()).decode())
+        return Judge(self, submission=lambda index: reply)(request)
+
+    def test_jobs_reject_malformed_or_conflicting_error_judge(self):
+        from test_scoring import host
+        from test_run_twice import twice_job
+        base = twice_job()
+        del base['runTwice']
+        judge = dict(mode='absolute', epsilon='1e-6')
+        code = dict(runtime='python314', source='x')
+        host.validate_job(dict(base, errorJudge=judge), 'sha256:test')
+        for conflict in (dict(checker=code), dict(interactor=code), dict(runTwice=code), dict(generate=True), dict(validate=True)):
+            with self.subTest(conflict=list(conflict)), self.assertRaises(ValueError):
+                host.validate_job(dict(base, errorJudge=judge, **conflict), 'sha256:test')
+        with self.assertRaisesRegex(ValueError, 'conflicting judge modes'):
+            host.validate_job(dict(base, errorJudge=judge, runTwice=code), 'sha256:test')
+        for bad in (dict(judge, epsilon='1e-13'), dict(judge, mode='x'), {}, 'absolute', dict(judge, extra=1)):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                host.validate_job(dict(base, errorJudge=bad), 'sha256:test')
+
+    def test_host_compares_with_tolerance(self):
+        judge = dict(mode='absolute', epsilon='1e-6')
+        self.assertEqual(self.run_job('0.5000001\n', error_judge=judge)['verdict'], 'AC')
+        self.assertEqual(self.run_job('0.5000001\n')['verdict'], 'WA')
+        result = self.run_job('0.50001\n', error_judge=judge)
+        self.assertEqual((result['verdict'], result['passed']), ('WA', 0))
+
+    def test_results_of_error_judge_jobs_carry_the_mark(self):
+        from test_scoring import Judge
+        from test_run_twice import twice_job
+        judge = dict(mode='absolute', epsilon='1e-6')
+        self.assertIs(self.run_job('0.5\n', error_judge=judge).get('errorJudge'), True)
+        self.assertIs(self.run_job('0.6\n', error_judge=judge).get('errorJudge'), True)
+        ce = Judge(self, compiled={'submitted source': False})(dict(
+            runtime='cpp23-gcc-isolate', runtimeDigest='sha256:test', source='submitted source', memoryLimitMb=256, timeLimitMs=1000,
+            cases=[dict(input='0', output='0')], errorJudge=judge))
+        self.assertEqual((ce['verdict'], ce.get('errorJudge')), ('CE', True))
+        self.assertNotIn('errorJudge', self.run_job('0.5\n'))
+        self.assertNotIn('errorJudge', self.run_job('0.6\n'))
+        twice = Judge(self, compiled={'submitted source': False})(twice_job())
+        self.assertEqual((twice['verdict'], twice.get('runTwice'), 'errorJudge' in twice), ('CE', True, False))
+
+    def test_sample_check_keeps_sample_details(self):
+        result = self.run_job('0.5000001\n', error_judge=dict(mode='absolute', epsilon='1e-6'), easyTest=True)
+        details = result['cases'][0]['sampleDetails']
+        self.assertEqual((result['verdict'], details['input']['text'], details['expectedOutput']['text'], details['actualOutput']['text']),
+                         ('AC', '0\n', '0.5\n', '0.5000001\n'))
+
+    def test_group_scoring_uses_tolerance_verdicts(self):
+        from test_scoring import scoring_job
+        request = scoring_job(groups=(('a', 100),), members=(['a'], ['a']), errorJudge=dict(mode='relative', epsilon='1e-3'))
+        for case in request['cases']:
+            case['output'] = '1000\n'
+        result = self.run_job('1000.5\n', **{key: request[key] for key in ('cases', 'scoring', 'errorJudge')})
+        self.assertEqual((result['verdict'], result['passed']), ('AC', 2))
+        self.assertEqual(result['scoring']['score'], 10000)
+        result = self.run_job('1002\n', **{key: request[key] for key in ('cases', 'scoring', 'errorJudge')})
+        self.assertEqual((result['verdict'], result['scoring']['score']), ('WA', 0))
+
+    def test_local_runner_rejects_error_judge_jobs(self):
+        import io
+        import json
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('local_runner', Path(__file__).resolve().parents[1] / 'local.py')
+        local = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(local)
+        request = dict(runtime='python314-local', errorJudge=dict(mode='absolute', epsilon='1e-6'))
+        with patch('sys.stdin', io.StringIO(json.dumps(request) + '\n')), self.assertRaisesRegex(ValueError, '誤差ジャッジはisolateワーカー'):
+            local.main()
 
 
 if __name__ == '__main__':

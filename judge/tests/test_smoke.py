@@ -12,19 +12,29 @@ ROOT = Path(__file__).resolve().parents[1] / 'runner'
 sys.path.insert(0, str(ROOT))
 import host
 import interactive_smoke
+import tolerance
+
+REAL_MATCHES = tolerance.matches
 
 
 class SmokeReportTests(unittest.TestCase):
-    def run_smoke(self, judge, role_error=None):
+    def run_smoke(self, judge, role_error=None, runtimes='cpp23-gcc-isolate,c23-gcc-isolate', fixtures=None):
         output = io.StringIO()
-        fixtures = (ROOT / 'language-smoke.json').read_text()
+        self.calls, self.count = [], 0
+        def matches(*args):
+            self.count += 1
+            if not self.calls:
+                self.calls.append(args)
+        self.matches = matches
+        fixtures = fixtures or (ROOT / 'language-smoke.json').read_text()
         with patch.object(host, 'judge', side_effect=judge), \
                 patch.object(host, 'slot', return_value=contextlib.nullcontext()), \
                 patch.object(host, 'prepare_cgroup'), \
                 patch.object(host, 'verify_assets', return_value='sha256:' + 'a' * 64), \
                 patch.object(interactive_smoke, 'run', side_effect=role_error), \
                 patch.object(Path, 'read_text', return_value=fixtures), \
-                patch.dict(os.environ, JUDGE_SMOKE_RUNTIMES='cpp23-gcc-isolate,c23-gcc-isolate'), \
+                patch.dict(os.environ, JUDGE_SMOKE_RUNTIMES=runtimes), \
+                patch.object(tolerance, 'matches', self.matches), \
                 contextlib.redirect_stdout(output):
             try:
                 runpy.run_path(str(ROOT / 'smoke.py'))
@@ -66,6 +76,58 @@ class SmokeReportTests(unittest.TestCase):
         report = json.loads(output.splitlines()[-1])
         self.assertEqual(report['passedRuntimes'], [])
         self.assertEqual(set(report['failedRuntimes']), {'cpp23-gcc-isolate', 'c23-gcc-isolate'})
+
+    def error_judge_run(self, wrong_for=None):
+        """Runs the whole smoke with python314 as the only language; error judge jobs get the real comparison."""
+        seen = []
+        baseline = iter(['AC', 'WA', 'CE', 'TLE', 'TLE', 'MLE', 'MLE', 'AC', 'OLE', 'AC', 'AC', 'AC', 'AC', 'AC', 'AC',
+                         'AC', 'MLE', 'AC', 'MLE', 'AC', 'MLE'])
+        def judge(job, _, save_output=None):
+            first = next(baseline, None)
+            if first:
+                return {'verdict': first}
+            if job.get('errorJudge'):
+                printed = job['source'].removeprefix('print("').removesuffix('")')
+                verdict = 'AC' if REAL_MATCHES(printed.encode(), job['cases'][0]['output'].encode(), job['errorJudge']) else 'WA'
+                seen.append((job['errorJudge']['mode'], job['cases'][0]['output'], printed, verdict))
+                if wrong_for == (job['errorJudge']['mode'], verdict):
+                    verdict = 'WA' if verdict == 'AC' else 'AC'
+                return {'verdict': verdict, 'errorJudge': True}
+            if job.get('checker'):
+                return {'verdict': 'AC' if job['checker']['source'] == 'print(3)' else 'WA'}
+            if job.get('generate'):
+                for _ in job['cases']:
+                    save_output(b'3\n')
+            return {'verdict': 'AC'}
+        fixtures = json.dumps({'python314-isolate': [{'name': 'echo', 'source': 'print(3)', 'verdict': 'AC'}]})
+        output, error = self.run_smoke(judge, runtimes='python314-isolate', fixtures=fixtures)
+        return output, error, seen
+
+    def test_error_judge_smoke_covers_three_modes(self):
+        output, error, seen = self.error_judge_run()
+        self.assertEqual({(mode, verdict) for mode, _, _, verdict in seen},
+                         {(mode, verdict) for mode in ('absolute', 'relative', 'either') for verdict in ('AC', 'WA')})
+        # The values sit exactly on T = 1e-6 * 1.001, or one digit past it.
+        self.assertEqual(seen[:2], [('absolute', '0', '0.000001001', 'AC'), ('absolute', '0', '0.0000010011', 'WA')])
+        self.assertEqual(seen[2:4], [('relative', '1000', '1000.001001', 'AC'), ('relative', '1000', '1000.0010011', 'WA')])
+
+    def test_error_judge_smoke_fails_on_a_different_verdict(self):
+        for mode in ('absolute', 'relative', 'either'):
+            for verdict in ('AC', 'WA'):
+                with self.subTest(mode=mode, verdict=verdict):
+                    output, error, _ = self.error_judge_run(wrong_for=(mode, verdict))
+                    report = json.loads(output.splitlines()[-1])
+                    self.assertIsInstance(error, SystemExit)
+                    self.assertEqual(report['passedRuntimes'], [])
+
+    def test_report_records_the_million_pair_timing_without_judging_by_it(self):
+        output, error, _ = self.error_judge_run()
+        self.assertIsNone(error, output)
+        report = json.loads(output.splitlines()[-1])
+        self.assertIsInstance(report['toleranceMillionPairsMs'], int)
+        self.assertEqual(self.count, 1_000_000)
+        self.assertEqual(self.calls[0], (b'0.000001001', b'0', dict(mode='absolute', epsilon='1e-6')))
+        self.assertEqual(report['failedRuntimes'], [])
 
 
 class RunTwiceSmokeTests(unittest.TestCase):
