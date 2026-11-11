@@ -56,9 +56,9 @@ def validate_job(job, runtime):
     # Text only echoes its source, so it cannot produce or validate test data.
     if job['runtime'] == 'text-isolate' and (job.get('generate') or job.get('validate')):
         raise ValueError('generation mode')
-    if job.get('checker') is not None and job.get('interactor') is not None:
+    if sum(job.get(field) is not None for field in ('checker', 'interactor', 'runTwice')) > 1:
         raise ValueError('conflicting judge modes')
-    for field in ('checker', 'interactor'):
+    for field in ('checker', 'interactor', 'runTwice'):
         code = job.get(field)
         if code is None:
             continue
@@ -364,7 +364,8 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
     result = dict(verdict='AC', passed=0, total=len(job['cases']), cases=[])
     tle_count = 0
     checker = job.get('checker')
-    judge_code = job.get('interactor') or checker
+    conversation = job.get('interactor') or job.get('runTwice')
+    judge_code = conversation or checker
     checker_artifact = sandbox.ARTIFACT.with_name('checker')
     scoring = job.get('scoring')
     # Only aggregate mode reads score and result files; existing judge programs may write anything there.
@@ -401,7 +402,7 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
                                        True, artifact=checker_artifact)
             if not compiled['compiled']:
                 diagnostic('検証コードのコンパイル失敗\n' + compiled.get('compileLog', ''))
-                return checker_error(('interactor' if job.get('interactor') else 'checker') + '_compile_failed')
+                return checker_error(('interactor' if job.get('interactor') else 'run_twice' if conversation else 'checker') + '_compile_failed')
         if aggregate:
             # Compile before any case runs, so a broken aggregator never spends the case budget.
             aggregator = scoring['aggregator']
@@ -430,7 +431,7 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
                         raise ValueError('test file loader unavailable')
                     case[key] = load_file(case[key + 'File'])
                 case[key] = normalize_test_data(case[key])
-            if job.get('interactor') is not None:
+            if conversation is not None:
                 diagnostic(f"ケース{index + 1}:\n")
                 case_log = bytearray()
                 log_limit = min(4096, (24 * 1024) // len(job['cases']))
@@ -438,16 +439,19 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
                     diagnostic(message)
                     data = message.encode()
                     case_log.extend(data[:max(0, log_limit + 1 - len(case_log))])
-                item = interactive.execute(job, case, checker_artifact, case_diagnostic, score_file=points)
+                run = interactive.execute_twice if job.get('runTwice') else interactive.execute
+                item = run(job, case, checker_artifact, case_diagnostic, score_file=points)
                 if job.get('easyTest'):
                     item['checkerLog'] = sample_preview(bytes(case_log), log_limit)
                 item['name'] = case.get('name') or f'ケース{index + 1}'
                 if item['verdict'] == 'JE':
-                    return checker_error('interactor_execution_failed')
+                    if item.get('reason'):
+                        diagnostic(item['reason'], keep=True)
+                    return checker_error(('interactor' if job.get('interactor') else 'run_twice') + '_execution_failed')
                 if points:
                     data, exit_code = item.pop('scoreFile'), item.pop('judgeExitCode')
                     try:
-                        verdict, score, message = case_score(job['interactor'].get('protocol', 'legacy'), item['verdict'], data, exit_code)
+                        verdict, score, message = case_score(conversation.get('protocol', 'legacy'), item['verdict'], data, exit_code)
                     except ScoreError as error:
                         diagnostic(f"{error}\n", keep=True)
                         return checker_error('judge_score_invalid')
@@ -490,7 +494,7 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
                     item['verdict'] = verdict
                     if score is not None:
                         item['score'] = score
-            if job.get('easyTest') and not job.get('interactor'):
+            if job.get('easyTest') and conversation is None:
                 limit = min(4096, (24 * 1024) // len(job['cases']) // 3)
                 actual = base64.b64decode(reply['output'], validate=True)
                 item['sampleDetails'] = dict(input=sample_preview(case['input'].encode(), limit),

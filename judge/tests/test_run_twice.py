@@ -1,3 +1,4 @@
+import base64
 import os
 import subprocess
 import tempfile
@@ -141,6 +142,136 @@ class RunTwiceTests(unittest.TestCase):
         self.assertIsNone(self.execute_first_run('legacy', write('handoff', b'x' * (sandbox.HANDOFF_LIMIT + 1)))['handoff'])
         self.assertEqual(len(self.execute_first_run('legacy', write('handoff', b'x' * sandbox.HANDOFF_LIMIT))['handoff']),
                          sandbox.HANDOFF_LIMIT)
+
+    def test_score_file_of_a_skipped_second_run_is_empty_for_legacy_only(self):
+        for protocol, expected in (('legacy', b''), ('testlib', b'50')):
+            with self.subTest(protocol=protocol):
+                request = job()
+                request['runTwice']['protocol'] = protocol
+                first = dict(verdict='WA', cpuTimeMs=1, wallTimeMs=1, memoryBytes=1, scoreFile=b'50', judgeExitCode=1)
+                with patch.object(interactive, 'execute', lambda *args, **kwargs: dict(first)):
+                    result = interactive.execute_twice(request, dict(input='i', output='o'), Path('a'), lambda _: None, True)
+                self.assertEqual((result['scoreFile'], result['judgeExitCode']), (expected, 1))
+
+
+def twice_job(**changes):
+    request = dict(runtime='cpp23-gcc-isolate', runtimeDigest='sha256:test', source='submitted source',
+                   runTwice=dict(runtime='python314', source='assert True'), memoryLimitMb=512, timeLimitMs=1000,
+                   cases=[dict(input='10\n', output='expected\n')] * 3)
+    request.update(changes)
+    return request
+
+
+def ok(**changes):
+    return dict(verdict='AC', cpuTimeMs=7, wallTimeMs=20, memoryBytes=512, **changes)
+
+
+class RunTwiceHostTests(unittest.TestCase):
+    def judge(self, request, twice, compile_ok=True):
+        compiled = []
+
+        def compile(item, compile_phase=False, **kwargs):
+            compiled.append(item['runtime'])
+            Path(kwargs.get('artifact', host.sandbox.ARTIFACT)).write_text(item['source'])
+            return dict(compiled=compile_ok or len(compiled) < 2, compileLog='log')
+        with tempfile.TemporaryDirectory() as tmp, patch.object(host.sandbox, 'ARTIFACT', Path(tmp) / 'main'), \
+                patch.object(host.sandbox, 'META', Path(tmp) / 'meta'), \
+                patch.object(host.sandbox, 'execute', compile), \
+                patch.object(host.telemetry, 'note_failure') as note, \
+                patch.object(interactive, 'execute_twice', twice) as run:
+            result = host.judge(request, 'sha256:test')
+        return result, compiled, note, run
+
+    def test_jobs_reject_two_judge_codes(self):
+        code = dict(runtime='python314', source='x')
+        for others in (('checker',), ('interactor',), ('checker', 'interactor')):
+            request = twice_job(**{name: code for name in others})
+            with self.assertRaises(ValueError):
+                host.validate_job(request, 'sha256:test')
+        host.validate_job(twice_job(), 'sha256:test')
+        for field in ('generate', 'validate'):
+            with self.assertRaises(ValueError):
+                host.validate_job(twice_job(**{field: True}), 'sha256:test')
+        for bad in ({}, False, {'runtime': 'sh', 'source': 'x'}, {'runtime': 'python314', 'source': ''}):
+            with self.assertRaises(ValueError):
+                host.validate_job(twice_job(runTwice=bad), 'sha256:test')
+
+    def test_host_runs_each_case_through_execute_twice(self):
+        metrics = [(1, 2, 3), (4, 5, 6), (7, 8, 9)]
+        calls = iter(metrics)
+
+        def twice(request, case, artifact, diagnostic, score_file=False):
+            cpu, wall, memory = next(calls)
+            return dict(verdict='AC', cpuTimeMs=cpu, wallTimeMs=wall, memoryBytes=memory)
+        result, compiled, _, _ = self.judge(twice_job(), twice)
+        self.assertEqual(compiled, ['cpp23-gcc-isolate', 'python314-isolate'])
+        self.assertEqual(result['verdict'], 'AC')
+        self.assertEqual(result['passed'], 3)
+        self.assertEqual([(c['cpuTimeMs'], c['wallTimeMs'], c['memoryBytes']) for c in result['cases']], metrics)
+
+    def test_judge_compile_failure_is_reported(self):
+        result, _, note, _ = self.judge(twice_job(), None, compile_ok=False)
+        self.assertEqual(result['verdict'], 'JE')
+        self.assertEqual(note.call_args.args, ('judge_code', 'run_twice_compile_failed'))
+
+    def test_handoff_failure_makes_the_submission_je(self):
+        reason = '引き継ぎファイルを読めません（16 MiB以下の通常のファイルにしてください）\n'
+        result, _, note, _ = self.judge(twice_job(), lambda *args, **kwargs: dict(verdict='JE', reason=reason))
+        self.assertEqual(result['verdict'], 'JE')
+        self.assertTrue(result['checkerLog'].endswith(reason))
+        self.assertEqual(note.call_args.args, ('judge_code', 'run_twice_execution_failed'))
+
+    def test_first_run_tle_counts_once_per_case_for_group_cutoff(self):
+        from test_scoring import scoring_job
+        request = scoring_job(groups=(('a', 100),), members=(['a'], ['a'], ['a']), runTwice=dict(runtime='python314', source='x'))
+        calls = []
+
+        def twice(request, case, artifact, diagnostic, score_file=False):
+            calls.append(case['input'])
+            return ok() | dict(verdict='TLE')
+        result, _, _, _ = self.judge(request, twice)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual([c['verdict'] for c in result['cases']], ['TLE', 'TLE', 'SKIPPED'])
+
+    def test_aggregate_points_use_the_returned_score_file(self):
+        from test_scoring import scoring_job, finished
+        request = scoring_job('aggregate', groups=(('a', 100),), members=(['a'],), runTwice=dict(runtime='python314', source='x'))
+        seen = []
+
+        def compile(item, compile_phase=False, **kwargs):
+            if compile_phase:
+                Path(kwargs.get('artifact', host.sandbox.ARTIFACT)).write_text(item['source'])
+                return dict(compiled=True)
+            seen.append(base64.b64decode(item['input']).decode())
+            return finished(output=base64.b64encode(b'80').decode(), checkerLog='')
+        twice = Mock(return_value=ok(scoreFile=b'80', judgeExitCode=0))
+        with tempfile.TemporaryDirectory() as tmp, patch.object(host.sandbox, 'ARTIFACT', Path(tmp) / 'main'), \
+                patch.object(host.sandbox, 'META', Path(tmp) / 'meta'), \
+                patch.object(host.sandbox, 'execute', compile), patch.object(interactive, 'execute_twice', twice):
+            result = host.judge(request, 'sha256:test')
+        self.assertEqual(result['cases'][0]['score'], 80)
+        self.assertTrue(twice.call_args.kwargs['score_file'])
+        self.assertEqual(seen, ['1 1\n100\nAC 80 0 1 0\n'])
+
+    def test_sample_check_keeps_per_case_log_with_headings(self):
+        def twice(request, case, artifact, diagnostic, score_file=False):
+            diagnostic('1回目:\n履歴\n')
+            diagnostic('2回目: 実行しません（1回目の判定: WA）\n')
+            return ok() | dict(verdict='WA')
+        result, _, _, _ = self.judge(twice_job(easyTest=True), twice)
+        for case in result['cases']:
+            self.assertNotIn('sampleDetails', case)
+            self.assertIn('1回目:\n履歴\n2回目: 実行しません（1回目の判定: WA）\n', case['checkerLog']['text'])
+
+    def test_local_runner_rejects_run_twice_jobs(self):
+        import io
+        import json
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('local_runner', Path(__file__).resolve().parents[1] / 'local.py')
+        local = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(local)
+        with patch('sys.stdin', io.StringIO(json.dumps(twice_job()) + '\n')), self.assertRaisesRegex(ValueError, '2ステップ形式'):
+            local.main()
 
 
 if __name__ == '__main__':

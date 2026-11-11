@@ -33,6 +33,8 @@ def main():
     job = json.loads(sys.stdin.readline())
     if job.get('interactor'):
         raise ValueError('対話形式はisolateワーカーで実行してください。')
+    if job.get('runTwice'):
+        raise ValueError('2ステップ形式はisolateワーカーで実行してください。')
     if job['runtime'] not in ('cpp17-local', 'cpp23-gcc-local', 'python314-local'):
         raise ValueError('unsupported local runtime')
     job['runtime'] = job['runtime'].removesuffix('-local') + '-isolate'

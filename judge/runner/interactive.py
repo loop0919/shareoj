@@ -191,6 +191,9 @@ def execute_twice(job, case, artifact, diagnostic, score_file=False):
     if first['verdict'] != 'AC':
         diagnostic(f"2回目: 実行しません（1回目の判定: {first['verdict']}）\n")
         first.pop('handoff', None)
+        if score_file and code.get('protocol', 'legacy') == 'legacy':
+            # Points come from run 2 only; the testlib result file carries just the verdict and message.
+            first['scoreFile'] = b''
         return first
     if first['handoff'] is None:
         return dict(verdict='JE', reason='引き継ぎファイルを読めません（16 MiB以下の通常のファイルにしてください）\n')
