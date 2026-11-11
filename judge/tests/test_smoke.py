@@ -23,8 +23,8 @@ class SmokeReportTests(unittest.TestCase):
         self.calls, self.count = [], 0
         def matches(*args):
             self.count += 1
-            if not self.calls:
-                self.calls.append(args)
+            self.calls.append(args)
+            return getattr(self, 'matches_result', True)
         self.matches = matches
         fixtures = fixtures or (ROOT / 'language-smoke.json').read_text()
         with patch.object(host, 'judge', side_effect=judge), \
@@ -125,8 +125,19 @@ class SmokeReportTests(unittest.TestCase):
         self.assertIsNone(error, output)
         report = json.loads(output.splitlines()[-1])
         self.assertIsInstance(report['toleranceMillionPairsMs'], int)
-        self.assertEqual(self.count, 1_000_000)
-        self.assertEqual(self.calls[0], (b'0.000001001', b'0', dict(mode='absolute', epsilon='1e-6')))
+        self.assertEqual(self.count, 1)
+        actual, expected, config = self.calls[0]
+        self.assertEqual(actual, b'0.000001001 ' * 1_000_000)
+        self.assertEqual(expected, b'0 ' * 1_000_000)
+        self.assertEqual(config, dict(mode='absolute', epsilon='1e-6'))
+
+    def test_timing_is_skipped_when_the_comparison_is_broken(self):
+        self.matches_result = False
+        output, error, _ = self.error_judge_run()
+        self.assertIsNone(error, output)
+        report = json.loads(output.splitlines()[-1])
+        self.assertNotIn('toleranceMillionPairsMs', report)
+        self.assertIn('tolerance timing skipped', output)
         self.assertEqual(report['failedRuntimes'], [])
 
 

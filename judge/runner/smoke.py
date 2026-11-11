@@ -93,12 +93,14 @@ def error_judge_smoke(digest, passed):
 
 
 def tolerance_timing():
-    """Milliseconds for one million comparisons; recorded in the report and never a pass condition."""
-    config = dict(mode='absolute', epsilon='1e-6')
+    """Milliseconds for one comparison of a million boundary pairs; recorded in the report and never a pass condition."""
+    actual, expected = b'0.000001001 ' * 1_000_000, b'0 ' * 1_000_000
     started = time.perf_counter()
-    for _ in range(1_000_000):
-        tolerance.matches(b'0.000001001', b'0', config)
-    return round((time.perf_counter() - started) * 1000)
+    matched = tolerance.matches(actual, expected, dict(mode='absolute', epsilon='1e-6'))
+    elapsed = time.perf_counter() - started
+    if not matched:
+        raise AssertionError('the boundary pairs did not match')
+    return round(elapsed * 1000)
 
 
 with slot():

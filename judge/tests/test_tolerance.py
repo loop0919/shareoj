@@ -207,7 +207,7 @@ class ToleranceTests(unittest.TestCase):
         for mode in ('absolute', 'relative', 'either'):
             for epsilon in tolerance.EPSILONS:
                 tolerance.validate({'mode': mode, 'epsilon': epsilon})
-        for margin in ('0', '0.5', '100', '12.345678', '100.000000', '000', None):
+        for margin in ('0', '0.5', '100', '12.345678', '100.000000', '000', '099', None):
             tolerance.validate({'mode': 'either', 'epsilon': '1e-6', 'marginPercent': margin})
         for bad in (None, {}, [], 'either', {'mode': 'both', 'epsilon': '1e-6'}, {'epsilon': '1e-6'},
                     {'mode': 'either'}, {'mode': 'either', 'epsilon': '1e-6', 'extra': 1}):
@@ -222,7 +222,33 @@ class ToleranceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             tolerance.matches(b'1', b'1', {'mode': 'both', 'epsilon': '1e-6'})
 
-    def test_fast_path_agrees_with_fractions(self):
+    def test_agrees_with_fractions(self):
+        """The whole module is checked against the Fraction-only reference, on fixed limit cases and on random pairs."""
+        big = b'1' * 396
+        limits = [
+            (big + b'.5', big + b'.4', 'absolute'),
+            (b'0.' + big, b'0.' + big[:-1] + b'2', 'absolute'),
+            (b'1' * 400, b'1' * 399 + b'2', 'relative'),
+            (b'1' * 400, b'1' * 399 + b'2', 'absolute'),
+            (b'1' * 401, b'1' * 400 + b'2', 'either'),
+            (b'1e400', b'1.000000000001e400', 'relative'),
+            (b'1e400', b'2e400', 'either'),
+            (b'1e-400', b'0', 'absolute'),
+            (b'1e-400', b'2e-400', 'relative'),
+            (b'1e401', b'1e401', 'either'),
+            (b'1e401', b'1e402', 'either'),
+            (b'1' + b'0' * 395 + b'.' + b'0' * 3, b'1e-400', 'either'),
+            (b'1e400', b'0.000001', 'absolute'),
+            (b'1e400', b'1e-400', 'either'),
+            (b'1e-400', b'-1e400', 'either'),
+            (b'-' + b'9' * 399, b'1e-400', 'absolute'),
+        ]
+        for a, b, mode in limits:
+            for margin in ('0', '0.1', '100'):
+                setting = config(mode, '1e-6', margin)
+                with self.subTest(a=a[:20], b=b[:20], mode=mode, margin=margin):
+                    self.assertIs(tolerance.matches(a, b, setting), reference(a, b, setting))
+                    self.assertIs(tolerance.matches(b, a, setting), reference(b, a, setting))
         rng = random.Random(20261112)
         results = {True: 0, False: 0}
         for _ in range(20_000):
@@ -264,6 +290,15 @@ class ToleranceTests(unittest.TestCase):
             results[want] += 1
             self.assertIs(tolerance.matches(a, b, setting), want, (a, b, setting))
         self.assertGreater(min(results.values()), 3000, results)
+
+    def test_separators_are_exactly_the_plain_judging_class(self):
+        for value in range(256):
+            with self.subTest(byte=value):
+                text = bytes([65, value, 66])
+                tokens = text.split()
+                self.assertEqual(tokens, re.findall(rb'[^ \t\n\r\v\f]+', text))
+                self.assertIs(tolerance.matches(text, b'A B', ABSOLUTE_6), tokens == [b'A', b'B'])
+                self.assertIs(tolerance.matches(text, b'A B', ABSOLUTE_6), value in b' \t\n\r\v\f')
 
     def test_chunk_boundaries_do_not_change_tokens(self):
         rng = random.Random(7)
