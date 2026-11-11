@@ -222,7 +222,7 @@ const inputSnippet = '\n```input\n$N$\n$A_1 \\quad A_2 \\quad \\cdots \\quad A_N
     </div>
     <TestCaseEditor v-if="section === 'tests'" v-model="draft.testCases" v-model:markdown="draft.markdown" :scoring="draft.scoring" :disabled="!ready || publishing || generating" :problem-id="cloudId" @show-scoring="section = 'scoring'" />
     <TestCaseGenerator v-if="ready" v-show="section === 'generators'" v-model="draft.testCases" v-model:config="draft.generators" v-model:busy="generating" v-model:judging="judging" :save="saveDraft" :disabled="publishing" :problem-id="cloudId" @show-cases="section = 'tests'">
-      <template #checker><ProblemChecker v-model="draft.checker" v-model:interactor="draft.interactor" :scoring-mode="draft.scoring?.mode" :disabled="publishing" :problem-id="cloudId" :save="saveDraft" :published="!!publishedVersion" /></template>
+      <template #checker><ProblemChecker v-model="draft.checker" v-model:interactor="draft.interactor" v-model:run-twice="draft.runTwice" :scoring-mode="draft.scoring?.mode" :disabled="publishing" :problem-id="cloudId" :save="saveDraft" :published="!!publishedVersion" /></template>
     </TestCaseGenerator>
     <ScoringEditor v-if="section === 'scoring'" v-model:scoring="draft.scoring" v-model:cases="draft.testCases" :disabled="!ready || publishing || generating" :contest="!!contestId" :memory="scoringMemory" @show-cases="section = 'tests'" />
     <section v-if="managing" class="problem-management" aria-labelledby="management-title">

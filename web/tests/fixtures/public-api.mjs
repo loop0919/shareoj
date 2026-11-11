@@ -13,6 +13,13 @@ const partialContest = {
   status: 'running', canEdit: false, official: true, participating: false, canViewSubmissions: false, partialScoring: true,
   problems: [{ id: partialProblem.id, title: partialProblem.title, points: 100, partial: true }, { id: problem.id, title: problem.title, points: 200 }],
 }
+// A run-twice problem, on its own and in a contest of its own.
+const runTwiceProblem = { ...problem, id: 'adadadad-adad-4dad-8dad-adadadadadad', title: '2ステップの問題', runTwice: true }
+const runTwiceContest = {
+  id: 'aeaeaeae-aeae-4eae-8eae-aeaeaeaeaeae', title: '2ステップのコンテスト', author: 'alice', description: '', startsAt: '2026-09-10T00:00:00Z', endsAt: '2026-09-10T02:00:00Z', penaltyMinutes: 5,
+  status: 'running', canEdit: false, official: true, participating: false, canViewSubmissions: false,
+  problems: [{ id: runTwiceProblem.id, title: runTwiceProblem.title, points: 100 }],
+}
 // The list tagged pagination, newest first, paged by offset and limit (ADR 0028).
 const pagedProblems = Array.from({ length: 120 }, (_, i) => ({
   id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`, title: `問題 ${String(i + 1).padStart(3, '0')}`, author: 'alice', publishedAt: '2026-09-10T00:00:00Z',
@@ -215,6 +222,9 @@ createServer(async (req, res) => {
   }
   else if (path === `/problems/${problem.id}`) res.end(JSON.stringify(problem))
   else if (path === `/problems/${partialProblem.id}`) res.end(JSON.stringify(partialProblem))
+  else if (path === `/problems/${runTwiceProblem.id}`) res.end(JSON.stringify(runTwiceProblem))
+  else if (path === `/contests/${runTwiceContest.id}`) res.end(JSON.stringify(runTwiceContest))
+  else if (path === `/contests/${runTwiceContest.id}/problems/${runTwiceProblem.id}`) res.end(JSON.stringify(runTwiceProblem))
   else if (path === `/contests/${partialContest.id}`) res.end(JSON.stringify(partialContest))
   else if (path === `/contests/${partialContest.id}/standings`) res.end('[]')
   else if (path === `/contests/${partialContest.id}/problems/${partialProblem.id}`) res.end(JSON.stringify(partialProblem))

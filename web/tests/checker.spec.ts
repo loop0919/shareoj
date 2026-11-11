@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test'
 import { test, expect } from './fixtures/account'
+import { shortId } from '../shared/utils/short-id'
 
 async function openChecker(page: Page) {
   await page.getByRole('button', { name: '生成・検証・判定', exact: true }).click()
@@ -127,4 +128,72 @@ test('judge tab saves the draft and opens the problem page to submit', async ({ 
   await open.click()
   expect((await saved).postDataJSON().draft.checker.source).toBe('int main(){}')
   await expect(page).toHaveURL(/\/problems\/[0-9A-Za-z]{22}#submission-title$/)
+})
+
+const runTwiceLabel = '2ステップ用ジャッジ'
+const runtimes = [{ id: 'cpp23-gcc', label: 'C++23' }, { id: 'python314', label: 'Python' }]
+
+test('2ステップ形式を選ぶと下書きに runTwice が入る', async ({ page }) => {
+  await page.route('**/api/runtimes', route => route.fulfill({ json: { items: runtimes } }))
+  await Promise.all([page.waitForResponse('**/api/runtimes'), page.goto('/problems/new?fresh=1')])
+  await page.getByLabel('問題のタイトル').fill('2ステップ問題')
+  await openChecker(page)
+  await page.getByRole('combobox', { name: '判定方法', exact: true }).selectOption({ label: '2ステップ形式（Run-twice）' })
+  await page.getByLabel(`${runTwiceLabel}の言語`).selectOption('python314')
+  await page.getByLabel(runTwiceLabel, { exact: true }).fill('print(1)')
+  const saved = page.waitForResponse(response => response.url().includes('/api/my/problems/') && response.request().method() === 'PUT')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  const body = (await saved).request().postDataJSON()
+  expect(body.draft.runTwice).toEqual({ runtime: 'python314', source: 'print(1)', protocol: 'legacy' })
+  expect(body.draft.checker).toBeNull()
+  expect(body.draft.interactor).toBeNull()
+  await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
+  await page.reload()
+  await openChecker(page)
+  await expect(page.getByRole('combobox', { name: '判定方法', exact: true })).toHaveValue('runTwice')
+})
+
+test('対話形式から2ステップ形式へ切り替えるとコードが引き継がれる', async ({ page }) => {
+  await page.route('**/api/runtimes', route => route.fulfill({ json: { items: runtimes } }))
+  await Promise.all([page.waitForResponse('**/api/runtimes'), page.goto('/problems/new?fresh=1')])
+  await page.getByLabel('問題のタイトル').fill('判定方法の切り替え')
+  await openChecker(page)
+  const selector = page.getByRole('combobox', { name: '判定方法', exact: true })
+  await selector.selectOption('interactive')
+  await page.getByLabel('対話用ジャッジの言語').selectOption('python314')
+  await page.getByLabel('対話用ジャッジ', { exact: true }).fill('print(7)')
+  await selector.selectOption('runTwice')
+  await expect(page.getByLabel(`${runTwiceLabel}の言語`)).toHaveValue('python314')
+  await expect(page.getByLabel(runTwiceLabel, { exact: true })).toHaveText('print(7)')
+  const saved = page.waitForResponse(response => response.url().includes('/api/my/problems/') && response.request().method() === 'PUT')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  const body = (await saved).request().postDataJSON()
+  expect(body.draft.interactor).toBeNull()
+  expect(body.draft.checker).toBeNull()
+  expect(body.draft.runTwice.source).toBe('print(7)')
+  await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
+})
+
+test('2ステップ形式の説明に引数が出る', async ({ page }) => {
+  await page.route('**/api/runtimes', route => route.fulfill({ json: { items: runtimes } }))
+  await Promise.all([page.waitForResponse('**/api/runtimes'), page.goto('/problems/new?fresh=1')])
+  await openChecker(page)
+  await page.getByRole('combobox', { name: '判定方法', exact: true }).selectOption('runTwice')
+  await page.getByText(`${runTwiceLabel}の仕様`, { exact: true }).click()
+  await expect(page.getByLabel('判定コードの形式')).toHaveValue('testlib')
+  await expect(page.getByText('1回目に tout へ書いた内容が、2回目の入力（inf）になります。', { exact: false })).toBeVisible()
+  await expect(page.getByText('各ケースCPU 5秒・256 MiB', { exact: false })).toBeVisible()
+  await page.getByLabel('判定コードの形式').selectOption('legacy')
+  await expect(page.getByText('何回目か（1か2）、引き継ぎファイルのパス（この順）。', { exact: false })).toBeVisible()
+  await expect(page.getByText('引き継ぎファイルは1回目に書き、2回目に読みます。', { exact: false })).toBeVisible()
+})
+
+test('問題ページに2ステップ形式と表示する', async ({ page }) => {
+  const notice = '2ステップ形式（Run-twice）：プログラムは1ケースにつき2回実行されます。応答を待つ前に出力をflushしてください。'
+  await page.goto(`/problems/${shortId('adadadad-adad-4dad-8dad-adadadadadad')}`)
+  await expect(page.getByText(notice, { exact: true })).toBeVisible()
+  await page.goto(`/contests/${shortId('aeaeaeae-aeae-4eae-8eae-aeaeaeaeaeae')}/A`)
+  await expect(page.getByText(notice, { exact: true })).toBeVisible()
+  await page.goto(`/problems/${shortId('11111111-1111-4111-8111-111111111111')}`)
+  await expect(page.getByText('2ステップ形式', { exact: false })).toHaveCount(0)
 })

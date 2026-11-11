@@ -33,6 +33,7 @@ export const problemDraftSchema = z.object({
   difficulty: difficultySchema,
   checker: judgeCodeSchema.nullable().default(null),
   interactor: judgeCodeSchema.nullable().default(null),
+  runTwice: judgeCodeSchema.nullable().default(null),
   generators: generatorsSchema.default(emptyGenerators),
   scoring: scoringSchema.nullable().default(null),
   title: z.string().max(120),

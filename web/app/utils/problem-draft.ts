@@ -113,5 +113,5 @@ export function draftErrors(draft: Pick<ProblemDraft, 'title' | 'markdown'>) {
 
 // A new problem's draft. Each call builds new arrays and generators, so the editor's draft and its reset share nothing.
 export function initialProblemDraft() {
-  return { checker: null as ProblemDraft['checker'], interactor: null as ProblemDraft['interactor'], scoring: null as ProblemDraft['scoring'], difficulty: null as number | null, title: '', markdown: markdownTemplate.statement, editorial: markdownTemplate.editorial, tags: [] as string[], generators: emptyGenerators(), timeLimitMs: '2000', memoryLimitMb: '512', testCases: [] as TestCase[] }
+  return { checker: null as ProblemDraft['checker'], interactor: null as ProblemDraft['interactor'], runTwice: null as ProblemDraft['runTwice'], scoring: null as ProblemDraft['scoring'], difficulty: null as number | null, title: '', markdown: markdownTemplate.statement, editorial: markdownTemplate.editorial, tags: [] as string[], generators: emptyGenerators(), timeLimitMs: '2000', memoryLimitMb: '512', testCases: [] as TestCase[] }
 }

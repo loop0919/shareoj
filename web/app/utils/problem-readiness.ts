@@ -14,6 +14,8 @@ const messages: Record<string, string> = {
   checker_runtime_unavailable: '検証コードの言語が現在使えません（ジャッジの保守中の可能性があります）',
   interactor_source_missing: '対話用ジャッジのコードが空です',
   interactor_runtime_unavailable: '対話用ジャッジの言語が現在使えません（ジャッジの保守中の可能性があります）',
+  run_twice_source_missing: '2ステップ用ジャッジのコードが空です',
+  run_twice_runtime_unavailable: '2ステップ用ジャッジの言語が現在使えません（ジャッジの保守中の可能性があります）',
   test_cases_missing: 'テストケースが1件もありません',
   scoring_groups_missing: '部分点のグループが1つもありません',
   scoring_group_empty: 'テストケースが1件も属していないグループがあります',
@@ -43,7 +45,7 @@ const sections: Record<string, EditorSection> = {
   title_missing: 'statement', statement_missing: 'statement', difficulty_missing: 'statement',
   test_cases_missing: 'tests', test_cases_only_samples: 'tests', scoring_group_empty: 'tests', test_case_ungrouped: 'tests',
   scoring_groups_missing: 'scoring', aggregator_source_missing: 'scoring', aggregator_runtime_unavailable: 'scoring',
-  checker_source_missing: 'checker', checker_runtime_unavailable: 'checker', interactor_source_missing: 'checker', interactor_runtime_unavailable: 'checker',
+  checker_source_missing: 'checker', checker_runtime_unavailable: 'checker', interactor_source_missing: 'checker', interactor_runtime_unavailable: 'checker', run_twice_source_missing: 'checker', run_twice_runtime_unavailable: 'checker',
   editorial_missing: 'editorial',
 }
 export const issueSection = (code: string): EditorSection | undefined => sections[code]

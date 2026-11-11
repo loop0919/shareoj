@@ -6,6 +6,7 @@ import { hasSource } from '~/utils/has-source'
 
 const checker = defineModel<ProblemDraft['checker']>({ required: true })
 const interactor = defineModel<ProblemDraft['interactor']>('interactor', { required: true })
+const runTwice = defineModel<ProblemDraft['runTwice']>('runTwice', { required: true })
 // In the aggregate mode the score file and testlib's quitp give each case its score (ADR 0025).
 const props = defineProps<{ disabled: boolean, problemId: string, published: boolean, save: () => Promise<boolean>, scoringMode?: 'groups' | 'aggregate' }>()
 const aggregate = computed(() => props.scoringMode === 'aggregate')
@@ -13,23 +14,26 @@ const { data: catalog, error: catalogError } = useJudgeCatalog()
 const available = computed(() => judgeCodeRuntimes(usableRuntimes(catalog.value, catalogError.value)))
 let previousCode: ProblemDraft['checker'] = null
 const method = computed({
-  get: () => interactor.value ? 'interactive' : checker.value ? 'special' : 'normal',
+  get: () => runTwice.value ? 'runTwice' : interactor.value ? 'interactive' : checker.value ? 'special' : 'normal',
   set: value => {
     const runtime = preferredRuntime(available.value)
-    const previous = interactor.value ?? checker.value ?? previousCode ?? { runtime, source: '', protocol: runtime === 'cpp23-gcc' ? 'testlib' : 'legacy' }
+    const previous = runTwice.value ?? interactor.value ?? checker.value ?? previousCode ?? { runtime, source: '', protocol: runtime === 'cpp23-gcc' ? 'testlib' : 'legacy' }
     previousCode = previous
     checker.value = value === 'special' ? previous : null
     interactor.value = value === 'interactive' ? previous : null
+    runTwice.value = value === 'runTwice' ? previous : null
   },
 })
-const code = computed(() => interactor.value ?? checker.value)
+const code = computed(() => runTwice.value ?? interactor.value ?? checker.value)
+// Both modes talk to the judge over stdin/stdout, with the same limits and testlib entry point.
+const talking = computed(() => !!(interactor.value ?? runTwice.value))
 const supportsTestlib = computed(() => ['cpp23-gcc', 'cpp23-clang'].includes(code.value?.runtime ?? ''))
 const protocol = computed({
   get: () => code.value?.protocol ?? 'legacy',
   set: (value: 'legacy' | 'testlib') => { if (code.value) code.value.protocol = value },
 })
 watch(supportsTestlib, supported => { if (!supported && protocol.value === 'testlib') protocol.value = 'legacy' })
-const codeLabel = computed(() => interactor.value ? '対話用ジャッジ' : '検証コード')
+const codeLabel = computed(() => runTwice.value ? '2ステップ用ジャッジ' : interactor.value ? '対話用ジャッジ' : '検証コード')
 const specOpen = useState('code-spec-open', () => false)
 const opening = ref(false)
 const openError = ref('')
@@ -57,6 +61,7 @@ const error = computed(() => code.value && (!hasSource(code.value.runtime, code.
           <option value="normal">通常判定（空白区切りで比較）</option>
           <option value="special">スペシャルジャッジ</option>
           <option value="interactive">インタラクティブ（対話形式）</option>
+          <option value="runTwice">2ステップ形式（Run-twice）</option>
         </select>
       </div>
       <template v-if="code">
@@ -80,19 +85,21 @@ const error = computed(() => code.value && (!hasSource(code.value.runtime, code.
       <details class="code-spec" :open="specOpen" @toggle="specOpen = ($event.target as HTMLDetailsElement).open">
         <summary><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>{{ codeLabel }}の仕様</summary>
         <dl>
-          <template v-if="interactor">
+          <template v-if="talking">
             <div><dt>対話</dt><dd>標準入力で提出の発言を読み、標準出力で応答します。応答を待つ前に flush してください。</dd></div>
             <div><dt>初期情報</dt><dd>テスト入力は自動で送りません。入力ファイルから読み、必要な情報を出力してください。</dd></div>
           </template>
           <div v-else-if="protocol === 'legacy'"><dt>標準入力</dt><dd>提出の出力</dd></div>
-          <div v-if="protocol === 'testlib'"><dt>初期化</dt><dd><code>testlib.h</code> を include し、<code>{{ interactor ? 'registerInteraction' : 'registerTestlibCmd' }}(argc, argv)</code> を呼びます。<NuxtLink to="/docs/checkers#testlib" target="_blank" rel="noopener noreferrer">コード例 ↗</NuxtLink></dd></div>
-          <div v-if="protocol === 'legacy'"><dt>引数</dt><dd>入力・期待出力・提出ソース・スコアのファイルパス（この順）。期待出力は空でもかまいません。</dd></div>
+          <div v-if="protocol === 'testlib'"><dt>初期化</dt><dd><code>testlib.h</code> を include し、<code>{{ talking ? 'registerInteraction' : 'registerTestlibCmd' }}(argc, argv)</code> を呼びます。<NuxtLink to="/docs/checkers#testlib" target="_blank" rel="noopener noreferrer">コード例 ↗</NuxtLink></dd></div>
+          <div v-if="protocol === 'legacy' && runTwice"><dt>引数</dt><dd>入力・正解・提出ソース・スコアのファイルパス、何回目か（<code>1</code>か<code>2</code>）、引き継ぎファイルのパス（この順）。引き継ぎファイルは1回目に書き、2回目に読みます。</dd></div>
+          <div v-else-if="protocol === 'legacy'"><dt>引数</dt><dd>入力・期待出力・提出ソース・スコアのファイルパス（この順）。期待出力は空でもかまいません。</dd></div>
           <div v-if="protocol === 'legacy'"><dt>スコア</dt><dd v-if="aggregate">ACかWAのケースで、書いた整数（0〜10<sup>18</sup>）をケースの点として集計コードに渡します。空なら点なしで、それ以外の内容はJEです。</dd><dd v-else>「集計コードで採点する」をオンにした問題でだけ、ケースの点として読みます。</dd></div>
+          <div v-else-if="runTwice"><dt>引数</dt><dd>入力・tout の書き込み先・正解のファイルパス（この順）。1回目に tout へ書いた内容が、2回目の入力（inf）になります。何回目かは入力の先頭の値などで見分けてください。</dd></div>
           <div v-else-if="interactor"><dt>引数</dt><dd>入力・tout の書き込み先・正解のファイルパス（この順）。tout は通信に使わず、あとから判定もしません。</dd></div>
           <div v-else><dt>引数</dt><dd>入力・提出出力（ouf）・正解（ans）のファイルパス（この順）</dd></div>
           <div v-if="protocol === 'legacy'"><dt>結果</dt><dd>終了コード0で正解、それ以外（assert の失敗を含む）で不正解</dd></div>
           <div v-else><dt>結果</dt><dd><code>quitf(_ok, …)</code> で正解、<code>_wa</code>・<code>_pe</code> で不正解、<code>_fail</code> でJE。<template v-if="aggregate"><code>quitp</code> に整数（0〜1,000,000）を渡すと、正解とし、その値をケースの点にします。小数の <code>quitp</code> と <code>_pc</code> はJEです。</template><template v-else><code>quitp</code> は、「集計コードで採点する」をオンにした問題でだけ使えます。</template></dd></div>
-          <div><dt>制限</dt><dd>各ケースCPU 5秒・{{ interactor ? 256 : 512 }} MiB。超えるとJEになります。</dd></div>
+          <div><dt>制限</dt><dd>各ケースCPU 5秒・{{ talking ? 256 : 512 }} MiB。超えるとJEになります。</dd></div>
         </dl>
       </details>
       <SourceCodeEditor v-model="code.source" :runtime="code.runtime" :label="codeLabel" :disabled="disabled" />
