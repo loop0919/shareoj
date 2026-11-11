@@ -10,6 +10,8 @@
   --color-line: light-dark(#dce2e8, #3a4858);
   --color-accent: light-dark(#18794e, #70dba2);
   --color-accent-soft: light-dark(#edf9f1, #203d30);
+  /* Translucent: the editor draws the selection under the line, so an opaque colour would hide it. */
+  --color-active-line: light-dark(rgb(24 121 78 / .08), rgb(112 219 162 / .14));
   --font-body: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui, sans-serif;
   --font-display: var(--font-body);
   --font-code: "SFMono-Regular", Consolas, "Liberation Mono", monospace;

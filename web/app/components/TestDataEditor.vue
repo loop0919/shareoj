@@ -60,7 +60,8 @@ onMounted(() => {
         '.cm-line': { padding: '0 16px' },
         '.cm-gutters': { backgroundColor: 'transparent', color: 'var(--color-muted)', borderRight: '1px solid var(--color-line)' },
         '.cm-lineNumbers .cm-gutterElement': { minWidth: '48px', paddingRight: '10px' },
-        '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: 'var(--color-accent-soft)' },
+        '.cm-activeLine': { backgroundColor: 'var(--color-active-line)' },
+        '.cm-activeLineGutter': { backgroundColor: 'var(--color-accent-soft)' },
       }),
     ],
   })

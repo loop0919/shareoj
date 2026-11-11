@@ -48,6 +48,18 @@ test('a signed-in user runs code, sees WJ with a spinner, then the output', asyn
   await expect(run).not.toHaveAttribute('aria-busy', 'true')
 })
 
+// The editor paints the selection under the lines, so an opaque cursor-line colour hides a selection of that line (issue #23).
+test('the cursor line stays see-through so a selection of it shows', async ({ page }) => {
+  await mockLatest(page, [null])
+  await page.goto('/run')
+  const source = page.getByLabel('ソースコード', { exact: true })
+  await source.fill('int main(){}')
+  await source.press('ControlOrMeta+a')
+  await expect(page.locator('.source-code-editor .cm-selectionBackground').first()).toBeVisible()
+  const background = await page.locator('.source-code-editor .cm-activeLine').evaluate(line => getComputedStyle(line).backgroundColor)
+  expect(background).toMatch(/^rgba\(.+, 0\.\d+\)$/)
+})
+
 test('the latest run comes back after leaving the page', async ({ page }) => {
   // Calls: mount (404), then two polls that stay queued; after returning, a queued read and the finished one.
   const latest = await mockLatest(page, [null, queued, queued, queued, accepted])

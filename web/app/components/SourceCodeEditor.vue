@@ -48,7 +48,8 @@ onMounted(() => {
         '.cm-line': { padding: '0 16px' },
         '.cm-gutters': { backgroundColor: 'var(--color-surface)', color: 'var(--color-muted)', borderRight: '1px solid var(--color-line)' },
         '.cm-lineNumbers .cm-gutterElement': { minWidth: '44px', paddingRight: '10px' },
-        '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: props.readonly ? 'transparent' : 'var(--color-accent-soft)' },
+        '.cm-activeLine': { backgroundColor: props.readonly ? 'transparent' : 'var(--color-active-line)' },
+        '.cm-activeLineGutter': { backgroundColor: props.readonly ? 'transparent' : 'var(--color-accent-soft)' },
       }),
     ],
   })
