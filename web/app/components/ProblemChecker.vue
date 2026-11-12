@@ -90,10 +90,10 @@ const error = computed(() => code.value && (!hasSource(code.value.runtime, code.
         <label for="judge-method">判定方法</label>
         <select id="judge-method" v-model="method" :disabled="disabled">
           <option value="normal">通常判定（空白区切りで比較）</option>
+          <option value="errorJudge">誤差ジャッジ</option>
           <option value="special">スペシャルジャッジ</option>
           <option value="interactive">インタラクティブ（対話形式）</option>
           <option value="runTwice">2ステップ形式（Run-twice）</option>
-          <option value="errorJudge">誤差ジャッジ</option>
         </select>
       </div>
       <template v-if="code">
