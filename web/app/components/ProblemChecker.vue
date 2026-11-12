@@ -162,8 +162,8 @@ const error = computed(() => code.value && (!hasSource(code.value.runtime, code.
           <template v-else-if="factor === '1'">期待出力との{{ errorWording }}が 10<sup>{{ epsilonExponent(errorJudge.epsilon) }}</sup> を少しでも超えると不正解になります。</template>
           <template v-else>期待出力との{{ errorWording }}が <span class="threshold">{{ factor }} × 10<sup>{{ epsilonExponent(errorJudge.epsilon) }}</sup></span> 以下なら正解になります。</template>
         </p>
-        <p v-if="factor !== '1'">想定解の出力も真の値からわずかにずれるので、その分だけ広げて比べます。</p>
-        <p>数として読めるトークンだけを誤差で比べ、それ以外は完全一致で比べます。<NuxtLink to="/docs/checkers#error-judge" target="_blank" rel="noopener noreferrer">誤差ジャッジの説明 ↗</NuxtLink></p>
+        <p v-if="factor !== '1'" class="widened-note">想定解の出力も真の値からわずかにずれる場合を考慮して、その分だけ広げて比べます。</p>
+        <p><NuxtLink to="/docs/checkers#error-judge" target="_blank" rel="noopener noreferrer">誤差ジャッジの説明 ↗</NuxtLink></p>
       </div>
     </template>
     <div class="checker-trial">
@@ -189,6 +189,8 @@ select, input { max-width: 100%; min-height: 36px; padding: 4px 8px; border: 1px
 .margin-input input[aria-invalid="true"] { border-color: var(--color-error); }
 .error-judge-notes { max-width: 1000px; margin-top: 16px; }
 .error-judge-notes p { margin: 4px 0; }
+/* A side remark on the threshold line above it, so it reads smaller and quieter. */
+.error-judge-notes p.widened-note { margin-top: 0; color: var(--color-muted); font-size: .75rem; }
 .threshold { white-space: nowrap; }
 @media (max-width: 39.999rem) { .margin-input input { font-size: 1rem; } }
 .checker-settings :deep(.source-code-editor) { max-width: 1000px; margin-block: 12px; }
