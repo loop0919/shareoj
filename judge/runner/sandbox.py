@@ -1,6 +1,9 @@
 #!/usr/bin/python3
 """Trusted isolate controller on the dedicated Lightsail host."""
 import base64
+import contextlib
+import hashlib
+import json
 import telemetry
 import math
 import os
@@ -25,6 +28,8 @@ HANDOFF_LIMIT = OUTPUT_LIMIT
 SCORE_FILE_LIMIT = 4096
 # testlib caps a message at 32,000 bytes before XML escaping, which can grow it sixfold.
 RESULT_FILE_LIMIT = 256 * 1024
+# Compiled judge code kept between jobs; the oldest entries leave first.
+CACHE_LIMIT = 512 * 1024 * 1024
 
 
 def invoke(args, timeout=10, *, box_id=0):
@@ -152,6 +157,50 @@ def execute(request, compile_phase=False, *, artifact=None, checker_files=None, 
                 raise telemetry.FatalPlatformError('isolate_cleanup_failed')
         except Exception:
             raise telemetry.FatalPlatformError('isolate_cleanup_failed') from None
+
+
+def execute_cached(request, digest, artifact):
+    """Compile judge code, reusing what the same source built under the same runtime digest.
+
+    The digest covers the compilers, their flags and this controller, so a hit is what a compile would produce.
+    Submissions are never cached. A broken or full cache only costs the compile it would have saved.
+    """
+    # systemd sets this from CacheDirectory=; without it (tests, smoke runs) every compile runs.
+    root = os.environ.get('CACHE_DIRECTORY')
+    if not root:
+        return execute(request, True, artifact=artifact)
+    directory = Path(root) / 'artifacts'
+    entry = directory / hashlib.sha256(json.dumps([digest, request['runtime'], request['source']]).encode()).hexdigest()
+    try:
+        shutil.copyfile(entry, artifact)
+        artifact.chmod(0o500)
+        os.utime(entry)
+        return dict(compiled=True, compileLog='', cached=True)
+    except OSError:
+        artifact.unlink(missing_ok=True)
+    compiled = execute(request, True, artifact=artifact)
+    if compiled['compiled']:
+        partial = entry.with_name(entry.name + '.tmp')
+        try:
+            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+            with open(artifact, 'rb') as source, open(partial, 'wb') as target:
+                shutil.copyfileobj(source, target)
+                # A crash must not leave a truncated entry that later judges as a broken checker.
+                target.flush()
+                os.fsync(target.fileno())
+            os.replace(partial, entry)
+            entries = sorted(((path.stat().st_mtime, path.stat().st_size, path) for path in directory.iterdir()),
+                             key=lambda item: item[0])
+            total = sum(size for _, size, _ in entries)
+            for _, size, path in entries:
+                if total <= CACHE_LIMIT:
+                    break
+                path.unlink()
+                total -= size
+        except OSError:
+            with contextlib.suppress(OSError):
+                partial.unlink(missing_ok=True)
+    return compiled
 
 
 def run_args(runtime, cpu, wall, memory, *, compile_phase=False, meta=None, interactive=False, interactor=False):

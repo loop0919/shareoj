@@ -41,6 +41,9 @@ fields @timestamp, service, event, category, reason, submissionId, attemptId, ph
 `request_sent`、`job_received`、`judge_started`、`judge_finished`、`result_sent`、`result_processed`を順に確認する。
 `result_processed`は結果の重複配信を正常に無視した場合も記録するため、実際の確定状態は提出画面またはDBと照合する。
 `durationMs`はワーカーの受信からの時間、bridgeでは各処理の経過時間である。
+ワーカーは、検証コードなどのジャッジ用コードをコンパイルするたびに`judge_code_compile`を記録する。
+`target`は`checker`、`interactor`、`run_twice`、`aggregator`のいずれか、`cache`は使い回したら`hit`、コンパイルしたら`miss`、`compileMs`はかかった時間である。
+提出されたソースのコンパイル時間は、この記録に含まない。
 ソース、テスト入出力、コンパイラ診断、資格情報、Webhook URLはログへ出さない。
 チェッカーの詳しい診断は既存の権限付き提出結果で確認する。
 

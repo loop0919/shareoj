@@ -413,6 +413,13 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
         telemetry.note_failure('judge_code', reason)
         return dict(verdict='JE', passed=0, total=len(job['cases']), checkerLog=result.get('checkerLog', ''))
 
+    def compile_judge_code(code, artifact, target):
+        began = time.monotonic()
+        compiled = sandbox.execute_cached(dict(source=code['source'], runtime=code['runtime'] + '-isolate'), runtime, artifact)
+        telemetry.emit('judge_code_compile', target=target, cache='hit' if compiled.get('cached') else 'miss',
+                       compileMs=round((time.monotonic() - began) * 1000))
+        return compiled
+
     try:
         if progress:
             progress('PREPARING', 0, result['total'])
@@ -423,16 +430,14 @@ def judge(job, runtime, load_file=None, progress=None, save_output=None):
                 failed['scoring'] = scoring_result(job, [0] * len(scoring['groups']))
             return failed
         if judge_code is not None:
-            compiled = sandbox.execute(dict(source=judge_code['source'], runtime=judge_code['runtime'] + '-isolate'),
-                                       True, artifact=checker_artifact)
+            compiled = compile_judge_code(judge_code, checker_artifact, 'interactor' if job.get('interactor') else 'run_twice' if conversation else 'checker')
             if not compiled['compiled']:
                 diagnostic('検証コードのコンパイル失敗\n' + compiled.get('compileLog', ''))
                 return checker_error(('interactor' if job.get('interactor') else 'run_twice' if conversation else 'checker') + '_compile_failed')
         if aggregate:
             # Compile before any case runs, so a broken aggregator never spends the case budget.
             aggregator = scoring['aggregator']
-            compiled = sandbox.execute(dict(source=aggregator['source'], runtime=aggregator['runtime'] + '-isolate'),
-                                       True, artifact=aggregator_artifact)
+            compiled = compile_judge_code(aggregator, aggregator_artifact, 'aggregator')
             if not compiled['compiled']:
                 diagnostic('集計コードのコンパイル失敗\n' + compiled.get('compileLog', ''))
                 return checker_error('aggregator_compile_failed')

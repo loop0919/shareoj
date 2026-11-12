@@ -37,6 +37,9 @@ PrivateTmp=true
 Environment=PYTHONDONTWRITEBYTECODE=1
 LogsDirectory=judge
 LogsDirectoryMode=0700
+# Compiled judge code survives restarts and idle stops; sandbox.execute_cached reads CACHE_DIRECTORY.
+CacheDirectory=judge
+CacheDirectoryMode=0700
 StandardOutput=journal
 StandardError=journal
 
