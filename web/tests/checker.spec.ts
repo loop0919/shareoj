@@ -238,7 +238,7 @@ test('誤差ジャッジを選ぶと下書きに errorJudge が入る', async ({
   await expect(kind).toHaveValue('either')
   await expect(kind.locator('option')).toHaveText(['絶対誤差', '相対誤差', '絶対誤差または相対誤差'])
   await expect(epsilon).toHaveValue('1e-6')
-  await expect(epsilon.locator('option')).toHaveText(Array.from({ length: 12 }, (_, index) => `10^-${index + 1}`))
+  await expect(epsilon.locator('option')).toHaveText(Array.from({ length: 12 }, (_, index) => `10の-${index + 1}乗`))
   await expect(margin).toHaveValue('0.1')
   await expect(page.getByText('%', { exact: true })).toBeVisible()
   // No author code: neither the language, the protocol, the code nor its spec shows.
@@ -252,7 +252,7 @@ test('誤差ジャッジを選ぶと下書きに errorJudge が入る', async ({
   expect(draft.interactor).toBeNull()
   expect(draft.runTwice).toBeNull()
   await kind.selectOption({ label: '相対誤差' })
-  await epsilon.selectOption({ label: '10^-9' })
+  await epsilon.selectOption({ label: '10の-9乗' })
   await margin.fill('0.5')
   draft = await saveWithButton(page)
   expect(draft.errorJudge).toEqual({ mode: 'relative', epsilon: '1e-9', marginPercent: '0.5' })

@@ -148,7 +148,7 @@ const error = computed(() => code.value && (!hasSource(code.value.runtime, code.
         <div>
           <label for="error-judge-epsilon">許容誤差</label>
           <select id="error-judge-epsilon" v-model="errorJudge.epsilon" :disabled="disabled">
-            <option v-for="epsilon in errorJudgeEpsilons" :key="epsilon" :value="epsilon">10^{{ epsilonExponent(epsilon) }}</option>
+            <option v-for="epsilon in errorJudgeEpsilons" :key="epsilon" :value="epsilon">10の{{ epsilonExponent(epsilon) }}乗</option>
           </select>
         </div>
         <div>
