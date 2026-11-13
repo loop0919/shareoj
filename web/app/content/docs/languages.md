@@ -410,7 +410,7 @@ GHC付属のパッケージ（`containers`、`bytestring`、`text`など）はGH
 
 Node.jsとBunでは`node:fs`などのNode互換API、Denoでは`Deno.stdin`などのAPIを利用できます。
 Node.jsのJavaScriptは`require`と`import`の両方に対応します。
-TypeScriptは型エラーをCEとして扱います。
+TypeScriptは型エラーを:CE:として扱います。
 Node.jsとBun向けのTypeScriptは、`NodeNext`形式でJavaScriptにコンパイルします。
 Denoの標準ライブラリは`@std/encoding/base64`などの公開サブパスもキャッシュしています。
 提出時の依存ダウンロードや自動インストールはできません。

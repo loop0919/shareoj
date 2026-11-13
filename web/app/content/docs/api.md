@@ -44,7 +44,7 @@ curl https://api.share-oj.net/problems
 パスの `{id}` には、小文字のUUIDを指定します。
 サイトのURLに含まれる22文字のIDは、APIでは使えません。
 
-一覧の取得方法は2種類あります。
+一覧の続きの取り方は、エンドポイントによって違います。
 
 - `/problems` と `/posts` は、応答の `nextCursor` を次のリクエストの `cursor` に渡します。`nextCursor` が空なら最後のページです。
 - `/problems` は `offset` と `limit`（1〜100）でも位置を指定できます。`/problems` とコンテストの提出一覧は、応答の `total` に総件数を返します。
