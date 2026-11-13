@@ -164,6 +164,8 @@ test('the contest guides split joining from ranking', async ({ page }) => {
   await expect(rules.locator('p').first().getByRole('link', { name: 'コンテストに参加する' })).toHaveAttribute('href', '/docs/contest-participation')
   await expect(rules).not.toContainText('回答')
   await expect(rules.locator('img')).toHaveCount(0)
+  // Verdicts show as the coloured badges used on the submission pages.
+  await expect(rules.locator('.verdict-badge')).toHaveText(['AC', 'WA', 'RE', 'TLE', 'MLE', 'OLE', 'CE', 'JE'])
 })
 
 test('the hosting guide carries what staff need to know', async ({ page }) => {
