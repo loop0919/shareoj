@@ -48,12 +48,12 @@ test('the guide index lists every guide and the sidebar follows the reader', asy
   const contents = sidebar.getByRole('list', { name: 'このページの目次' })
   await expect(contents).toHaveCount(1)
   await expect(sidebar.getByRole('listitem').filter({ has: page.getByRole('link', { name: 'コンテストのルール', exact: true }) }).getByRole('list', { name: 'このページの目次' })).toBeVisible()
-  await expect(contents.getByRole('link', { name: '参加と開催時間' })).toHaveAttribute('href', '#participation')
+  await expect(contents.getByRole('link', { name: '公式順位に入る提出' })).toHaveAttribute('href', '#official')
   // The sidebar switches guides and their headings follow.
   await sidebar.getByRole('link', { name: '提出と判定結果', exact: true }).click()
   await expect(page).toHaveURL('/docs/submissions')
   await expect(contents.getByRole('link', { name: '解答を提出する' })).toHaveAttribute('href', '#submit')
-  await expect(contents.getByRole('link', { name: '参加と開催時間' })).toHaveCount(0)
+  await expect(contents.getByRole('link', { name: '公式順位に入る提出' })).toHaveCount(0)
   // A link in the Markdown body moves within the app, keeping the sidebar.
   await page.locator('article .markdown-body').getByRole('link', { name: '使える言語と実行環境の仕様' }).click()
   await expect(page).toHaveURL('/docs/languages')
@@ -145,4 +145,23 @@ test('each guide names its reader above the title and in the lists', async ({ pa
   }
   await page.goto('/docs')
   await expect(page.locator('.docs-index').getByRole('heading', { level: 2 })).toHaveText(['参加者向け', '作問者向け', '開発者向け'])
+})
+
+test('the contest guides split joining from ranking', async ({ page }) => {
+  await page.goto('/docs/contest-participation')
+  const joining = page.locator('article .markdown-body')
+  for (const id of ['join', 'team', 'onsite', 'clarifications', 'my-submissions']) await expect(joining.locator(`#${id}`)).toHaveCount(1)
+  await expect(joining.locator('img[src="/images/docs/contest-join.png"]')).toHaveCount(1)
+  await expect(joining).not.toContainText('誤答ペナルティは')
+
+  await page.goto('/docs/contest-rules')
+  const rules = page.locator('article .markdown-body')
+  await expect(rules.locator('h2')).toHaveCount(5)
+  for (const id of ['official', 'scoring', 'penalty', 'freeze', 'visibility']) await expect(rules.locator(`#${id}`)).toHaveCount(1)
+  // The terms and the privacy policy defer to this page for when contest submissions become public.
+  await expect(rules.locator('#visibility ~ *').filter({ hasText: '終了後' }).first()).toBeVisible()
+  // Readers arriving at a section that moved find the way from the top of the page.
+  await expect(rules.locator('p').first().getByRole('link', { name: 'コンテストに参加する' })).toHaveAttribute('href', '/docs/contest-participation')
+  await expect(rules).not.toContainText('回答')
+  await expect(rules.locator('img')).toHaveCount(0)
 })
