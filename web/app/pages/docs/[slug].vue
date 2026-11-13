@@ -33,7 +33,7 @@ function followLink(event: MouseEvent) {
   <article class="blog-article" @click="followLink">
     <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink to="/docs">ガイド</NuxtLink><span aria-hidden="true">/</span><span>{{ docSection(page.slug).title }}</span></nav><TweetButton :title="page.title" :url="canonical" /></div>
     <header class="blog-article-header">
-      <p class="eyebrow">SHAREOJ GUIDE</p>
+      <p class="eyebrow">{{ docSection(page.slug).title }}</p>
       <h1>{{ page.title }}</h1>
       <p class="lead">{{ page.lead }}</p>
     </header>

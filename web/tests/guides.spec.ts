@@ -136,3 +136,13 @@ test('the featured guide gives the delivery time in JST', async ({ page }) => {
   await page.goto('/docs/featured')
   await expect(page.locator('article .markdown-body')).toContainText('定期便は、毎週月曜と木曜の22:00 (JST)に、Easy（Lv.1〜4）とHard（Lv.5〜10）を1問ずつ出題します。')
 })
+
+test('each guide names its reader above the title and in the lists', async ({ page }) => {
+  for (const [slug, reader] of [['submissions', '参加者向け'], ['contest-rules', '参加者向け'], ['hosting-contests', '作問者向け'], ['cli', '作問者向け'], ['api', '開発者向け']] as const) {
+    await page.goto(`/docs/${slug}`)
+    await expect(page.locator('article .eyebrow')).toHaveText(reader)
+    await expect(page.getByRole('navigation', { name: 'パンくずリスト' })).toContainText(reader)
+  }
+  await page.goto('/docs')
+  await expect(page.locator('.docs-index').getByRole('heading', { level: 2 })).toHaveText(['参加者向け', '作問者向け', '開発者向け'])
+})

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { docPath, docSections } from '~~/shared/docs'
 const config = useRuntimeConfig()
-const description = 'ShareOJ の使い方のガイド。提出と判定結果、コンテストのルールと開き方、問題の作り方、定期便、作問CLIと公開APIを目的別にまとめています。'
+const description = 'ShareOJ の使い方のガイド。提出と判定結果、コンテストのルールと開き方、問題の作り方、定期便、作問CLIと公開APIを読む人ごとにまとめています。'
 const canonical = new URL('/docs', config.public.siteUrl).href
 useSeoMeta({ title: 'ガイド | ShareOJ', description })
 useHead({ link: [{ rel: 'canonical', href: canonical }] })
@@ -12,7 +12,7 @@ useSharePreview({ type: 'website', title: 'ガイド', path: '/docs', descriptio
   <div class="docs-index">
     <header>
       <h1>ガイド</h1>
-      <p class="lead">ShareOJ の使い方を、やりたいことごとにまとめています。</p>
+      <p class="lead">ShareOJ の使い方を、読む人ごとにまとめています。</p>
     </header>
     <section v-for="section in docSections" :key="section.title">
       <h2>{{ section.title }}</h2>
