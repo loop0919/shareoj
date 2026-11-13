@@ -179,35 +179,35 @@ Rubyで解くときの注意は、[使える言語と実行環境の仕様](/doc
 
 次の問題を例にします。
 
-- 1回目：ジャッジは`1`と、長さ $N$ の二進文字列 $S$ を1行ずつ送ります。提出は、0と1からなる長さ1以上 $3N$ 以下の文字列 $T$ を1行で返します。
-- 2回目：ジャッジは`2`と、$T$ のどこかに0か1を1文字挿入した文字列を送ります。提出は $S$ を返します。
+- 1回目：ジャッジは`1`と、0以上100以下の整数 $X$ を1行ずつ送ります。提出は、`a`と`b`からなる長さ1以上200以下の文字列 $T$ を1行で返します。
+- 2回目：ジャッジは`2`と、$T$ を回転した文字列を送ります。提出は $X$ を返します。
 
-テストケースの入力は、1行目が $S$、2行目が挿入の位置を決める0以上の整数 $p$ と文字 $c$ で、期待される出力は使いません。
-ジャッジは、$T$ の先頭から $k$ 文字の後ろ（$k$ は $p$ を $T$ の長さ+1で割った余り）に $c$ を挿入します。
+テストケースの入力は、1行目が $X$、2行目が回転の量を決める0以上の整数 $p$ で、期待される出力は使いません。
+ジャッジは、$T$ の先頭の $k$ 文字（$k$ は $p$ を $T$ の長さで割った余り）を末尾へ移します。
 現行形式の2ステップ用ジャッジは次のとおりです。
 
 ```python
 import sys
 
 with open(sys.argv[1]) as file:
-    s = file.readline().strip()
-    p, c = file.readline().split()
+    x = file.readline().strip()
+    p = int(file.readline())
 run, handoff = sys.argv[5], sys.argv[6]
 if run == '1':
-    print(1, s, sep='\n', flush=True)
+    print(1, x, sep='\n', flush=True)
     t = sys.stdin.readline().strip()
-    assert 1 <= len(t) <= 3 * len(s) and set(t) <= {'0', '1'}
-    k = int(p) % (len(t) + 1)
+    assert 1 <= len(t) <= 200 and set(t) <= {'a', 'b'}
+    k = p % len(t)
     with open(handoff, 'w') as file:
-        file.write(t[:k] + c + t[k:])
+        file.write(t[k:] + t[:k])
 else:
     with open(handoff) as file:
         print(2, file.read(), sep='\n', flush=True)
-    assert sys.stdin.readline().strip() == s
+    assert sys.stdin.readline().strip() == x
 ```
 
 testlib形式の例では、テストケースの入力の先頭に`1`の行を足し、1回目は`tout`の先頭に`2`を書きます。
-2回目は元の入力を読めないので、$S$ も`tout`に書きます。
+2回目は元の入力を読めないので、$X$ も`tout`に書きます。
 
 ```cpp
 #include "testlib.h"
@@ -217,37 +217,35 @@ testlib形式の例では、テストケースの入力の先頭に`1`の行を�
 int main(int argc, char** argv) {
   registerInteraction(argc, argv);
   int run = inf.readInt();
-  std::string s = inf.readToken();
+  int x = inf.readInt();
   std::cout << run << '\n';
   if (run == 1) {
     int p = inf.readInt();
-    std::string c = inf.readToken();
-    std::cout << s << std::endl;
+    std::cout << x << std::endl;
     std::string t = ouf.readToken();
-    if (t.size() > 3 * s.size() || t.find_first_not_of("01") != std::string::npos) quitf(_wa, "invalid code");
-    t.insert(p % (t.size() + 1), c);
-    tout << 2 << '\n' << s << '\n' << t << std::endl;
-    quitf(_ok, "encoded");
+    if (t.size() > 200 || t.find_first_not_of("ab") != std::string::npos) quitf(_wa, "invalid message");
+    int k = p % t.size();
+    tout << 2 << '\n' << x << '\n' << t.substr(k) + t.substr(0, k) << std::endl;
+    quitf(_ok, "sent");
   }
   std::string t = inf.readToken();
   std::cout << t << std::endl;
-  if (ouf.readToken() != s) quitf(_wa, "wrong string");
-  quitf(_ok, "decoded");
+  if (ouf.readInt() != x) quitf(_wa, "wrong number");
+  quitf(_ok, "received");
 }
 ```
 
 次の提出は、どちらの形式のジャッジでも正解になります。
 
-- 1回目は、$S$ の各文字を3回ずつ並べて $T$ とします。
-- 2回目は、同じ文字が続く区間ごとに、長さを3で割って四捨五入した数だけ文字を戻します。1文字が挿入されていても、これで $S$ に戻ります。
+- 1回目は、`a`を $X$ 個並べ、最後に`b`を1個付けて $T$ とします。
+- 2回目は、受け取った文字列の`a`の個数を返します。回転しても`a`の個数は変わりません。
 
 ```python
-from itertools import groupby
+import sys
 
-if input() == '1':
-    print(''.join(bit * 3 for bit in input()), flush=True)
-else:
-    print(''.join(bit * round(len(list(group)) / 3) for bit, group in groupby(input())), flush=True)
+run = sys.stdin.readline().strip()
+value = sys.stdin.readline().strip()
+print('a' * int(value) + 'b' if run == '1' else value.count('a'), flush=True)
 ```
 
 ## 集計コード {#aggregator}
