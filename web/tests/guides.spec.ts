@@ -129,7 +129,7 @@ test('links between guides point at existing pages and headings', async ({ page 
 
 test('the contest guide says start times are typed in JST', async ({ page }) => {
   await page.goto('/docs/hosting-contests')
-  await expect(page.locator('article .markdown-body')).toContainText('開始日時はJSTで入力し、公開されるページでもJSTで表示します。')
+  await expect(page.locator('article .markdown-body')).toContainText('開始日時はJSTで入力します。')
 })
 
 test('the featured guide gives the delivery time in JST', async ({ page }) => {
@@ -164,4 +164,12 @@ test('the contest guides split joining from ranking', async ({ page }) => {
   await expect(rules.locator('p').first().getByRole('link', { name: 'コンテストに参加する' })).toHaveAttribute('href', '/docs/contest-participation')
   await expect(rules).not.toContainText('回答')
   await expect(rules.locator('img')).toHaveCount(0)
+})
+
+test('the hosting guide carries what staff need to know', async ({ page }) => {
+  await page.goto('/docs/hosting-contests')
+  const body = page.locator('article .markdown-body')
+  for (const id of ['problems', 'create', 'publish', 'changes', 'setters', 'staff', 'clarifications', 'after']) await expect(body.locator(`#${id}`)).toHaveCount(1)
+  await expect(body).toContainText('スタッフは参加登録できません')
+  await expect(body.locator('ol').first()).toBeVisible()
 })
