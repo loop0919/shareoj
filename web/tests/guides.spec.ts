@@ -152,16 +152,21 @@ test('the contest guides split joining from ranking', async ({ page }) => {
   const joining = page.locator('article .markdown-body')
   for (const id of ['join', 'team', 'onsite', 'clarifications', 'my-submissions']) await expect(joining.locator(`#${id}`)).toHaveCount(1)
   await expect(joining.locator('img[src="/images/docs/contest-join.png"]')).toHaveCount(1)
-  await expect(joining).not.toContainText('誤答ペナルティは')
+  await expect(joining.locator('#penalty')).toHaveCount(0)
+  await expect(joining).toContainText('チームメイトには表示しません')
+  await expect(joining).toContainText('質問した人の名前')
 
   await page.goto('/docs/contest-rules')
   const rules = page.locator('article .markdown-body')
   await expect(rules.locator('h2')).toHaveCount(5)
   for (const id of ['official', 'scoring', 'penalty', 'freeze', 'visibility']) await expect(rules.locator(`#${id}`)).toHaveCount(1)
   // The terms and the privacy policy defer to this page for when contest submissions become public.
-  await expect(rules.locator('#visibility ~ *').filter({ hasText: '終了後' }).first()).toBeVisible()
+  await expect(rules.locator('#visibility ~ table tbody tr').filter({ hasText: '終了後' })).toContainText('誰でも見られます')
   // Readers arriving at a section that moved find the way from the top of the page.
   await expect(rules.locator('p').first().getByRole('link', { name: 'コンテストに参加する' })).toHaveAttribute('href', '/docs/contest-participation')
+  await expect(rules.locator('p').first()).toContainText('質問')
+  // Testers and authors see only their own problems before the start.
+  await expect(rules).toContainText('その問題の作者とテスター')
   await expect(rules).not.toContainText('回答')
   await expect(rules.locator('img')).toHaveCount(0)
   // Verdicts show as the coloured badges used on the submission pages.
@@ -173,6 +178,7 @@ test('the hosting guide carries what staff need to know', async ({ page }) => {
   const body = page.locator('article .markdown-body')
   for (const id of ['problems', 'create', 'publish', 'changes', 'setters', 'staff', 'clarifications', 'after']) await expect(body.locator(`#${id}`)).toHaveCount(1)
   await expect(body).toContainText('スタッフは参加登録できません')
+  await expect(body).toContainText('オープン参加には戻せません')
   await expect(body.locator('ol').first()).toBeVisible()
 })
 
@@ -181,7 +187,7 @@ test('the featured guides split solving from applying', async ({ page }) => {
   const solving = page.locator('article .markdown-body')
   for (const id of ['schedule', 'solve', 'standings']) await expect(solving.locator(`#${id}`)).toHaveCount(1)
   await expect(solving.locator('#apply')).toHaveCount(0)
-  await expect(solving.getByRole('link', { name: '定期便に応募する' })).toHaveAttribute('href', '/docs/featured-apply')
+  await expect(solving.locator('p').first().getByRole('link', { name: '定期便に応募する' })).toHaveAttribute('href', '/docs/featured-apply')
   await expect(solving).toContainText('Hardの点数')
 
   await page.goto('/docs/featured-apply')
@@ -198,6 +204,7 @@ test('the submission guide leads with the steps and keeps the verdict table', as
   await expect(body.locator('table').filter({ hasText: '正解' }).first().locator('tbody tr')).toHaveCount(9)
   await expect(body.locator('#usage')).toHaveCount(0)
   await expect(body).not.toContainText('1,048,576')
+  await expect(body.locator('tr').filter({ hasText: 'ジャッジ中' })).toContainText('コンパイルしています')
 })
 
 test('the authoring guide keeps its anchors and drops the sample marker details', async ({ page }) => {
