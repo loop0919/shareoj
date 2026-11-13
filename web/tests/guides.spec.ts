@@ -190,3 +190,12 @@ test('the featured guides split solving from applying', async ({ page }) => {
   for (const id of ['apply', 'conditions', 'selection', 'withdraw']) await expect(applying.locator(`#${id}`)).toHaveCount(1)
   await expect(applying.locator('img[src="/images/docs/featured-apply.png"]')).toHaveCount(1)
 })
+
+test('the submission guide leads with the steps and keeps the verdict table', async ({ page }) => {
+  await page.goto('/docs/submissions')
+  const body = page.locator('article .markdown-body')
+  await expect(body.locator('#submit ~ ol').first().locator('li')).toHaveCount(3)
+  await expect(body.locator('table').filter({ hasText: '正解' }).first().locator('tbody tr')).toHaveCount(9)
+  await expect(body.locator('#usage')).toHaveCount(0)
+  await expect(body).not.toContainText('1,048,576')
+})
