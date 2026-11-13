@@ -134,7 +134,7 @@ test('the contest guide says start times are typed in JST', async ({ page }) => 
 
 test('the featured guide gives the delivery time in JST', async ({ page }) => {
   await page.goto('/docs/featured')
-  await expect(page.locator('article .markdown-body')).toContainText('定期便は、毎週月曜と木曜の22:00 (JST)に、Easy（Lv.1〜4）とHard（Lv.5〜10）を1問ずつ出題します。')
+  await expect(page.locator('article .markdown-body')).toContainText('22:00 (JST)')
 })
 
 test('each guide names its reader above the title and in the lists', async ({ page }) => {
@@ -174,4 +174,19 @@ test('the hosting guide carries what staff need to know', async ({ page }) => {
   for (const id of ['problems', 'create', 'publish', 'changes', 'setters', 'staff', 'clarifications', 'after']) await expect(body.locator(`#${id}`)).toHaveCount(1)
   await expect(body).toContainText('スタッフは参加登録できません')
   await expect(body.locator('ol').first()).toBeVisible()
+})
+
+test('the featured guides split solving from applying', async ({ page }) => {
+  await page.goto('/docs/featured')
+  const solving = page.locator('article .markdown-body')
+  for (const id of ['schedule', 'solve', 'standings']) await expect(solving.locator(`#${id}`)).toHaveCount(1)
+  await expect(solving.locator('#apply')).toHaveCount(0)
+  await expect(solving.getByRole('link', { name: '定期便に応募する' })).toHaveAttribute('href', '/docs/featured-apply')
+  await expect(solving).toContainText('Hardの点数')
+
+  await page.goto('/docs/featured-apply')
+  await expect(page.locator('article .eyebrow')).toHaveText('作問者向け')
+  const applying = page.locator('article .markdown-body')
+  for (const id of ['apply', 'conditions', 'selection', 'withdraw']) await expect(applying.locator(`#${id}`)).toHaveCount(1)
+  await expect(applying.locator('img[src="/images/docs/featured-apply.png"]')).toHaveCount(1)
 })

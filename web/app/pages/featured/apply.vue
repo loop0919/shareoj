@@ -113,7 +113,7 @@ async function apply() {
         <template #icon="{ value }"><FeaturedPreferenceIcon :preference="value" :size="20" /></template>
       </SegmentedChoice>
       <template #actions>
-        <NuxtLink to="/docs/featured">出題のルール</NuxtLink>
+        <NuxtLink to="/docs/featured-apply">応募のガイド</NuxtLink>
         <button form="featured-apply-form" class="editor-button primary" :disabled="busy || !selected || unchanged" :aria-busy="busy">{{ label }}</button>
       </template>
     </ActionBar>
