@@ -199,3 +199,12 @@ test('the submission guide leads with the steps and keeps the verdict table', as
   await expect(body.locator('#usage')).toHaveCount(0)
   await expect(body).not.toContainText('1,048,576')
 })
+
+test('the authoring guide keeps its anchors and drops the sample marker details', async ({ page }) => {
+  await page.goto('/docs/authoring')
+  const body = page.locator('article .markdown-body')
+  for (const id of ['start', 'statement', 'tests', 'scoring', 'save', 'readiness', 'publish', 'after-publish', 'rejudge', 'testers', 'editorials']) await expect(body.locator(`#${id}`)).toHaveCount(1)
+  await expect(body.locator('img')).toHaveCount(11)
+  await expect(body).not.toContainText('sample-begin')
+  await expect(body.locator('#publish ~ ol').first()).toBeVisible()
+})
