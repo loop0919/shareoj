@@ -55,17 +55,44 @@ def database_status(config):
     return status
 
 
+def all_queues(config):
+    """Every request, result and dead letter queue, including the second request lane when configured."""
+    return config['queues'] + ([config['request_queue_b']] if config.get('request_queue_b') else [])
+
+
+def lanes(config):
+    """Resolve the request lanes from the queue the live bridge sends to (the single source of truth)."""
+    bridge = aws(config['region'], 'lambda', 'get-function-configuration', '--function-name', config['bridge'])
+    url = bridge['Environment']['Variables']['JUDGE_REQUEST_QUEUE_URL']
+    first, second = config['queues'][0], config.get('request_queue_b')
+    if url == first:
+        return dict(active='a', active_url=first, standby_url=second)
+    if second and url == second:
+        return dict(active='b', active_url=second, standby_url=first)
+    raise ValueError('bridge request queue is not a configured lane')
+
+
+def queue_counts(config, url):
+    """Visible, in-flight and delayed messages of one queue, summed."""
+    attributes = aws(config['region'], 'sqs', 'get-queue-attributes', '--queue-url', url,
+                     '--attribute-names', 'ApproximateNumberOfMessages', 'ApproximateNumberOfMessagesNotVisible',
+                     'ApproximateNumberOfMessagesDelayed')['Attributes']
+    return sum(int(attributes[key]) for key in ('ApproximateNumberOfMessages',
+               'ApproximateNumberOfMessagesNotVisible', 'ApproximateNumberOfMessagesDelayed'))
+
+
+def sync_lane(config, lane):
+    """Point Terraform's request_lane at the lane in use, keeping every other rollout-owned value."""
+    path = ROOT / 'infra/judge/zz-rollout.auto.tfvars.json'
+    values = json.loads(path.read_text() or '{}') if path.exists() else {}
+    save(path, {**values, 'request_lane': lane})
+
+
 def wait_empty(config, timeout=3600):
     deadline, stable = time.monotonic() + timeout, 0
     while time.monotonic() < deadline:
         status = database_status(config)
-        counts = []
-        for url in config['queues']:
-            attributes = aws(config['region'], 'sqs', 'get-queue-attributes', '--queue-url', url,
-                             '--attribute-names', 'ApproximateNumberOfMessages', 'ApproximateNumberOfMessagesNotVisible',
-                             'ApproximateNumberOfMessagesDelayed')['Attributes']
-            counts.extend(int(attributes[key]) for key in ('ApproximateNumberOfMessages',
-                          'ApproximateNumberOfMessagesNotVisible', 'ApproximateNumberOfMessagesDelayed'))
+        counts = [queue_counts(config, url) for url in all_queues(config)]
         stable = stable + 1 if status['pending'] == status['undispatched'] == 0 and not any(counts) else 0
         if stable == 3:
             return
@@ -199,6 +226,9 @@ def preflight(config):
     if not config['nodes'] or len(set(config['nodes'])) != len(config['nodes']) or len(set(config['queues'])) != 4 or any(
             not NODE_ID.fullmatch(node) for node in config['nodes']):
         raise ValueError('configure distinct hosts and request/result/dead queue URLs')
+    second = config.get('request_queue_b')
+    if second is not None and (not isinstance(second, str) or second in config['queues']):
+        raise ValueError('request_queue_b must be a fifth queue distinct from the four queues')
     retired = config.get('retire_nodes', [])
     if len(set(retired)) != len(retired) or set(retired) & set(config['nodes']) or any(not NODE_ID.fullmatch(node) for node in retired):
         raise ValueError('retired hosts must be distinct SSM nodes outside the deployment targets')
@@ -209,14 +239,19 @@ def preflight(config):
     targets = aws(region, 'events', 'list-targets-by-rule', '--rule', config['dispatch_rule'])['Targets']
     if mapping['FunctionArn'] != bridge['FunctionArn'] or not any(t['Arn'] == bridge['FunctionArn'] for t in targets):
         raise ValueError('dispatch or result mapping belongs to a different bridge')
-    if bridge['Environment']['Variables']['JUDGE_REQUEST_QUEUE_URL'] != config['queues'][0] or \
-            bridge['Environment']['Variables']['JUDGE_JOB_BUCKET'] != config['bucket']:
+    lane = lanes(config)
+    if bridge['Environment']['Variables']['JUDGE_JOB_BUCKET'] != config['bucket']:
         raise ValueError('request queue or release bucket differs from bridge configuration')
     queues = [aws(region, 'sqs', 'get-queue-attributes', '--queue-url', url,
                   '--attribute-names', 'QueueArn', 'RedrivePolicy')['Attributes'] for url in config['queues']]
     if mapping['EventSourceArn'] != queues[1]['QueueArn'] or any(
             json.loads(queues[i]['RedrivePolicy'])['deadLetterTargetArn'] != queues[i + 2]['QueueArn'] for i in (0, 1)):
         raise ValueError('result queue or dead letter queue does not match')
+    if second is not None:
+        standby = aws(region, 'sqs', 'get-queue-attributes', '--queue-url', second,
+                      '--attribute-names', 'RedrivePolicy')['Attributes']
+        if json.loads(standby['RedrivePolicy'])['deadLetterTargetArn'] != queues[2]['QueueArn']:
+            raise ValueError('request queue b does not redrive to the request dead letter queue')
     if not config['worker_alarms']:
         raise ValueError('configure the worker alarms')
     alarms = aws(region, 'cloudwatch', 'describe-alarms', '--alarm-names', *config['worker_alarms'])['MetricAlarms']
@@ -227,6 +262,9 @@ def preflight(config):
         if len(info) != 1 or info[0]['PingStatus'] != 'Online':
             raise ValueError('SSM node is not online: ' + node)
     run('gh', 'variable', 'list', '--repo', config['repository'], '--env', config['github_environment'], '--json', 'name,value')
+    if second is not None:
+        # Terraform's precondition compares request_lane with the live bridge; a stale file would block a resumed run.
+        sync_lane(config, lane['active'])
     for root in ('infra/api', 'infra/judge'):
         if not (ROOT / root / '.terraform').exists():
             raise ValueError('initialize Terraform before maintenance: ' + root)
@@ -364,7 +402,7 @@ def retired_workers_stopped(config, directory):
         raise RuntimeError('a retired worker is still enabled')
 
 
-def sync_settings(config, directory, digest, runtimes, previous=None):
+def sync_settings(config, directory, digest, runtimes, previous=None, lane=None):
     for name, value in {'JUDGE_RUNTIME_DIGEST': digest, 'JUDGE_ENABLED_RUNTIMES': json.dumps(runtimes)}.items():
         run('gh', 'variable', 'set', name, '--repo', config['repository'], '--env', config['github_environment'], '--body', value)
     saved = json.loads(run('gh', 'variable', 'list', '--repo', config['repository'], '--env', config['github_environment'], '--json', 'name,value'))
@@ -374,7 +412,8 @@ def sync_settings(config, directory, digest, runtimes, previous=None):
     # Terraform owns the fleet shape; keep values such as the host count that rollout does not manage.
     for root, values in [('infra/api', dict(judge_runtime_digest=digest, judge_enabled_runtimes=runtimes)),
                          ('infra/judge', dict(runtime_digest=digest, enabled=True, enabled_runtimes=runtimes,
-                                              **({} if previous is None else dict(previous_runtime_digest=previous))))]:
+                                              **({} if previous is None else dict(previous_runtime_digest=previous)),
+                                              **({} if lane is None else dict(request_lane=lane))))]:
         path = ROOT / root / 'zz-rollout.auto.tfvars.json'
         backup = directory / (root.replace('/', '-') + '-variables.json')
         if not backup.exists():
@@ -536,7 +575,8 @@ def pool_bursts(config):
 def contest_guard(config):
     """Refuse to change the environment within or shortly before a contest window (ADR 0014)."""
     status = database_status(config)
-    if 'nextContestWindowAt' not in status or 'dispatchPaused' not in status:
+    if 'nextContestWindowAt' not in status or 'dispatchPaused' not in status or \
+            type(status.get('requestQueueUrl')) is not str or type(status.get('previousInFlight')) is not int:
         raise ValueError('bridge must support the rolling update; deploy the compatible bridge package first')
     window = status['nextContestWindowAt']
     hours = config.get('rolling_guard_hours', 4)

@@ -69,6 +69,105 @@ class RolloutTests(unittest.TestCase):
             rollout.wait_empty(dict(region='test', queues=['queue']))
             self.assertEqual(status.call_count, 4)
 
+    def test_lanes_follow_the_live_bridge(self):
+        config = dict(region='test', bridge='bridge', queues=['qa', 'r', 'da', 'dr'], request_queue_b='qb')
+        for url, expected in [('qb', dict(active='b', active_url='qb', standby_url='qa')),
+                              ('qa', dict(active='a', active_url='qa', standby_url='qb'))]:
+            bridge = dict(Environment=dict(Variables=dict(JUDGE_REQUEST_QUEUE_URL=url)))
+            with patch.object(rollout, 'aws', return_value=bridge):
+                self.assertEqual(rollout.lanes(config), expected)
+        bridge = dict(Environment=dict(Variables=dict(JUDGE_REQUEST_QUEUE_URL='other')))
+        with patch.object(rollout, 'aws', return_value=bridge), self.assertRaises(ValueError):
+            rollout.lanes(config)
+
+    def test_lanes_without_a_second_queue(self):
+        config = dict(region='test', bridge='bridge', queues=['qa', 'r', 'da', 'dr'])
+        bridge = dict(Environment=dict(Variables=dict(JUDGE_REQUEST_QUEUE_URL='qa')))
+        with patch.object(rollout, 'aws', return_value=bridge):
+            self.assertEqual(rollout.lanes(config), dict(active='a', active_url='qa', standby_url=None))
+        self.assertEqual(rollout.all_queues(config), config['queues'])
+
+    def test_wait_empty_watches_both_lanes(self):
+        config = dict(region='test', queues=['qa', 'r', 'da', 'dr'], request_queue_b='qb')
+        def attributes(region, service, operation, *args):
+            busy = args[args.index('--queue-url') + 1] == 'qb'
+            return dict(Attributes=dict(ApproximateNumberOfMessages='1' if busy else '0',
+                                        ApproximateNumberOfMessagesNotVisible='0', ApproximateNumberOfMessagesDelayed='0'))
+        with patch.object(rollout, 'database_status', return_value=dict(pending=0, undispatched=0)), \
+                patch.object(rollout, 'aws', side_effect=attributes), \
+                patch.object(rollout.time, 'monotonic', side_effect=[0, 1, 2, 4000]), patch.object(rollout.time, 'sleep'):
+            with self.assertRaises(TimeoutError):
+                rollout.wait_empty(config)
+
+    def test_preflight_syncs_the_lane_before_terraform(self):
+        config = dict(region='test', account='1', api_url='https://x', runtimes=['python314'], smoke_runtime='python314',
+                      nodes=['i-0123456789abcdef0'], queues=['qa', 'r', 'da', 'dr'], request_queue_b='qb', bridge='bridge',
+                      bucket='bucket', result_mapping='m', dispatch_rule='rule', worker_alarms=['alarm'],
+                      repository='o/r', github_environment='dev')
+        arns = {'qa': 'arn:qa', 'qb': 'arn:qb', 'r': 'arn:r', 'da': 'arn:da', 'dr': 'arn:dr'}
+        def aws(region, service, operation, *args):
+            if operation == 'get-caller-identity':
+                return dict(Account='1')
+            if operation == 'get-function-configuration':
+                return dict(FunctionArn='arn:bridge', Environment=dict(Variables=dict(JUDGE_REQUEST_QUEUE_URL='qb', JUDGE_JOB_BUCKET='bucket')))
+            if operation == 'get-event-source-mapping':
+                return dict(FunctionArn='arn:bridge', EventSourceArn='arn:r')
+            if operation == 'list-targets-by-rule':
+                return dict(Targets=[dict(Arn='arn:bridge')])
+            if operation == 'get-queue-attributes':
+                url = args[args.index('--queue-url') + 1]
+                dead = 'arn:da' if url in ('qa', 'qb') else 'arn:dr'
+                return dict(Attributes=dict(QueueArn=arns[url], RedrivePolicy=json.dumps(dict(deadLetterTargetArn=dead))))
+            if operation == 'describe-alarms':
+                return dict(MetricAlarms=[dict(AlarmName='alarm')])
+            return dict(InstanceInformationList=[dict(PingStatus='Online')])
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            for path in ('infra/api/.terraform', 'infra/judge/.terraform'):
+                (root / path).mkdir(parents=True)
+            tfvars = root / 'infra/judge/zz-rollout.auto.tfvars.json'
+            tfvars.write_text('{"request_lane":"a","worker_count":2}')
+            seen = []
+            def command(*args):
+                if args[0] == 'terraform':
+                    seen.append(json.loads(tfvars.read_text()))
+                return '[]'
+            with patch.object(rollout, 'ROOT', root), patch.object(rollout, 'aws', side_effect=aws), \
+                    patch.object(rollout, 'run', side_effect=command):
+                rollout.preflight(config)
+            self.assertEqual(seen, [dict(request_lane='b', worker_count=2)] * 2)
+            # A standby lane that does not redrive to the request dead letter queue is refused.
+            arns['da'], arns['dr'] = 'arn:dr', 'arn:da'
+            with patch.object(rollout, 'ROOT', root), patch.object(rollout, 'aws', side_effect=aws), \
+                    patch.object(rollout, 'run', side_effect=command), self.assertRaises(ValueError):
+                rollout.preflight(config)
+
+    def test_sync_lane_changes_only_the_lane_and_settings_can_carry_it(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            (root / 'infra/judge').mkdir(parents=True)
+            path = root / 'infra/judge/zz-rollout.auto.tfvars.json'
+            with patch.object(rollout, 'ROOT', root):
+                rollout.sync_lane({}, 'b')
+                self.assertEqual(json.loads(path.read_text()), dict(request_lane='b'))
+                path.write_text('{"request_lane":"a","worker_count":2}')
+                rollout.sync_lane({}, 'b')
+                self.assertEqual(json.loads(path.read_text()), dict(request_lane='b', worker_count=2))
+                (root / 'infra/api').mkdir(parents=True)
+                (root / 'run').mkdir()
+                values = {}
+                def command(*args):
+                    if args[2] == 'set':
+                        values[args[3]] = args[args.index('--body') + 1]
+                        return ''
+                    return json.dumps([dict(name=n, value=v) for n, v in values.items()])
+                config = dict(repository='o/r', github_environment='dev')
+                with patch.object(rollout, 'run', side_effect=command):
+                    rollout.sync_settings(config, root / 'run', 'sha256:fixed', ['python314'], lane='a')
+            self.assertEqual(json.loads(path.read_text())['request_lane'], 'a')
+            self.assertEqual(json.loads(path.read_text())['worker_count'], 2)
+            self.assertNotIn('request_lane', json.loads((root / 'infra/api/zz-rollout.auto.tfvars.json').read_text()))
+
     def test_prepare_drains_before_stopping_workers(self):
         events = []
         with tempfile.TemporaryDirectory() as name:
@@ -503,12 +602,21 @@ class RollingTests(unittest.TestCase):
         self.assertFalse(any(e[0] in ('drain', 'env') for e in events))
         self.assertEqual(state['status'], 'passed')
 
+    def test_contest_guard_requires_the_lane_fields(self):
+        base = dict(pending=0, undispatched=0, dispatchPaused=False, nextContestWindowAt=None)
+        for missing in ('requestQueueUrl', 'previousInFlight'):
+            status = dict(base, requestQueueUrl='queue', previousInFlight=0)
+            del status[missing]
+            with patch.object(rollout, 'database_status', return_value=status), self.assertRaises(ValueError):
+                rollout.contest_guard({})
+
     def test_contest_window_and_old_bridge_block_rolling(self):
         soon = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)).isoformat()
         later = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=6)).isoformat().replace('+00:00', 'Z')
-        base = dict(pending=0, undispatched=0, dispatchPaused=False)
+        base = dict(pending=0, undispatched=0, dispatchPaused=False, requestQueueUrl='queue', previousInFlight=0)
         for status, allowed in [({**base, 'nextContestWindowAt': None}, True), ({**base, 'nextContestWindowAt': later}, True),
-                                ({**base, 'nextContestWindowAt': soon}, False), (dict(pending=0, undispatched=0), False)]:
+                                ({**base, 'nextContestWindowAt': soon}, False), (dict(pending=0, undispatched=0), False),
+                                (dict(pending=0, undispatched=0, dispatchPaused=False, nextContestWindowAt=None), False)]:
             with patch.object(rollout, 'database_status', return_value=status):
                 if allowed:
                     rollout.contest_guard({})
