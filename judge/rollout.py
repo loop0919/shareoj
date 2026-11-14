@@ -405,16 +405,29 @@ PY
         raise RuntimeError('workers are not ready')
 
 
+# Outlast one 20-second long poll, so a failing receive (such as a missing permission) is in the log.
+STANDBY_WAIT = 35
+# A failing worker logs a receive failure and retries about every 5 seconds, so one failing now has a failure
+# within this window, which is longer than the wait. Failures from before a fix stay in the same invocation's
+# journal and must not block a resumed run. The host's own clock bounds the window, so controller drift cannot hide one.
+STANDBY_WINDOW = 60
+
+
 def standby_ready(config, directory, node, url):
-    """Confirm the standby worker still runs on the standby lane and has received from it without failing."""
+    """Confirm the standby worker still runs on the standby lane and is not failing to receive from it."""
     check_dir = directory / ('standby-' + str(time.time_ns()))
     receipt = new_run(check_dir, config['region'], [node], 'install')
     command = '''set -eu
 systemctl is-active --quiet judge-worker
-python3 - ''' + shlex.quote(url) + ''' <<'PY'
-import json, subprocess, sys
+python3 - ''' + shlex.quote(url) + ' ' + str(STANDBY_WINDOW) + ''' <<'PY'
+import json, subprocess, sys, time
+from datetime import datetime
 from pathlib import Path
-url = sys.argv[1]
+url, since = sys.argv[1], time.time() - int(sys.argv[2])
+def recent(event):
+    # Telemetry stamps every record with an aware UTC ISO time; a record without a readable one counts as recent.
+    try: return datetime.fromisoformat(event['timestamp']).timestamp() >= since
+    except (KeyError, TypeError, ValueError): return True
 pid = subprocess.check_output(['systemctl', 'show', 'judge-worker', '-p', 'MainPID', '--value'], text=True).strip()
 env = Path('/proc/' + pid + '/environ').read_bytes().split(b'\\0')
 # Old and new workers must never read the same queue.
@@ -428,7 +441,8 @@ for line in log.splitlines():
     except ValueError: pass
 if not any(e.get('event') == 'worker_started' for e in events): raise SystemExit('worker is not ready')
 # A receive failure is logged and retried, so the worker stays active while it cannot take any job.
-if any(e.get('reason') == 'queue_receive_failed' for e in events): raise SystemExit('worker cannot receive from the standby lane')
+if any(e.get('reason') == 'queue_receive_failed' and recent(e) for e in events):
+    raise SystemExit('worker cannot receive from the standby lane (failed within ' + sys.argv[2] + ' seconds)')
 subprocess.run(['systemctl', 'is-active', '--quiet', 'judge-worker'], check=True)
 print('standby ready')
 PY
@@ -750,12 +764,15 @@ def switch(config, directory, state, first, rest, verification):
         checkpoint(directory, state, 'standby-first')
         # A run stopped right after the bridge update finds the bridge already switched, and the new lane busy.
         if not bridge_switched(config, state):
+            # With an unchanged digest the bridge would get previous == current: previousInFlight would count the
+            # new lane's work too, and the drain's requeue would restart submissions the new worker is judging.
+            if digest == previous:
+                raise ValueError('the prepared runtime digest equals the published one; nothing changed, so there is nothing to switch')
             # Work left in the standby lane would reach the new environment before the switch is decided.
             if queue_counts(config, state['activeQueue']) != 0:
                 raise ValueError('the standby lane is not empty')
             start_workers(verification, request_queue=state['activeQueue'])
-            # Outlast one 20-second long poll, so a failing receive (such as a missing permission) is in the log.
-            time.sleep(35)
+            time.sleep(STANDBY_WAIT)
             standby_ready(config, directory, first, state['activeQueue'])
             # Everything above leaves users on the old environment; the bridge update below is the first visible change.
             checkpoint(directory, state, 'switch-lane')

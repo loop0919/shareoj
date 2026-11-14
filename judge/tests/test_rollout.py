@@ -531,9 +531,11 @@ class RollingTests(unittest.TestCase):
                                 JUDGE_ENABLED_RUNTIMES='python314'),
                     api=dict(JUDGE_CPP_IMAGE=self.old, JUDGE_ENABLED_RUNTIMES='python314'))
 
-    def run_rolling(self, state=None, events=None, live=None, directory=None, queues=None, in_flight=(0,), requeued=0, **overrides):
+    def run_rolling(self, state=None, events=None, live=None, directory=None, queues=None, in_flight=(0,), requeued=0,
+                    prepared=None, **overrides):
         """Run rolling against fakes; lane a is 'qa' (queues[0]) and lane b is 'qb' (request_queue_b)."""
         events = [] if events is None else events
+        prepared = prepared or self.new
         config = dict(region='test', api='api', bridge='bridge', pool='judge-dev', nodes=[self.primary, self.first, self.other],
                       worker_alarms=['alarm'], runtimes=['python314'], queues=['qa', 'r', 'da', 'dr'], request_queue_b='qb')
         config = {key: value for key, value in {**config, **overrides}.items() if value is not None}
@@ -561,7 +563,7 @@ class RollingTests(unittest.TestCase):
             events.append(('prepare', label, tuple(nodes), expected_digest))
             verification = directory / ('verify-' + label)
             verification.mkdir(exist_ok=True)
-            (verification / 'report.json').write_text(json.dumps(dict(runtimeDigest=self.new)))
+            (verification / 'report.json').write_text(json.dumps(dict(runtimeDigest=prepared)))
             state.setdefault('packages', 'c' * 64)
             return verification
 
@@ -711,6 +713,28 @@ class RollingTests(unittest.TestCase):
         self.assertFalse(any(e[:2] == ('env', 'bridge') or e[0] == 'standby' or e == ('count', 'qb') for e in events))
         self.assertIn(('env', 'api', dict(JUDGE_CPP_IMAGE=self.new)), events)
 
+    def test_rolling_refuses_an_unchanged_digest(self):
+        # No package or release change reproduces the published digest; the bridge would get previous == current.
+        events = []
+        with self.assertRaisesRegex(ValueError, 'nothing changed'):
+            self.run_rolling(events=events, prepared=self.old)
+        self.assertIn(('prepare', 'first', (self.first,), None), events)
+        self.assertFalse(any(e[0] in ('env', 'start', 'standby') for e in events))
+
+    def test_unchanged_digest_does_not_block_a_switched_resume(self):
+        # A run that already switched (recorded, or found on the live bridge) carries on; only a new switch is refused.
+        lanes = dict(previousLane='a', previousQueue='qa', activeLane='b', activeQueue='qb')
+        base = dict(firstHost=self.first, previousDigest=self.old, runtimeDigest=self.old, packages='c' * 64,
+                    alarm_actions={'alarm': False}, **lanes)
+        for recorded in (True, False):
+            with self.subTest(recorded=recorded):
+                live = self.live_lambdas()
+                live['bridge'].update(JUDGE_REQUEST_QUEUE_URL='qb', JUDGE_PREVIOUS_RUNTIME_DIGEST=self.old)
+                state = dict(base, digestSwitched=True) if recorded else dict(base)
+                state, events = self.run_rolling(state, live=live, prepared=self.old)
+                self.assertEqual((state['status'], state['step'], state['digestSwitched']), ('passed', 'complete', True))
+                self.assertFalse(any(e[:2] == ('env', 'bridge') or e[0] == 'standby' for e in events))
+
     def test_requeue_returns_the_count_and_rejects_function_errors(self):
         payloads = []
         def invoke(response, error=None):
@@ -746,23 +770,36 @@ class RollingTests(unittest.TestCase):
         self.assertEqual(submit.call_args.args[2], self.first)
         script = submit.call_args.args[-1]
         subprocess.run(['bash', '-n'], input=script, text=True, check=True)
+        self.assertIn(url + ' ' + str(rollout.STANDBY_WINDOW) + " <<'PY'", script)
+        self.assertGreater(rollout.STANDBY_WINDOW, rollout.STANDBY_WAIT)
         code = compile(script.split("<<'PY'\n", 1)[1].rsplit('\nPY\n', 1)[0], '<standby check>', 'exec')
+        now = 1_800_000_000.0
+
+        def failure(age):
+            # The record shape telemetry.emit writes: an aware UTC ISO timestamp.
+            stamp = datetime.datetime.fromtimestamp(now - age, datetime.timezone.utc).isoformat()
+            return dict(timestamp=stamp, event='failure', category='platform', reason='queue_receive_failed')
 
         def check(queue, *failures):
-            journal = '\n'.join(json.dumps(event) for event in [dict(event='worker_started'), *failures])
+            started = dict(timestamp=datetime.datetime.fromtimestamp(now - 600, datetime.timezone.utc).isoformat(), event='worker_started')
+            journal = '\n'.join(json.dumps(event) for event in [started, *failures])
             outputs = {'MainPID': '42\n', 'InvocationID': 'abc\n'}
             def check_output(args, text=False):
                 return journal if args[0] == 'journalctl' else outputs[args[4]]
-            with patch.object(sys, 'argv', ['-', url]), patch('subprocess.check_output', side_effect=check_output), \
-                    patch('subprocess.run'), patch('builtins.print'), \
+            with patch.object(sys, 'argv', ['-', url, str(rollout.STANDBY_WINDOW)]), patch('time.time', return_value=now), \
+                    patch('subprocess.check_output', side_effect=check_output), patch('subprocess.run'), patch('builtins.print'), \
                     patch.object(Path, 'read_bytes', return_value=b'JUDGE_REQUEST_QUEUE_URL=' + queue.encode() + b'\0'):
                 exec(code, {'__name__': '__main__'})
 
         check(url)
         with self.assertRaisesRegex(SystemExit, 'another request queue'):
             check(url.removesuffix('-b'))
-        with self.assertRaisesRegex(SystemExit, 'cannot receive'):
-            check(url, dict(event='failure', category='platform', reason='queue_receive_failed'))
+        # Failures from before a fix stay in the same invocation's journal; they must not block the resumed run.
+        check(url, failure(300), failure(295), failure(rollout.STANDBY_WINDOW + 1))
+        for recent in (failure(rollout.STANDBY_WAIT), failure(5),
+                       dict(event='failure', category='platform', reason='queue_receive_failed')):
+            with self.subTest(recent=recent), self.assertRaisesRegex(SystemExit, 'cannot receive'):
+                check(url, failure(300), recent)
         with tempfile.TemporaryDirectory() as name, patch.object(rollout, 'new_run', return_value={}), \
                 patch.object(rollout, 'submit'), patch.object(rollout, 'collect', return_value=1), self.assertRaises(RuntimeError):
             rollout.standby_ready(dict(region='test'), Path(name), self.first, url)
