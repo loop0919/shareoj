@@ -72,6 +72,7 @@ func (b bridge) deploymentStatus(ctx context.Context) (any, error) {
 func (b bridge) handle(ctx context.Context, raw json.RawMessage) (any, error) {
 	var event struct {
 		Operation  string `json:"operation"`
+		Digest     string `json:"digest"`
 		Source     string `json:"source"`
 		DetailType string `json:"detail-type"`
 		events.SQSEvent
@@ -80,10 +81,16 @@ func (b bridge) handle(ctx context.Context, raw json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("invalid event")
 	}
 	if event.Operation != "" {
-		if event.Operation != "deployment-status" || len(event.Records) != 0 {
+		if len(event.Records) != 0 {
 			return nil, errors.New("invalid operation")
 		}
-		return b.deploymentStatus(ctx)
+		switch event.Operation {
+		case "deployment-status":
+			return b.deploymentStatus(ctx)
+		case "requeue-digest":
+			return b.requeueDigest(ctx, event.Digest)
+		}
+		return nil, errors.New("invalid operation")
 	}
 	if len(event.Records) > 0 {
 		return b.results(ctx, event.SQSEvent), nil
