@@ -129,7 +129,8 @@ python3 judge/rollout.py finish --config judge/.build/rollout.json --run-dir "$J
    `state.json`が`status: passed`と`step: complete`になるまで完了させる。
 3. 完了を確かめてから、部分点の設定の保存と表示を有効にするコミットをpushする。
 
-`rolling`は使わない。
+この節は、`rolling`が送り出しを止めていた当時に`run`で配布した手順である。
+同じ形の変更は、[`rolling`を使える3条件](#rollingを使える配布)を満たせば`rolling`で配布できる。
 `run`はコンテストの予定を確かめないので、受付停止から完了までの間にコンテストが重ならないことを、開始前に確かめる。
 手順2の前に部分点の設定を保存できると、古いbridgeがジョブの`scoring`を落とし、ワーカーは一括方式で採点する。
 手順3の後にbridgeを手順1より前の版へ戻すと、部分点の設定がワーカーに届かず、得点のない結果をJEにする安全網も働かない。
@@ -165,15 +166,42 @@ bridgeも毎分のdispatchで定期便を出題するので、手順1から2の�
 重ねると、移行で22時に移った回を旧bridgeが出題し、解禁を翌21時に、次回を23時にしてしまう。
 
 `rollout.py run`をpushより先に実行しない（新しいbridgeが`code_runs`を読めず、送り出しが止まる）。
-`rolling`は使わない（スキーマとbridgeとワーカーの互換性を変える配布のため）。
+当時は`run`で配布した。3条件を満たせない変更は、今も`run`を使う。
 手順1と2の間にコード実行をした人には、JEか「混雑」が表示される。
 
 ## OS更新はローリング更新で配布する
 
 OSのセキュリティ更新は`judge/rollout.py rolling`で配布する。
-提出の受付は止めない。
-判断の経緯は[ADR 0014](../adr/0014-roll-out-os-updates-without-stopping-judging.md)に記録している。
-提出の形式、DBのスキーマ、bridgeとworkerの互換性を変える配布には使わず、`run`で全台を止めて配布する。
+提出の受付も、bridgeの送り出しも止めない。
+要求キューを2本（レーンaとb）にし、新しい環境のワーカーを空いているレーンで待たせてから、bridgeの送り先を切り替える。
+判断の経緯は[ADR 0039](../adr/0039-switch-judge-environments-by-request-lanes.md)と[ADR 0014](../adr/0014-roll-out-os-updates-without-stopping-judging.md)に記録している。
+
+### `rolling`を使える配布
+
+次の3つを満たす配布は、形式が変わるものも`rolling`で行う。
+満たせない配布と、旧bridgeが読めなくなるDBの変更（列の削除や意味の変更）を伴う配布は`run`を使う。
+
+- 新しいbridgeは、旧workerの結果も新workerの結果も受け取れる。
+- 新しいbridgeが既存の機能の提出について送るジョブは、旧workerがそのまま採点できる。
+- 新しいジョブの項目や結果の項目を使う機能は、`rolling`が完了してからAPIで有効にする。
+
+- DBのスキーマの変更はAPIの配布（GitHub Actions）で入る。列やテーブルを足すだけなら、旧bridgeと旧workerが動いたまま入れられる。
+- mainへpushするとAPIが自動で配布される。workerの配布物は「APIが新機能の設定の保存を拒む版」のコミットから作り、新機能を有効にするコミットは`rolling`の完了後にpushする。
+- この順序は配布ツールでは検査しない。運用者が守る。
+
+### レーンを使う導入の順序
+
+初回の1回だけ、次を行う。
+
+1. `infra/judge`の`terraform.tfvars`に`request_lane = "a"`を書いてapplyする。planで、既存のキューと採点ホストが作り直されないことを確かめる。
+2. `judge/.build/rollout.json`に`request_queue_b`（レーンbのキューURL）を足す。`queues`の要求にはレーンaを書いたままにする。`request_queue_b`がない設定では`rolling`を拒む。
+3. 最初の`rolling`が、新しい状態項目（`requestQueueUrl`、`previousInFlight`）と`requeue-digest`に対応したbridgeを配布する。bridgeがこれらを返さなければ`rolling`は拒む。
+
+- レーンを切り替えるのは`rolling`と`rolling-revert`だけである。切り替え後に、配布ツールが`zz-rollout.auto.tfvars.json`へ`request_lane`を書く。
+- `request_lane`が稼働中のbridgeの送り先と違えば、`infra/judge`のplanは失敗する。古い入力ファイルや別のチェックアウトからのapplyでレーンが戻るのを防ぐためである。
+- `check_live_request_lane = false`は、bridgeがまだない最初の構築のときだけ使う。
+- `run`はレーンを切り替えない。全台を使用中のレーンに向けて起動する。
+- 要求のDLQから、どちらのレーンへも再送しない。
 
 設定は`run`と同じ`rollout.json`を使い、`pool`の指定を必須とする。
 `release`を指定すると、OS更新の後にその配布物を導入する。
@@ -209,18 +237,20 @@ t3.smallの3台では、smokeを2回含めて2時間程度かかる。
 
 ### 処理の順序
 
-1. 全台を起動して保守用の保持期限を6時間にし、全burstのワーカーを止めて無効にする。primaryは旧digestで採点を続ける。
-2. 名前順で最初のburstを更新する。`apt-get update --error-on=any`の後に`full-upgrade`し、SSMの終了コード194で再起動する。配布物の導入または指紋の再作成の後、全言語のsmokeを通して新しいdigestを得る。
-3. 参加者のいるコンテストの期間（開始30分前から終了15分後）が`rolling_guard_hours`（既定4時間）以内に始まらないことを確かめる。
-4. bridgeの送り出しを一時停止（`JUDGE_DISPATCH_PAUSED`）し、処理中の提出が終わって要求キューが空になるのを待つ。primaryと残りのburstのワーカーを止める。
-5. bridgeの`JUDGE_RUNTIME_DIGEST`を新しい値、`JUDGE_PREVIOUS_RUNTIME_DIGEST`を直前の値にし、APIの`JUDGE_CPP_IMAGE`を新しい値にする。準備したburstへ`JudgeInstalledDigest`を付けてワーカーを起動し、送り出しを再開する。
-6. CI変数とTerraformの入力（`previous_runtime_digest`を含む）を同期し、準備したburstだけで本番APIテストを通す。
-7. primaryと残りのburstを同じ手順で更新する。パッケージ一覧が最初の台と違えば、再起動する前に止まる。指紋が切り替えたdigestと一致することを確かめ、smokeを通してから起動する。
-8. 全台の健全性と、2台の同時採点を含む本番APIテストを通す。Terraformを`refresh-only`で同期し、保持期限を15分に縮める。
+1. 全台を起動して保守用の保持期限を6時間にし、全burstのワーカーを止めて無効にする。ワーカーのアラームのアクションも止める。primaryは旧digestで採点を続ける。使用中のレーンと空いているレーンを決め、空いているレーンが空であることを確かめる。
+2. 名前順で最初のburstを更新する。`apt-get update --error-on=any`の後に`full-upgrade`し、SSMの終了コード194で再起動する。配布物の導入または指紋の再作成の後、全言語のsmokeを通して新しいdigestを得る。準備したdigestが公開中のdigestと同じなら、切り替えるものがないので拒む。
+3. その台を空いているレーンに向けて起動し、ワーカーが動いていて、直近60秒に受信の失敗がないことを確かめる。ここまでは旧環境のままで、利用者に影響はない。
+4. 参加者のいるコンテストの期間（開始30分前から終了15分後）が`rolling_guard_hours`（既定4時間）以内に始まらないことを確かめ、bridgeの送り先、`JUDGE_RUNTIME_DIGEST`、`JUDGE_PREVIOUS_RUNTIME_DIGEST`を1回の更新で切り替える。以後の新しい提出は新しいワーカーへ流れる。
+5. bridgeのタイムアウト＋5秒待ってから、APIの`JUDGE_CPP_IMAGE`を新しい値にする。続けて、CI変数とTerraformの入力（`previous_runtime_digest`と`request_lane`を含む）を同期し、準備したburstだけで本番APIテストを通す。
+6. 旧レーンのキューと、直前のdigestの処理中の提出が3回連続で0になるまで待ち、旧ワーカーを止める。キューが空なのに処理中の提出が残るときは、`requeue-digest`で新しい環境へ送り直し、件数を`state.json`の`requeued`に残す。45分で終わらなければ、旧ワーカーを動かしたまま失敗として終わる。
+7. primaryと残りのburstを同じ手順で更新する。パッケージ一覧が最初の台と違えば、再起動する前に止まる。指紋が切り替えたdigestと一致することを確かめ、smokeを通してから、使用中のレーンに向けて起動する。
+8. 全台の健全性と、2台の同時採点を含む本番APIテストを通す。Terraformを`refresh-only`で同期し、保持期限を15分に縮める。ワーカーのアラームのアクションを元へ戻す。
 
-送り出しを止めている間も提出は受け付け、採点待ちとして溜まる。
-切り替え前のdigestで作られた未送出の提出は、新しい環境で公開中の言語に限ってbridgeが付け替える。
-それ以外のdigestの提出は、従来どおりJEにする。
+- 切り替えの瞬間に採点中だった提出は、旧ワーカーが旧レーンで最後まで採点する。
+- 切り替え前のdigestで作られた未送出の提出は、新しい環境で公開中の言語に限ってbridgeが付け替える。それ以外のdigestの提出は、従来どおりJEにする。
+- DLQに落ちたメッセージは消さない。
+- 切り替えの前後で、提出から採点開始までの待ちを測り、実行ディレクトリの`switch-watch.json`に書く。待ちの増加が10秒を超えた配布と、拒否またはJEの提出があった配布は、成功として報告しない。この計測は実装中で、実機では未確認である。
+
 採点台はIPv6専用で、IPv6のアドレスを持たないsnapshot.ubuntu.comには届かない。
 そのためAPTのスナップショットで時点を固定せず、後の台のパッケージ一覧が最初の台と一致することで版をそろえる。
 `apt-get update`は一覧の取得に失敗しても警告だけで成功を返し、古い一覧のまま何も更新しないため、`--error-on=any`で失敗として扱う。
@@ -230,17 +260,43 @@ t3.smallの3台では、smokeを2回含めて2時間程度かかる。
 ### 失敗時の操作
 
 失敗すると`state.json`に`status: failed`と失敗した`step`が残る。
-受付停止は使わないため、`admissionPaused`は変わらない。
-`dispatchPaused: true`のまま止まった場合は、送り出しが止まっている。
-送り出しの停止が6時間を超えると、採点待ちの提出は期限切れでJEになる。
+受付停止は使わない。送り出しも止めない。
 
-- 切り替え前の失敗（`step`が`pause-dispatch`より前）：primaryが旧digestで採点を続けている。原因を直して同じコマンドで再開する。OSを更新したburstは旧digestでは起動できないため、中止する場合は次の`rolling`か`run`で全台をそろえるまでburstを増設に使えない。
-- 排出待ちが45分で終わらない場合：旧digestのワーカーが動いたままなので、送り出しを自動で再開してから終了する。
-- 旧ワーカーの停止から準備したburstの起動まで（`stop-old-workers`から`start-first`）の失敗：採点が止まり、提出は溜まる。同じコマンドで再開する。旧環境へ戻す場合は、bridgeの`JUDGE_RUNTIME_DIGEST`とAPIの`JUDGE_CPP_IMAGE`を`previousDigest`へ戻し、primaryのワーカーを`systemctl enable --now judge-worker`で起動してから`JUDGE_DISPATCH_PAUSED`を外す。
-- 切り替え後の失敗（`switched: true`）：準備したburstが新しいdigestで採点を続けている。同じコマンドで再開する。
+| 失敗した場所 | 状態 | 対応 |
+| --- | --- | --- |
+| 切り替え前（`step`が`switch-lane`以前） | 旧環境のまま採点している。ワーカーのアラームのアクションは止まり、burstのワーカーは止まったままである | 原因を直して同じコマンドで再開する。中止する場合は、`state.json`の`alarm_actions`を見てアラームを手で戻す。OSを更新したburstは旧digestでは起動できないため、次の`rolling`か`run`で全台をそろえるまで増設に使えない |
+| 準備したdigestが公開中と同じ | 何も変わっていない。上と同じく、アラームのアクションとburstは止まったままである | 切り替えるものがないので、更新が必要な理由を確かめる。再開しても同じ理由で拒まれる。アラームを手で戻す |
+| 待機のワーカーが受信できない | 旧環境のまま採点している | 原因（レーンbのIAMなど）を直し、約1分待ってから同じ実行を再開する。確認は直近60秒の失敗だけを見るので、直後の再開は同じ失敗で止まる |
+| bridgeの更新そのもの | Lambdaの更新は全部入るか全く入らないかである | 同じコマンドで再開する。再開は`deployment-status`でbridgeの状態を見て、切り替え済みなら更新を繰り返さない |
+| 切り替え後のAPI、設定の同期、本番APIテスト | 新しいレーンが使用中で、旧ワーカーも旧レーンで動いている | 失敗ログを調べ、直せるなら再開する。新しい環境が壊れているなら`rolling-revert`で戻す |
+| 旧レーンの排出が45分で終わらない | 新しいレーンで採点している。旧ワーカーは残りを処理中 | 旧レーンに残る提出を調べて再開する。再開はまた45分待つ |
+| 切り替え後の残りの台 | 新しい環境の1台で採点している | 同じコマンドで再開する |
 
-ワーカーのアラームのアクションは`run`と同じく開始時に止め、完了時に元へ戻す。
-途中で失敗した場合は止めたままになるため、`state.json`の`alarm_actions`を見て戻す。
+- 再開には、同じ`rolling`コマンドと同じ`--run-dir`を使う。切り替え済みなら、再開はbridgeを更新し直さず、保存したレーンとdigestを使う。
+- 旧版（送り出しを一時停止する版）で作った実行ディレクトリは、この版で再開しない。レーンを決め直して、新しいワーカーを誤ったレーンで起動する。
+- 切り替え後の自動ロールバックは行わない。
+
+#### 切り替えを戻す
+
+新しい環境が壊れていたときに、`rolling-revert`で旧環境へ戻す。
+
+```sh
+nohup nix develop . --command python3 judge/rollout.py rolling-revert --config judge/.build/rollout.json \
+  --run-dir "$JUDGE_RELEASE_RUN" > "$JUDGE_RELEASE_RUN-revert.log" 2>&1 < /dev/null &
+```
+
+- 使えるのは、bridgeを切り替えた後、旧ワーカーを止める前だけである。旧ワーカーの停止を始めた後（`oldWorkersStopped`、または実行ディレクトリの`switch-stop/`がある）と、切り替える前の実行では、AWSを触らずに拒む。
+- まだ動いている`rolling`（旧レーンの排出待ちなど）は、先に止める（Ctrl-C）。同じロックを使うので、動いたままでは起動できない。
+- 順序は、bridgeを旧レーンと旧digestへ戻す、bridgeのタイムアウト＋5秒待つ、APIのdigestを旧へ戻す、新ワーカーを止めて新レーンを空にする、新しい環境で終わらなかった提出を`requeue-digest`で旧環境へ送り直す、設定（GitHubの変数、Terraformの入力、`request_lane`）を旧へ戻す、ワーカーのアラームのアクションを元へ戻す、である。
+- 新しい環境で採点が終わった提出は、そのまま残す。採点し直さない。
+- 終わると`status: reverted`になり、再開できない。同じ実行ディレクトリでの`rolling`や`run`は拒まれる。原因を直してから、新しい実行ディレクトリで始める。
+- 途中で止まった場合は、同じコマンドで続きから再開する。
+- 戻した後に運用者が行う（`rolling-revert`はしない）。
+  - 準備したburst以外のburstのワーカーは、止めて無効にしたままである。必要なら`systemctl enable --now judge-worker`で戻す。
+  - 保守用の保持期限（6時間）は縮めない。準備したburstは期限まで動いたままで、ワーカーは無効である。
+  - Terraformの`refresh-only`は実行しない。
+- 準備したburstが6時間を超えて落ちていると、新ワーカーの停止（`revert-stop`）が失敗する。ホストを起動し、中身のない`revert-stop/`が実行ディレクトリに残っていれば削除してから、同じコマンドで再開する。
+- 新レーンの空の確認が180秒で終わらなければ失敗する。再開すると、前回から65秒待って必要なら消去し直す。
 
 以下の個別コマンドは、`run`の統合処理を分けて実行したい場合や、障害調査時に使用する。
 

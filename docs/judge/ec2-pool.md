@@ -79,6 +79,14 @@ bridgeは毎分のdispatchで、コンテストの問題公開や定期便の出
 2026-09-29の切り替えでは、未リリースの定期便の変更を含む`main`からbridgeを作ったため、約2時間dispatchが止まった。
 `rollout.py`の`prepare`は`bridge_package`の内容でbridgeを更新するので、配布の前にビルド元のコミットを確かめる。
 
+`rolling`を使うには、次も設定する。
+
+- `rollout.json`の`request_queue_b`：レーンbの要求キューのURL。`queues`の要求にはレーンaを書く。ない設定では`rolling`を拒む。`run`は従来どおり動く。
+- `infra/judge`の`request_lane`（`a`または`b`）：bridgeの送り先を決める。既定値はなく、初回だけ`terraform.tfvars`へ`a`と書く。以後は`rollout.py`が`zz-rollout.auto.tfvars.json`へ書き込む。稼働中のbridgeの送り先と違えばplanが失敗する。
+- `check_live_request_lane = false`は、bridgeがまだない最初の構築のときだけ使う。
+
+手順は[配布と検証の定型コマンド](deployment-checks.md#レーンを使う導入の順序)にある。
+
 `infra/judge`は公開言語を`enabled_runtimes`として必須の変数に持つ。
 applyでbridgeの`JUDGE_ENABLED_RUNTIMES`を消さないためである。
 初回だけは`terraform.tfvars`へ手で設定し、以後は`rollout.py`が`zz-rollout.auto.tfvars.json`へ書き込む。

@@ -1,7 +1,7 @@
 # 提出も採点も止めないジャッジ更新の設計
 
 - 作成日: 2026-11-14
-- 状態: 承認待ち
+- 状態: 実装済み、未配布（決定は[ADR 0039](../../adr/0039-switch-judge-environments-by-request-lanes.md)）
 - 前提: [ADR 0014](../../adr/0014-roll-out-os-updates-without-stopping-judging.md)の`judge/rollout.py rolling`の上に作る
 
 ## 目的
