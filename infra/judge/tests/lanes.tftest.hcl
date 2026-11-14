@@ -73,8 +73,36 @@ run "lane_b_selects_queue" {
   }
 }
 
+# SQS checks the dead letter queue's allow policy when a source queue names it, so the policy must list lane b
+# before lane b is created. Deriving the ARNs from the DLQ's own ARN keeps the policy off the queues' ARNs:
+# with only the DLQ ARNs known, the policy is complete.
+run "dead_letter_allows_both_lanes_before_they_exist" {
+  command = plan
+  override_resource {
+    override_during = plan
+    target          = aws_sqs_queue.dead["requests"]
+    values          = { arn = "arn:aws:sqs:ap-northeast-1:123456789012:judge-dev-judge-requests-dead" }
+  }
+  override_resource {
+    override_during = plan
+    target          = aws_sqs_queue.dead["results"]
+    values          = { arn = "arn:aws:sqs:ap-northeast-1:123456789012:judge-dev-judge-results-dead" }
+  }
+  assert {
+    condition = jsondecode(aws_sqs_queue_redrive_allow_policy.dead["requests"].redrive_allow_policy).sourceQueueArns == [
+      "arn:aws:sqs:ap-northeast-1:123456789012:judge-dev-judge-requests",
+      "arn:aws:sqs:ap-northeast-1:123456789012:judge-dev-judge-requests-b",
+    ]
+    error_message = "The request DLQ must allow lane a and lane b by ARNs that do not wait for the queues."
+  }
+  assert {
+    condition     = jsondecode(aws_sqs_queue_redrive_allow_policy.dead["results"].redrive_allow_policy).sourceQueueArns == ["arn:aws:sqs:ap-northeast-1:123456789012:judge-dev-judge-results"]
+    error_message = "The result DLQ keeps allowing only the result queue."
+  }
+}
+
 run "invalid_lane" {
-  command         = plan
+  command = plan
   variables { request_lane = "c" }
   expect_failures = [var.request_lane]
 }
@@ -101,7 +129,7 @@ run "stale_lane_fails" {
 }
 
 run "first_build_without_live_bridge" {
-  command   = plan
+  command = plan
   variables { check_live_request_lane = false }
 }
 
