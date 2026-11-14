@@ -41,6 +41,14 @@ class SummarizeTests(unittest.TestCase):
         self.assertEqual(smoke.summarize([sample(1, 1)], 10)['status'], 'failed')
         self.assertEqual(smoke.summarize([], 10)['status'], 'failed')
 
+    def test_a_submission_still_waiting_at_the_switch_counts_after_it(self):
+        # Submitted 2 s before the switch and started 15 s after submitting: the switch is what it waited through.
+        before = [sample(1, w) for w in (900, 1100, 1000)]
+        result = smoke.summarize(before + [sample(8, 15000), sample(10, 1000)], 10)
+        self.assertEqual((result['status'], result['baselineWaitMs'], result['maxWaitMs']), ('failed', 1000, 15000))
+        # One that started before the switch stays in the baseline.
+        self.assertEqual(smoke.summarize(before + [sample(8, 1500), sample(10, 1000)], 10)['maxWaitMs'], 1000)
+
     def test_a_wait_of_exactly_ten_seconds_more_passes(self):
         self.assertEqual(smoke.summarize([sample(1, 1000), sample(10, 11000)], 10)['status'], 'passed')
         self.assertEqual(smoke.summarize([sample(1, 1000), sample(10, 11001)], 10)['status'], 'failed')

@@ -139,8 +139,11 @@ def summarize(samples, switch_at):
     rejected = sum(1 for s in samples if s.get('rejected'))
     accepted = [s for s in samples if not s.get('rejected')]
     je = sum(1 for s in accepted if s.get('verdict') == 'JE')
-    before = [s['waitMs'] for s in accepted if s['submittedAt'] < switch_at]
-    after = [s['waitMs'] for s in accepted if s['submittedAt'] >= switch_at]
+    # A submission still waiting at the switch waited through it, so it belongs to the "after" side even when it was
+    # submitted shortly before; only those that started judging before the switch form the baseline.
+    spans = [(s['submittedAt'] + s['waitMs'] / 1000 >= switch_at, s['waitMs']) for s in accepted]
+    before = [wait for waited, wait in spans if not waited]
+    after = [wait for waited, wait in spans if waited]
     baseline = statistics.median(before) if before else None
     peak = max(after) if after else None
     ok = bool(before) and bool(after) and rejected == 0 and je == 0 and peak - baseline <= MAX_WAIT_GROWTH_MS
