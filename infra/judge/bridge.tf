@@ -34,8 +34,10 @@ locals {
   request_queue_urls = { a = aws_sqs_queue.queue["requests"].url, b = aws_sqs_queue.queue["requests-b"].url }
 }
 # Reads the live bridge so a stale request_lane cannot silently switch lanes.
-# The function must already exist; a first-time build has to create it before this data source can be read.
+# The data source fails the plan when the function does not exist, so it is gated by
+# check_live_request_lane (set false only for a first-time build); count = 0 skips the check.
 data "aws_lambda_function" "bridge_live" {
+  count         = var.check_live_request_lane ? 1 : 0
   function_name = "${local.name}-judge-bridge"
 }
 resource "aws_lambda_function" "bridge" {
@@ -82,7 +84,7 @@ resource "aws_lambda_function" "bridge" {
       error_message = "Tag the pool with a smoke-tested runtime before the bridge starts hosts."
     }
     precondition {
-      condition     = try(data.aws_lambda_function.bridge_live.environment[0].variables.JUDGE_REQUEST_QUEUE_URL, local.request_queue_urls[var.request_lane]) == local.request_queue_urls[var.request_lane]
+      condition     = length(data.aws_lambda_function.bridge_live) == 0 || try(data.aws_lambda_function.bridge_live[0].environment[0].variables.JUDGE_REQUEST_QUEUE_URL, local.request_queue_urls[var.request_lane]) == local.request_queue_urls[var.request_lane]
       error_message = "request_lane differs from the live bridge. Only judge/rollout.py switches lanes; set request_lane to the live lane."
     }
   }

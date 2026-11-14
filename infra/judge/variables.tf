@@ -152,3 +152,8 @@ variable "request_lane" {
     error_message = "request_lane must be a or b."
   }
 }
+variable "check_live_request_lane" {
+  description = "Compare request_lane with the live bridge at plan time. Set false only for a first-time build, before the bridge function exists."
+  type        = bool
+  default     = true
+}
