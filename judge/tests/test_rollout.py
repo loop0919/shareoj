@@ -168,6 +168,28 @@ class RolloutTests(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text())['worker_count'], 2)
             self.assertNotIn('request_lane', json.loads((root / 'infra/api/zz-rollout.auto.tfvars.json').read_text()))
 
+    def test_settings_sync_keeps_a_lane_written_after_the_backup(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            for path in ('infra/api', 'infra/judge', 'run'):
+                (root / path).mkdir(parents=True)
+            tfvars = root / 'infra/judge/zz-rollout.auto.tfvars.json'
+            tfvars.write_text('{"worker_count":2}')
+            values = {}
+            def command(*args):
+                if args[2] == 'set':
+                    values[args[3]] = args[args.index('--body') + 1]
+                    return ''
+                return json.dumps([dict(name=n, value=v) for n, v in values.items()])
+            config = dict(repository='o/r', github_environment='dev')
+            with patch.object(rollout, 'ROOT', root), patch.object(rollout, 'run', side_effect=command):
+                rollout.sync_settings(config, root / 'run', 'sha256:one', ['python314'], lane='a')
+                rollout.sync_lane(config, 'b')
+                rollout.sync_settings(config, root / 'run', 'sha256:two', ['python314'])
+            self.assertEqual(json.loads(tfvars.read_text()),
+                             dict(worker_count=2, request_lane='b', runtime_digest='sha256:two', enabled=True,
+                                  enabled_runtimes=['python314']))
+
     def test_prepare_drains_before_stopping_workers(self):
         events = []
         with tempfile.TemporaryDirectory() as name:

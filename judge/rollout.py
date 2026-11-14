@@ -418,8 +418,8 @@ def sync_settings(config, directory, digest, runtimes, previous=None, lane=None)
         backup = directory / (root.replace('/', '-') + '-variables.json')
         if not backup.exists():
             save(backup, dict(existed=path.exists(), content=path.read_text() if path.exists() else ''))
-        previous = json.loads(backup.read_text())
-        save(path, {**json.loads(previous['content'] or '{}'), **values})
+        # Merge over the current file, not the backup: sync_lane may have changed request_lane since the backup.
+        save(path, {**(json.loads(path.read_text() or '{}') if path.exists() else {}), **values})
 
 
 def finish(config, directory, state, report_path):
