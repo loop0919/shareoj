@@ -45,17 +45,24 @@ func (b bridge) deploymentStatus(ctx context.Context) (any, error) {
 		RuntimeDigest         string `json:"runtimeDigest"`
 		PreviousRuntimeDigest string `json:"previousRuntimeDigest"`
 		DispatchPaused        bool   `json:"dispatchPaused"`
+		// The request queue (lane) this bridge sends to.
+		RequestQueueURL string `json:"requestQueueUrl"`
+		// Dispatched but unfinished items still carrying the previous runtime digest.
+		PreviousInFlight int64 `json:"previousInFlight"`
 		// A rolling update must not change the environment within a contest (ADR 0014).
 		// The window runs from 30 minutes before the start to 15 minutes after the end of each contest.
 		// Unlike the burst hold, it has no 3-hour cap and needs only one participant.
 		NextContestWindowAt *time.Time `json:"nextContestWindowAt"`
-	}{Kind: "judge-deployment-status", RuntimeDigest: b.runtime, PreviousRuntimeDigest: b.previous, DispatchPaused: b.paused}
+	}{Kind: "judge-deployment-status", RuntimeDigest: b.runtime, PreviousRuntimeDigest: b.previous, DispatchPaused: b.paused, RequestQueueURL: b.queueURL}
 	err := b.db.QueryRow(ctx, `SELECT COUNT(*), COUNT(*) FILTER (WHERE dispatched_at IS NULL),
       (SELECT MIN(c.starts_at-interval '30 minutes') FROM contests c
         WHERE c.ends_at+interval '15 minutes' > statement_timestamp()
-          AND EXISTS (SELECT 1 FROM contest_participants p WHERE p.contest_id=c.id))
+          AND EXISTS (SELECT 1 FROM contest_participants p WHERE p.contest_id=c.id)),
+      CASE WHEN $2 = '' THEN 0 ELSE
+        (SELECT COUNT(*) FROM submissions WHERE runtime=ANY($1::text[]) AND status <> 'DONE' AND dispatched_at IS NOT NULL AND job->>'image' = $2)
+        + (SELECT COUNT(*) FROM code_runs WHERE runtime=ANY($1::text[]) AND status <> 'DONE' AND dispatched_at IS NOT NULL AND image = $2) END
       FROM (SELECT dispatched_at FROM submissions WHERE runtime=ANY($1::text[]) AND status <> 'DONE'
-        UNION ALL SELECT dispatched_at FROM code_runs WHERE runtime=ANY($1::text[]) AND status <> 'DONE') w`, submissions.IsolateRuntimeIDs()).Scan(&status.Pending, &status.Undispatched, &status.NextContestWindowAt)
+        UNION ALL SELECT dispatched_at FROM code_runs WHERE runtime=ANY($1::text[]) AND status <> 'DONE') w`, submissions.IsolateRuntimeIDs(), b.previous).Scan(&status.Pending, &status.Undispatched, &status.NextContestWindowAt, &status.PreviousInFlight)
 	if err != nil {
 		return nil, errors.New("deployment status unavailable")
 	}
@@ -65,6 +72,7 @@ func (b bridge) deploymentStatus(ctx context.Context) (any, error) {
 func (b bridge) handle(ctx context.Context, raw json.RawMessage) (any, error) {
 	var event struct {
 		Operation  string `json:"operation"`
+		Digest     string `json:"digest"`
 		Source     string `json:"source"`
 		DetailType string `json:"detail-type"`
 		events.SQSEvent
@@ -73,10 +81,16 @@ func (b bridge) handle(ctx context.Context, raw json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("invalid event")
 	}
 	if event.Operation != "" {
-		if event.Operation != "deployment-status" || len(event.Records) != 0 {
+		if len(event.Records) != 0 {
 			return nil, errors.New("invalid operation")
 		}
-		return b.deploymentStatus(ctx)
+		switch event.Operation {
+		case "deployment-status":
+			return b.deploymentStatus(ctx)
+		case "requeue-digest":
+			return b.requeueDigest(ctx, event.Digest)
+		}
+		return nil, errors.New("invalid operation")
 	}
 	if len(event.Records) > 0 {
 		return b.results(ctx, event.SQSEvent), nil

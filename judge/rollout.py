@@ -8,6 +8,8 @@ import json
 import os
 import re
 from pathlib import Path
+import shlex
+import signal
 import subprocess
 import sys
 import tempfile
@@ -21,8 +23,8 @@ ROOT = Path(__file__).resolve().parents[1]
 LOG_DIRECTORY = None
 
 
-def run(*args):
-    result = subprocess.run(args, cwd=ROOT, capture_output=True, text=True)
+def run(*args, timeout=None):
+    result = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, timeout=timeout)
     if LOG_DIRECTORY is not None:
         path = LOG_DIRECTORY / 'commands.log'
         with path.open('a') as file:
@@ -55,17 +57,62 @@ def database_status(config):
     return status
 
 
+def requeue(config, digest):
+    """Return dispatched, unfinished items of the bridge's previous digest to dispatch; returns how many."""
+    with tempfile.NamedTemporaryFile() as file:
+        result = aws(config['region'], 'lambda', 'invoke', '--function-name', config['bridge'], '--cli-binary-format', 'raw-in-base64-out',
+                     '--payload', json.dumps(dict(operation='requeue-digest', digest=digest)), file.name)
+        response = json.loads(Path(file.name).read_text())
+    # The bridge accepts only its previous digest and changes nothing when it refuses.
+    if result.get('FunctionError') or not isinstance(response, dict) or response.get('kind') != 'judge-requeue' or \
+            type(response.get('requeued')) is not int or response['requeued'] < 0:
+        raise RuntimeError('bridge did not requeue the previous digest')
+    return response['requeued']
+
+
+def all_queues(config):
+    """Every request, result and dead letter queue, including the second request lane when configured."""
+    return config['queues'] + ([config['request_queue_b']] if config.get('request_queue_b') else [])
+
+
+def lanes(config):
+    """Resolve the request lanes from the queue the live bridge sends to (the single source of truth)."""
+    bridge = aws(config['region'], 'lambda', 'get-function-configuration', '--function-name', config['bridge'])
+    url = bridge['Environment']['Variables']['JUDGE_REQUEST_QUEUE_URL']
+    first, second = config['queues'][0], config.get('request_queue_b')
+    if url == first:
+        return dict(active='a', active_url=first, standby_url=second)
+    if second and url == second:
+        return dict(active='b', active_url=second, standby_url=first)
+    raise ValueError('bridge request queue is not a configured lane')
+
+
+def live_lane(config):
+    """The request queue the live bridge sends to, or None for a configuration with one request queue."""
+    return lanes(config)['active_url'] if config.get('request_queue_b') else None
+
+
+def queue_counts(config, url):
+    """Visible, in-flight and delayed messages of one queue, summed."""
+    attributes = aws(config['region'], 'sqs', 'get-queue-attributes', '--queue-url', url,
+                     '--attribute-names', 'ApproximateNumberOfMessages', 'ApproximateNumberOfMessagesNotVisible',
+                     'ApproximateNumberOfMessagesDelayed')['Attributes']
+    return sum(int(attributes[key]) for key in ('ApproximateNumberOfMessages',
+               'ApproximateNumberOfMessagesNotVisible', 'ApproximateNumberOfMessagesDelayed'))
+
+
+def sync_lane(config, lane):
+    """Point Terraform's request_lane at the lane in use, keeping every other rollout-owned value."""
+    path = ROOT / 'infra/judge/zz-rollout.auto.tfvars.json'
+    values = json.loads(path.read_text() or '{}') if path.exists() else {}
+    save(path, {**values, 'request_lane': lane})
+
+
 def wait_empty(config, timeout=3600):
     deadline, stable = time.monotonic() + timeout, 0
     while time.monotonic() < deadline:
         status = database_status(config)
-        counts = []
-        for url in config['queues']:
-            attributes = aws(config['region'], 'sqs', 'get-queue-attributes', '--queue-url', url,
-                             '--attribute-names', 'ApproximateNumberOfMessages', 'ApproximateNumberOfMessagesNotVisible',
-                             'ApproximateNumberOfMessagesDelayed')['Attributes']
-            counts.extend(int(attributes[key]) for key in ('ApproximateNumberOfMessages',
-                          'ApproximateNumberOfMessagesNotVisible', 'ApproximateNumberOfMessagesDelayed'))
+        counts = [queue_counts(config, url) for url in all_queues(config)]
         stable = stable + 1 if status['pending'] == status['undispatched'] == 0 and not any(counts) else 0
         if stable == 3:
             return
@@ -199,6 +246,9 @@ def preflight(config):
     if not config['nodes'] or len(set(config['nodes'])) != len(config['nodes']) or len(set(config['queues'])) != 4 or any(
             not NODE_ID.fullmatch(node) for node in config['nodes']):
         raise ValueError('configure distinct hosts and request/result/dead queue URLs')
+    second = config.get('request_queue_b')
+    if second is not None and (not isinstance(second, str) or second in config['queues']):
+        raise ValueError('request_queue_b must be a fifth queue distinct from the four queues')
     retired = config.get('retire_nodes', [])
     if len(set(retired)) != len(retired) or set(retired) & set(config['nodes']) or any(not NODE_ID.fullmatch(node) for node in retired):
         raise ValueError('retired hosts must be distinct SSM nodes outside the deployment targets')
@@ -209,14 +259,19 @@ def preflight(config):
     targets = aws(region, 'events', 'list-targets-by-rule', '--rule', config['dispatch_rule'])['Targets']
     if mapping['FunctionArn'] != bridge['FunctionArn'] or not any(t['Arn'] == bridge['FunctionArn'] for t in targets):
         raise ValueError('dispatch or result mapping belongs to a different bridge')
-    if bridge['Environment']['Variables']['JUDGE_REQUEST_QUEUE_URL'] != config['queues'][0] or \
-            bridge['Environment']['Variables']['JUDGE_JOB_BUCKET'] != config['bucket']:
+    lane = lanes(config)
+    if bridge['Environment']['Variables']['JUDGE_JOB_BUCKET'] != config['bucket']:
         raise ValueError('request queue or release bucket differs from bridge configuration')
     queues = [aws(region, 'sqs', 'get-queue-attributes', '--queue-url', url,
                   '--attribute-names', 'QueueArn', 'RedrivePolicy')['Attributes'] for url in config['queues']]
     if mapping['EventSourceArn'] != queues[1]['QueueArn'] or any(
             json.loads(queues[i]['RedrivePolicy'])['deadLetterTargetArn'] != queues[i + 2]['QueueArn'] for i in (0, 1)):
         raise ValueError('result queue or dead letter queue does not match')
+    if second is not None:
+        standby = aws(region, 'sqs', 'get-queue-attributes', '--queue-url', second,
+                      '--attribute-names', 'RedrivePolicy')['Attributes']
+        if json.loads(standby['RedrivePolicy'])['deadLetterTargetArn'] != queues[2]['QueueArn']:
+            raise ValueError('request queue b does not redrive to the request dead letter queue')
     if not config['worker_alarms']:
         raise ValueError('configure the worker alarms')
     alarms = aws(region, 'cloudwatch', 'describe-alarms', '--alarm-names', *config['worker_alarms'])['MetricAlarms']
@@ -227,6 +282,9 @@ def preflight(config):
         if len(info) != 1 or info[0]['PingStatus'] != 'Online':
             raise ValueError('SSM node is not online: ' + node)
     run('gh', 'variable', 'list', '--repo', config['repository'], '--env', config['github_environment'], '--json', 'name,value')
+    if second is not None:
+        # Terraform's precondition compares request_lane with the live bridge; a stale file would block a resumed run.
+        sync_lane(config, lane['active'])
     for root in ('infra/api', 'infra/judge'):
         if not (ROOT / root / '.terraform').exists():
             raise ValueError('initialize Terraform before maintenance: ' + root)
@@ -319,12 +377,13 @@ def prepare(config, directory, state):
     checkpoint(directory, state, 'prepared', prepared=True, status='prepared')
 
 
-def healthy_workers(config, directory, digest):
+def healthy_workers(config, directory, digest, queue=None):
+    """Confirm every host runs `digest` and is ready; with `queue`, also that each worker reads that request queue."""
     health_dir = directory / ('health-' + str(time.time_ns()))
     receipt = new_run(health_dir, config['region'], config['nodes'], 'install')
     command = '''set -eu
 systemctl is-active --quiet judge-worker
-PYTHONPATH=/opt/judge python3 - ''' + digest + ''' <<'PY'
+PYTHONPATH=/opt/judge python3 - ''' + digest + ('' if queue is None else ' ' + shlex.quote(queue)) + ''' <<'PY'
 import json, subprocess, sys
 from pathlib import Path
 from host import verify_assets
@@ -333,6 +392,8 @@ if verify_assets() != digest: raise SystemExit('installed digest differs')
 pid = subprocess.check_output(['systemctl', 'show', 'judge-worker', '-p', 'MainPID', '--value'], text=True).strip()
 env = Path('/proc/' + pid + '/environ').read_bytes().split(b'\\0')
 if ('JUDGE_RUNTIME_DIGEST=' + digest).encode() not in env: raise SystemExit('running process digest differs')
+# A worker on the lane the bridge does not send to is running but takes no submission.
+if sys.argv[2:] and ('JUDGE_REQUEST_QUEUE_URL=' + sys.argv[2]).encode() not in env: raise SystemExit('worker reads another request queue')
 invocation = subprocess.check_output(['systemctl', 'show', 'judge-worker', '-p', 'InvocationID', '--value'], text=True).strip()
 if not invocation: raise SystemExit('worker invocation missing')
 log = subprocess.check_output(['journalctl', '_SYSTEMD_INVOCATION_ID=' + invocation, '-o', 'cat', '--no-pager'], text=True)
@@ -353,6 +414,73 @@ PY
         raise RuntimeError('workers are not ready')
 
 
+# Outlast one 20-second long poll, so a failing receive (such as a missing permission) is in the log.
+STANDBY_WAIT = 35
+# A failing worker logs a receive failure and retries about every 5 seconds, so one failing now has a failure
+# within this window, which is longer than the wait. Failures from before a fix stay in the same invocation's
+# journal and must not block a resumed run. The host's own clock bounds the window, so controller drift cannot hide one.
+STANDBY_WINDOW = 60
+
+
+def lane_worker_ready(config, directory, nodes, url, digest=None, label='lane'):
+    """Confirm each node's running worker reads `url` (and runs `digest`, when given) and is not failing to receive.
+
+    Every switch and every return of capacity relies on this: a worker that is active but reads the other lane, or
+    runs another digest, judges nothing the bridge sends. Raises RuntimeError naming the receipt to inspect.
+    """
+    if digest is not None and not re.fullmatch('sha256:[a-f0-9]{64}', digest):
+        raise ValueError('invalid runtime digest')
+    check_dir = directory / (label + '-' + str(time.time_ns()))
+    receipt = new_run(check_dir, config['region'], nodes, 'install')
+    command = '''set -eu
+systemctl is-active --quiet judge-worker
+python3 - ''' + shlex.quote(url) + ' ' + str(STANDBY_WINDOW) + ('' if digest is None else ' ' + digest) + ''' <<'PY'
+import json, subprocess, sys, time
+from datetime import datetime
+from pathlib import Path
+url, since = sys.argv[1], time.time() - int(sys.argv[2])
+def recent(event):
+    # Telemetry stamps every record with an aware UTC ISO time; a record without a readable one counts as recent.
+    try: return datetime.fromisoformat(event['timestamp']).timestamp() >= since
+    except (KeyError, TypeError, ValueError): return True
+pid = subprocess.check_output(['systemctl', 'show', 'judge-worker', '-p', 'MainPID', '--value'], text=True).strip()
+env = Path('/proc/' + pid + '/environ').read_bytes().split(b'\\0')
+# Old and new workers must never read the same queue.
+if ('JUDGE_REQUEST_QUEUE_URL=' + url).encode() not in env: raise SystemExit('worker reads another request queue')
+if sys.argv[3:] and ('JUDGE_RUNTIME_DIGEST=' + sys.argv[3]).encode() not in env: raise SystemExit('worker runs another runtime digest')
+invocation = subprocess.check_output(['systemctl', 'show', 'judge-worker', '-p', 'InvocationID', '--value'], text=True).strip()
+if not invocation: raise SystemExit('worker invocation missing')
+log = subprocess.check_output(['journalctl', '_SYSTEMD_INVOCATION_ID=' + invocation, '-o', 'cat', '--no-pager'], text=True)
+events = []
+for line in log.splitlines():
+    try: events.append(json.loads(line))
+    except ValueError: pass
+if not any(e.get('event') == 'worker_started' for e in events): raise SystemExit('worker is not ready')
+# A receive failure is logged and retried, so the worker stays active while it cannot take any job.
+if any(e.get('reason') == 'queue_receive_failed' and recent(e) for e in events):
+    raise SystemExit('worker cannot receive from its lane (failed within ' + sys.argv[2] + ' seconds)')
+subprocess.run(['systemctl', 'is-active', '--quiet', 'judge-worker'], check=True)
+print('lane worker ready')
+PY
+'''
+    for node in nodes:
+        submit(check_dir, receipt, node, command)
+    try:
+        finished = collect(check_dir, receipt, wait=True) == 0
+    except RuntimeError:
+        finished = False
+    if not finished:
+        raise RuntimeError('a worker is not ready on ' + url + '; inspect ' + str(check_dir / 'receipt.json'))
+
+
+def standby_ready(config, directory, node, url):
+    """Confirm the standby worker still runs on the standby lane and is not failing to receive from it."""
+    try:
+        lane_worker_ready(config, directory, [node], url, label='standby')
+    except RuntimeError as error:
+        raise RuntimeError('the standby worker is not ready; the bridge was not switched (' + str(error) + ')') from None
+
+
 def retired_workers_stopped(config, directory):
     if not config.get('retire_nodes'):
         return
@@ -364,7 +492,7 @@ def retired_workers_stopped(config, directory):
         raise RuntimeError('a retired worker is still enabled')
 
 
-def sync_settings(config, directory, digest, runtimes, previous=None):
+def sync_settings(config, directory, digest, runtimes, previous=None, lane=None):
     for name, value in {'JUDGE_RUNTIME_DIGEST': digest, 'JUDGE_ENABLED_RUNTIMES': json.dumps(runtimes)}.items():
         run('gh', 'variable', 'set', name, '--repo', config['repository'], '--env', config['github_environment'], '--body', value)
     saved = json.loads(run('gh', 'variable', 'list', '--repo', config['repository'], '--env', config['github_environment'], '--json', 'name,value'))
@@ -374,13 +502,14 @@ def sync_settings(config, directory, digest, runtimes, previous=None):
     # Terraform owns the fleet shape; keep values such as the host count that rollout does not manage.
     for root, values in [('infra/api', dict(judge_runtime_digest=digest, judge_enabled_runtimes=runtimes)),
                          ('infra/judge', dict(runtime_digest=digest, enabled=True, enabled_runtimes=runtimes,
-                                              **({} if previous is None else dict(previous_runtime_digest=previous))))]:
+                                              **({} if previous is None else dict(previous_runtime_digest=previous)),
+                                              **({} if lane is None else dict(request_lane=lane))))]:
         path = ROOT / root / 'zz-rollout.auto.tfvars.json'
         backup = directory / (root.replace('/', '-') + '-variables.json')
         if not backup.exists():
             save(backup, dict(existed=path.exists(), content=path.read_text() if path.exists() else ''))
-        previous = json.loads(backup.read_text())
-        save(path, {**json.loads(previous['content'] or '{}'), **values})
+        # Merge over the current file, not the backup: sync_lane may have changed request_lane since the backup.
+        save(path, {**(json.loads(path.read_text() or '{}') if path.exists() else {}), **values})
 
 
 def finish(config, directory, state, report_path):
@@ -395,7 +524,7 @@ def finish(config, directory, state, report_path):
     api = aws(config['region'], 'lambda', 'get-function-configuration', '--function-name', config['api'])
     time.sleep(api['Timeout'] + 5)
     wait_empty(config)
-    healthy_workers(config, directory, digest)
+    healthy_workers(config, directory, digest, live_lane(config))
     retired_workers_stopped(config, directory)
     if config.get('pool'):
         # The bridge starts a stopped host only when this matches its dispatch digest.
@@ -533,35 +662,57 @@ def pool_bursts(config):
     return bursts
 
 
-def contest_guard(config):
-    """Refuse to change the environment within or shortly before a contest window (ADR 0014)."""
+def contest_guard(config, window=True):
+    """Refuse to change the environment within or shortly before a contest window (ADR 0014).
+
+    With window=False only the bridge's fields are checked: a run that may already have switched must be able to
+    finish near a contest, because stopping there leaves every burst held and the old workers on the old lane.
+    """
     status = database_status(config)
-    if 'nextContestWindowAt' not in status or 'dispatchPaused' not in status:
+    if 'nextContestWindowAt' not in status or 'dispatchPaused' not in status or \
+            type(status.get('requestQueueUrl')) is not str or type(status.get('previousInFlight')) is not int:
         raise ValueError('bridge must support the rolling update; deploy the compatible bridge package first')
-    window = status['nextContestWindowAt']
+    starts = status['nextContestWindowAt']
     hours = config.get('rolling_guard_hours', 4)
-    if window is not None and datetime.datetime.fromisoformat(window).timestamp() < time.time() + hours * 3600:
-        raise ValueError('a contest window starts at ' + window + '; run the rolling update outside contests')
+    if window and starts is not None and datetime.datetime.fromisoformat(starts).timestamp() < time.time() + hours * 3600:
+        raise ValueError('a contest window starts at ' + starts + '; run the rolling update outside contests')
     return status
 
 
-def wait_requests_idle(config, timeout=2700):
-    """Wait until every dispatched submission has finished and the request queue is empty."""
-    deadline, stable = time.monotonic() + timeout, 0
+def bridge_switched(config, state):
+    """Whether the live bridge already sends the new digest to the new lane; False while it is unchanged."""
+    status = database_status(config)
+    live = status.get('requestQueueUrl'), status.get('runtimeDigest'), status.get('previousRuntimeDigest')
+    if live == (state['activeQueue'], state['runtimeDigest'], state['previousDigest']):
+        return True
+    if live[:2] == (state['previousQueue'], state['previousDigest']):
+        return False
+    raise ValueError('bridge is on neither the previous nor the new lane; inspect deployment-status before resuming')
+
+
+def drain_previous(config, directory, state, url, timeout=2700):
+    """Wait until the previous lane is empty and no previous-digest work is left, re-sending stranded work once."""
+    state.setdefault('requeued', 0)
+    deadline, stable, empty, requeued = time.monotonic() + timeout, 0, 0, False
     while time.monotonic() < deadline:
-        status = database_status(config)
-        attributes = aws(config['region'], 'sqs', 'get-queue-attributes', '--queue-url', config['queues'][0],
-                         '--attribute-names', 'ApproximateNumberOfMessages', 'ApproximateNumberOfMessagesNotVisible',
-                         'ApproximateNumberOfMessagesDelayed')['Attributes']
-        busy = status['pending'] != status['undispatched'] or any(int(value) for value in attributes.values())
-        stable = 0 if busy else stable + 1
+        count = queue_counts(config, url)
+        in_flight = database_status(config)['previousInFlight']
+        stable = stable + 1 if count == 0 and in_flight == 0 else 0
         if stable == 3:
             return
+        empty = empty + 1 if count == 0 else 0
+        # With the lane empty, previous-digest work left means its message went to the DLQ or an old worker
+        # died mid-job; no old worker will finish it, so the new environment must. The DLQ message stays for the operator.
+        if empty >= 3 and in_flight > 0 and not requeued:
+            state['requeued'] += requeue(config, state['previousDigest'])
+            save(directory / 'state.json', state)
+            requeued = True
         time.sleep(10)
-    raise TimeoutError('dispatched submissions did not finish; dispatch remains paused')
+    raise TimeoutError('the previous lane did not drain; old workers keep running')
 
 
 def set_dispatch(config, directory, state, paused):
+    # Kept for manual operator use; rolling never pauses dispatch.
     if paused:
         update_env(config['region'], config['bridge'], dict(JUDGE_DISPATCH_PAUSED='true'))
     else:
@@ -612,10 +763,11 @@ def prepare_hosts(config, directory, state, nodes, label, expected_digest=None):
     return verification
 
 
-def start_workers(verification):
+def start_workers(verification, request_queue=None):
     receipt = json.loads((verification / 'receipt.json').read_text())
     if receipt['phase'] == 'smoke':
-        run(sys.executable, 'judge/verify.py', 'start', '--run-dir', str(verification))
+        run(sys.executable, 'judge/verify.py', 'start', '--run-dir', str(verification),
+            *(() if request_queue is None else ('--request-queue', request_queue)))
     run(sys.executable, 'judge/verify.py', 'collect', '--run-dir', str(verification), '--wait')
 
 
@@ -634,44 +786,397 @@ def api_smoke(config, directory, nodes):
     return report
 
 
-def switch(config, directory, state, first, rest, verification):
-    """Hold dispatch, retire the old digest, and start the prepared burst; admission stays open."""
-    region, digest = config['region'], state['runtimeDigest']
-    if not state.get('digestSwitched'):
-        contest_guard(config)
-        if not state.get('dispatchPaused'):
-            set_dispatch(config, directory, state, True)
-            bridge = aws(region, 'lambda', 'get-function-configuration', '--function-name', config['bridge'])
-            time.sleep(bridge['Timeout'] + 5)  # Let dispatches started before the pause finish sending.
-        checkpoint(directory, state, 'drain-requests')
-        if not (directory / 'switch-stop').exists():
+# The switch latency watcher (judge/smoke-api.py --watch): the baseline it must collect before the switch, how long it
+# keeps submitting after the API switch, and how long it may take to finish and clean up once stopped.
+WATCH_BASELINE_SAMPLES = 6
+WATCH_BASELINE_TIMEOUT = 180
+WATCH_TAIL = 60
+WATCH_STOP_WAIT = 180
+WATCH_ABORT_WAIT = 120
+WATCH_CLEANUP_TIMEOUT = 120
+WATCH_SCRIPT = 'judge/smoke-api.py'
+WATCH_FAILED = 'switch latency check failed; see switch-watch.json'
+
+
+def watch_failed_message(state):
+    """The failure with its cause: latency, a watcher that did not start or died, or test users left behind."""
+    detail = {key: state[key] for key in ('switchWatch', 'switchWatchLeftovers') if key in state}
+    return WATCH_FAILED + ' (' + json.dumps(detail, sort_keys=True) + ')'
+
+
+def watch_paths(directory):
+    return directory / 'switch-watch.json', directory / 'switch-watch.stop', directory / 'switch-at'
+
+
+def read_watch_report(path):
+    """The watcher's report only if it saw the stop file and finished normally; a terminated, capped or crashed
+    watcher (or one still running) leaves a report that says nothing about the whole switch."""
+    try:
+        report = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    if report.get('status') not in ('passed', 'failed') or report.get('terminated') or report.get('capped') \
+            or report.get('stopped') is not True:
+        return None
+    return report
+
+
+def watch_command(config, directory):
+    """The watcher's argv. The cadence is left to the watcher's own default, which the user-count assertion in
+    smoke-api.py is written against, so rollout cannot drift from it."""
+    report, stop, switch_at = watch_paths(directory)
+    return [sys.executable, WATCH_SCRIPT, '--watch', '--function', config['api'], '--api-url', config['api_url'],
+            '--region', config['region'], '--runtime', config['smoke_runtime'],
+            '--stop-file', str(stop), '--switch-at-file', str(switch_at), '--report', str(report)]
+
+
+def watcher_alive(pid, report):
+    """Whether `pid` is still this run's watcher (the pid may have been reused by something else): its argv holds the
+    script (as start_watch passes it, however the path is spelled), --watch and this run's report path."""
+    try:
+        command = Path('/proc/%d/cmdline' % pid).read_bytes().split(b'\0')
+    except OSError:
+        return False
+    return any(Path(part.decode(errors='replace')).name == Path(WATCH_SCRIPT).name for part in command) \
+        and b'--watch' in command and str(report).encode() in command
+
+
+def leftover_users(report):
+    try:
+        return json.loads(report.with_suffix('.cleanup.json').read_text())['users']
+    except (OSError, ValueError, KeyError):
+        return []
+
+
+def clean_leftovers(config, directory):
+    """Remove test users and problems a watcher left behind; True once none remain."""
+    report = watch_paths(directory)[0]
+    if not leftover_users(report):
+        return True
+    try:
+        # A timeout keeps an API or Cognito outage from holding the switch; what remains is recorded as leftovers.
+        run(sys.executable, WATCH_SCRIPT, '--cleanup', '--function', config['api'], '--api-url', config['api_url'],
+            '--region', config['region'], '--report', str(report), timeout=WATCH_CLEANUP_TIMEOUT)
+    except Exception as error:
+        print('watch cleanup incomplete:', error, flush=True)
+    return not leftover_users(report)
+
+
+def signal_watcher(pid, report, number):
+    try:
+        if watcher_alive(pid, report):
+            os.kill(pid, number)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def collect_stale_watch(config, directory, state):
+    """End a watcher left by an earlier process (SIGTERM, so it cleans up), then return its report if it had finished."""
+    report_path = watch_paths(directory)[0]
+    old = state.pop('switchWatcher', None)
+    if old:
+        signal_watcher(old['pid'], report_path, signal.SIGTERM)
+        for _ in range(90):
+            if not watcher_alive(old['pid'], report_path):
+                break
+            time.sleep(1)
+        else:
+            signal_watcher(old['pid'], report_path, signal.SIGKILL)
+    clean_leftovers(config, directory)
+    return read_watch_report(report_path)
+
+
+def start_watch(config, directory, state):
+    """Start the latency watcher as a child process. It stops itself after its hard cap even if nobody stops it."""
+    collect_stale_watch(config, directory, state)
+    report, stop, switch_at = watch_paths(directory)
+    # Never forget test users: a new watcher starts only when the earlier one left none.
+    if leftover_users(report):
+        raise RuntimeError('an earlier watch left test users; run smoke-api.py --cleanup with ' + str(report))
+    for path in (report, stop, switch_at, report.with_suffix('.cleanup.json'), report.with_suffix('.progress.json')):
+        path.unlink(missing_ok=True)
+    with (directory / 'switch-watch.log').open('ab') as log:
+        # Its own session: Ctrl-C or a closed terminal reaches the rollout only, which then stops the watcher itself.
+        process = subprocess.Popen(watch_command(config, directory), cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
+                                   start_new_session=True)
+    state['switchWatcher'] = dict(pid=process.pid, stopFile=str(stop), report=str(report))
+    save(directory / 'state.json', state)
+    return process
+
+
+def wait_for_baseline(process, directory):
+    """Wait until the watcher has seen enough submissions start (or exited, or the timeout); the switch goes on either way."""
+    progress = watch_paths(directory)[0].with_suffix('.progress.json')
+    deadline = time.monotonic() + WATCH_BASELINE_TIMEOUT
+    while process.poll() is None and time.monotonic() < deadline:
+        try:
+            if json.loads(progress.read_text())['started'] >= WATCH_BASELINE_SAMPLES:
+                return
+        except (OSError, ValueError, KeyError):
+            pass
+        time.sleep(2)
+
+
+def stop_watch(process, directory):
+    """Ask the watcher to finish, wait for its report and cleanup, and return the report (None if it never finished)."""
+    report, stop, _ = watch_paths(directory)
+    stop.touch()
+    try:
+        process.wait(WATCH_STOP_WAIT)
+    except subprocess.TimeoutExpired:
+        process.terminate()
+        try:
+            process.wait(60)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+    return read_watch_report(report)
+
+
+def abort_watch(config, directory, state, process):
+    """End a watcher because the switch failed or was interrupted. SIGTERM makes it clean up; this never raises."""
+    if process is None:
+        return
+    try:
+        if process.poll() is None:
+            process.terminate()
             try:
-                wait_requests_idle(config)
-            except TimeoutError:
-                # The old workers are still judging, so resuming dispatch restores normal service.
-                set_dispatch(config, directory, state, False)
-                raise
-        checkpoint(directory, state, 'stop-old-workers')
-        ssm_step(directory, 'switch-stop', config, rest, stop_command)
-        wait_requests_idle(config)
-        checkpoint(directory, state, 'switch-digest')
-        update_env(region, config['bridge'], dict(JUDGE_RUNTIME_DIGEST=digest, JUDGE_PREVIOUS_RUNTIME_DIGEST=state['previousDigest']))
-        status = database_status(config)
-        if status['runtimeDigest'] != digest or status['previousRuntimeDigest'] != state['previousDigest'] or not status['dispatchPaused']:
-            raise ValueError('bridge digest did not switch')
-        # Requests the API creates with the old digest from here on are rebound by the bridge.
+                process.wait(WATCH_ABORT_WAIT)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        state.pop('switchWatcher', None)
+        if not clean_leftovers(config, directory):
+            state['switchWatchLeftovers'] = True
+            save(directory / 'state.json', state)
+    except BaseException as error:
+        print('could not stop the switch watch:', error, flush=True)
+
+
+def settle_watch(config, directory, state, process):
+    """Record how the watch ended. It never changes what the switch does, and never raises into it; a bad watch only
+    fails the run at the end."""
+    if 'switchWatch' in state:
+        # Already decided (for example not-started because test users were left): retry removing them, and name them.
+        try:
+            if not clean_leftovers(config, directory):
+                state['switchWatchLeftovers'] = True
+                state['switchWatchFailed'] = True
+                save(directory / 'state.json', state)
+        except Exception as error:
+            print('watch cleanup failed:', error, flush=True)
+        return
+    try:
+        if process is not None:
+            time.sleep(WATCH_TAIL)
+            report, outcome = stop_watch(process, directory), 'died'
+        else:
+            # The run was resumed after the switch: a watcher from the dead run is ended, and only a finished report counts.
+            report, outcome = collect_stale_watch(config, directory, state), 'interrupted'
+    except Exception as error:
+        print('switch watch could not be settled:', error, flush=True)
+        report, outcome = None, 'died' if process is not None else 'interrupted'
+    state.pop('switchWatcher', None)
+    if report is None:
+        state['switchWatch'] = outcome
+        failed = outcome == 'died'
+    else:
+        state['switchWatch'] = dict(report=str(watch_paths(directory)[0]), status=report['status'], maxWaitMs=report.get('maxWaitMs'))
+        failed = report['status'] != 'passed'
+    # Test users left behind are removed now; if some remain, say so rather than blaming latency.
+    try:
+        if not clean_leftovers(config, directory):
+            state['switchWatchLeftovers'] = True
+            failed = True
+    except Exception as error:
+        print('watch cleanup failed:', error, flush=True)
+    if failed:
+        state['switchWatchFailed'] = True
+    else:
+        state.pop('switchWatchFailed', None)
+    try:
+        save(directory / 'state.json', state)
+    except Exception as error:
+        print('could not save the watch result:', error, flush=True)
+
+
+class NothingToSwitch(Exception):
+    """The prepared runtime digest equals the published one, so the bridge has nothing to switch to."""
+
+
+UNCHANGED = ('nothing to roll out: the prepared runtime digest equals the published one; the burst workers, '
+             'the alarm actions and the maintenance hold were put back (status: unchanged)')
+# A worker logs worker_started only after hashing the whole runtime tree (about 20 GB on a t3.small), which takes
+# minutes, while systemctl returns as soon as the unit forks. Wait as long as verify.py start does; SSM allows 7200 s.
+ENABLE_READY_TRIES = 360
+ENABLE_READY_INTERVAL = 10
+
+
+def enable_worker_command(tries=ENABLE_READY_TRIES, interval=ENABLE_READY_INTERVAL):
+    """Enable and start the worker, then wait until this systemd invocation is ready, as verify.py start does."""
+    return '''set -eu
+systemctl enable --now judge-worker.service
+python3 - ''' + str(int(tries)) + ' ' + str(int(interval)) + ''' <<'PY'
+import json, subprocess, sys, time
+tries, interval = int(sys.argv[1]), int(sys.argv[2])
+def invocation_id():
+    return subprocess.check_output(['systemctl', 'show', 'judge-worker', '-p', 'InvocationID', '--value'], text=True).strip()
+# Match this systemd invocation, not a worker_started event from an earlier boot or start.
+invocation = invocation_id()
+if not invocation: raise SystemExit('worker invocation is missing')
+for _ in range(tries):
+    if invocation_id() != invocation: raise SystemExit('worker restarted during readiness check')
+    log = subprocess.check_output(['journalctl', '_SYSTEMD_INVOCATION_ID=' + invocation, '-o', 'cat', '--no-pager'], text=True)
+    events = []
+    for line in log.splitlines():
+        try: events.append(json.loads(line))
+        except ValueError: pass
+    # The worker takes live jobs at once; a problem author's failing checker is no worker fault.
+    if any(e.get('event') == 'failure' and e.get('category') != 'judge_code' for e in events):
+        raise SystemExit('worker reported a failure')
+    if any(e.get('event') == 'worker_started' for e in events):
+        subprocess.run(['systemctl', 'is-active', '--quiet', 'judge-worker'], check=True)
+        print('worker ready')
+        break
+    time.sleep(interval)
+else: raise SystemExit('worker readiness timed out')
+PY
+'''
+
+
+# Undoes hold-bursts on a host that was only stopped: its worker.env still names the lane and digest it judged with.
+ENABLE_WORKER = enable_worker_command()
+
+
+def restore_alarms(config, state):
+    """Put the worker alarm actions back as they were before the run disabled them."""
+    for name, enabled in state['alarm_actions'].items():
+        aws(config['region'], 'cloudwatch', 'enable-alarm-actions' if enabled else 'disable-alarm-actions', '--alarm-names', name)
+
+
+def release_hold(config):
+    """Shorten the maintenance hold to 15 minutes; False if the tag call failed. A burst idle-stops only past it."""
+    try:
+        aws(config['region'], 'ec2', 'create-tags', '--resources', *config['nodes'], '--tags',
+            'Key=JudgeMaintenanceHoldUntil,Value=' + hold_time(900))
+    except Exception:
+        return False
+    return True
+
+
+def finish_unchanged(config, directory, state, bursts, verification):
+    """Nothing to switch: put the pool back as the run found it, then end the run as unchanged.
+
+    Left as they were, held bursts never power off (idle stop runs in the worker) and give no contest capacity, and
+    the alarm actions stay off. An equal digest means the first burst's kernel, packages and runtime files match the
+    published environment, so it may judge again. It starts like any prepared host, on the lane in use, which also
+    corrects a worker.env that a revert left on the other lane. The other bursts were only stopped.
+    """
+    first, digest, lane = state['firstHost'], state['runtimeDigest'], state['previousQueue']
+    if not state.get('nothingToSwitch'):
+        # From here a resumed run only finishes this restore; it never holds the bursts or disables the alarms again.
+        checkpoint(directory, state, 'restore-unchanged', nothingToSwitch=True)
+    # First, before the burst starts, which wait minutes for each worker and can fail: the primaries' alarms must not
+    # stay off meanwhile. The held bursts' alarms are in alarm already, so turning the actions on notifies nothing.
+    restore_alarms(config, state)
+    start_workers(verification, request_queue=lane)
+    tag_digest(config, [first], digest)
+    others = [node for node in bursts if node != first]
+    if others:
+        # Waits until each worker logs worker_started, like verify.py start for the first burst above.
+        ssm_step(directory, 'release-bursts', config, others, ENABLE_WORKER)
+    lane_worker_ready(config, directory, bursts, lane, digest, label='bursts')
+    checkpoint(directory, state, 'unchanged', status='unchanged', maintenanceHoldReleased=release_hold(config))
+    print(UNCHANGED, flush=True)
+
+
+def switch(config, directory, state, first, rest, verification):
+    """Switch the lane; if anything stops it before the watch is settled, the watcher is stopped too."""
+    handle = [None]
+    try:
+        switch_steps(config, directory, state, first, rest, verification, handle)
+    except BaseException:
+        abort_watch(config, directory, state, handle[0])
+        raise
+
+
+def switch_steps(config, directory, state, first, rest, verification, handle):
+    """Start the prepared burst on the standby lane, move the bridge to it, then drain and stop the previous lane.
+
+    Dispatch and admission stay open; old and new workers never read the same queue. Each step runs once:
+    a resumed run continues after the last recorded one and never switches the bridge twice.
+    """
+    region, digest, previous = config['region'], state['runtimeDigest'], state['previousDigest']
+    if not state.get('digestSwitched'):
+        checkpoint(directory, state, 'standby-first')
+        # A run stopped right after the bridge update finds the bridge already switched, and the new lane busy.
+        if not bridge_switched(config, state):
+            # With an unchanged digest the bridge would get previous == current: previousInFlight would count the
+            # new lane's work too, and the drain's requeue would restart submissions the new worker is judging.
+            if digest == previous:
+                raise NothingToSwitch()
+            # Work left in the standby lane would reach the new environment before the switch is decided.
+            if queue_counts(config, state['activeQueue']) != 0:
+                raise ValueError('the standby lane is not empty')
+            start_workers(verification, request_queue=state['activeQueue'])
+            time.sleep(STANDBY_WAIT)
+            standby_ready(config, directory, first, state['activeQueue'])
+            # The watch only measures; a watcher that cannot start fails the watch, never the switch.
+            state.pop('switchWatch', None)
+            state.pop('switchWatchFailed', None)
+            try:
+                handle[0] = start_watch(config, directory, state)
+            except Exception as error:
+                state.update(switchWatch='not-started', switchWatchFailed=True)
+                print('switch watch did not start:', error, flush=True)
+            else:
+                # Baseline submissions from the old environment, before anything changes.
+                wait_for_baseline(handle[0], directory)
+            # Everything above leaves users on the old environment; the bridge update below is the first visible change.
+            checkpoint(directory, state, 'switch-lane')
+            contest_guard(config)
+            # Saved before the update is sent. A run that stops after the update has switched without recording it,
+            # and only a run with this mark makes rolling-revert ask the bridge whether that happened.
+            state['laneSwitchAttempted'] = True
+            # The watcher compares submissions made before and after this wall-clock moment.
+            state['switchAt'] = time.time()
+            save(watch_paths(directory)[2], state['switchAt'])
+            save(directory / 'state.json', state)
+            # One update moves the queue, the digest and the previous digest together. The bridge then never sends
+            # new-digest work to the old lane, and rebinds undispatched old-digest submissions to the new digest.
+            update_env(region, config['bridge'], dict(JUDGE_REQUEST_QUEUE_URL=state['activeQueue'], JUDGE_RUNTIME_DIGEST=digest,
+                                                      JUDGE_PREVIOUS_RUNTIME_DIGEST=previous))
+            if not bridge_switched(config, state):
+                raise ValueError('bridge did not switch to the new lane')
+        state['digestSwitched'] = True
+        save(directory / 'state.json', state)
+    if not state.get('apiSwitched'):
+        checkpoint(directory, state, 'switch-api')
+        bridge = aws(region, 'lambda', 'get-function-configuration', '--function-name', config['bridge'])
+        # A bridge invocation still running with the old configuration would mark a new-digest submission as JE.
+        # Meanwhile the API creates old-digest submissions, which the switched bridge rebinds, so nobody waits.
+        time.sleep(bridge['Timeout'] + 5)
         update_env(region, config['api'], dict(JUDGE_CPP_IMAGE=digest))
         tag_digest(config, [first], digest)
-        checkpoint(directory, state, 'start-first', digestSwitched=True)
-    start_workers(verification)
-    checkpoint(directory, state, 'resume-dispatch')
-    set_dispatch(config, directory, state, False)
-    aws(region, 'lambda', 'invoke', '--function-name', config['bridge'], '--invocation-type', 'Event',
-        '--cli-binary-format', 'raw-in-base64-out', '--payload', '{}', os.devnull)
-    checkpoint(directory, state, 'sync-settings')
-    sync_settings(config, directory, digest, config['runtimes'], previous=state['previousDigest'])
-    checkpoint(directory, state, 'api-smoke-first')
-    api_smoke(config, directory, [first])
+        state['apiSwitched'] = True
+        save(directory / 'state.json', state)
+    settle_watch(config, directory, state, handle[0])
+    handle[0] = None
+    if 'firstApiReport' not in state:
+        checkpoint(directory, state, 'sync-settings')
+        sync_settings(config, directory, digest, config['runtimes'], previous=previous, lane=state['activeLane'])
+        checkpoint(directory, state, 'api-smoke-first')
+        state['firstApiReport'] = str(api_smoke(config, directory, [first]))
+    if not state.get('oldWorkersStopped'):
+        checkpoint(directory, state, 'drain-previous')
+        # Old workers stop only once nothing is left for them; users are judged on the new lane meanwhile.
+        # The stop exists only after a passed drain, so a resumed stop does not wait for another one.
+        if not (directory / 'switch-stop').exists():
+            drain_previous(config, directory, state, state['previousQueue'])
+        checkpoint(directory, state, 'stop-old-workers')
+        ssm_step(directory, 'switch-stop', config, rest, stop_command)
+        state['oldWorkersStopped'] = True
+        save(directory / 'state.json', state)
 
 
 def publish_rolling_runtimes(config, directory, state):
@@ -696,18 +1201,45 @@ def publish_rolling_runtimes(config, directory, state):
     return dict(config, runtimes=requested)
 
 
-def rolling(config, directory, state):
-    """Roll an OS update through the pool while admission stays open (ADR 0014)."""
-    region = config['region']
+def refuse_reverted(state):
+    """Refuse a run that was reverted, or is being reverted: it must never drain or stop the workers users are back on."""
+    if state.get('status') == 'reverted':
+        raise ValueError('this run was reverted; start a new run')
+    if state.get('revertStarted'):
+        raise ValueError('this run is being reverted; finish it with rolling-revert')
+
+
+def check_rolling_config(config):
+    """Refuse a configuration rolling cannot use. main checks it before starting or holding any host."""
     if not config.get('pool') or config.get('retire_nodes'):
         raise ValueError('a rolling update needs an EC2 pool and no retired hosts')
+    # The new environment waits on the second lane; with one queue old and new workers would share it.
+    if not config.get('request_queue_b'):
+        raise ValueError('a rolling update needs request_queue_b')
+
+
+def rolling(config, directory, state):
+    """Roll an OS update through the pool while admission and dispatch stay open (ADR 0014, two request lanes)."""
+    refuse_reverted(state)
+    if state.get('step') == 'switch-watch-failed':
+        raise ValueError(watch_failed_message(state))
+    if state.get('status') == 'unchanged':
+        print(UNCHANGED, flush=True)
+        return
+    region = config['region']
+    check_rolling_config(config)
     preflight(config)
     bursts = pool_bursts(config)
     first = state.setdefault('firstHost', bursts[0])
     rest = [node for node in config['nodes'] if node != first]
+    if state.get('nothingToSwitch'):
+        finish_unchanged(config, directory, state, bursts, directory / 'verify-first')
+        return
     if not state.get('switched'):
         deploy_bridge(config, directory, state, maintenance=False)
-        contest_guard(config)
+        # Once the bridge update may have been sent, only the bridge's fields are checked here. A run that switched
+        # must finish near a contest too; switch_steps checks the window again wherever the bridge has not switched.
+        contest_guard(config, window=not (state.get('laneSwitchAttempted') or state.get('digestSwitched')))
         if 'previousDigest' not in state:
             bridge = aws(region, 'lambda', 'get-function-configuration', '--function-name', config['bridge'])['Environment']['Variables']
             api = aws(region, 'lambda', 'get-function-configuration', '--function-name', config['api'])['Environment']['Variables']
@@ -715,6 +1247,28 @@ def rolling(config, directory, state):
                     sorted(api.get('JUDGE_ENABLED_RUNTIMES', '').split(',')) != sorted(config['runtimes']):
                 raise ValueError('API and bridge must publish the same digest and the approved runtimes before a rolling update')
             checkpoint(directory, state, 'hold-bursts', previousDigest=bridge['JUDGE_RUNTIME_DIGEST'])
+        if 'activeQueue' not in state:
+            # Decided once from the live bridge: after the switch it points at the new lane, so a resumed run
+            # uses these. "previous" is the lane in use before the switch, "active" the standby lane in use after it.
+            lane = lanes(config)
+            # Refuse before preparing anything; the standby check repeats right before the new worker starts.
+            if queue_counts(config, lane['standby_url']) != 0:
+                raise ValueError('the standby lane is not empty')
+            # The primaries judge alone while the bursts are held, so each must judge on the live lane with the
+            # published digest. One that does not is usually an earlier run stopped between its switch and its
+            # old-worker stop: holding the bursts would stop that run's only new worker, and this run's new worker
+            # would share the old primary's lane. Refused here, before the alarms or any burst change.
+            primaries = [node for node in config['nodes'] if node not in bursts]
+            if primaries:
+                try:
+                    lane_worker_ready(config, directory, primaries, lane['active_url'], state['previousDigest'], label='primaries')
+                except RuntimeError as error:
+                    raise ValueError('an earlier rolling has not finished, or a primary is not judging: every primary must '
+                                     'judge on the live lane with the published digest; resume or rolling-revert an '
+                                     'unfinished run (' + str(error) + ')') from None
+            state.update(previousLane=lane['active'], previousQueue=lane['active_url'],
+                         activeLane='b' if lane['active'] == 'a' else 'a', activeQueue=lane['standby_url'])
+            save(directory / 'state.json', state)
         if 'alarm_actions' not in state:
             alarms = aws(region, 'cloudwatch', 'describe-alarms', '--alarm-names', *config['worker_alarms'])['MetricAlarms']
             state['alarm_actions'] = {a['AlarmName']: a['ActionsEnabled'] for a in alarms}
@@ -724,39 +1278,235 @@ def rolling(config, directory, state):
         ssm_step(directory, 'hold-bursts', config, bursts, stop_command)
         checkpoint(directory, state, 'prepare-first')
         verification = prepare_hosts(config, directory, state, [first], 'first')
-        digest = json.loads((verification / 'report.json').read_text())['runtimeDigest']
-        checkpoint(directory, state, 'pause-dispatch', runtimeDigest=digest)
-        switch(config, directory, state, first, rest, verification)
+        if not state.get('digestSwitched'):
+            # Once switched, the saved digest is the one the bridge publishes.
+            state['runtimeDigest'] = json.loads((verification / 'report.json').read_text())['runtimeDigest']
+        try:
+            switch(config, directory, state, first, rest, verification)
+        except NothingToSwitch:
+            finish_unchanged(config, directory, state, bursts, verification)
+            return
         checkpoint(directory, state, 'prepare-rest', switched=True)
     digest = state['runtimeDigest']
     aws(region, 'ec2', 'create-tags', '--resources', *config['nodes'], '--tags', 'Key=JudgeMaintenanceHoldUntil,Value=' + hold_time(ROLLING_HOLD))
     verification = prepare_hosts(config, directory, state, rest, 'rest', expected_digest=digest)
     checkpoint(directory, state, 'start-rest')
-    start_workers(verification)
+    start_workers(verification, request_queue=state['activeQueue'])
     tag_digest(config, rest, digest)
     checkpoint(directory, state, 'api-smoke')
-    healthy_workers(config, directory, digest)
+    # Every worker must read the lane in use: one left on the other lane is running but judges nothing.
+    healthy_workers(config, directory, digest, state['activeQueue'])
     config = publish_rolling_runtimes(config, directory, state)
     report = api_smoke(config, directory, config['nodes'])
-    for name, enabled in state['alarm_actions'].items():
-        aws(region, 'cloudwatch', 'enable-alarm-actions' if enabled else 'disable-alarm-actions', '--alarm-names', name)
+    restore_alarms(config, state)
     checkpoint(directory, state, 'refresh-state')
     for root in ('infra/api', 'infra/judge'):
         plan = directory / (root.replace('/', '-') + '.tfplan')
         run('terraform', '-chdir=' + root, 'plan', '-input=false', '-refresh-only', '-out=' + str(plan))
         run('terraform', '-chdir=' + root, 'apply', '-input=false', str(plan))
-    released = True
-    try:
-        aws(region, 'ec2', 'create-tags', '--resources', *config['nodes'], '--tags', 'Key=JudgeMaintenanceHoldUntil,Value=' + hold_time(900))
-    except Exception:
-        released = False
+    released = release_hold(config)
+    if state.get('switchWatchFailed'):
+        # The rollout itself is done, but it must not be reported as passed.
+        checkpoint(directory, state, 'switch-watch-failed', apiReport=str(report), maintenanceHoldReleased=released)
+        raise ValueError(watch_failed_message(state))
     checkpoint(directory, state, 'complete', status='passed', apiReport=str(report), maintenanceHoldReleased=released)
+
+
+REVERT_WINDOW = 'revert is only possible between the lane switch and the old worker stop'
+# SQS accepts one purge of a queue every 60 seconds, and a purge deletes the queue's messages within 60 seconds.
+PURGE_INTERVAL = 65
+
+
+def bridge_reverted(config, state):
+    """Whether the live bridge sends the previous digest to the previous lane again; False while it is still switched."""
+    status = database_status(config)
+    live = status.get('requestQueueUrl'), status.get('runtimeDigest'), status.get('previousRuntimeDigest')
+    if live == (state['previousQueue'], state['previousDigest'], state['runtimeDigest']):
+        return True
+    if live == (state['activeQueue'], state['runtimeDigest'], state['previousDigest']):
+        return False
+    raise ValueError('bridge is on neither the new lane nor the reverted one; inspect deployment-status before resuming')
+
+
+def send_purge(config, directory, state, url):
+    """Purge a lane that no worker reads. A resumed revert waits out the SQS purge interval before purging again."""
+    if state.get('purgeSent'):
+        # The previous run may have purged moments ago. Its purge finishes within the interval and SQS refuses
+        # another one inside it, so wait, then purge again only if messages are left.
+        time.sleep(PURGE_INTERVAL)
+    if not state.get('purgeSent') or queue_counts(config, url) != 0:
+        # Saved before the call, so a run that stops right after it knows a purge may be in progress.
+        state['purgeSent'] = True
+        save(directory / 'state.json', state)
+        aws(config['region'], 'sqs', 'purge-queue', '--queue-url', url)
+
+
+def wait_purged(config, directory, state, url, timeout=180):
+    """Wait until a purged lane reads empty. After a timeout the resumed revert sends the purge again."""
+    deadline = time.monotonic() + timeout
+    while queue_counts(config, url) != 0:
+        if time.monotonic() >= deadline:
+            state.pop('newLanePurgeSent', None)
+            save(directory / 'state.json', state)
+            raise RuntimeError('the new lane did not empty after the purge; resume rolling-revert to purge it again')
+        time.sleep(10)
+
+
+def end_stale_watch(config, directory, state):
+    """End a watcher that a killed rolling left, and retry removing its test users. This never raises: the watch
+    only measures, and the revert must not wait on it."""
+    try:
+        collect_stale_watch(config, directory, state)
+        if leftover_users(watch_paths(directory)[0]):
+            state['switchWatchLeftovers'] = True
+        else:
+            state.pop('switchWatchLeftovers', None)
+        save(directory / 'state.json', state)
+    except Exception as error:
+        print('switch watch cleanup failed:', error, flush=True)
+
+
+def revert(config, directory, state):
+    """Move a switched rolling update back to the previous lane and digest while the old workers still run there.
+
+    The operator decides to revert; nothing calls this automatically. Each step is recorded, so the same command
+    resumes an interrupted revert without updating the bridge, purging the new lane or requeueing again.
+    It ends as reverted only once the other bursts judge again and the old environment passes the API smoke.
+    """
+    if state.get('status') == 'reverted':
+        print('already reverted', flush=True)
+        return
+    # Users go back to the old workers, so those must still run. switch-stop exists from the moment they are told
+    # to stop, before oldWorkersStopped is saved. These checks read only local files, so a refusal touches nothing.
+    if state.get('oldWorkersStopped') or (directory / 'switch-stop').exists():
+        raise ValueError(REVERT_WINDOW)
+    if not state.get('revertStarted'):
+        if not state.get('digestSwitched'):
+            # A run can stop between the bridge update and saving digestSwitched. Only a run that went as far as
+            # sending the update asks the bridge, the way a resumed rolling update does; any other run is before the switch.
+            if not state.get('laneSwitchAttempted') or not bridge_switched(config, state):
+                raise ValueError(REVERT_WINDOW)
+    region, digest, previous, first = config['region'], state['runtimeDigest'], state['previousDigest'], state['firstHost']
+    bursts = pool_bursts(config)
+    primaries = [node for node in config['nodes'] if node not in bursts]
+    if not state.get('revertStarted'):
+        # Every user goes back to the old lane, and only the primaries still read it: hold-bursts disabled the other
+        # bursts. A primary whose worker died (a runtime_mismatch exit is never restarted) would leave nobody
+        # judging once the new worker stops. Checked before anything changes, so a refusal leaves users where they are.
+        for node in primaries:
+            try:
+                lane_worker_ready(config, directory, [node], state['previousQueue'], previous, label='revert-primary')
+            except RuntimeError:
+                continue
+            break
+        else:
+            raise ValueError('no primary worker judges on the previous lane ' + state['previousQueue'] + ' with the previous '
+                             'digest; the bridge was not reverted. Restart an old worker, then run rolling-revert again')
+    if not state.get('bridgeReverted'):
+        # Saved before the bridge changes. From here rolling refuses the run, so nothing drains or stops the old
+        # workers, and a resumed revert skips the window check, which a reverted bridge would no longer pass.
+        checkpoint(directory, state, 'revert-bridge', revertStarted=True, digestSwitched=True)
+        # Bridge first, in one update. From then on new submissions go to the old workers, and new-digest submissions
+        # not yet dispatched are rebound to the old digest, because the new digest becomes the bridge's previous one.
+        if not bridge_reverted(config, state):
+            update_env(region, config['bridge'], dict(JUDGE_REQUEST_QUEUE_URL=state['previousQueue'], JUDGE_RUNTIME_DIGEST=previous,
+                                                      JUDGE_PREVIOUS_RUNTIME_DIGEST=digest))
+            if not bridge_reverted(config, state):
+                raise ValueError('bridge did not return to the previous lane')
+        state['bridgeReverted'] = True
+        save(directory / 'state.json', state)
+    if not state.get('apiReverted'):
+        checkpoint(directory, state, 'revert-api')
+        bridge = aws(region, 'lambda', 'get-function-configuration', '--function-name', config['bridge'])
+        # A bridge invocation still running with the pre-revert configuration treats an old-digest submission as the
+        # previous environment's: it rebinds it to the new digest and sends it to the new lane, or marks it JE for a
+        # runtime it does not publish. So the API creates old-digest submissions only once every such invocation is over.
+        # Meanwhile the reverted bridge rebinds the API's new-digest submissions to the old digest, so nobody waits.
+        # After the wait nothing sends to the new lane any more, which the purge below relies on.
+        time.sleep(bridge['Timeout'] + 5)
+        update_env(region, config['api'], dict(JUDGE_CPP_IMAGE=previous))
+        state['apiReverted'] = True
+        save(directory / 'state.json', state)
+    if not state.get('newWorkerStopped'):
+        checkpoint(directory, state, 'revert-stop')
+        # Stop the new worker before the purge and the requeue. A worker still running could take a job from the
+        # new lane, or finish one whose attempt the requeue is about to replace.
+        ssm_step(directory, 'revert-stop', config, [first], stop_command)
+        # The host now holds the new environment. Without the tag the bridge never starts it as an old-environment
+        # host: it starts a stopped host only when the tag matches its dispatch digest. A missing tag is no error.
+        aws(region, 'ec2', 'delete-tags', '--resources', first, '--tags', 'Key=JudgeInstalledDigest')
+        state['newWorkerStopped'] = True
+        save(directory / 'state.json', state)
+    if not state.get('firstHostStopped'):
+        checkpoint(directory, state, 'revert-first-host')
+        # The first host holds the broken environment with its worker disabled. It would never idle-stop (idle stop runs
+        # in the worker), and a running host without a worker trips its worker alarm, so it is stopped before the alarm
+        # actions return. Stopped, it stays down: without its digest tag the bridge never starts it. The next rolling
+        # or run starts and prepares it again.
+        aws(region, 'ec2', 'stop-instances', '--instance-ids', first)
+        state['firstHostStopped'] = True
+        save(directory / 'state.json', state)
+    if not state.get('newLanePurgeSent'):
+        checkpoint(directory, state, 'revert-purge')
+        # Purge before the requeue. The requeue re-sends these submissions with new attempts through the old lane,
+        # so their messages on the new lane are stale. Left there, they would block the next rolling update,
+        # which starts its standby worker on this lane only when it is empty.
+        send_purge(config, directory, state, state['activeQueue'])
+        state['newLanePurgeSent'] = True
+        save(directory / 'state.json', state)
+    if 'revertRequeued' not in state:
+        checkpoint(directory, state, 'revert-requeue')
+        # Submissions the new environment did not finish go back to the old one. The bridge accepts only its previous
+        # digest, which the bridge update made the new one, and rebinds them to the old digest when it sends them.
+        # Submissions the new environment finished keep their results. A run that stops before saving the count
+        # requeues again on resume. That is safe: once the first call has run, nothing is dispatched with the new
+        # digest any more, because the reverted bridge rebinds before it dispatches.
+        # It does not wait for the purged lane to read empty: the requeued work goes to the old lane, and these users
+        # wait until it runs (past 6 hours the bridge would mark them JE).
+        count = requeue(config, digest)
+        state.update(requeued=state.get('requeued', 0) + count, revertRequeued=count)
+        save(directory / 'state.json', state)
+    # The reverted state is made consistent before anything slow or failure-prone: the purge wait, the watcher and the
+    # burst restart can stop the run for a while, and meanwhile CI, Terraform and the alarms must match the bridge.
+    checkpoint(directory, state, 'revert-settings')
+    # Terraform's previous digest is the new one, as on the live bridge, so an apply keeps the bridge as it is.
+    sync_settings(config, directory, previous, config['runtimes'], previous=digest, lane=state['previousLane'])
+    restore_alarms(config, state)
+    if not state.get('newLanePurged'):
+        checkpoint(directory, state, 'revert-purge-wait')
+        wait_purged(config, directory, state, state['activeQueue'])
+        state['newLanePurged'] = True
+        save(directory / 'state.json', state)
+    # A rolling killed mid-switch leaves its watcher submitting and maybe test users behind; nobody else retries them,
+    # because the run closes as reverted. Done once the broken worker is stopped and users are back, so it delays neither.
+    end_stale_watch(config, directory, state)
+    if not state.get('revertBurstsReady'):
+        checkpoint(directory, state, 'revert-bursts')
+        # hold-bursts stopped every burst. The others still hold the old environment and their worker.env still names
+        # the old lane, so enabling them is enough. The enable waits until each worker is ready (minutes); the check
+        # then confirms the lane and digest, because a burst that judges nothing gives no contest capacity.
+        others = [node for node in bursts if node != first]
+        if others:
+            ssm_step(directory, 'revert-bursts', config, others, ENABLE_WORKER)
+            lane_worker_ready(config, directory, others, state['previousQueue'], previous, label='revert-bursts-check')
+        state['revertBurstsReady'] = True
+        save(directory / 'state.json', state)
+    if 'maintenanceHoldReleased' not in state:
+        # The other bursts judge again, so they may power off once idle, as after a finished rolling.
+        state['maintenanceHoldReleased'] = release_hold(config)
+        save(directory / 'state.json', state)
+    if 'revertApiReport' not in state:
+        checkpoint(directory, state, 'revert-smoke')
+        # `reverted` means the old environment judges through the public API, not only that the settings went back.
+        state['revertApiReport'] = str(api_smoke(config, directory, primaries[:1]))
+        save(directory / 'state.json', state)
+    checkpoint(directory, state, 'reverted', status='reverted')
 
 
 def main():
     global LOG_DIRECTORY
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['prepare', 'finish', 'run', 'prune', 'rolling'])
+    parser.add_argument('action', choices=['prepare', 'finish', 'run', 'prune', 'rolling', 'rolling-revert'])
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--run-dir', type=Path, required=True)
     parser.add_argument('--report', type=Path)
@@ -787,6 +1537,27 @@ def main():
         if args.action == 'prune':
             cleanup_after_success(config, directory, state, strict=True)
             return
+        if args.action == 'rolling-revert':
+            # An emergency action uses no artifact and needs only the first host, so neither an artifact check, a pool
+            # start nor preflight runs; a stale local file or an unrelated offline host must not keep users on a broken environment.
+            try:
+                revert(config, directory, state)
+            except BaseException as error:
+                # A refusal changes nothing; a started revert records where it stopped.
+                if state.get('revertStarted'):
+                    state.update(status='failed', error=str(error))
+                    save(state_path, state)
+                raise
+            return
+        if state.get('status') == 'unchanged':
+            # Finished with nothing to switch and the pool put back. Repeating the command repeats the result without
+            # touching AWS; no other action may take the run up, because nothing in it is left to finish.
+            if args.action != 'rolling':
+                raise ValueError(UNCHANGED + '; start a new run')
+            print(UNCHANGED, flush=True)
+            return
+        # Before anything is saved, so a reverted run keeps its status and stays closed.
+        refuse_reverted(state)
         try:
             for key in ('release', 'bridge_package'):
                 if key == 'release' and args.action == 'rolling' and not config.get('release'):
@@ -800,6 +1571,12 @@ def main():
                 cleanup_after_success(config, directory, state)
                 print('already complete for these artifact hashes')
                 return
+            if args.action == 'rolling' and state.get('step') == 'switch-watch-failed':
+                # Everything else finished and the hold was released; do not touch the pool, only repeat the verdict.
+                raise ValueError(watch_failed_message(state))
+            if args.action == 'rolling':
+                # A configuration rolling refuses must not start the stopped bursts with a 6-hour hold first.
+                check_rolling_config(config)
             save(state_path, state)
             ensure_pool(config, ROLLING_HOLD if args.action == 'rolling' else 4 * 3600)
             if args.action == 'rolling':
@@ -827,11 +1604,10 @@ def main():
                     run(sys.executable, 'judge/verify.py', 'submit', '--run-dir', str(verification), '--region', config['region'],
                         *[option for node in config['nodes'] for option in ('--instance', node)])
                 run(sys.executable, 'judge/verify.py', 'collect', '--run-dir', str(verification), '--wait')
-                receipt = json.loads((verification / 'receipt.json').read_text())
                 checkpoint(directory, state, 'start')
-                if receipt['phase'] == 'smoke':
-                    run(sys.executable, 'judge/verify.py', 'start', '--run-dir', str(verification))
-                run(sys.executable, 'judge/verify.py', 'collect', '--run-dir', str(verification), '--wait')
+                # run never switches lanes, but it points every host at the lane in use: a worker.env can name the
+                # other lane (rolling-revert leaves the prepared burst so), and a worker there takes no submission.
+                start_workers(verification, request_queue=live_lane(config))
                 finish(config, directory, state, verification / 'report.json')
             elif args.action == 'finish':
                 if not args.report:

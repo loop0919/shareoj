@@ -1,13 +1,17 @@
 import base64
+import contextlib
 import datetime
 import hashlib
 import io
 import json
+import os
 import subprocess
 from pathlib import Path
 import sys
 import tempfile
+import time
 import unittest
+import unittest.mock
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -68,6 +72,127 @@ class RolloutTests(unittest.TestCase):
                 patch.object(rollout, 'aws', return_value=dict(Attributes=attributes)), patch.object(rollout.time, 'sleep'):
             rollout.wait_empty(dict(region='test', queues=['queue']))
             self.assertEqual(status.call_count, 4)
+
+    def test_lanes_follow_the_live_bridge(self):
+        config = dict(region='test', bridge='bridge', queues=['qa', 'r', 'da', 'dr'], request_queue_b='qb')
+        for url, expected in [('qb', dict(active='b', active_url='qb', standby_url='qa')),
+                              ('qa', dict(active='a', active_url='qa', standby_url='qb'))]:
+            bridge = dict(Environment=dict(Variables=dict(JUDGE_REQUEST_QUEUE_URL=url)))
+            with patch.object(rollout, 'aws', return_value=bridge):
+                self.assertEqual(rollout.lanes(config), expected)
+        bridge = dict(Environment=dict(Variables=dict(JUDGE_REQUEST_QUEUE_URL='other')))
+        with patch.object(rollout, 'aws', return_value=bridge), self.assertRaises(ValueError):
+            rollout.lanes(config)
+
+    def test_lanes_without_a_second_queue(self):
+        config = dict(region='test', bridge='bridge', queues=['qa', 'r', 'da', 'dr'])
+        bridge = dict(Environment=dict(Variables=dict(JUDGE_REQUEST_QUEUE_URL='qa')))
+        with patch.object(rollout, 'aws', return_value=bridge):
+            self.assertEqual(rollout.lanes(config), dict(active='a', active_url='qa', standby_url=None))
+        self.assertEqual(rollout.all_queues(config), config['queues'])
+
+    def test_wait_empty_watches_both_lanes(self):
+        config = dict(region='test', queues=['qa', 'r', 'da', 'dr'], request_queue_b='qb')
+        def attributes(region, service, operation, *args):
+            busy = args[args.index('--queue-url') + 1] == 'qb'
+            return dict(Attributes=dict(ApproximateNumberOfMessages='1' if busy else '0',
+                                        ApproximateNumberOfMessagesNotVisible='0', ApproximateNumberOfMessagesDelayed='0'))
+        with patch.object(rollout, 'database_status', return_value=dict(pending=0, undispatched=0)), \
+                patch.object(rollout, 'aws', side_effect=attributes), \
+                patch.object(rollout.time, 'monotonic', side_effect=[0, 1, 2, 4000]), patch.object(rollout.time, 'sleep'):
+            with self.assertRaises(TimeoutError):
+                rollout.wait_empty(config)
+
+    def test_preflight_syncs_the_lane_before_terraform(self):
+        config = dict(region='test', account='1', api_url='https://x', runtimes=['python314'], smoke_runtime='python314',
+                      nodes=['i-0123456789abcdef0'], queues=['qa', 'r', 'da', 'dr'], request_queue_b='qb', bridge='bridge',
+                      bucket='bucket', result_mapping='m', dispatch_rule='rule', worker_alarms=['alarm'],
+                      repository='o/r', github_environment='dev')
+        arns = {'qa': 'arn:qa', 'qb': 'arn:qb', 'r': 'arn:r', 'da': 'arn:da', 'dr': 'arn:dr'}
+        def aws(region, service, operation, *args):
+            if operation == 'get-caller-identity':
+                return dict(Account='1')
+            if operation == 'get-function-configuration':
+                return dict(FunctionArn='arn:bridge', Environment=dict(Variables=dict(JUDGE_REQUEST_QUEUE_URL='qb', JUDGE_JOB_BUCKET='bucket')))
+            if operation == 'get-event-source-mapping':
+                return dict(FunctionArn='arn:bridge', EventSourceArn='arn:r')
+            if operation == 'list-targets-by-rule':
+                return dict(Targets=[dict(Arn='arn:bridge')])
+            if operation == 'get-queue-attributes':
+                url = args[args.index('--queue-url') + 1]
+                dead = 'arn:da' if url in ('qa', 'qb') else 'arn:dr'
+                return dict(Attributes=dict(QueueArn=arns[url], RedrivePolicy=json.dumps(dict(deadLetterTargetArn=dead))))
+            if operation == 'describe-alarms':
+                return dict(MetricAlarms=[dict(AlarmName='alarm')])
+            return dict(InstanceInformationList=[dict(PingStatus='Online')])
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            for path in ('infra/api/.terraform', 'infra/judge/.terraform'):
+                (root / path).mkdir(parents=True)
+            tfvars = root / 'infra/judge/zz-rollout.auto.tfvars.json'
+            tfvars.write_text('{"request_lane":"a","worker_count":2}')
+            seen = []
+            def command(*args):
+                if args[0] == 'terraform':
+                    seen.append(json.loads(tfvars.read_text()))
+                return '[]'
+            with patch.object(rollout, 'ROOT', root), patch.object(rollout, 'aws', side_effect=aws), \
+                    patch.object(rollout, 'run', side_effect=command):
+                rollout.preflight(config)
+            self.assertEqual(seen, [dict(request_lane='b', worker_count=2)] * 2)
+            # A standby lane that does not redrive to the request dead letter queue is refused.
+            arns['da'], arns['dr'] = 'arn:dr', 'arn:da'
+            with patch.object(rollout, 'ROOT', root), patch.object(rollout, 'aws', side_effect=aws), \
+                    patch.object(rollout, 'run', side_effect=command), self.assertRaises(ValueError):
+                rollout.preflight(config)
+
+    def test_sync_lane_changes_only_the_lane_and_settings_can_carry_it(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            (root / 'infra/judge').mkdir(parents=True)
+            path = root / 'infra/judge/zz-rollout.auto.tfvars.json'
+            with patch.object(rollout, 'ROOT', root):
+                rollout.sync_lane({}, 'b')
+                self.assertEqual(json.loads(path.read_text()), dict(request_lane='b'))
+                path.write_text('{"request_lane":"a","worker_count":2}')
+                rollout.sync_lane({}, 'b')
+                self.assertEqual(json.loads(path.read_text()), dict(request_lane='b', worker_count=2))
+                (root / 'infra/api').mkdir(parents=True)
+                (root / 'run').mkdir()
+                values = {}
+                def command(*args):
+                    if args[2] == 'set':
+                        values[args[3]] = args[args.index('--body') + 1]
+                        return ''
+                    return json.dumps([dict(name=n, value=v) for n, v in values.items()])
+                config = dict(repository='o/r', github_environment='dev')
+                with patch.object(rollout, 'run', side_effect=command):
+                    rollout.sync_settings(config, root / 'run', 'sha256:fixed', ['python314'], lane='a')
+            self.assertEqual(json.loads(path.read_text())['request_lane'], 'a')
+            self.assertEqual(json.loads(path.read_text())['worker_count'], 2)
+            self.assertNotIn('request_lane', json.loads((root / 'infra/api/zz-rollout.auto.tfvars.json').read_text()))
+
+    def test_settings_sync_keeps_a_lane_written_after_the_backup(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            for path in ('infra/api', 'infra/judge', 'run'):
+                (root / path).mkdir(parents=True)
+            tfvars = root / 'infra/judge/zz-rollout.auto.tfvars.json'
+            tfvars.write_text('{"worker_count":2}')
+            values = {}
+            def command(*args):
+                if args[2] == 'set':
+                    values[args[3]] = args[args.index('--body') + 1]
+                    return ''
+                return json.dumps([dict(name=n, value=v) for n, v in values.items()])
+            config = dict(repository='o/r', github_environment='dev')
+            with patch.object(rollout, 'ROOT', root), patch.object(rollout, 'run', side_effect=command):
+                rollout.sync_settings(config, root / 'run', 'sha256:one', ['python314'], lane='a')
+                rollout.sync_lane(config, 'b')
+                rollout.sync_settings(config, root / 'run', 'sha256:two', ['python314'])
+            self.assertEqual(json.loads(tfvars.read_text()),
+                             dict(worker_count=2, request_lane='b', runtime_digest='sha256:two', enabled=True,
+                                  enabled_runtimes=['python314']))
 
     def test_prepare_drains_before_stopping_workers(self):
         events = []
@@ -233,7 +358,7 @@ class RolloutTests(unittest.TestCase):
             catalog = io.BytesIO(b'{"maintenance":false,"items":[{"id":"python314"}]}')
             with patch.object(rollout, 'update_env'), patch.object(rollout, 'wait_empty'), \
                     patch.object(rollout, 'aws', side_effect=aws), patch.object(rollout.time, 'sleep'), \
-                    patch.object(rollout, 'healthy_workers', side_effect=lambda *a: events.append(('healthy',))), \
+                    patch.object(rollout, 'healthy_workers', side_effect=lambda *a: events.append(('healthy',) + a[3:])), \
                     patch.object(rollout, 'database_status', return_value=dict(runtimeDigest=digest)), \
                     patch.object(rollout, 'sync_settings'), patch.object(rollout, 'delivery', side_effect=lambda *a: events.append(('delivery',))), \
                     patch.object(rollout.urllib.request, 'urlopen', return_value=catalog), patch.object(rollout, 'run', side_effect=command):
@@ -398,117 +523,1219 @@ class RolloutTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, 'worker reported failures'):
                 check(dict(event='failure', category=category, reason='x'))
 
+    def test_worker_health_can_require_the_lane(self):
+        digest, url = 'sha256:' + 'a' * 64, 'https://sqs.ap-northeast-1.amazonaws.com/123456789012/judge-dev-judge-requests-b'
+        with tempfile.TemporaryDirectory() as name, patch.object(rollout, 'new_run', return_value={}), \
+                patch.object(rollout, 'submit') as submit, patch.object(rollout, 'collect', return_value=0):
+            rollout.healthy_workers(dict(region='test', nodes=['mi-a']), Path(name), digest, url)
+        script = submit.call_args.args[-1]
+        subprocess.run(['bash', '-n'], input=script, text=True, check=True)
+        self.assertIn(digest + ' ' + url + " <<'PY'", script)
+        code = compile(script.split("<<'PY'\n", 1)[1].rsplit('\nPY\n', 1)[0], '<worker health>', 'exec')
+
+        def check(queue):
+            journal = json.dumps(dict(event='worker_started'))
+            outputs = {'MainPID': '42\n', 'InvocationID': 'abc\n'}
+            host = type(sys)('host')
+            host.verify_assets = lambda: digest
+            environ = b'JUDGE_RUNTIME_DIGEST=' + digest.encode() + b'\0JUDGE_REQUEST_QUEUE_URL=' + queue.encode() + b'\0'
+            with patch.dict(sys.modules, host=host), patch.object(sys, 'argv', ['-', digest, url]), \
+                    patch('subprocess.check_output', side_effect=lambda args, text=False: journal if args[0] == 'journalctl' else outputs[args[4]]), \
+                    patch('subprocess.run'), patch.object(Path, 'read_bytes', return_value=environ), patch('builtins.print'):
+                exec(code, {'__name__': '__main__'})
+
+        check(url)
+        # A worker idling on the lane the bridge does not send to is no capacity.
+        with self.assertRaisesRegex(SystemExit, 'another request queue'):
+            check(url.removesuffix('-b'))
+
+    def test_finish_checks_the_workers_on_the_live_lane(self):
+        lane = dict(active='b', active_url='qb', standby_url='qa')
+        with patch.object(rollout, 'lanes', return_value=lane):
+            _, _, events, _, digest = self.run_finish(request_queue_b='qb')
+        self.assertIn(('healthy', 'qb'), events)
+        # A configuration with one request queue checks no lane, as before.
+        _, _, events, _, _ = self.run_finish()
+        self.assertIn(('healthy', None), events)
+
+    def run_main(self, root, action, config, state=None, patches=None):
+        """Run main() for `action` with the AWS account check passing; returns (stdout, the aws mock)."""
+        config_path = root / 'config.json'
+        config_path.write_text(json.dumps(config))
+        directory = root / 'run'
+        directory.mkdir(exist_ok=True)
+        if state is not None:
+            (directory / 'state.json').write_text(json.dumps(state))
+        argv = ['rollout.py', action, '--config', str(config_path), '--run-dir', str(directory)]
+        with contextlib.ExitStack() as stack:
+            for patcher in (patch.object(sys, 'argv', argv), patch.object(rollout, 'ROOT', root), patch.object(rollout.os, 'chdir'),
+                            patch.object(rollout, 'LOG_DIRECTORY', None)):
+                stack.enter_context(patcher)
+            for name, fake in (patches or {}).items():
+                stack.enter_context(patch.object(rollout, name, side_effect=fake))
+            output = stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            rollout.main()
+        return output.getvalue()
+
+    def test_run_starts_every_host_on_the_live_lane(self):
+        # A worker.env can name the other lane (rolling-revert leaves the prepared burst so); run must not keep it there.
+        for second, expected in (('qb', 'qb'), (None, None)):
+            with self.subTest(second=second), tempfile.TemporaryDirectory() as name:
+                root = Path(name)
+                artifact = root / 'artifact'
+                artifact.write_bytes(b'x')
+                config = dict(account='123', region='test', api='api', bridge='bridge', release=str(artifact), bridge_package=str(artifact),
+                              nodes=['mi-a', 'mi-b'], bucket='bucket', queues=['qa', 'r', 'da', 'dr'],
+                              **({} if second is None else dict(request_queue_b=second)))
+                directory = root / 'run'
+                for path in ('install-1', 'install-2', 'verify'):
+                    (directory / path).mkdir(parents=True)
+                (directory / 'verify/receipt.json').write_text('{"phase":"smoke"}')
+                starts = []
+
+                def aws(region, service, operation, *args):
+                    if operation == 'get-caller-identity':
+                        return dict(Account='123')
+                    variables = dict(JUDGE_ENABLED_RUNTIMES='none') if args[-1] == 'api' else dict(JUDGE_REQUEST_QUEUE_URL='qb')
+                    return dict(Environment=dict(Variables=variables))
+                self.run_main(root, 'run', config, dict(prepared=True), dict(
+                    aws=aws, ensure_pool=lambda c, hold: None, wait_empty=lambda c: None, run=lambda *a: '',
+                    start_workers=lambda v, request_queue=None: starts.append((v.name, request_queue)),
+                    finish=lambda c, d, s, report: None))
+                self.assertEqual(starts, [('verify', expected)])
+
+    def test_a_rolling_refused_by_its_configuration_starts_no_host(self):
+        # An old pause-era run directory saved a configuration without request_queue_b.
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            artifact = root / 'artifact'
+            artifact.write_bytes(b'x')
+            config = dict(account='123', region='test', api='api', release=str(artifact), bridge_package=str(artifact), pool='judge-dev')
+            pool = []
+            with self.assertRaisesRegex(ValueError, 'a rolling update needs request_queue_b'):
+                self.run_main(root, 'rolling', config, dict(step='drain', status='failed'), dict(
+                    aws=lambda *a: dict(Account='123'), ensure_pool=lambda c, hold: pool.append(hold)))
+            self.assertEqual(pool, [])
+
+
+class Interrupted(Exception):
+    pass
+
+
+class Interrupt(list):
+    """An event list that stops the run right after the first event starting with `at`, like a killed process."""
+
+    def __init__(self, at=None):
+        super().__init__()
+        self.at = at
+
+    def append(self, event):
+        super().append(event)
+        if self.at is not None and event[:len(self.at)] == self.at:
+            self.at = None
+            raise Interrupted(event)
+
 
 class RollingTests(unittest.TestCase):
     first, primary, other = 'i-0123456789abcdef1', 'i-0123456789abcdef0', 'i-0123456789abcdef2'
     old, new = 'sha256:' + 'a' * 64, 'sha256:' + 'b' * 64
+    window = 'revert is only possible between the lane switch and the old worker stop'
+    # The real guard, kept before any test patches it; it reads the faked bridge status.
+    contest_guard = staticmethod(rollout.contest_guard)
 
-    def run_rolling(self, state=None, drain=None, **config):
-        events = []
+    def live_lambdas(self, url='qa'):
+        """The live Lambda environments; update_env writes to them and the bridge status reads them."""
+        return dict(bridge=dict(JUDGE_RUNTIME_DIGEST=self.old, JUDGE_PREVIOUS_RUNTIME_DIGEST='', JUDGE_REQUEST_QUEUE_URL=url,
+                                JUDGE_ENABLED_RUNTIMES='python314'),
+                    api=dict(JUDGE_CPP_IMAGE=self.old, JUDGE_ENABLED_RUNTIMES='python314'))
+
+    def run_rolling(self, state=None, events=None, live=None, directory=None, queues=None, in_flight=(0,), requeued=0,
+                    prepared=None, action=None, clock=None, purges=None, watch=None, contest_at=None, extra=None, **overrides):
+        """Run rolling (or another action) against fakes; lane a is 'qa' (queues[0]) and lane b is 'qb' (request_queue_b).
+
+        Pass the same live, queues, clock and purges to a resumed run: they are the AWS side, which outlives a process.
+        `contest_at` is the bridge's next contest window; `extra` replaces any fake.
+        """
+        events = [] if events is None else events
+        prepared = prepared or self.new
         config = dict(region='test', api='api', bridge='bridge', pool='judge-dev', nodes=[self.primary, self.first, self.other],
-                      worker_alarms=['alarm'], runtimes=['python314'], queues=['requests'], **config)
+                      worker_alarms=['alarm'], runtimes=['python314'], queues=['qa', 'r', 'da', 'dr'], request_queue_b='qb')
+        config = {key: value for key, value in {**config, **overrides}.items() if value is not None}
         state = {} if state is None else state
+        live = self.live_lambdas() if live is None else live
+        queues = {} if queues is None else queues
+        counted, clock = [], [0.0] if clock is None else clock
+        purges = {} if purges is None else purges
 
         def aws(region, service, operation, *args):
             if operation == 'get-function-configuration':
-                variables = dict(JUDGE_RUNTIME_DIGEST=self.old, JUDGE_CPP_IMAGE=self.old, JUDGE_ENABLED_RUNTIMES='python314')
-                return dict(Environment=dict(Variables=variables), Timeout=0)
+                variables = live[args[args.index('--function-name') + 1]]
+                return dict(Environment=dict(Variables=dict(variables)), Timeout=120)
             if operation == 'describe-alarms':
                 return dict(MetricAlarms=[dict(AlarmName='alarm', ActionsEnabled=True)])
+            if operation == 'purge-queue':
+                url = args[args.index('--queue-url') + 1]
+                # SQS rejects a second purge of the same queue within 60 seconds.
+                if url in purges and clock[0] - purges[url] < 60:
+                    raise RuntimeError('PurgeQueueInProgress')
+                purges[url] = clock[0]
+                queues.pop(url, None)
             events.append((operation, *args))
             return {}
+
+        def update_env(region, function, changes, remove=()):
+            live[function].update(changes)
+            for name in remove:
+                live[function].pop(name, None)
+            events.append(('env', function, changes))
+
+        def requeue(config, digest):
+            # The bridge requeues only its current previous digest.
+            if digest != live['bridge']['JUDGE_PREVIOUS_RUNTIME_DIGEST']:
+                raise RuntimeError('bridge did not requeue the previous digest')
+            events.append(('requeue', digest))
+            return requeued
 
         def prepare_hosts(config, directory, state, nodes, label, expected_digest=None):
             events.append(('prepare', label, tuple(nodes), expected_digest))
             verification = directory / ('verify-' + label)
             verification.mkdir(exist_ok=True)
-            (verification / 'report.json').write_text(json.dumps(dict(runtimeDigest=self.new)))
+            (verification / 'report.json').write_text(json.dumps(dict(runtimeDigest=prepared)))
             state.setdefault('packages', 'c' * 64)
             return verification
 
-        def status():
-            paused = events and any(e[0] == 'dispatch' for e in events) and [e for e in events if e[0] == 'dispatch'][-1][1]
-            switched = any(e[:2] == ('env', 'bridge') for e in events)
-            return dict(runtimeDigest=self.new if switched else self.old, previousRuntimeDigest=self.old if switched else '',
-                        dispatchPaused=bool(paused), pending=0, undispatched=0)
+        def queue_counts(config, url):
+            counted.append(url)
+            events.append(('count', url))
+            return queues.get(url, 0)
 
-        with tempfile.TemporaryDirectory() as name, patch.object(rollout, 'preflight'), \
-                patch.object(rollout, 'pool_bursts', return_value=[self.first, self.other]), \
-                patch.object(rollout, 'deploy_bridge', side_effect=lambda *a, **k: events.append(('bridge-code',))), \
-                patch.object(rollout, 'contest_guard', side_effect=lambda c: events.append(('contest',))), \
-                patch.object(rollout, 'aws', side_effect=aws), patch.object(rollout.time, 'sleep'), \
-                patch.object(rollout, 'ssm_step', side_effect=lambda d, step, c, nodes, script: events.append(('ssm', step, tuple(nodes)))), \
-                patch.object(rollout, 'prepare_hosts', side_effect=prepare_hosts), \
-                patch.object(rollout, 'set_dispatch', side_effect=lambda c, d, s, paused: events.append(('dispatch', paused)) or s.update(dispatchPaused=paused)), \
-                patch.object(rollout, 'wait_requests_idle', side_effect=drain or (lambda c: events.append(('drain',)))), \
-                patch.object(rollout, 'update_env', side_effect=lambda region, function, changes, remove=(): events.append(('env', function, changes))), \
-                patch.object(rollout, 'database_status', side_effect=lambda c: status()), \
-                patch.object(rollout, 'start_workers', side_effect=lambda v: events.append(('start', v.name))), \
-                patch.object(rollout, 'sync_settings', side_effect=lambda *a, **k: events.append(('sync', k.get('previous')))), \
-                patch.object(rollout, 'api_smoke', side_effect=lambda c, d, nodes: events.append(('api', tuple(nodes))) or d / 'api.json'), \
-                patch.object(rollout, 'healthy_workers', side_effect=lambda c, d, digest: events.append(('healthy', digest))), \
-                patch.object(rollout, 'run', side_effect=lambda *a: events.append(('cmd',) + a[:3])):
-            rollout.rolling(config, Path(name), state)
+        def status(config):
+            bridge = live['bridge']
+            # in_flight[k] is what the bridge reports at the (k+1)-th check of the previous lane.
+            checks = counted.count(state.get('previousQueue'))
+            return dict(kind='judge-deployment-status', pending=0, undispatched=0, dispatchPaused=False, nextContestWindowAt=contest_at,
+                        runtimeDigest=bridge['JUDGE_RUNTIME_DIGEST'], previousRuntimeDigest=bridge['JUDGE_PREVIOUS_RUNTIME_DIGEST'],
+                        requestQueueUrl=bridge['JUDGE_REQUEST_QUEUE_URL'],
+                        previousInFlight=in_flight[min(max(checks - 1, 0), len(in_flight) - 1)])
+
+        def sleep(seconds):
+            events.append(('sleep', seconds))
+            clock[0] += seconds
+
+        fakes = dict(
+            preflight=lambda c: events.append(('preflight',)), pool_bursts=lambda c: [self.first, self.other], aws=aws,
+            update_env=update_env, deploy_bridge=lambda *a, **k: events.append(('bridge-code',)),
+            # A guard that checks only the bridge's fields, not the contest window, is recorded apart.
+            contest_guard=lambda c, window=True: events.append(('contest',) if window else ('contest-fields',)),
+            ssm_step=lambda d, step, c, nodes, script: events.append(('ssm', step, tuple(nodes))),
+            prepare_hosts=prepare_hosts, database_status=status, queue_counts=queue_counts,
+            set_dispatch=lambda c, d, s, paused: events.append(('dispatch', paused)), requeue=requeue,
+            standby_ready=lambda c, d, node, url: events.append(('standby', node, url)),
+            lane_worker_ready=lambda c, d, nodes, url, digest=None, **k: events.append(('ready', tuple(nodes), url, digest)),
+            start_workers=lambda v, request_queue=None: events.append(('start', v.name, request_queue)),
+            sync_settings=lambda c, d, digest, runtimes, **k: events.append(('sync', digest, k.get('previous'), k.get('lane'))),
+            api_smoke=lambda c, d, nodes: events.append(('api', tuple(nodes))) or d / 'api.json',
+            healthy_workers=lambda c, d, digest, queue=None: events.append(('healthy', digest)),
+            run=lambda *a: events.append(('cmd',) + a[:3]),
+            # By default the watcher is silent and passes; `watch` replaces any of these.
+            **{'start_watch': lambda c, d, s: object(), 'stop_watch': lambda h, d: dict(status='passed', maxWaitMs=1200),
+               'collect_stale_watch': lambda c, d, s: None, 'wait_for_baseline': lambda h, d: None,
+               'abort_watch': lambda c, d, s, h: None, **(watch or {})})
+        fakes.update(extra or {})
+        with contextlib.ExitStack() as stack:
+            name = stack.enter_context(tempfile.TemporaryDirectory())
+            stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+            for function, fake in fakes.items():
+                stack.enter_context(patch.object(rollout, function, side_effect=fake))
+            stack.enter_context(patch.object(rollout.time, 'sleep', side_effect=sleep))
+            stack.enter_context(patch.object(rollout.time, 'monotonic', side_effect=lambda: clock[0]))
+            (action or rollout.rolling)(config, directory or Path(name), state)
         return state, events
 
-    def test_rolling_prepares_a_burst_then_switches_with_dispatch_paused(self):
+    def stopped_rolling(self, directory, at=None):
+        """Run rolling until it stops at the event `at`, or else at the drain timeout with the old workers on lane a."""
+        state, live = {}, self.live_lambdas()
+        with self.assertRaises(Interrupted if at else TimeoutError):
+            self.run_rolling(state, Interrupt(at), live=live, directory=directory, in_flight=(2,))
+        return state, live
+
+    def run_revert(self, state, live, directory, events=None, **kwargs):
+        return self.run_rolling(state, events, live=live, directory=directory, action=rollout.revert, **kwargs)
+
+    def reverted(self):
+        """The bridge configuration a revert sets: the previous lane and digest, with the new digest as the previous one."""
+        return dict(JUDGE_REQUEST_QUEUE_URL='qa', JUDGE_RUNTIME_DIGEST=self.old, JUDGE_PREVIOUS_RUNTIME_DIGEST=self.new)
+
+    def assertInOrder(self, events, *expected):
+        position = 0
+        for item in expected:
+            try:
+                position = events.index(item, position) + 1
+            except ValueError:
+                self.fail(f'{item} not found after event {position}: {events[position:]}')
+
+    def test_rolling_switches_lanes_without_pausing_dispatch(self):
         state, events = self.run_rolling()
-        names = [e[0] if e[0] not in ('ssm', 'prepare', 'start', 'env') else e[:2] for e in events]
         rest = (self.primary, self.other)
-        self.assertEqual(state['status'], 'passed')
-        self.assertEqual(state['step'], 'complete')
-        self.assertEqual(state['previousDigest'], self.old)
-        self.assertEqual(state['runtimeDigest'], self.new)
-        self.assertIn(('ssm', 'hold-bursts', (self.first, self.other)), events)
-        self.assertIn(('prepare', 'first', (self.first,), None), events)
-        self.assertIn(('ssm', 'switch-stop', rest), events)
-        self.assertIn(('prepare', 'rest', rest, self.new), events)
-        order = [('ssm', 'hold-bursts'), ('prepare', 'first'), 'dispatch', 'drain', ('ssm', 'switch-stop'),
-                 ('env', 'bridge'), ('env', 'api'), ('start', 'verify-first'), 'sync', 'api', ('prepare', 'rest'),
-                 ('start', 'verify-rest'), 'healthy']
-        positions = [names.index(item) for item in order]
-        self.assertEqual(positions, sorted(positions))
-        self.assertEqual([e[1] for e in events if e[0] == 'dispatch'], [True, False])
-        self.assertIn(('env', 'bridge', dict(JUDGE_RUNTIME_DIGEST=self.new, JUDGE_PREVIOUS_RUNTIME_DIGEST=self.old)), events)
-        self.assertIn(('env', 'api', dict(JUDGE_CPP_IMAGE=self.new)), events)
-        self.assertEqual([e[1] for e in events if e[0] == 'api'], [(self.first,), (self.primary, self.first, self.other)])
-        self.assertIn(('sync', self.old), events)
+        self.assertEqual((state['status'], state['step']), ('passed', 'complete'))
+        self.assertEqual((state['previousDigest'], state['runtimeDigest']), (self.old, self.new))
+        # "active" names the lane in use after the switch (the standby before it); "previous" the lane in use before it.
+        self.assertEqual((state['previousLane'], state['previousQueue'], state['activeLane'], state['activeQueue']), ('a', 'qa', 'b', 'qb'))
+        self.assertEqual((state['digestSwitched'], state['apiSwitched'], state['oldWorkersStopped'], state['requeued']), (True, True, True, 0))
+        switch = dict(JUDGE_REQUEST_QUEUE_URL='qb', JUDGE_RUNTIME_DIGEST=self.new, JUDGE_PREVIOUS_RUNTIME_DIGEST=self.old)
+        self.assertInOrder(events, ('ssm', 'hold-bursts', (self.first, self.other)), ('prepare', 'first', (self.first,), None),
+                           ('count', 'qb'), ('start', 'verify-first', 'qb'), ('sleep', 35), ('standby', self.first, 'qb'),
+                           ('contest',), ('env', 'bridge', switch), ('sleep', 125), ('env', 'api', dict(JUDGE_CPP_IMAGE=self.new)),
+                           ('sync', self.new, self.old, 'b'), ('api', (self.first,)), ('count', 'qa'), ('ssm', 'switch-stop', rest),
+                           ('prepare', 'rest', rest, self.new), ('start', 'verify-rest', 'qb'), ('healthy', self.new),
+                           ('api', (self.primary, self.first, self.other)))
+        # One bridge update switches the lane, the digest and the previous digest together; dispatch is never paused.
+        self.assertEqual([e for e in events if e[:2] == ('env', 'bridge')], [('env', 'bridge', switch)])
+        self.assertFalse(any(e[0] == 'dispatch' for e in events))
+        # Admission is never paused by a rolling update.
+        self.assertFalse(any(e[:2] == ('env', 'api') and e[2].get('JUDGE_ENABLED_RUNTIMES') == 'none' for e in events))
+        self.assertFalse(any(e[0] == 'requeue' for e in events))
         tags = [e for e in events if e[0] == 'create-tags' and 'JudgeInstalledDigest' in e[-1]]
         self.assertEqual([t[2:-2] for t in tags], [(self.first,), rest])
-        # Admission is never paused by a rolling update.
-        self.assertFalse(any(e[0] == 'env' and e[1] == 'api' and 'JUDGE_ENABLED_RUNTIMES' in e[2] for e in events))
 
-    def test_drain_timeout_before_switch_resumes_dispatch(self):
-        def drain(config):
-            raise TimeoutError('busy')
-        with self.assertRaises(TimeoutError):
-            self.run_rolling(drain=drain)
-        # run_rolling raised before returning; check through a fresh run that records events.
+    def watching(self, events, report=None, start=None):
+        """Watcher fakes that leave their place in the event list; `report` is what the stopped watcher wrote."""
+        def stop(handle, directory):
+            events.append(('watch-stop',))
+            return report
+
+        def begin(config, directory, state):
+            events.append(('watch-start',))
+            if start:
+                raise start
+            return object()
+        return dict(start_watch=begin, stop_watch=stop, wait_for_baseline=lambda h, d: events.append(('watch-baseline',)))
+
+    def test_rolling_watches_the_switch(self):
         events = []
-        with tempfile.TemporaryDirectory() as name, \
-                patch.object(rollout, 'contest_guard'), patch.object(rollout, 'aws', return_value=dict(Timeout=0)), \
-                patch.object(rollout.time, 'sleep'), \
-                patch.object(rollout, 'set_dispatch', side_effect=lambda c, d, s, paused: events.append(paused) or s.update(dispatchPaused=paused)), \
-                patch.object(rollout, 'wait_requests_idle', side_effect=drain), patch.object(rollout, 'ssm_step') as ssm:
-            with self.assertRaises(TimeoutError):
-                rollout.switch(dict(region='test', bridge='bridge'), Path(name), dict(runtimeDigest=self.new), self.first, [self.primary], Path(name))
-        self.assertEqual(events, [True, False])
-        ssm.assert_not_called()
+        with tempfile.TemporaryDirectory() as name:
+            state, events = self.run_rolling(events=events, directory=Path(name),
+                                             watch=self.watching(events, dict(status='passed', maxWaitMs=1200)))
+            switch_at = float((Path(name) / 'switch-at').read_text())
+        self.assertEqual((state['status'], state['step']), ('passed', 'complete'))
+        self.assertEqual(state['switchAt'], switch_at)
+        self.assertEqual((state['switchWatch']['status'], state['switchWatch']['maxWaitMs']), ('passed', 1200))
+        self.assertFalse(state.get('switchWatchFailed'))
+        bridge = [e for e in events if e[:2] == ('env', 'bridge')][0]
+        self.assertInOrder(events, ('standby', self.first, 'qb'), ('watch-start',), ('watch-baseline',), ('contest',), bridge,
+                           ('sleep', 125), ('env', 'api', dict(JUDGE_CPP_IMAGE=self.new)), ('sleep', rollout.WATCH_TAIL),
+                           ('watch-stop',), ('sync', self.new, self.old, 'b'))
 
-    def test_resumed_switch_does_not_pause_again(self):
-        state = dict(firstHost=self.first, previousDigest=self.old, runtimeDigest=self.new,
-                     packages='c' * 64, alarm_actions={'alarm': False}, digestSwitched=True, dispatchPaused=True)
-        state, events = self.run_rolling(state)
-        self.assertEqual([e[1] for e in events if e[0] == 'dispatch'], [False])
-        self.assertFalse(any(e[0] in ('drain', 'env') for e in events))
-        self.assertEqual(state['status'], 'passed')
+    def test_a_failed_watch_finishes_every_step_but_never_reaches_complete(self):
+        events, state = [], {}
+        failed = dict(status='failed', maxWaitMs=30000)
+        with tempfile.TemporaryDirectory() as name:
+            directory, live, queues, clock = Path(name), self.live_lambdas(), {}, [0.0]
+            with self.assertRaisesRegex(ValueError, r'switch latency check failed; see switch-watch\.json'):
+                self.run_rolling(state, events, live=live, directory=directory, queues=queues, clock=clock,
+                                 watch=self.watching(events, failed))
+            self.assertTrue(state['switchWatchFailed'])
+            self.assertNotEqual(state['step'], 'complete')
+            self.assertNotEqual(state.get('status'), 'passed')
+            self.assertInOrder(events, ('watch-stop',), ('prepare', 'rest', (self.primary, self.other), self.new),
+                               ('healthy', self.new), ('api', (self.primary, self.first, self.other)),
+                               ('enable-alarm-actions', '--alarm-names', 'alarm'), ('cmd', 'terraform', '-chdir=infra/api', 'apply'),
+                               ('cmd', 'terraform', '-chdir=infra/judge', 'apply'))
+            self.assertTrue(any(e[0] == 'create-tags' and 'JudgeMaintenanceHoldUntil' in e[-1] for e in events[events.index(('watch-stop',)):]))
+            # Resuming reaches the same error without redoing a step or starting another watcher.
+            again = []
+            with self.assertRaisesRegex(ValueError, 'switch latency check failed'):
+                self.run_rolling(state, again, live=live, directory=directory, queues=queues, clock=clock,
+                                 watch=self.watching(again, failed))
+            self.assertEqual([e for e in again if e[0] in ('prepare', 'start', 'api', 'env', 'watch-start', 'watch-stop')], [])
+
+    def test_a_watcher_that_cannot_start_does_not_stop_the_switch(self):
+        events, state = [], {}
+        with self.assertRaisesRegex(ValueError, 'switch latency check failed'):
+            self.run_rolling(state, events, watch=self.watching(events, start=OSError('no spawn')))
+        self.assertTrue(state['switchWatchFailed'])
+        self.assertTrue(any(e[:2] == ('env', 'bridge') for e in events))
+        self.assertTrue(state['digestSwitched'] and state['apiSwitched'] and state['oldWorkersStopped'])
+        self.assertFalse(('watch-stop',) in events)
+
+    def test_a_watcher_that_died_without_a_report_fails_the_watch(self):
+        events, state = [], {}
+        with self.assertRaisesRegex(ValueError, 'switch latency check failed'):
+            self.run_rolling(state, events, watch=self.watching(events, None))
+        self.assertTrue(state['switchWatchFailed'])
+
+    def test_resume_after_the_switch_without_a_watch_report_is_interrupted(self):
+        live = self.live_lambdas('qa')
+        live['bridge'].update(JUDGE_RUNTIME_DIGEST=self.new, JUDGE_PREVIOUS_RUNTIME_DIGEST=self.old)
+        state = dict(firstHost=self.first, previousDigest=self.old, runtimeDigest=self.new, packages='c' * 64,
+                     alarm_actions={'alarm': False}, previousLane='b', previousQueue='qb', activeLane='a', activeQueue='qa',
+                     digestSwitched=True, apiSwitched=False, switchWatcher=dict(pid=1))
+        events = []
+        state, events = self.run_rolling(state, events, live=live, watch=self.watching(events))
+        self.assertEqual((state['status'], state['step']), ('passed', 'complete'))
+        self.assertEqual(state['switchWatch'], 'interrupted')
+        self.assertFalse(state.get('switchWatchFailed'))
+        self.assertFalse(('watch-start',) in events or ('watch-stop',) in events)
+
+    def test_resume_uses_a_watch_report_that_finished_before_the_run_died(self):
+        live = self.live_lambdas('qa')
+        live['bridge'].update(JUDGE_RUNTIME_DIGEST=self.new, JUDGE_PREVIOUS_RUNTIME_DIGEST=self.old)
+        state = dict(firstHost=self.first, previousDigest=self.old, runtimeDigest=self.new, packages='c' * 64,
+                     alarm_actions={'alarm': False}, previousLane='b', previousQueue='qb', activeLane='a', activeQueue='qa',
+                     digestSwitched=True, apiSwitched=True, firstApiReport='x')
+        with self.assertRaisesRegex(ValueError, 'switch latency check failed'):
+            self.run_rolling(state, live=live, watch=dict(collect_stale_watch=lambda c, d, s: dict(status='failed', maxWaitMs=99999)))
+        self.assertEqual(state['switchWatch']['status'], 'failed')
+
+    def test_the_watcher_before_a_resumed_switch_is_replaced_not_duplicated(self):
+        # Resumed before the switch: start_watch stops the recorded watcher first, then starts exactly one new process.
+        stale = subprocess.Popen([sys.executable, '-c', 'pass'])
+        stale.wait()
+        state = dict(switchWatcher=dict(pid=stale.pid, stopFile='old-stop', report='old-report'))
+        new = unittest.mock.Mock(pid=4242)
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            (directory / 'switch-watch.json').write_text('{"status": "failed"}')
+            (directory / 'switch-watch.stop').write_text('')
+            config = dict(api='api', api_url='https://api.invalid', region='test', smoke_runtime='python314')
+            with patch.object(rollout.subprocess, 'Popen', return_value=new) as popen:
+                self.assertIs(rollout.start_watch(config, directory, state), new)
+            self.assertEqual(popen.call_count, 1)
+            self.assertFalse((directory / 'switch-watch.json').exists() or (directory / 'switch-watch.stop').exists())
+            self.assertEqual(state['switchWatcher']['pid'], 4242)
+            args = popen.call_args.args[0]
+            self.assertEqual(args, rollout.watch_command(config, directory))
+            self.assertIn('--watch', args)
+            # The cadence is the watcher's own default, the constant its user-count assertion is written against.
+            self.assertNotIn('--interval', args)
+
+    def test_a_failure_after_the_watcher_started_stops_it_and_keeps_the_error(self):
+        events = []
+        stops = []
+        watch = self.watching(events)
+        watch['abort_watch'] = lambda c, d, s, h: stops.append(h)
+        # The run stops right after the bridge update, between start_watch and settle_watch.
+        with self.assertRaises(Interrupted):
+            self.run_rolling(events=Interrupt(('env', 'bridge')), watch=dict(watch, start_watch=lambda c, d, s: events.append(('watch-start',)) or 'handle'))
+        self.assertEqual(stops, ['handle'])
+
+    def test_abort_watch_terminates_and_cleans_up_without_raising(self):
+        process = unittest.mock.Mock()
+        process.poll.return_value = None
+        state = dict(switchWatcher=dict(pid=1))
+        with tempfile.TemporaryDirectory() as name, patch.object(rollout, 'clean_leftovers') as clean:
+            rollout.abort_watch({}, Path(name), state, process)
+            process.terminate.assert_called_once()
+            clean.assert_called_once()
+            self.assertNotIn('switchWatcher', state)
+            clean.side_effect = RuntimeError('boom')
+            rollout.abort_watch({}, Path(name), state, process)
+
+    def test_resuming_a_switch_watch_failed_run_does_not_touch_the_pool(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            artifact = root / 'artifact'
+            artifact.write_bytes(b'x')
+            config = dict(account='123', region='test', api='api', release=str(artifact), bridge_package=str(artifact))
+            config_path = root / 'config.json'
+            config_path.write_text(json.dumps(config))
+            directory = root / 'run'
+            directory.mkdir()
+            (directory / 'state.json').write_text(json.dumps(dict(step='switch-watch-failed', status='failed', switchWatchFailed=True,
+                                                                  switchWatch=dict(status='failed', maxWaitMs=30000))))
+            argv = ['rollout.py', 'rolling', '--config', str(config_path), '--run-dir', str(directory)]
+            with patch.object(sys, 'argv', argv), patch.object(rollout, 'ROOT', root), patch.object(rollout.os, 'chdir'), \
+                    patch.object(rollout, 'LOG_DIRECTORY', None), patch.object(rollout, 'aws', return_value=dict(Account='123')), \
+                    patch.object(rollout, 'ensure_pool') as pool, patch.object(rollout, 'rolling') as rolling:
+                with self.assertRaisesRegex(ValueError, r'switch latency check failed; see switch-watch\.json .*30000'):
+                    rollout.main()
+            pool.assert_not_called()
+            rolling.assert_not_called()
+            self.assertEqual(json.loads((directory / 'state.json').read_text())['status'], 'failed')
+
+    def test_only_a_report_that_saw_the_stop_file_is_trusted(self):
+        with tempfile.TemporaryDirectory() as name:
+            path = Path(name, 'r.json')
+            good = dict(status='passed', stopped=True, terminated=False, capped=False)
+            for change, trusted in (({}, True), (dict(terminated=True), False), (dict(capped=True), False),
+                                    (dict(stopped=False), False), (dict(status='running'), False)):
+                with self.subTest(change):
+                    path.write_text(json.dumps(dict(good, **change)))
+                    self.assertEqual(rollout.read_watch_report(path) is not None, trusted)
+            path.write_text(json.dumps(dict(status='failed')))
+            self.assertIsNone(rollout.read_watch_report(path))
+
+    def test_leftover_test_users_block_a_new_watcher_and_are_cleaned_in_settle(self):
+        config = dict(api='api', api_url='https://api.invalid', region='test', smoke_runtime='python314')
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            leftovers = directory / 'switch-watch.cleanup.json'
+            leftovers.write_text(json.dumps(dict(users=[dict(username='u')])))
+            with patch.object(rollout, 'run', side_effect=RuntimeError('cleanup failed')) as command, \
+                    patch.object(rollout.subprocess, 'Popen') as popen:
+                with self.assertRaisesRegex(RuntimeError, 'left test users'):
+                    rollout.start_watch(config, directory, {})
+            popen.assert_not_called()
+            self.assertIn('--cleanup', command.call_args.args)
+            self.assertTrue(leftovers.exists())
+            # settle runs --cleanup too; users that remain fail the watch and are named in the error.
+            state = {}
+            with patch.object(rollout, 'run', side_effect=RuntimeError('cleanup failed')) as command, patch.object(rollout.time, 'sleep'):
+                rollout.settle_watch(config, directory, state, None)
+            self.assertIn('--cleanup', command.call_args.args)
+            self.assertTrue(state['switchWatchFailed'] and state['switchWatchLeftovers'])
+            self.assertIn('switchWatchLeftovers', rollout.watch_failed_message(state))
+            # Once cleanup succeeds the leftovers file lists nobody, and a watcher may start.
+            leftovers.write_text(json.dumps(dict(users=[])))
+            with patch.object(rollout.subprocess, 'Popen', return_value=unittest.mock.Mock(pid=1)) as popen:
+                rollout.start_watch(config, directory, {})
+            self.assertFalse(leftovers.exists())
+            self.assertEqual(popen.call_args.kwargs['start_new_session'], True)
+
+    def test_settle_watch_never_raises_into_the_switch(self):
+        config = dict(api='api', api_url='https://api.invalid', region='test')
+        for error in (ProcessLookupError(), PermissionError(), OSError('x')):
+            with self.subTest(error=error), tempfile.TemporaryDirectory() as name:
+                state = {}
+                with patch.object(rollout, 'collect_stale_watch', side_effect=error):
+                    rollout.settle_watch(config, Path(name), state, None)
+                self.assertEqual(state['switchWatch'], 'interrupted')
+                self.assertFalse(state.get('switchWatchFailed'))
+        # A kill that races with the watcher's own exit is swallowed.
+        with patch.object(rollout, 'watcher_alive', return_value=True), patch.object(rollout.os, 'kill', side_effect=ProcessLookupError):
+            rollout.signal_watcher(1, Path('r.json'), rollout.signal.SIGTERM)
+
+    def test_a_recorded_pid_is_signalled_only_when_it_is_this_runs_watcher(self):
+        with patch.object(rollout, 'watcher_alive', return_value=False), patch.object(rollout.os, 'kill') as kill:
+            rollout.signal_watcher(1, Path('r.json'), rollout.signal.SIGTERM)
+        kill.assert_not_called()
+        self.assertFalse(rollout.watcher_alive(os.getpid(), Path('r.json')))
+
+    @staticmethod
+    def eventually_alive(pid, report, script=True):
+        """Wait for the child's own argv: a python launcher may exec the real interpreter shortly after Popen returns."""
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if script and rollout.watcher_alive(pid, report):
+                return True
+            if not script and str(report).encode() in Path('/proc/%d/cmdline' % pid).read_bytes().split(b'\0'):
+                return True
+            time.sleep(0.02)
+        return False
+
+    def test_a_really_running_watcher_is_recognised_and_ended(self):
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            script = directory / 'smoke-api.py'
+            script.write_text('import time\ntime.sleep(60)\n')
+            report = directory / 'switch-watch.json'
+            process = subprocess.Popen([sys.executable, str(script), '--watch', '--report', str(report)])
+            self.addCleanup(lambda: (process.kill(), process.wait()))
+            self.assertTrue(self.eventually_alive(process.pid, report))
+            self.assertFalse(rollout.watcher_alive(process.pid, directory / 'other.json'))
+            # The same shape start_watch uses: the script as a relative path.
+            relative = subprocess.Popen([sys.executable, 'smoke-api.py', '--watch', '--report', str(report)], cwd=directory)
+            self.addCleanup(lambda: (relative.kill(), relative.wait()))
+            self.assertTrue(self.eventually_alive(relative.pid, report))
+            plain = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', '--report', str(report)])
+            self.addCleanup(lambda: (plain.kill(), plain.wait()))
+            self.assertTrue(self.eventually_alive(plain.pid, report, script=False))
+            self.assertFalse(rollout.watcher_alive(plain.pid, report))
+            state = dict(switchWatcher=dict(pid=process.pid))
+            with patch.object(rollout, 'clean_leftovers', return_value=True):
+                self.assertIsNone(rollout.collect_stale_watch(dict(), directory, state))
+            self.assertEqual(process.wait(10), -rollout.signal.SIGTERM)
+            self.assertNotIn('switchWatcher', state)
+
+    def test_not_started_because_of_leftovers_is_retried_and_named(self):
+        config = dict(api='api', api_url='https://api.invalid', region='test')
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            (directory / 'switch-watch.cleanup.json').write_text(json.dumps(dict(users=[dict(username='u')])))
+            state = dict(switchWatch='not-started', switchWatchFailed=True)
+            with patch.object(rollout, 'run', side_effect=RuntimeError('still failing')) as command:
+                rollout.settle_watch(config, directory, state, None)
+            self.assertIn('--cleanup', command.call_args.args)
+            self.assertEqual(command.call_args.kwargs['timeout'], rollout.WATCH_CLEANUP_TIMEOUT)
+            self.assertTrue(state['switchWatchLeftovers'])
+            self.assertIn('switchWatchLeftovers', rollout.watch_failed_message(state))
+
+    def test_abort_records_leftovers_and_cleanup_times_out(self):
+        config = dict(api='api', api_url='https://api.invalid', region='test')
+        process = unittest.mock.Mock()
+        process.poll.return_value = 0
+        state = {}
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            rollout.abort_watch(config, directory, state, process)
+            self.assertNotIn('switchWatchLeftovers', state)
+            (directory / 'switch-watch.cleanup.json').write_text(json.dumps(dict(users=[dict(username='u')])))
+            timeout = subprocess.TimeoutExpired('cleanup', rollout.WATCH_CLEANUP_TIMEOUT)
+            with patch.object(rollout, 'run', side_effect=timeout) as command:
+                rollout.abort_watch(config, directory, state, process)
+            self.assertEqual(command.call_args.kwargs['timeout'], rollout.WATCH_CLEANUP_TIMEOUT)
+            self.assertTrue(state['switchWatchLeftovers'])
+
+    def test_the_baseline_wait_ends_on_enough_samples_exit_or_timeout(self):
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            progress = directory / 'switch-watch.progress.json'
+            clock = [0.0]
+
+            def sleep(seconds):
+                clock[0] += seconds
+                progress.write_text(json.dumps(dict(started=int(clock[0] // 2))))
+            alive = unittest.mock.Mock(poll=lambda: None)
+            with patch.object(rollout.time, 'sleep', side_effect=sleep), patch.object(rollout.time, 'monotonic', side_effect=lambda: clock[0]):
+                rollout.wait_for_baseline(alive, directory)
+                self.assertEqual(clock[0], 2 * rollout.WATCH_BASELINE_SAMPLES)
+                clock[0] = 0.0
+                progress.unlink()
+                rollout.wait_for_baseline(unittest.mock.Mock(poll=lambda: 1), directory)
+                self.assertEqual(clock[0], 0.0)
+            clock[0] = 0.0
+            with patch.object(rollout.time, 'sleep', side_effect=lambda s: clock.__setitem__(0, clock[0] + s)), \
+                    patch.object(rollout.time, 'monotonic', side_effect=lambda: clock[0]):
+                rollout.wait_for_baseline(alive, directory)
+                self.assertGreaterEqual(clock[0], rollout.WATCH_BASELINE_TIMEOUT)
+
+    def test_rolling_refuses_a_busy_standby_lane(self):
+        # A fresh run refuses before preparing; a resumed run checks again right before the standby worker starts.
+        for state in ({}, dict(previousLane='a', previousQueue='qa', activeLane='b', activeQueue='qb')):
+            resumed = bool(state)
+            with self.subTest(resumed=resumed):
+                events = []
+                with self.assertRaisesRegex(ValueError, 'the standby lane is not empty'):
+                    self.run_rolling(state, events, queues={'qb': 1})
+                self.assertFalse(any(e[0] == 'env' for e in events))
+                self.assertFalse(any(e[0] == 'start' for e in events))
+                self.assertEqual(any(e[0] == 'prepare' for e in events), resumed)
+
+    def test_rolling_requires_the_second_lane(self):
+        events = []
+        with self.assertRaisesRegex(ValueError, 'a rolling update needs request_queue_b'):
+            self.run_rolling(events=events, request_queue_b=None)
+        self.assertFalse(any(e[0] == 'env' for e in events))
+
+    def test_drain_requeues_stranded_submissions(self):
+        # The previous lane is empty but the bridge still counts two dispatched previous-digest submissions.
+        state, events = self.run_rolling(in_flight=(2, 2, 2, 0), requeued=2)
+        self.assertEqual(state['requeued'], 2)
+        self.assertEqual(state['step'], 'complete')
+        stop = events.index(('ssm', 'switch-stop', (self.primary, self.other)))
+        drain = [e for e in events[:stop] if e in (('count', 'qa'), ('requeue', self.old))]
+        self.assertEqual(drain, [('count', 'qa')] * 3 + [('requeue', self.old)] + [('count', 'qa')] * 3)
+
+    def test_drain_timeout_keeps_old_workers(self):
+        state, live = {}, self.live_lambdas()
+        with tempfile.TemporaryDirectory() as name:
+            events = []
+            with self.assertRaisesRegex(TimeoutError, 'the previous lane did not drain; old workers keep running'):
+                self.run_rolling(state, events, live=live, directory=Path(name), in_flight=(2,))
+            self.assertFalse(any(e[:2] == ('ssm', 'switch-stop') for e in events))
+            self.assertEqual([e for e in events if e[0] == 'requeue'], [('requeue', self.old)])
+            self.assertEqual(state['step'], 'drain-previous')
+            state, events = self.run_rolling(state, live=live, directory=Path(name))
+        self.assertEqual((state['status'], state['step']), ('passed', 'complete'))
+        self.assertFalse(any(e[0] in ('env', 'standby') for e in events))
+        # The resumed run goes straight from the first host's collected report to the drain.
+        resumed = events.index(('prepare', 'first', (self.first,), None)) + 1
+        self.assertEqual(events[resumed], ('count', 'qa'))
+        self.assertIn(('ssm', 'switch-stop', (self.primary, self.other)), events)
+
+    def test_resume_after_switch_skips_the_switch(self):
+        # This run started on lane b, so the live bridge already sends to lane a; resume must use the saved lanes.
+        live = self.live_lambdas('qa')
+        live['bridge'].update(JUDGE_RUNTIME_DIGEST=self.new, JUDGE_PREVIOUS_RUNTIME_DIGEST=self.old)
+        state = dict(firstHost=self.first, previousDigest=self.old, runtimeDigest=self.new, packages='c' * 64,
+                     alarm_actions={'alarm': False}, previousLane='b', previousQueue='qb', activeLane='a', activeQueue='qa',
+                     digestSwitched=True, apiSwitched=False)
+        state, events = self.run_rolling(state, live=live)
+        self.assertEqual((state['status'], state['step']), ('passed', 'complete'))
+        self.assertFalse(any(e[:2] == ('env', 'bridge') or e[0] == 'standby' for e in events))
+        self.assertFalse(any(e[:2] == ('start', 'verify-first') for e in events))
+        resumed = events.index(('prepare', 'first', (self.first,), None)) + 1
+        self.assertEqual(events[resumed:resumed + 2], [('sleep', 125), ('env', 'api', dict(JUDGE_CPP_IMAGE=self.new))])
+        self.assertInOrder(events[resumed:], ('sync', self.new, self.old, 'a'), ('api', (self.first,)), ('count', 'qb'),
+                           ('ssm', 'switch-stop', (self.primary, self.other)), ('start', 'verify-rest', 'qa'))
+
+    def test_resume_after_an_unrecorded_switch_does_not_switch_again(self):
+        # The bridge took the update but the run stopped before saving digestSwitched; the new lane now has work.
+        live = self.live_lambdas()
+        live['bridge'].update(JUDGE_REQUEST_QUEUE_URL='qb', JUDGE_RUNTIME_DIGEST=self.new, JUDGE_PREVIOUS_RUNTIME_DIGEST=self.old)
+        state = dict(firstHost=self.first, previousDigest=self.old, runtimeDigest=self.new, packages='c' * 64,
+                     alarm_actions={'alarm': False}, previousLane='a', previousQueue='qa', activeLane='b', activeQueue='qb')
+        state, events = self.run_rolling(state, live=live, queues={'qb': 1})
+        self.assertEqual((state['status'], state['step']), ('passed', 'complete'))
+        self.assertTrue(state['digestSwitched'])
+        self.assertFalse(any(e[:2] == ('env', 'bridge') or e[0] == 'standby' or e == ('count', 'qb') for e in events))
+        self.assertIn(('env', 'api', dict(JUDGE_CPP_IMAGE=self.new)), events)
+
+    def switched_state(self, **extra):
+        """A run stopped after its bridge update, with the old workers still on lane a and the new one on lane b."""
+        live = self.live_lambdas('qb')
+        live['bridge'].update(JUDGE_RUNTIME_DIGEST=self.new, JUDGE_PREVIOUS_RUNTIME_DIGEST=self.old)
+        return dict(firstHost=self.first, previousDigest=self.old, runtimeDigest=self.new, packages='c' * 64,
+                    alarm_actions={'alarm': True}, previousLane='a', previousQueue='qa', activeLane='b', activeQueue='qb',
+                    laneSwitchAttempted=True, **extra), live
+
+    def test_a_switched_resume_is_not_refused_near_a_contest(self):
+        # Refusing here would leave the run in its worst state: bursts held, alarm actions off, old workers on the old lane.
+        soon = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)).isoformat()
+        for recorded in (True, False):
+            with self.subTest(recorded=recorded):
+                state, live = self.switched_state(**(dict(digestSwitched=True) if recorded else {}))
+                state, events = self.run_rolling(state, live=live, contest_at=soon, extra=dict(contest_guard=self.contest_guard))
+                self.assertEqual((state['status'], state['step']), ('passed', 'complete'))
+                self.assertIn(('ssm', 'switch-stop', (self.primary, self.other)), events)
+                self.assertFalse(any(e[:2] == ('env', 'bridge') for e in events))
+        # A run that sent no bridge update, or one the bridge did not take, is still refused before it switches.
+        for attempted in (True, False):
+            with self.subTest(attempted=attempted):
+                state, _ = self.switched_state()
+                if not attempted:
+                    state.pop('laneSwitchAttempted')
+                events = []
+                with self.assertRaisesRegex(ValueError, 'contest window'):
+                    self.run_rolling(state, events, contest_at=soon, extra=dict(contest_guard=self.contest_guard))
+                self.assertFalse(any(e[:2] == ('env', 'bridge') for e in events))
+
+    def test_a_fresh_rolling_refuses_while_a_primary_is_off_the_live_lane(self):
+        # An earlier run stopped between its switch and its old-worker stop: the bridge sends to lane b, the primary reads lane a.
+        events = []
+
+        def off_lane(config, directory, nodes, url, digest=None, **k):
+            events.append(('ready', tuple(nodes), url, digest))
+            raise RuntimeError('worker reads another request queue')
+        state = {}
+        with self.assertRaisesRegex(ValueError, 'earlier rolling'):
+            self.run_rolling(state, events, live=self.live_lambdas('qb'), extra=dict(lane_worker_ready=off_lane))
+        self.assertEqual([e for e in events if e[0] == 'ready'], [('ready', (self.primary,), 'qb', self.old)])
+        # Refused before anything changes: no alarm action, burst or bridge is touched, and the lanes are decided again next time.
+        self.assertFalse(any(e[0] in ('disable-alarm-actions', 'ssm', 'prepare', 'env') for e in events))
+        self.assertNotIn('activeQueue', state)
+        # A primary on the live lane passes the same check, before the alarms and bursts change.
+        _, events = self.run_rolling()
+        self.assertInOrder(events, ('ready', (self.primary,), 'qa', self.old), ('disable-alarm-actions', '--alarm-names', 'alarm'),
+                           ('ssm', 'hold-bursts', (self.first, self.other)))
+
+    def test_rolling_checks_every_worker_on_the_new_lane_at_the_end(self):
+        seen = []
+        state, _ = self.run_rolling(extra=dict(healthy_workers=lambda c, d, digest, queue=None: seen.append((digest, queue))))
+        self.assertEqual(state['step'], 'complete')
+        self.assertEqual(seen, [(self.new, 'qb')])
+
+    def test_an_unchanged_digest_puts_the_pool_back_and_ends_unchanged(self):
+        # No package or release change reproduces the published digest; the bridge would get previous == current.
+        # The first burst then runs the published environment, so it goes back to judging like the other bursts.
+        events = []
+        state, events = self.run_rolling(events=events, prepared=self.old)
+        self.assertEqual((state['status'], state['step']), ('unchanged', 'unchanged'))
+        self.assertFalse(any(e[0] in ('env', 'standby', 'requeue') for e in events))
+        # The alarm actions return before the burst starts, which wait minutes for each worker and can fail.
+        self.assertInOrder(events, ('ssm', 'hold-bursts', (self.first, self.other)), ('prepare', 'first', (self.first,), None),
+                           ('enable-alarm-actions', '--alarm-names', 'alarm'), ('start', 'verify-first', 'qa'),
+                           ('ssm', 'release-bursts', (self.other,)), ('ready', (self.first, self.other), 'qa', self.old))
+        self.assertIn(('create-tags', '--resources', self.first, '--tags', 'Key=JudgeInstalledDigest,Value=' + self.old), events)
+        holds = [e for e in events if e[0] == 'create-tags' and 'JudgeMaintenanceHoldUntil' in e[-1]]
+        self.assertEqual(holds[-1][2:-2], (self.primary, self.first, self.other))
+        until = datetime.datetime.fromisoformat(holds[-1][-1].split('Value=')[1].replace('Z', '+00:00'))
+        self.assertLessEqual(until.timestamp(), datetime.datetime.now(datetime.timezone.utc).timestamp() + 900)
+        self.assertTrue(state['maintenanceHoldReleased'])
+
+    def test_an_interrupted_unchanged_run_finishes_putting_the_pool_back(self):
+        for at in (('start', 'verify-first'), ('ssm', 'release-bursts'), ('enable-alarm-actions',), ('ready', (self.first, self.other))):
+            with self.subTest(at=at), tempfile.TemporaryDirectory() as name:
+                directory, state = Path(name), {}
+                with self.assertRaises(Interrupted):
+                    self.run_rolling(state, Interrupt(at), directory=directory, prepared=self.old)
+                state, events = self.run_rolling(state, directory=directory, prepared=self.old)
+                self.assertEqual((state['status'], state['step']), ('unchanged', 'unchanged'))
+                # The resumed run neither holds the bursts nor turns the alarm actions off again.
+                self.assertFalse(any(e[0] in ('disable-alarm-actions', 'prepare', 'env') or e[:2] == ('ssm', 'hold-bursts') for e in events))
+                self.assertInOrder(events, ('enable-alarm-actions', '--alarm-names', 'alarm'), ('ready', (self.first, self.other), 'qa', self.old))
+
+    def test_main_keeps_an_unchanged_run_finished(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            artifact = root / 'artifact'
+            artifact.write_bytes(b'x')
+            config = dict(account='123', region='test', api='api', release=str(artifact), bridge_package=str(artifact), pool='judge-dev',
+                          request_queue_b='qb')
+            saved = dict(status='unchanged', step='unchanged', previousDigest=self.old, runtimeDigest=self.old)
+            calls = []
+            fakes = dict(aws=lambda *a: calls.append(a[2]) or dict(Account='123'), ensure_pool=lambda c, hold: calls.append('pool'),
+                         rolling=lambda c, d, s: calls.append('rolling'))
+            output = RolloutTests.run_main(self, root, 'rolling', config, saved, fakes)
+            self.assertIn('nothing to roll out', output)
+            # Only main's account check reaches AWS; the pool is not touched.
+            self.assertEqual(calls, ['get-caller-identity'])
+            for action, message in (('run', 'nothing to roll out'), ('finish', 'nothing to roll out'), ('rolling-revert', self.window)):
+                with self.subTest(action), self.assertRaisesRegex(ValueError, message):
+                    RolloutTests.run_main(self, root, action, config, None, fakes)
+            self.assertEqual(json.loads((root / 'run/state.json').read_text()), saved)
+
+    def test_unchanged_digest_does_not_block_a_switched_resume(self):
+        # A run that already switched (recorded, or found on the live bridge) carries on; only a new switch is refused.
+        lanes = dict(previousLane='a', previousQueue='qa', activeLane='b', activeQueue='qb')
+        base = dict(firstHost=self.first, previousDigest=self.old, runtimeDigest=self.old, packages='c' * 64,
+                    alarm_actions={'alarm': False}, **lanes)
+        for recorded in (True, False):
+            with self.subTest(recorded=recorded):
+                live = self.live_lambdas()
+                live['bridge'].update(JUDGE_REQUEST_QUEUE_URL='qb', JUDGE_PREVIOUS_RUNTIME_DIGEST=self.old)
+                state = dict(base, digestSwitched=True) if recorded else dict(base)
+                state, events = self.run_rolling(state, live=live, prepared=self.old)
+                self.assertEqual((state['status'], state['step'], state['digestSwitched']), ('passed', 'complete', True))
+                self.assertFalse(any(e[:2] == ('env', 'bridge') or e[0] == 'standby' for e in events))
+
+    def test_revert_restores_the_previous_lane_and_digest(self):
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            # The drain timed out: users are judged on lane b, the old workers still run on lane a.
+            state, live = self.stopped_rolling(directory)
+            self.assertTrue(state['digestSwitched'] and state['apiSwitched'])
+            # The new lane still holds work the new worker had not taken.
+            state, events = self.run_revert(state, live, directory, queues={'qb': 2}, requeued=3)
+        tag = ('delete-tags', '--resources', self.first, '--tags', 'Key=JudgeInstalledDigest')
+        hold = ('create-tags', '--resources', self.primary, self.first, self.other, '--tags', 'Key=JudgeMaintenanceHoldUntil')
+        events = [e[:-1] + ('Key=JudgeMaintenanceHoldUntil',) if e[0] == 'create-tags' else e for e in events]
+        # The old workers are confirmed alive first. The requeue does not wait for the purged lane to read empty.
+        # The settings and alarm actions are back before the slow burst restart, which can fail and be resumed.
+        # Only a passed API smoke on the old environment ends the revert.
+        self.assertEqual(events, [('ready', (self.primary,), 'qa', self.old),
+                                  ('env', 'bridge', self.reverted()), ('sleep', 125), ('env', 'api', dict(JUDGE_CPP_IMAGE=self.old)),
+                                  # Stopped before the alarm actions return: a running host without a worker trips its alarm.
+                                  ('ssm', 'revert-stop', (self.first,)), tag, ('stop-instances', '--instance-ids', self.first),
+                                  ('purge-queue', '--queue-url', 'qb'), ('requeue', self.new), ('sync', self.old, self.new, 'a'),
+                                  ('enable-alarm-actions', '--alarm-names', 'alarm'), ('count', 'qb'),
+                                  ('ssm', 'revert-bursts', (self.other,)), ('ready', (self.other,), 'qa', self.old),
+                                  hold, ('api', (self.primary,))])
+        self.assertEqual((state['status'], state['step']), ('reverted', 'reverted'))
+        self.assertEqual((state['requeued'], state['revertRequeued']), (3, 3))
+        self.assertTrue(state['maintenanceHoldReleased'])
+        self.assertEqual(state['revertApiReport'], str(directory / 'api.json'))
+        self.assertEqual({key: live['bridge'][key] for key in self.reverted()}, self.reverted())
+        self.assertEqual(live['api']['JUDGE_CPP_IMAGE'], self.old)
+
+    def test_revert_refuses_when_no_old_worker_judges(self):
+        # The primary's worker died (for example a runtime_mismatch exit, which is never restarted): nobody reads the old lane.
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            state, live = self.stopped_rolling(directory)
+            unchanged, events = json.dumps(state, sort_keys=True), []
+
+            def dead(config, directory, nodes, url, digest=None, **k):
+                events.append(('ready', tuple(nodes), url, digest))
+                raise RuntimeError('worker is not active')
+            with self.assertRaisesRegex(ValueError, 'no primary worker judges on the previous lane'):
+                self.run_revert(state, live, directory, events, extra=dict(lane_worker_ready=dead))
+        self.assertEqual(events, [('ready', (self.primary,), 'qa', self.old)])
+        self.assertEqual(json.dumps(state, sort_keys=True), unchanged)
+
+    def test_revert_requeues_even_when_the_purged_lane_does_not_read_empty(self):
+        # The requeue returns the stranded submissions to the old workers; it must not wait on the purge.
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            state, live = self.stopped_rolling(directory)
+            world = dict(queues={'qb': 2}, clock=[0.0], purges={}, requeued=3)
+            first = []
+            busy = dict(queue_counts=lambda c, url: first.append(('count', url)) or 1)
+            with self.assertRaisesRegex(RuntimeError, 'did not empty after the purge'):
+                self.run_revert(state, live, directory, first, extra=busy, **world)
+            self.assertInOrder(first, ('purge-queue', '--queue-url', 'qb'), ('requeue', self.new), ('count', 'qb'))
+            self.assertEqual((state['revertRequeued'], state.get('newLanePurged')), (3, None))
+            # Resumed, the purge is sent again after the SQS interval; the requeue is not repeated.
+            world['queues']['qb'] = 1
+            state, again = self.run_revert(state, live, directory, **world)
+        self.assertEqual((state['status'], state['step']), ('reverted', 'reverted'))
+        self.assertInOrder(again, ('sleep', rollout.PURGE_INTERVAL), ('count', 'qb'), ('purge-queue', '--queue-url', 'qb'), ('count', 'qb'))
+        self.assertFalse(any(e[0] in ('requeue', 'env') for e in again))
+
+    def test_a_failed_smoke_after_the_revert_is_resumed_not_reported_reverted(self):
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            state, live = self.stopped_rolling(directory)
+
+            def failing(config, directory, nodes):
+                raise ValueError('API smoke did not pass')
+            with self.assertRaisesRegex(ValueError, 'API smoke did not pass'):
+                self.run_revert(state, live, directory, extra=dict(api_smoke=failing))
+            self.assertNotEqual(state['status'], 'reverted')
+            self.assertEqual(state['step'], 'revert-smoke')
+            # The run never goes back to rolling; the same revert command repeats only what is left.
+            with self.assertRaisesRegex(ValueError, 'this run is being reverted'):
+                self.run_rolling(state, live=live, directory=directory)
+            state, again = self.run_revert(state, live, directory)
+        self.assertEqual((state['status'], state['step']), ('reverted', 'reverted'))
+        self.assertIn(('api', (self.primary,)), again)
+        self.assertFalse(any(e[0] in ('env', 'ssm', 'purge-queue', 'requeue', 'stop-instances', 'ready') for e in again))
+
+    def test_revert_ends_a_watcher_left_by_a_killed_rolling(self):
+        # rolling was killed mid-switch, so nothing stopped its watcher, and the watcher's own cleanup left a user.
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            state, live = self.stopped_rolling(directory)
+            state['switchWatcher'] = dict(pid=1)
+            (directory / 'switch-watch.cleanup.json').write_text(json.dumps(dict(users=[dict(username='u')])))
+            events = []
+
+            def collect(config, directory, state):
+                events.append(('watch-collect', state.pop('switchWatcher', None)))
+            state, events = self.run_revert(state, live, directory, events, extra=dict(collect_stale_watch=collect))
+        self.assertEqual((state['status'], state['switchWatchLeftovers']), ('reverted', True))
+        # The revert waits on the watcher only once the broken worker is stopped and the settings are back.
+        self.assertInOrder(events, ('ssm', 'revert-stop', (self.first,)), ('requeue', self.new),
+                           ('enable-alarm-actions', '--alarm-names', 'alarm'), ('watch-collect', dict(pid=1)),
+                           ('ssm', 'revert-bursts', (self.other,)))
+
+    def test_revert_refused_outside_its_window(self):
+        config = dict(region='test', api='api', bridge='bridge', runtimes=['python314'], worker_alarms=['alarm'])
+        saved = dict(previousLane='a', previousQueue='qa', activeLane='b', activeQueue='qb', previousDigest=self.old,
+                     runtimeDigest=self.new, firstHost=self.first, alarm_actions={'alarm': True})
+        with tempfile.TemporaryDirectory() as name:
+            before, _ = self.stopped_rolling(Path(name), at=('standby',))
+        cases = [('a fresh run', {}, False),
+                 ('stopped before the switch', before, False),
+                 ('refused right before the bridge update', dict(saved, step='switch-lane'), False),
+                 ('old workers stopped', dict(digestSwitched=True, oldWorkersStopped=True), False),
+                 # switch-stop exists from the moment the old workers are told to stop, before oldWorkersStopped is saved.
+                 ('old workers told to stop', dict(saved, digestSwitched=True, apiSwitched=True), True)]
+        for case, state, stopping in cases:
+            with self.subTest(case), tempfile.TemporaryDirectory() as name, patch.object(subprocess, 'run') as process, \
+                    patch.object(rollout.time, 'sleep') as sleep:
+                directory, unchanged = Path(name), json.dumps(state, sort_keys=True)
+                if stopping:
+                    (directory / 'switch-stop').mkdir()
+                with self.assertRaisesRegex(ValueError, self.window):
+                    rollout.revert(config, directory, state)
+                # Not one AWS, gh or Terraform call, and no state change.
+                process.assert_not_called()
+                sleep.assert_not_called()
+                self.assertEqual(json.dumps(state, sort_keys=True), unchanged)
+                self.assertFalse((directory / 'state.json').exists())
+
+    def test_rolling_refuses_a_reverted_run(self):
+        for state, message in [(dict(status='reverted'), 'this run was reverted; start a new run'),
+                               (dict(status='failed', step='revert-purge', digestSwitched=True, revertStarted=True),
+                                'this run is being reverted; finish it with rolling-revert')]:
+            with self.subTest(state['status']):
+                events = []
+                with self.assertRaisesRegex(ValueError, message):
+                    self.run_rolling(state, events)
+                self.assertEqual(events, [])
+
+    def test_revert_after_an_unrecorded_switch(self):
+        # The bridge took the update, but the run stopped before saving digestSwitched or switching the API.
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            state, live = self.stopped_rolling(directory, at=('env', 'bridge'))
+            self.assertNotIn('digestSwitched', state)
+            self.assertEqual(live['bridge']['JUDGE_REQUEST_QUEUE_URL'], 'qb')
+            state, events = self.run_revert(state, live, directory)
+        self.assertEqual((state['status'], state['digestSwitched']), ('reverted', True))
+        self.assertEqual([e for e in events if e[0] == 'env'],
+                         [('env', 'bridge', self.reverted()), ('env', 'api', dict(JUDGE_CPP_IMAGE=self.old))])
+        self.assertInOrder(events, ('env', 'bridge', self.reverted()), ('sleep', 125), ('env', 'api', dict(JUDGE_CPP_IMAGE=self.old)),
+                           ('ssm', 'revert-stop', (self.first,)), ('purge-queue', '--queue-url', 'qb'), ('requeue', self.new),
+                           ('sync', self.old, self.new, 'a'))
+        self.assertEqual({key: live['bridge'][key] for key in self.reverted()}, self.reverted())
+
+    def test_revert_refuses_a_switch_the_bridge_did_not_take(self):
+        # The run sent the bridge update, which did not take effect; the bridge still sends the old digest to lane a.
+        state = dict(previousLane='a', previousQueue='qa', activeLane='b', activeQueue='qb', previousDigest=self.old,
+                     runtimeDigest=self.new, firstHost=self.first, alarm_actions={'alarm': True}, laneSwitchAttempted=True,
+                     step='switch-lane', status='failed')
+        unchanged, events = json.dumps(state, sort_keys=True), []
+        with tempfile.TemporaryDirectory() as name:
+            with self.assertRaisesRegex(ValueError, self.window):
+                self.run_revert(state, self.live_lambdas(), Path(name), events)
+            self.assertFalse((Path(name) / 'state.json').exists())
+        self.assertEqual(events, [])
+        self.assertEqual(json.dumps(state, sort_keys=True), unchanged)
+
+    def test_revert_sets_the_api_back_whether_or_not_it_was_switched(self):
+        tag = ('delete-tags', '--resources', self.first, '--tags', 'Key=JudgeInstalledDigest')
+        # Stopped in the bridge wait (API not switched), after the API update but before saving it, and after the switch.
+        for at in (('sleep', 125), ('env', 'api'), None):
+            with self.subTest(at=at), tempfile.TemporaryDirectory() as name:
+                directory = Path(name)
+                state, live = self.stopped_rolling(directory, at=at)
+                self.assertEqual(live['api']['JUDGE_CPP_IMAGE'], self.old if at == ('sleep', 125) else self.new)
+                state, events = self.run_revert(state, live, directory)
+                self.assertEqual(state['status'], 'reverted')
+                self.assertEqual(live['api']['JUDGE_CPP_IMAGE'], self.old)
+                self.assertEqual([e for e in events if e[:2] == ('env', 'api')], [('env', 'api', dict(JUDGE_CPP_IMAGE=self.old))])
+                self.assertInOrder(events, ('env', 'bridge', self.reverted()), ('sleep', 125), ('env', 'api', dict(JUDGE_CPP_IMAGE=self.old)),
+                                   ('ssm', 'revert-stop', (self.first,)), tag)
+
+    def test_interrupted_revert_resumes_without_repeating_its_changes(self):
+        points = [('env', 'bridge'), ('sleep', 125), ('env', 'api'), ('ssm', 'revert-stop'), ('delete-tags',), ('purge-queue',),
+                  ('count', 'qb'), ('requeue',), ('sync',), ('enable-alarm-actions',)]
+        for at in points:
+            with self.subTest(at=at), tempfile.TemporaryDirectory() as name:
+                directory = Path(name)
+                state, live = self.stopped_rolling(directory)
+                world = dict(queues={'qb': 2}, clock=[0.0], purges={}, requeued=3)
+                first = Interrupt(at)
+                with self.assertRaises(Interrupted):
+                    self.run_revert(state, live, directory, first, **world)
+                self.assertTrue(state['revertStarted'])
+                state, second = self.run_revert(state, live, directory, **world)
+                events = first + second
+                self.assertEqual((state['status'], state['step']), ('reverted', 'reverted'))
+                # The bridge update and the purge happen once; a requeue whose answer was lost is sent again (a no-op then).
+                self.assertEqual([e for e in events if e[:2] == ('env', 'bridge')], [('env', 'bridge', self.reverted())])
+                self.assertEqual(sum(e[0] == 'purge-queue' for e in events), 1)
+                self.assertEqual(sum(e[0] == 'requeue' for e in events), 2 if at == ('requeue',) else 1)
+                self.assertEqual((state['requeued'], state['revertRequeued']), (3, 3))
+                self.assertInOrder(events, ('env', 'bridge', self.reverted()), ('sleep', 125), ('env', 'api', dict(JUDGE_CPP_IMAGE=self.old)),
+                                   ('ssm', 'revert-stop', (self.first,)), ('purge-queue', '--queue-url', 'qb'), ('requeue', self.new),
+                                   ('sync', self.old, self.new, 'a'), ('enable-alarm-actions', '--alarm-names', 'alarm'))
+                # Whichever run sets the API back has waited out the bridge timeout itself.
+                for run in (first, second):
+                    for index, event in enumerate(run):
+                        if event[:2] == ('env', 'api'):
+                            self.assertIn(('sleep', 125), run[:index])
+                self.assertEqual({key: live['bridge'][key] for key in self.reverted()}, self.reverted())
+                self.assertEqual(live['api']['JUDGE_CPP_IMAGE'], self.old)
+
+    def test_resumed_revert_purges_again_only_after_the_sqs_interval(self):
+        # SQS deletes a purge's messages within 60 seconds and rejects another purge of the queue within 60 seconds.
+        for left in (0, 1):
+            with self.subTest(left=left), tempfile.TemporaryDirectory() as name:
+                directory = Path(name)
+                state, live = self.stopped_rolling(directory)
+                world = dict(queues={'qb': 2}, clock=[0.0], purges={})
+                with self.assertRaises(Interrupted):
+                    self.run_revert(state, live, directory, Interrupt(('purge-queue',)), **world)
+                purged = world['purges']['qb']
+                world['queues']['qb'] = left  # what the lane still holds when the revert resumes at once
+                state, events = self.run_revert(state, live, directory, **world)
+                self.assertEqual(events[:2], [('sleep', rollout.PURGE_INTERVAL), ('count', 'qb')])
+                self.assertGreaterEqual(rollout.PURGE_INTERVAL, 60)
+                self.assertEqual(sum(e[0] == 'purge-queue' for e in events), left)
+                if left:
+                    self.assertGreaterEqual(world['purges']['qb'] - purged, 60)
+                self.assertEqual(state['status'], 'reverted')
+                self.assertFalse(any(e[0] == 'env' for e in events))
+
+    def test_main_reverts_without_rollout_checks_and_keeps_reverted_runs_closed(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            # The artifacts are gone: a revert uses neither, and a refused run never reads them.
+            config = dict(account='123', region='test', api='api', release=str(root / 'gone'), bridge_package=str(root / 'gone'))
+            config_path = root / 'config.json'
+            config_path.write_text(json.dumps(config))
+            directory = root / 'run'
+            directory.mkdir()
+            state_path = directory / 'state.json'
+
+            def main(action, revert=None):
+                argv = ['rollout.py', action, '--config', str(config_path), '--run-dir', str(directory)]
+                with contextlib.ExitStack() as stack:
+                    for patcher in (patch.object(sys, 'argv', argv), patch.object(rollout, 'ROOT', root), patch.object(rollout.os, 'chdir'),
+                                    patch.object(rollout, 'LOG_DIRECTORY', None)):
+                        stack.enter_context(patcher)
+                    aws = stack.enter_context(patch.object(rollout, 'aws', return_value=dict(Account='123')))
+                    pool = stack.enter_context(patch.object(rollout, 'ensure_pool'))
+                    output = stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+                    if revert:
+                        stack.enter_context(patch.object(rollout, 'revert', side_effect=revert))
+                    try:
+                        rollout.main()
+                    finally:
+                        # Only the account check reaches AWS, and no host is started or held.
+                        self.assertEqual(aws.call_count, 1)
+                        pool.assert_not_called()
+                return output.getvalue()
+
+            with self.assertRaisesRegex(ValueError, self.window):
+                main('rolling-revert')
+            self.assertFalse(state_path.exists())
+
+            def stopped(config, directory, state):
+                state['revertStarted'] = True
+                raise RuntimeError('purge failed')
+            with self.assertRaisesRegex(RuntimeError, 'purge failed'):
+                main('rolling-revert', stopped)
+            saved = json.loads(state_path.read_text())
+            self.assertEqual((saved['status'], saved['error'], saved['revertStarted']), ('failed', 'purge failed', True))
+            with self.assertRaisesRegex(ValueError, 'this run is being reverted; finish it with rolling-revert'):
+                main('rolling')
+            self.assertEqual(json.loads(state_path.read_text()), saved)
+
+            state_path.write_text(json.dumps(dict(saved, status='reverted', step='reverted')))
+            for action in ('rolling', 'run'):
+                with self.subTest(action), self.assertRaisesRegex(ValueError, 'this run was reverted; start a new run'):
+                    main(action)
+            self.assertIn('already reverted', main('rolling-revert'))
+            self.assertEqual(json.loads(state_path.read_text())['status'], 'reverted')
+
+    def test_requeue_returns_the_count_and_rejects_function_errors(self):
+        payloads = []
+        def invoke(response, error=None):
+            def aws(region, *args):
+                payloads.append(json.loads(args[args.index('--payload') + 1]))
+                Path(args[-1]).write_text(json.dumps(response))
+                return dict(FunctionError=error) if error else {}
+            return aws
+        config = dict(region='test', bridge='bridge')
+        with patch.object(rollout, 'aws', side_effect=invoke(dict(kind='judge-requeue', requeued=3))):
+            self.assertEqual(rollout.requeue(config, self.old), 3)
+        self.assertEqual(payloads, [dict(operation='requeue-digest', digest=self.old)])
+        for response, error in [(dict(errorMessage='invalid operation'), 'Unhandled'), (dict(kind='other', requeued=1), None)]:
+            with patch.object(rollout, 'aws', side_effect=invoke(response, error)), self.assertRaises(RuntimeError):
+                rollout.requeue(config, self.old)
+
+    def test_start_workers_passes_the_lane_only_when_given(self):
+        with tempfile.TemporaryDirectory() as name:
+            (Path(name) / 'receipt.json').write_text('{"phase":"smoke"}')
+            calls = []
+            with patch.object(rollout, 'run', side_effect=lambda *a: calls.append(a[1:])):
+                rollout.start_workers(Path(name), request_queue='qb')
+                rollout.start_workers(Path(name))
+        self.assertEqual([c for c in calls if c[1] == 'start'],
+                         [('judge/verify.py', 'start', '--run-dir', name, '--request-queue', 'qb'),
+                          ('judge/verify.py', 'start', '--run-dir', name)])
+
+    def test_standby_check_requires_the_lane_and_no_receive_failure(self):
+        url = 'https://sqs.ap-northeast-1.amazonaws.com/123456789012/judge-dev-judge-requests-b'
+        with tempfile.TemporaryDirectory() as name, patch.object(rollout, 'new_run', return_value={}), \
+                patch.object(rollout, 'submit') as submit, patch.object(rollout, 'collect', return_value=0):
+            rollout.standby_ready(dict(region='test'), Path(name), self.first, url)
+        self.assertEqual(submit.call_args.args[2], self.first)
+        script = submit.call_args.args[-1]
+        subprocess.run(['bash', '-n'], input=script, text=True, check=True)
+        self.assertIn(url + ' ' + str(rollout.STANDBY_WINDOW) + " <<'PY'", script)
+        self.assertGreater(rollout.STANDBY_WINDOW, rollout.STANDBY_WAIT)
+        code = compile(script.split("<<'PY'\n", 1)[1].rsplit('\nPY\n', 1)[0], '<standby check>', 'exec')
+        now = 1_800_000_000.0
+
+        def failure(age):
+            # The record shape telemetry.emit writes: an aware UTC ISO timestamp.
+            stamp = datetime.datetime.fromtimestamp(now - age, datetime.timezone.utc).isoformat()
+            return dict(timestamp=stamp, event='failure', category='platform', reason='queue_receive_failed')
+
+        def check(queue, *failures):
+            started = dict(timestamp=datetime.datetime.fromtimestamp(now - 600, datetime.timezone.utc).isoformat(), event='worker_started')
+            journal = '\n'.join(json.dumps(event) for event in [started, *failures])
+            outputs = {'MainPID': '42\n', 'InvocationID': 'abc\n'}
+            def check_output(args, text=False):
+                return journal if args[0] == 'journalctl' else outputs[args[4]]
+            with patch.object(sys, 'argv', ['-', url, str(rollout.STANDBY_WINDOW)]), patch('time.time', return_value=now), \
+                    patch('subprocess.check_output', side_effect=check_output), patch('subprocess.run'), patch('builtins.print'), \
+                    patch.object(Path, 'read_bytes', return_value=b'JUDGE_REQUEST_QUEUE_URL=' + queue.encode() + b'\0'):
+                exec(code, {'__name__': '__main__'})
+
+        check(url)
+        with self.assertRaisesRegex(SystemExit, 'another request queue'):
+            check(url.removesuffix('-b'))
+        # Failures from before a fix stay in the same invocation's journal; they must not block the resumed run.
+        check(url, failure(300), failure(295), failure(rollout.STANDBY_WINDOW + 1))
+        for recent in (failure(rollout.STANDBY_WAIT), failure(5),
+                       dict(event='failure', category='platform', reason='queue_receive_failed')):
+            with self.subTest(recent=recent), self.assertRaisesRegex(SystemExit, 'cannot receive'):
+                check(url, failure(300), recent)
+        with tempfile.TemporaryDirectory() as name, patch.object(rollout, 'new_run', return_value={}), \
+                patch.object(rollout, 'submit'), patch.object(rollout, 'collect', return_value=1), self.assertRaises(RuntimeError):
+            rollout.standby_ready(dict(region='test'), Path(name), self.first, url)
+
+    def test_enabling_a_worker_waits_for_its_new_invocation_to_start(self):
+        # systemctl returns once the unit forks; the worker logs worker_started only after hashing the runtime tree.
+        script = rollout.ENABLE_WORKER
+        subprocess.run(['bash', '-n'], input=script, text=True, check=True)
+        self.assertLess(script.index('systemctl enable --now judge-worker.service'), script.index("<<'PY'"))
+        code = compile(script.split("<<'PY'\n", 1)[1].rsplit('\nPY\n', 1)[0], '<enable worker>', 'exec')
+        # The host's command must finish inside SSM's execution timeout, as verify.py start does.
+        tries, interval = (int(v) for v in script.split("python3 - ", 1)[1].split(" <<'PY'", 1)[0].split())
+        self.assertLess(tries * interval, 7200)
+
+        def run(journals, invocations=('abc',), tries=3):
+            """Run the host script against journals returned poll by poll; returns the journalctl and sleep calls."""
+            reads, sleeps, invocations = [], [], list(invocations)
+
+            def check_output(args, text=False):
+                if args[0] == 'journalctl':
+                    reads.append(args[1])
+                    return '\n'.join(json.dumps(e) for e in journals[min(len(reads), len(journals)) - 1])
+                return (invocations.pop(0) if len(invocations) > 1 else invocations[0]) + '\n'
+            with patch.object(sys, 'argv', ['-', str(tries), '0']), patch('subprocess.check_output', side_effect=check_output), \
+                    patch('subprocess.run'), patch('time.sleep', side_effect=sleeps.append), patch('builtins.print'):
+                exec(code, {'__name__': '__main__'})
+            return reads, sleeps
+
+        # Ready only once this invocation logs worker_started, which takes a few polls.
+        reads, sleeps = run([[], [dict(event='worker_started')]])
+        self.assertEqual((reads, len(sleeps)), (['_SYSTEMD_INVOCATION_ID=abc'] * 2, 1))
+        with self.assertRaisesRegex(SystemExit, 'readiness timed out'):
+            run([[]])
+        with self.assertRaisesRegex(SystemExit, 'worker reported a failure'):
+            run([[dict(event='failure', category='platform', reason='runtime_verification_failed')]])
+        # A failing checker is the problem author's fault, as in the final health check.
+        run([[dict(event='worker_started'), dict(event='failure', category='judge_code')]])
+        with self.assertRaisesRegex(SystemExit, 'restarted'):
+            run([[], [dict(event='worker_started')]], invocations=('abc', 'abc', 'def'))
+
+    def test_revert_and_unchanged_runs_enable_bursts_with_the_waiting_script(self):
+        scripts = {}
+
+        def ssm_step(directory, step, config, nodes, script):
+            scripts[step] = script
+        self.run_rolling(prepared=self.old, extra=dict(ssm_step=ssm_step))
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            state, live = self.stopped_rolling(directory)
+            self.run_revert(state, live, directory, extra=dict(ssm_step=ssm_step))
+        self.assertIs(scripts['release-bursts'], rollout.ENABLE_WORKER)
+        self.assertIs(scripts['revert-bursts'], rollout.ENABLE_WORKER)
+
+    def test_lane_check_can_require_the_digest_on_several_hosts(self):
+        url = 'https://sqs.ap-northeast-1.amazonaws.com/123456789012/judge-dev-judge-requests'
+        with tempfile.TemporaryDirectory() as name, patch.object(rollout, 'new_run', return_value={}), \
+                patch.object(rollout, 'submit') as submit, patch.object(rollout, 'collect', return_value=0):
+            rollout.lane_worker_ready(dict(region='test'), Path(name), [self.primary, self.other], url, self.old)
+        self.assertEqual([c.args[2] for c in submit.call_args_list], [self.primary, self.other])
+        script = submit.call_args.args[-1]
+        subprocess.run(['bash', '-n'], input=script, text=True, check=True)
+        self.assertIn(url + ' ' + str(rollout.STANDBY_WINDOW) + ' ' + self.old + " <<'PY'", script)
+        code = compile(script.split("<<'PY'\n", 1)[1].rsplit('\nPY\n', 1)[0], '<lane check>', 'exec')
+
+        def check(digest):
+            journal = json.dumps(dict(event='worker_started'))
+            outputs = {'MainPID': '42\n', 'InvocationID': 'abc\n'}
+            environ = b'JUDGE_REQUEST_QUEUE_URL=' + url.encode() + b'\0JUDGE_RUNTIME_DIGEST=' + digest.encode() + b'\0'
+            with patch.object(sys, 'argv', ['-', url, str(rollout.STANDBY_WINDOW), self.old]), \
+                    patch('subprocess.check_output', side_effect=lambda args, text=False: journal if args[0] == 'journalctl' else outputs[args[4]]), \
+                    patch('subprocess.run'), patch('builtins.print'), patch.object(Path, 'read_bytes', return_value=environ):
+                exec(code, {'__name__': '__main__'})
+
+        check(self.old)
+        with self.assertRaisesRegex(SystemExit, 'another runtime digest'):
+            check(self.new)
+        # A failed SSM command is reported with the receipt to inspect, never as an unexplained error.
+        with tempfile.TemporaryDirectory() as name, patch.object(rollout, 'new_run', return_value={}), patch.object(rollout, 'submit'), \
+                patch.object(rollout, 'collect', side_effect=RuntimeError('SSM verification failed')), \
+                self.assertRaisesRegex(RuntimeError, 'a worker is not ready on ' + url + '; inspect .*receipt.json'):
+            rollout.lane_worker_ready(dict(region='test'), Path(name), [self.primary], url, self.old)
+        with self.assertRaises(ValueError):
+            rollout.lane_worker_ready(dict(region='test'), Path('.'), [self.primary], url, 'sha256:$(id)')
+
+    def test_contest_guard_requires_the_lane_fields(self):
+        base = dict(pending=0, undispatched=0, dispatchPaused=False, nextContestWindowAt=None)
+        for missing in ('requestQueueUrl', 'previousInFlight'):
+            status = dict(base, requestQueueUrl='queue', previousInFlight=0)
+            del status[missing]
+            with patch.object(rollout, 'database_status', return_value=status), self.assertRaises(ValueError):
+                rollout.contest_guard({})
 
     def test_contest_window_and_old_bridge_block_rolling(self):
         soon = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)).isoformat()
         later = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=6)).isoformat().replace('+00:00', 'Z')
-        base = dict(pending=0, undispatched=0, dispatchPaused=False)
+        base = dict(pending=0, undispatched=0, dispatchPaused=False, requestQueueUrl='queue', previousInFlight=0)
         for status, allowed in [({**base, 'nextContestWindowAt': None}, True), ({**base, 'nextContestWindowAt': later}, True),
-                                ({**base, 'nextContestWindowAt': soon}, False), (dict(pending=0, undispatched=0), False)]:
+                                ({**base, 'nextContestWindowAt': soon}, False), (dict(pending=0, undispatched=0), False),
+                                (dict(pending=0, undispatched=0, dispatchPaused=False, nextContestWindowAt=None), False)]:
             with patch.object(rollout, 'database_status', return_value=status):
                 if allowed:
                     rollout.contest_guard({})

@@ -12,6 +12,7 @@ mock_provider "aws" {
   mock_data "aws_ssm_parameter" { defaults = { insecure_value = "ami-0123456789abcdef0", value = "ami-0123456789abcdef0" } }
 }
 variables {
+  request_lane               = "a"
   discord_webhook_secret_arn = ""
   alerts_enabled             = false
   enabled                    = false

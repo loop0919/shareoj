@@ -5,7 +5,10 @@ from datetime import datetime
 import json
 from pathlib import Path
 import secrets
+import signal
+import statistics
 import tempfile
+import threading
 import time
 import urllib.request
 import urllib.error
@@ -113,6 +116,166 @@ PY
     return events_by_node
 
 
+# Watch mode: the longest the watcher lives without a stop file, the wait for in-flight submissions after the stop,
+# and the interval at which each pending submission is polled.
+WATCH_CAP = 15 * 60
+WATCH_GRACE = 60
+POLL_INTERVAL = 0.5
+# The API lets one owner submit SUBMIT_LIMIT times per LIMIT_WINDOW seconds (api/internal/submissions/rate_limit.go).
+# Submissions rotate over WATCH_USERS test users, so a user's SUBMIT_LIMIT+1 consecutive submissions are further apart
+# than the window: the watcher must never cause a refusal itself.
+WATCH_CADENCE = 5
+SUBMIT_LIMIT = 2
+LIMIT_WINDOW = 60
+WATCH_USERS = 8
+assert SUBMIT_LIMIT * WATCH_USERS * WATCH_CADENCE > LIMIT_WINDOW, 'too few watch users for the submission limit'
+NOT_STARTED = ('QUEUED', 'PENDING')
+MAX_WAIT_GROWTH_MS = 10000
+
+
+def summarize(samples, switch_at):
+    """Judge the switch from watch samples (pure). Samples carry submittedAt (epoch seconds), waitMs and verdict;
+    a sample with rejected=True is a submit request the API refused."""
+    rejected = sum(1 for s in samples if s.get('rejected'))
+    accepted = [s for s in samples if not s.get('rejected')]
+    je = sum(1 for s in accepted if s.get('verdict') == 'JE')
+    # A submission still waiting at the switch waited through it, so it belongs to the "after" side even when it was
+    # submitted shortly before; only those that started judging before the switch form the baseline.
+    spans = [(s['submittedAt'] + s['waitMs'] / 1000 >= switch_at, s['waitMs']) for s in accepted]
+    before = [wait for waited, wait in spans if not waited]
+    after = [wait for waited, wait in spans if waited]
+    baseline = statistics.median(before) if before else None
+    peak = max(after) if after else None
+    ok = bool(before) and bool(after) and rejected == 0 and je == 0 and peak - baseline <= MAX_WAIT_GROWTH_MS
+    return dict(status='passed' if ok else 'failed', rejected=rejected, je=je, maxWaitMs=peak, baselineWaitMs=baseline)
+
+
+def watch_one(args, token, problem, entry, abandon):
+    """Submit once, then poll until judging starts and the result is final; fills `entry` as it learns."""
+    source = 'n=int(input())\nprint(0)\n'
+    entry['submittedAt'] = time.time()
+    try:
+        item = request(args.api_url, 'POST', '/my/submissions',
+                       dict(problemId=problem, runtime=args.runtime, source=source, easyTest=False), token)
+    except Exception:
+        entry.update(rejected=True, finished=True)
+        return
+    sent = time.monotonic()
+    entry.update(id=item['id'], sentAt=sent)
+    while not abandon.is_set():
+        try:
+            current = request(args.api_url, 'GET', '/my/submissions/' + item['id'], token=token)
+        except Exception:
+            current = None
+        if current is not None:
+            now = time.monotonic()
+            if not entry.get('started') and current['status'] not in NOT_STARTED:
+                # An approximation by polling: the true start lies up to about 0.5 s before this observation.
+                entry.update(started=True, waitMs=round((now - sent) * 1000))
+            if current['status'] == 'DONE':
+                entry.update(verdict=(current.get('result') or {}).get('verdict'), finished=True)
+                return
+        abandon.wait(POLL_INTERVAL)
+
+
+def watch(args, pool, cleanup_path):
+    """Keep submitting a trivial accepted solution and record how long each waits to start, until the stop file
+    appears, a signal arrives, or the hard cap passes. Cleanup always runs."""
+    started = time.monotonic()
+    terminated, abandon = threading.Event(), threading.Event()
+    # SIGINT and SIGHUP end the watch like SIGTERM; the handlers stay until cleanup is over.
+    previous = {}
+    if threading.current_thread() is threading.main_thread():
+        for number in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            previous[number] = signal.signal(number, lambda *_: terminated.set())
+    users, tokens, entries, threads = [], [], [], []
+    progress_path = args.report.with_suffix('.progress.json')
+    save(args.report, dict(status='running', submissions=[]))
+    capped = stopped = False
+    try:
+        for _ in range(WATCH_USERS):
+            if terminated.is_set():
+                break
+            username = 'judge-watch-' + uuid.uuid4().hex + '@example.invalid'
+            user = dict(username=username, problem=None)
+            users.append(user)
+            save(cleanup_path, dict(pool=pool, api=args.api_url, users=users))
+            cognito(args.region, 'admin-create-user', dict(UserPoolId=pool, Username=username,
+                MessageAction='SUPPRESS', UserAttributes=[dict(Name='email', Value=username), dict(Name='email_verified', Value='true')]))
+            token = login(args, pool, user)
+            tokens.append(token)
+            request(args.api_url, 'PUT', '/my/profile', dict(handle='watch_' + uuid.uuid4().hex[:10], avatar='', version=0), token)
+            user['problem'] = str(uuid.uuid4())
+            save(cleanup_path, dict(pool=pool, api=args.api_url, users=users))
+            draft = dict(title='ジャッジ切り替えの計測', markdown='非公開の一時テスト', timeLimitMs='1000', memoryLimitMb='315',
+                         testCases=[dict(name='case1', input='1', output='0', isSample=True)])
+            request(args.api_url, 'PUT', '/my/problems/' + user['problem'], dict(version=0, draft=draft), token)
+        next_at, count, progress = time.monotonic(), 0, None
+        while tokens and not terminated.is_set():
+            if args.stop_file.exists():
+                stopped = True
+                break
+            if time.monotonic() - started >= WATCH_CAP:
+                capped = True
+                break
+            if time.monotonic() >= next_at:
+                # Round-robin over the users keeps each one under the per-owner submission limit; the cadence never
+                # depends on earlier submissions, because each one is polled by its own thread.
+                owner = count % len(tokens)
+                count += 1
+                entry = dict(started=False, finished=False)
+                entries.append(entry)
+                thread = threading.Thread(target=watch_one, args=(args, tokens[owner], users[owner]['problem'], entry, abandon), daemon=True)
+                thread.start()
+                threads.append(thread)
+                next_at += args.interval
+            begun = sum(1 for e in entries if e['started'])
+            if begun != progress:
+                progress = begun
+                save(progress_path, dict(started=begun))
+            terminated.wait(min(POLL_INTERVAL, 0.2))
+        # Let in-flight submissions finish, unless the process was told to end.
+        deadline = time.monotonic() + WATCH_GRACE
+        while stopped and not terminated.is_set() and time.monotonic() < deadline and not all(e['finished'] for e in entries):
+            terminated.wait(0.2)
+    finally:
+        abandon.set()
+        for thread in threads:
+            thread.join(2)
+        now = time.monotonic()
+        submissions = []
+        for entry in list(entries):
+            row = dict(id=entry.get('id'), submittedAt=entry.get('submittedAt'), waitMs=entry.get('waitMs'),
+                       verdict=entry.get('verdict'), started=entry['started'])
+            if entry.get('rejected'):
+                row.update(rejected=True)
+            elif not entry['started'] and 'sentAt' in entry:
+                # Still waiting when the watch ended: count the wait so far, so a stall shows as a long wait.
+                row['waitMs'] = round((now - entry['sentAt']) * 1000)
+            submissions.append(row)
+        # The rollout writes the moment of the switch into this file just before it updates the bridge.
+        try:
+            switch_at = float(args.switch_at_file.read_text())
+        except (OSError, ValueError):
+            switch_at = float('inf')  # Nothing can be judged: no submission lies at or after it.
+        done = [s for s in submissions if s.get('waitMs') is not None or s.get('rejected')]
+        # `stopped` marks a watch that saw the stop file and finished normally: only such a report is trusted as final.
+        report = dict(submissions=submissions, terminated=terminated.is_set(), capped=capped,
+                      stopped=stopped and not terminated.is_set(), switchAt=switch_at if switch_at != float('inf') else None)
+        report.update(summarize(done, switch_at))
+        try:
+            cleanup(args, pool, users, cleanup_path)
+        except Exception:
+            report.update(status='failed', cleanup='incomplete')
+            save(args.report, report)
+            raise
+        finally:
+            for number, handler in previous.items():
+                signal.signal(number, handler)
+        report['cleanup'] = 'complete'
+        save(args.report, report)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--function', required=True, help='API Lambda used to resolve the Cognito pool')
@@ -122,8 +285,14 @@ def main():
     parser.add_argument('--report', type=Path, required=True)
     parser.add_argument('--instance', action='append', default=[], help='Specify every running host to require concurrent judging')
     parser.add_argument('--cleanup', action='store_true')
+    parser.add_argument('--watch', action='store_true', help='Keep submitting and record the wait before judging starts')
+    parser.add_argument('--stop-file', type=Path, help='--watch ends once this file exists')
+    parser.add_argument('--switch-at-file', type=Path, help='--watch reads the epoch seconds of the lane switch from here')
+    parser.add_argument('--interval', type=float, default=WATCH_CADENCE, help='--watch submits every this many seconds')
     args = parser.parse_args()
     args.api_url = args.api_url.rstrip('/')
+    if args.watch and not (args.stop_file and args.switch_at_file):
+        parser.error('--watch needs --stop-file and --switch-at-file')
     if not args.api_url.startswith('https://'):
         parser.error('use an HTTPS API URL')
     if args.instance and (len(set(args.instance)) < 2 or len(set(args.instance)) != len(args.instance)):
@@ -142,6 +311,9 @@ def main():
     if catalog['maintenance'] or args.runtime not in {r['id'] for r in catalog['items']}:
         raise ValueError('the selected Python runtime must be published before the API smoke test')
     args.report.parent.mkdir(parents=True, exist_ok=True)
+    if args.watch:
+        watch(args, pool, cleanup_path)
+        return
     users, results, tokens = [], [], []
     save(args.report, dict(status='running', results=[]))
     try:

@@ -34,3 +34,6 @@ discord_webhook_secret_key = "" # Set a JSON key if the existing secret is an ob
 alerts_enabled = false # Enable after worker telemetry and notification tests pass.
 # notify_package_path defaults to ../../api/.build/judge-notify.zip
 # Build it together with the bridge: make -C api package-judge
+# Request queue lane; must match the live bridge (judge/rollout.py switches it).
+request_lane = "a"
+# check_live_request_lane = false # only for a first-time build, before the bridge exists

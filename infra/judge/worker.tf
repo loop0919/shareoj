@@ -3,7 +3,7 @@
 locals {
   # Shared by the Lightsail IAM user and the EC2 instance role.
   worker_statements = concat([
-    { Effect = "Allow", Action = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:ChangeMessageVisibility"], Resource = aws_sqs_queue.queue["requests"].arn },
+    { Effect = "Allow", Action = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:ChangeMessageVisibility"], Resource = [aws_sqs_queue.queue["requests"].arn, aws_sqs_queue.queue["requests-b"].arn] },
     { Effect = "Allow", Action = ["sqs:SendMessage"], Resource = aws_sqs_queue.queue["results"].arn },
     { Effect = "Allow", Action = ["s3:GetObjectVersion"], Resource = concat(["${aws_s3_bucket.jobs.arn}/jobs/*"], var.test_data_bucket == null ? [] : ["${var.test_data_bucket.arn}/test-files/*"]) }
     ], var.test_data_bucket == null ? [] : [

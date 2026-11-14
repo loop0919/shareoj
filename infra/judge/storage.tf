@@ -58,21 +58,27 @@ resource "aws_sqs_queue" "dead" {
   message_retention_seconds = 1209600
 }
 resource "aws_sqs_queue" "queue" {
-  for_each                   = toset(["requests", "results"])
+  # requests = lane a, requests-b = lane b; both lanes share the requests DLQ and the results queue.
+  for_each                   = toset(["requests", "requests-b", "results"])
   name                       = "${local.name}-judge-${each.key}"
   sqs_managed_sse_enabled    = true
   message_retention_seconds  = 86400
   receive_wait_time_seconds  = 20
-  visibility_timeout_seconds = each.key == "requests" ? 2100 : 720
+  visibility_timeout_seconds = startswith(each.key, "requests") ? 2100 : 720
   redrive_policy = jsonencode({
-    deadLetterTargetArn = aws_sqs_queue.dead[each.key].arn
+    deadLetterTargetArn = aws_sqs_queue.dead[startswith(each.key, "requests") ? "requests" : "results"].arn
     maxReceiveCount     = 3
   })
+  # SQS checks the DLQ's allow policy when a queue names that DLQ, so a new lane is created only after it is allowed.
+  depends_on = [aws_sqs_queue_redrive_allow_policy.dead]
 }
 resource "aws_sqs_queue_redrive_allow_policy" "dead" {
   for_each  = aws_sqs_queue.dead
   queue_url = each.value.id
+  # The source ARNs follow the queue names ("<name>-dead" serves "<name>"), so the policy does not depend on the
+  # queues and can be applied before lane b exists. Lane a and the result queue keep the same ARN strings.
   redrive_allow_policy = jsonencode({
-    redrivePermission = "byQueue", sourceQueueArns = [aws_sqs_queue.queue[each.key].arn]
+    redrivePermission = "byQueue"
+    sourceQueueArns   = [for key in(each.key == "requests" ? ["requests", "requests-b"] : [each.key]) : replace(each.value.arn, "${each.key}-dead", key)]
   })
 }

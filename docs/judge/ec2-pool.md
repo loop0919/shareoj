@@ -28,7 +28,7 @@ EC2の台は`infra/judge/ec2.tf`で作る。
 | `JudgeRole` | Terraform | `primary`または`burst` |
 | `JudgeHoldUntil` | bridge | コンテストや滞留のために台を動かしておく期限 |
 | `JudgeMaintenanceHoldUntil` | `judge/rollout.py` | 配布中に台を動かしておく期限。`rolling`では6時間 |
-| `JudgeInstalledDigest` | `judge/rollout.py` | 検証を通って導入されたruntime digest。`rolling`では起動した台から順に付け替える |
+| `JudgeInstalledDigest` | `judge/rollout.py` | 検証を通って導入されたruntime digest。`rolling`では起動した台から順に付け替える。`rolling-revert`は準備したburstから外し、その台を止める |
 
 Terraformは最後の3つを`ignore_tags`で無視し、applyで消さない。
 採点台と専用VPCには`Component=judge-worker`タグも付き、GitHubの配布ロールはこれらを参照しかできない。
@@ -78,6 +78,14 @@ bridgeは毎分のdispatchで、コンテストの問題公開や定期便の出
 本番より進んだコミットから作ったbridgeは、まだ適用されていないマイグレーションのテーブルを参照し、dispatch全体が失敗する。
 2026-09-29の切り替えでは、未リリースの定期便の変更を含む`main`からbridgeを作ったため、約2時間dispatchが止まった。
 `rollout.py`の`prepare`は`bridge_package`の内容でbridgeを更新するので、配布の前にビルド元のコミットを確かめる。
+
+`rolling`を使うには、次も設定する。
+
+- `rollout.json`の`request_queue_b`：レーンbの要求キューのURL。`queues`の要求にはレーンaを書く。ない設定では`rolling`を拒む。`run`は従来どおり動く。
+- `infra/judge`の`request_lane`（`a`または`b`）：bridgeの送り先を決める。既定値はなく、初回だけ`terraform.tfvars`へ`a`と書く。以後は`rollout.py`が`zz-rollout.auto.tfvars.json`へ書き込む。稼働中のbridgeの送り先と違えばplanが失敗する。
+- `check_live_request_lane = false`は、bridgeがまだない最初の構築のときだけ使う。
+
+手順は[配布と検証の定型コマンド](deployment-checks.md#レーンを使う導入の順序)にある。
 
 `infra/judge`は公開言語を`enabled_runtimes`として必須の変数に持つ。
 applyでbridgeの`JUDGE_ENABLED_RUNTIMES`を消さないためである。

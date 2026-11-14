@@ -799,3 +799,55 @@ func TestOldWorkerJEFinishesTheCodeRun(t *testing.T) {
 	}
 	f.assertCodeRunCleared(codeRunA)
 }
+
+func TestDeploymentStatusReportsLaneAndPreviousInFlight(t *testing.T) {
+	ctx := context.Background()
+	db := migratedDB(t)
+	old, current := "sha256:"+strings.Repeat("a", 64), "sha256:"+strings.Repeat("b", 64)
+	if _, err := db.Exec(ctx, `INSERT INTO user_profiles(owner_id,handle) VALUES ('alice','alice')`); err != nil {
+		t.Fatal(err)
+	}
+	// Only the first submission and the code run count: dispatched, unfinished, previous digest.
+	for i, s := range []struct {
+		image      string
+		dispatched bool
+		status     string
+	}{
+		{old, true, "QUEUED"},
+		{old, false, "QUEUED"},
+		{old, true, "DONE"},
+		{current, true, "QUEUED"},
+	} {
+		id := fmt.Sprintf("%08d-1111-4111-8111-111111111111", i)
+		raw, _ := json.Marshal(submissions.Job{Image: s.image, TimeLimitMS: 1000, MemoryLimitMB: 256, Cases: []submissions.Case{{Input: "1", Output: "1"}}})
+		if _, err := db.Exec(ctx, `INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,judge_attempt,status,dispatched_at)
+ VALUES ($1,'alice',$1,1,'test','python314-isolate','source',$2,$1,$3,CASE WHEN $4 THEN clock_timestamp() END)`, id, raw, s.status, s.dispatched); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const codeRunID = "99999999-2222-4222-8222-222222222222"
+	if _, err := db.Exec(ctx, `INSERT INTO code_runs(id,owner_id,runtime,image,source,stdin,judge_attempt,dispatched_at) VALUES ($1,'alice','python314-isolate',$2,'print(1)','',$1,clock_timestamp())`, codeRunID, old); err != nil {
+		t.Fatal(err)
+	}
+	status := func(b bridge) map[string]any {
+		t.Helper()
+		value, err := b.handle(ctx, json.RawMessage(`{"operation":"deployment-status"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, _ := json.Marshal(value)
+		var got map[string]any
+		if err := json.Unmarshal(data, &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	got := status(bridge{db: db, queueURL: "https://sqs.test/requests-b", runtime: current, previous: old})
+	if got["requestQueueUrl"] != "https://sqs.test/requests-b" || got["previousInFlight"] != float64(2) {
+		t.Fatalf("status: %v", got)
+	}
+	got = status(bridge{db: db, queueURL: "https://sqs.test/requests-b", runtime: current})
+	if got["previousInFlight"] != float64(0) {
+		t.Fatalf("without a previous digest: %v", got)
+	}
+}

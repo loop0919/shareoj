@@ -19,6 +19,7 @@
     "https://sqs.ap-northeast-1.amazonaws.com/907170969801/judge-dev-judge-requests-dead",
     "https://sqs.ap-northeast-1.amazonaws.com/907170969801/judge-dev-judge-results-dead"
   ],
+  "request_queue_b": "https://sqs.ap-northeast-1.amazonaws.com/907170969801/judge-dev-judge-requests-b",
   "repository": "loop0919/shareoj",
   "github_environment": "dev",
   "smoke_runtime": "python314",

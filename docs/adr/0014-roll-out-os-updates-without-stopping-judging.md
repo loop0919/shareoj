@@ -2,6 +2,7 @@
 
 - 状態：Accepted
 - 決定日：2026-10-10
+- 一部変更：[ADR 0039](0039-switch-judge-environments-by-request-lanes.md)（切り替えの手順と「使う場面」）
 - 一部変更：[ADR 0012](0012-run-judge-on-ec2-pool.md)の配布（全台を同時に止めて更新する）
 - 範囲：OS更新の配布手順、runtime digestの付け替え、bridgeの送り出しの一時停止。2026-10-10に`judge/rollout.py rolling`として実装した。週1回の更新確認の通知は未実装
 

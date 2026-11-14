@@ -17,13 +17,14 @@ output "worker_environment" {
     "AWS_SHARED_CREDENTIALS_FILE=/root/.aws/credentials",
     "JUDGE_JOB_BUCKET=${aws_s3_bucket.jobs.id}",
     "JUDGE_TEST_DATA_BUCKET=${var.test_data_bucket == null ? "" : var.test_data_bucket.id}",
-    "JUDGE_REQUEST_QUEUE_URL=${aws_sqs_queue.queue["requests"].url}",
+    "JUDGE_REQUEST_QUEUE_URL=${local.request_queue_urls[var.request_lane]}",
     "JUDGE_RESULT_QUEUE_URL=${aws_sqs_queue.queue["results"].url}",
     "JUDGE_RUNTIME_DIGEST=${var.runtime_digest}",
     ""
   ])
 }
 output "request_queue_url" { value = aws_sqs_queue.queue["requests"].url }
+output "request_queue_b_url" { value = aws_sqs_queue.queue["requests-b"].url }
 output "result_queue_url" { value = aws_sqs_queue.queue["results"].url }
 output "job_bucket" { value = aws_s3_bucket.jobs.id }
 output "runtime_digest" { value = var.runtime_digest }
