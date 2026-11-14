@@ -28,7 +28,7 @@ EC2の台は`infra/judge/ec2.tf`で作る。
 | `JudgeRole` | Terraform | `primary`または`burst` |
 | `JudgeHoldUntil` | bridge | コンテストや滞留のために台を動かしておく期限 |
 | `JudgeMaintenanceHoldUntil` | `judge/rollout.py` | 配布中に台を動かしておく期限。`rolling`では6時間 |
-| `JudgeInstalledDigest` | `judge/rollout.py` | 検証を通って導入されたruntime digest。`rolling`では起動した台から順に付け替える |
+| `JudgeInstalledDigest` | `judge/rollout.py` | 検証を通って導入されたruntime digest。`rolling`では起動した台から順に付け替える。`rolling-revert`は準備したburstから外し、その台を止める |
 
 Terraformは最後の3つを`ignore_tags`で無視し、applyで消さない。
 採点台と専用VPCには`Component=judge-worker`タグも付き、GitHubの配布ロールはこれらを参照しかできない。
