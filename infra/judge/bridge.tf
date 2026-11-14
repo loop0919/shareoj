@@ -17,7 +17,7 @@ resource "aws_iam_role_policy" "bridge" {
       { Effect = "Allow", Action = ["logs:CreateLogStream", "logs:PutLogEvents"], Resource = "${aws_cloudwatch_log_group.bridge.arn}:*" },
       { Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = var.database.secret_arn },
       { Effect = "Allow", Action = ["s3:PutObject"], Resource = "${aws_s3_bucket.jobs.arn}/jobs/*" },
-      { Effect = "Allow", Action = ["sqs:SendMessage"], Resource = aws_sqs_queue.queue["requests"].arn },
+      { Effect = "Allow", Action = ["sqs:SendMessage"], Resource = [aws_sqs_queue.queue["requests"].arn, aws_sqs_queue.queue["requests-b"].arn] },
       { Effect = "Allow", Action = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"], Resource = aws_sqs_queue.queue["results"].arn },
       { Effect = "Allow", Action = ["ec2:CreateNetworkInterface", "ec2:DescribeNetworkInterfaces", "ec2:DescribeSubnets", "ec2:DeleteNetworkInterface", "ec2:AssignPrivateIpAddresses", "ec2:UnassignPrivateIpAddresses"], Resource = "*" },
       # Capacity: start pool hosts and extend their contest hold; never stop, terminate or relabel them.
@@ -29,6 +29,14 @@ resource "aws_iam_role_policy" "bridge" {
       }
     ]
   })
+}
+locals {
+  request_queue_urls = { a = aws_sqs_queue.queue["requests"].url, b = aws_sqs_queue.queue["requests-b"].url }
+}
+# Reads the live bridge so a stale request_lane cannot silently switch lanes.
+# The function must already exist; a first-time build has to create it before this data source can be read.
+data "aws_lambda_function" "bridge_live" {
+  function_name = "${local.name}-judge-bridge"
 }
 resource "aws_lambda_function" "bridge" {
   function_name                  = "${local.name}-judge-bridge"
@@ -55,7 +63,7 @@ resource "aws_lambda_function" "bridge" {
       DATABASE_SECRET_ARN           = var.database.secret_arn
       AWS_USE_DUALSTACK_ENDPOINT    = "true"
       JUDGE_JOB_BUCKET              = aws_s3_bucket.jobs.id
-      JUDGE_REQUEST_QUEUE_URL       = aws_sqs_queue.queue["requests"].url
+      JUDGE_REQUEST_QUEUE_URL       = local.request_queue_urls[var.request_lane]
       JUDGE_RUNTIME_DIGEST          = var.runtime_digest
       JUDGE_PREVIOUS_RUNTIME_DIGEST = var.previous_runtime_digest
       JUDGE_ENABLED_RUNTIMES        = join(",", var.enabled_runtimes)
@@ -72,6 +80,10 @@ resource "aws_lambda_function" "bridge" {
     precondition {
       condition     = !var.capacity_enabled || var.runtime_digest != ""
       error_message = "Tag the pool with a smoke-tested runtime before the bridge starts hosts."
+    }
+    precondition {
+      condition     = try(data.aws_lambda_function.bridge_live.environment[0].variables.JUDGE_REQUEST_QUEUE_URL, local.request_queue_urls[var.request_lane]) == local.request_queue_urls[var.request_lane]
+      error_message = "request_lane differs from the live bridge. Only judge/rollout.py switches lanes; set request_lane to the live lane."
     }
   }
   depends_on = [aws_iam_role_policy.bridge]

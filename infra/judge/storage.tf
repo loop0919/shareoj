@@ -58,14 +58,15 @@ resource "aws_sqs_queue" "dead" {
   message_retention_seconds = 1209600
 }
 resource "aws_sqs_queue" "queue" {
-  for_each                   = toset(["requests", "results"])
+  # requests = lane a, requests-b = lane b; both lanes share the requests DLQ and the results queue.
+  for_each                   = toset(["requests", "requests-b", "results"])
   name                       = "${local.name}-judge-${each.key}"
   sqs_managed_sse_enabled    = true
   message_retention_seconds  = 86400
   receive_wait_time_seconds  = 20
-  visibility_timeout_seconds = each.key == "requests" ? 2100 : 720
+  visibility_timeout_seconds = startswith(each.key, "requests") ? 2100 : 720
   redrive_policy = jsonencode({
-    deadLetterTargetArn = aws_sqs_queue.dead[each.key].arn
+    deadLetterTargetArn = aws_sqs_queue.dead[startswith(each.key, "requests") ? "requests" : "results"].arn
     maxReceiveCount     = 3
   })
 }
@@ -73,6 +74,6 @@ resource "aws_sqs_queue_redrive_allow_policy" "dead" {
   for_each  = aws_sqs_queue.dead
   queue_url = each.value.id
   redrive_allow_policy = jsonencode({
-    redrivePermission = "byQueue", sourceQueueArns = [aws_sqs_queue.queue[each.key].arn]
+    redrivePermission = "byQueue", sourceQueueArns = each.key == "requests" ? [aws_sqs_queue.queue["requests"].arn, aws_sqs_queue.queue["requests-b"].arn] : [aws_sqs_queue.queue[each.key].arn]
   })
 }

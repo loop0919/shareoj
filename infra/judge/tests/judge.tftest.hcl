@@ -12,6 +12,7 @@ mock_provider "aws" {
   mock_data "aws_ssm_parameter" { defaults = { insecure_value = "ami-0123456789abcdef0", value = "ami-0123456789abcdef0" } }
 }
 variables {
+  request_lane               = "a"
   discord_webhook_secret_arn = ""
   alerts_enabled             = false
   enabled                    = false
@@ -317,4 +318,50 @@ run "reject_missing_runtimes" {
   command = plan
   variables { enabled_runtimes = [] }
   expect_failures = [var.enabled_runtimes]
+}
+
+run "request_lanes" {
+  command = plan
+  assert {
+    condition = (
+      aws_sqs_queue.queue["requests"].name == "judge-dev-judge-requests" &&
+      endswith(aws_sqs_queue.queue["requests-b"].name, "-judge-requests-b") &&
+      aws_sqs_queue.queue["requests-b"].visibility_timeout_seconds == 2100
+    )
+    error_message = "Lane a keeps its name and lane b is a second request queue with the same visibility timeout."
+  }
+}
+
+run "lane_b_selects_queue" {
+  command = plan
+  variables { request_lane = "b" }
+  override_resource {
+    target = aws_sqs_queue.queue["requests-b"]
+    values = { url = "https://sqs.ap-northeast-1.amazonaws.com/123456789012/lane-b" }
+  }
+  assert {
+    condition     = aws_lambda_function.bridge.environment[0].variables.JUDGE_REQUEST_QUEUE_URL == aws_sqs_queue.queue["requests-b"].url
+    error_message = "The bridge must send to the selected lane."
+  }
+}
+
+run "invalid_lane" {
+  command         = plan
+  variables { request_lane = "c" }
+  expect_failures = [var.request_lane]
+}
+
+run "stale_lane_fails" {
+  command = plan
+  override_resource {
+    target = aws_sqs_queue.queue["requests-b"]
+    values = { url = "https://sqs.ap-northeast-1.amazonaws.com/123456789012/lane-b" }
+  }
+  override_data {
+    target = data.aws_lambda_function.bridge_live
+    values = {
+      environment = [{ variables = { JUDGE_REQUEST_QUEUE_URL = "https://sqs.ap-northeast-1.amazonaws.com/123456789012/lane-b" } }]
+    }
+  }
+  expect_failures = [aws_lambda_function.bridge]
 }
