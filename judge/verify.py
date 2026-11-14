@@ -110,16 +110,33 @@ PY
 '''
 
 
-def start_command(run_id, digest):
+REQUEST_QUEUE_URL = re.compile(r'https://sqs\.[a-z0-9-]+\.amazonaws\.com/[0-9]{12}/[A-Za-z0-9_-]+')
+
+
+def check_request_queue(request_queue):
+    # The value is embedded in a root shell script, so reject anything but a plain SQS URL.
+    if request_queue is not None and not REQUEST_QUEUE_URL.fullmatch(request_queue):
+        raise ValueError('request queue must be an SQS queue URL')
+
+
+def start_command(run_id, digest, request_queue=None):
+    check_request_queue(request_queue)
+    queue_arg = '' if request_queue is None else ' ' + shlex.quote(request_queue)
+    queue_unpack = '' if request_queue is None else ', queue'
+    queue_check = '' if request_queue is None else '''if sum(line.startswith('JUDGE_REQUEST_QUEUE_URL=') for line in lines) != 1:
+    raise SystemExit('expected exactly one request queue setting')
+'''
+    queue_rewrite = '' if request_queue is None else '''lines = ['JUDGE_REQUEST_QUEUE_URL=' + queue if line.startswith('JUDGE_REQUEST_QUEUE_URL=') else line for line in lines]
+'''
     return '''set -eu
 umask 077
 exec 9>/run/judge-verification.lock
 flock -n 9
-PYTHONPATH=/opt/judge python3 - ''' + shlex.quote(run_id) + ' ' + shlex.quote(digest) + ''' <<'PY'
+PYTHONPATH=/opt/judge python3 - ''' + shlex.quote(run_id) + ' ' + shlex.quote(digest) + queue_arg + ''' <<'PY'
 import json, subprocess, sys, time
 from pathlib import Path
 from host import verify_assets
-run_id, digest = sys.argv[1:]
+run_id, digest''' + queue_unpack + ''' = sys.argv[1:]
 root = Path('/var/lib/judge-verification') / run_id
 report = json.loads(root.joinpath('report.json').read_text())
 if report['runId'] != run_id or report['runtimeDigest'] != digest or report['failedRuntimes']:
@@ -129,9 +146,9 @@ env = Path('/opt/judge/worker.env')
 lines = env.read_text().splitlines()
 if sum(line.startswith('JUDGE_RUNTIME_DIGEST=') for line in lines) != 1:
     raise SystemExit('expected exactly one worker digest setting')
-active = subprocess.run(['systemctl', 'is-active', '--quiet', 'judge-worker']).returncode == 0
+''' + queue_check + '''active = subprocess.run(['systemctl', 'is-active', '--quiet', 'judge-worker']).returncode == 0
 if active: raise SystemExit('worker is already active; inspect the previous start command')
-env.write_text('\\n'.join('JUDGE_RUNTIME_DIGEST=' + digest if line.startswith('JUDGE_RUNTIME_DIGEST=')
+''' + queue_rewrite + '''env.write_text('\\n'.join('JUDGE_RUNTIME_DIGEST=' + digest if line.startswith('JUDGE_RUNTIME_DIGEST=')
                         else line for line in lines) + '\\n')
 env.chmod(0o600)
 subprocess.run(['systemctl', 'enable', '--now', 'judge-worker'], check=True, stdout=subprocess.DEVNULL)
@@ -230,7 +247,11 @@ def main():
     parser.add_argument('--instance', action='append', default=[])
     parser.add_argument('--region', default='ap-northeast-1')
     parser.add_argument('--wait', action='store_true')
+    parser.add_argument('--request-queue')
     args = parser.parse_args()
+    if args.request_queue is not None and args.action != 'start':
+        parser.error('--request-queue is only for start')
+    check_request_queue(args.request_queue)
     if args.action == 'submit':
         receipt = new_run(args.run_dir, args.region, args.instance, 'smoke')
         for node in receipt['instances']:
@@ -247,9 +268,11 @@ def main():
         report = json.loads((args.run_dir / 'report.json').read_text())
         save(args.run_dir / 'smoke-receipt.json', receipt)
         receipt.update(phase='start', commands={})
+        if args.request_queue is not None:
+            receipt['requestQueue'] = args.request_queue
         save(args.run_dir / 'receipt.json', receipt)
         for node in receipt['instances']:
-            submit(args.run_dir, receipt, node, start_command(receipt['runId'], report['runtimeDigest']))
+            submit(args.run_dir, receipt, node, start_command(receipt['runId'], report['runtimeDigest'], receipt.get('requestQueue')))
         return collect(args.run_dir, receipt, wait=True) if args.wait else 0
     return collect(args.run_dir, receipt, args.wait)
 
