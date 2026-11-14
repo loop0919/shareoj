@@ -803,8 +803,10 @@ class RollingTests(unittest.TestCase):
             self.assertFalse((directory / 'switch-watch.json').exists() or (directory / 'switch-watch.stop').exists())
             self.assertEqual(state['switchWatcher']['pid'], 4242)
             args = popen.call_args.args[0]
+            self.assertEqual(args, rollout.watch_command(config, directory))
             self.assertIn('--watch', args)
-            self.assertEqual(args[args.index('--interval') + 1], '5')
+            # The cadence is the watcher's own default, the constant its user-count assertion is written against.
+            self.assertNotIn('--interval', args)
 
     def test_a_failure_after_the_watcher_started_stops_it_and_keeps_the_error(self):
         events = []
@@ -907,6 +909,58 @@ class RollingTests(unittest.TestCase):
             rollout.signal_watcher(1, Path('r.json'), rollout.signal.SIGTERM)
         kill.assert_not_called()
         self.assertFalse(rollout.watcher_alive(os.getpid(), Path('r.json')))
+
+    def test_a_really_running_watcher_is_recognised_and_ended(self):
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            script = directory / 'smoke-api.py'
+            script.write_text('import time\ntime.sleep(60)\n')
+            report = directory / 'switch-watch.json'
+            process = subprocess.Popen([sys.executable, str(script), '--watch', '--report', str(report)])
+            self.addCleanup(lambda: (process.kill(), process.wait()))
+            self.assertTrue(rollout.watcher_alive(process.pid, report))
+            self.assertFalse(rollout.watcher_alive(process.pid, directory / 'other.json'))
+            # The same shape start_watch uses: the script as a relative path.
+            relative = subprocess.Popen([sys.executable, 'smoke-api.py', '--watch', '--report', str(report)], cwd=directory)
+            self.addCleanup(lambda: (relative.kill(), relative.wait()))
+            self.assertTrue(rollout.watcher_alive(relative.pid, report))
+            plain = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', '--report', str(report)])
+            self.addCleanup(lambda: (plain.kill(), plain.wait()))
+            self.assertFalse(rollout.watcher_alive(plain.pid, report))
+            state = dict(switchWatcher=dict(pid=process.pid))
+            with patch.object(rollout, 'clean_leftovers', return_value=True):
+                self.assertIsNone(rollout.collect_stale_watch(dict(), directory, state))
+            self.assertEqual(process.wait(10), -rollout.signal.SIGTERM)
+            self.assertNotIn('switchWatcher', state)
+
+    def test_not_started_because_of_leftovers_is_retried_and_named(self):
+        config = dict(api='api', api_url='https://api.invalid', region='test')
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            (directory / 'switch-watch.cleanup.json').write_text(json.dumps(dict(users=[dict(username='u')])))
+            state = dict(switchWatch='not-started', switchWatchFailed=True)
+            with patch.object(rollout, 'run', side_effect=RuntimeError('still failing')) as command:
+                rollout.settle_watch(config, directory, state, None)
+            self.assertIn('--cleanup', command.call_args.args)
+            self.assertEqual(command.call_args.kwargs['timeout'], rollout.WATCH_CLEANUP_TIMEOUT)
+            self.assertTrue(state['switchWatchLeftovers'])
+            self.assertIn('switchWatchLeftovers', rollout.watch_failed_message(state))
+
+    def test_abort_records_leftovers_and_cleanup_times_out(self):
+        config = dict(api='api', api_url='https://api.invalid', region='test')
+        process = unittest.mock.Mock()
+        process.poll.return_value = 0
+        state = {}
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            rollout.abort_watch(config, directory, state, process)
+            self.assertNotIn('switchWatchLeftovers', state)
+            (directory / 'switch-watch.cleanup.json').write_text(json.dumps(dict(users=[dict(username='u')])))
+            timeout = subprocess.TimeoutExpired('cleanup', rollout.WATCH_CLEANUP_TIMEOUT)
+            with patch.object(rollout, 'run', side_effect=timeout) as command:
+                rollout.abort_watch(config, directory, state, process)
+            self.assertEqual(command.call_args.kwargs['timeout'], rollout.WATCH_CLEANUP_TIMEOUT)
+            self.assertTrue(state['switchWatchLeftovers'])
 
     def test_the_baseline_wait_ends_on_enough_samples_exit_or_timeout(self):
         with tempfile.TemporaryDirectory() as name:

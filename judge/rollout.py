@@ -23,8 +23,8 @@ ROOT = Path(__file__).resolve().parents[1]
 LOG_DIRECTORY = None
 
 
-def run(*args):
-    result = subprocess.run(args, cwd=ROOT, capture_output=True, text=True)
+def run(*args, timeout=None):
+    result = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, timeout=timeout)
     if LOG_DIRECTORY is not None:
         path = LOG_DIRECTORY / 'commands.log'
         with path.open('a') as file:
@@ -761,6 +761,8 @@ WATCH_BASELINE_TIMEOUT = 180
 WATCH_TAIL = 60
 WATCH_STOP_WAIT = 180
 WATCH_ABORT_WAIT = 120
+WATCH_CLEANUP_TIMEOUT = 120
+WATCH_SCRIPT = 'judge/smoke-api.py'
 WATCH_FAILED = 'switch latency check failed; see switch-watch.json'
 
 
@@ -787,13 +789,24 @@ def read_watch_report(path):
     return report
 
 
+def watch_command(config, directory):
+    """The watcher's argv. The cadence is left to the watcher's own default, which the user-count assertion in
+    smoke-api.py is written against, so rollout cannot drift from it."""
+    report, stop, switch_at = watch_paths(directory)
+    return [sys.executable, WATCH_SCRIPT, '--watch', '--function', config['api'], '--api-url', config['api_url'],
+            '--region', config['region'], '--runtime', config['smoke_runtime'],
+            '--stop-file', str(stop), '--switch-at-file', str(switch_at), '--report', str(report)]
+
+
 def watcher_alive(pid, report):
-    """Whether `pid` is still this run's watcher (the pid may have been reused by something else)."""
+    """Whether `pid` is still this run's watcher (the pid may have been reused by something else): its argv holds the
+    script (as start_watch passes it, however the path is spelled), --watch and this run's report path."""
     try:
         command = Path('/proc/%d/cmdline' % pid).read_bytes().split(b'\0')
     except OSError:
         return False
-    return b'smoke-api.py' in command and b'--watch' in command and str(report).encode() in command
+    return any(Path(part.decode(errors='replace')).name == Path(WATCH_SCRIPT).name for part in command) \
+        and b'--watch' in command and str(report).encode() in command
 
 
 def leftover_users(report):
@@ -809,8 +822,9 @@ def clean_leftovers(config, directory):
     if not leftover_users(report):
         return True
     try:
-        run(sys.executable, 'judge/smoke-api.py', '--cleanup', '--function', config['api'], '--api-url', config['api_url'],
-            '--region', config['region'], '--report', str(report))
+        # A timeout keeps an API or Cognito outage from holding the switch; what remains is recorded as leftovers.
+        run(sys.executable, WATCH_SCRIPT, '--cleanup', '--function', config['api'], '--api-url', config['api_url'],
+            '--region', config['region'], '--report', str(report), timeout=WATCH_CLEANUP_TIMEOUT)
     except Exception as error:
         print('watch cleanup incomplete:', error, flush=True)
     return not leftover_users(report)
@@ -851,10 +865,8 @@ def start_watch(config, directory, state):
         path.unlink(missing_ok=True)
     with (directory / 'switch-watch.log').open('ab') as log:
         # Its own session: Ctrl-C or a closed terminal reaches the rollout only, which then stops the watcher itself.
-        process = subprocess.Popen([sys.executable, 'judge/smoke-api.py', '--watch', '--function', config['api'],
-            '--api-url', config['api_url'], '--region', config['region'], '--runtime', config['smoke_runtime'],
-            '--stop-file', str(stop), '--switch-at-file', str(switch_at), '--interval', '5', '--report', str(report)],
-            cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        process = subprocess.Popen(watch_command(config, directory), cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
+                                   start_new_session=True)
     state['switchWatcher'] = dict(pid=process.pid, stopFile=str(stop), report=str(report))
     save(directory / 'state.json', state)
     return process
@@ -902,7 +914,9 @@ def abort_watch(config, directory, state, process):
                 process.kill()
                 process.wait()
         state.pop('switchWatcher', None)
-        clean_leftovers(config, directory)
+        if not clean_leftovers(config, directory):
+            state['switchWatchLeftovers'] = True
+            save(directory / 'state.json', state)
     except BaseException as error:
         print('could not stop the switch watch:', error, flush=True)
 
@@ -911,6 +925,14 @@ def settle_watch(config, directory, state, process):
     """Record how the watch ended. It never changes what the switch does, and never raises into it; a bad watch only
     fails the run at the end."""
     if 'switchWatch' in state:
+        # Already decided (for example not-started because test users were left): retry removing them, and name them.
+        try:
+            if not clean_leftovers(config, directory):
+                state['switchWatchLeftovers'] = True
+                state['switchWatchFailed'] = True
+                save(directory / 'state.json', state)
+        except Exception as error:
+            print('watch cleanup failed:', error, flush=True)
         return
     try:
         if process is not None:
