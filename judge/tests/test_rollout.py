@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 import sys
 import tempfile
+import time
 import unittest
 import unittest.mock
 from unittest.mock import patch
@@ -1010,6 +1011,18 @@ class RollingTests(unittest.TestCase):
         kill.assert_not_called()
         self.assertFalse(rollout.watcher_alive(os.getpid(), Path('r.json')))
 
+    @staticmethod
+    def eventually_alive(pid, report, script=True):
+        """Wait for the child's own argv: a python launcher may exec the real interpreter shortly after Popen returns."""
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if script and rollout.watcher_alive(pid, report):
+                return True
+            if not script and str(report).encode() in Path('/proc/%d/cmdline' % pid).read_bytes().split(b'\0'):
+                return True
+            time.sleep(0.02)
+        return False
+
     def test_a_really_running_watcher_is_recognised_and_ended(self):
         with tempfile.TemporaryDirectory() as name:
             directory = Path(name)
@@ -1018,14 +1031,15 @@ class RollingTests(unittest.TestCase):
             report = directory / 'switch-watch.json'
             process = subprocess.Popen([sys.executable, str(script), '--watch', '--report', str(report)])
             self.addCleanup(lambda: (process.kill(), process.wait()))
-            self.assertTrue(rollout.watcher_alive(process.pid, report))
+            self.assertTrue(self.eventually_alive(process.pid, report))
             self.assertFalse(rollout.watcher_alive(process.pid, directory / 'other.json'))
             # The same shape start_watch uses: the script as a relative path.
             relative = subprocess.Popen([sys.executable, 'smoke-api.py', '--watch', '--report', str(report)], cwd=directory)
             self.addCleanup(lambda: (relative.kill(), relative.wait()))
-            self.assertTrue(rollout.watcher_alive(relative.pid, report))
+            self.assertTrue(self.eventually_alive(relative.pid, report))
             plain = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', '--report', str(report)])
             self.addCleanup(lambda: (plain.kill(), plain.wait()))
+            self.assertTrue(self.eventually_alive(plain.pid, report, script=False))
             self.assertFalse(rollout.watcher_alive(plain.pid, report))
             state = dict(switchWatcher=dict(pid=process.pid))
             with patch.object(rollout, 'clean_leftovers', return_value=True):
