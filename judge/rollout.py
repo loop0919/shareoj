@@ -1006,8 +1006,46 @@ class NothingToSwitch(Exception):
 
 UNCHANGED = ('nothing to roll out: the prepared runtime digest equals the published one; the burst workers, '
              'the alarm actions and the maintenance hold were put back (status: unchanged)')
+# A worker logs worker_started only after hashing the whole runtime tree (about 20 GB on a t3.small), which takes
+# minutes, while systemctl returns as soon as the unit forks. Wait as long as verify.py start does; SSM allows 7200 s.
+ENABLE_READY_TRIES = 360
+ENABLE_READY_INTERVAL = 10
+
+
+def enable_worker_command(tries=ENABLE_READY_TRIES, interval=ENABLE_READY_INTERVAL):
+    """Enable and start the worker, then wait until this systemd invocation is ready, as verify.py start does."""
+    return '''set -eu
+systemctl enable --now judge-worker.service
+python3 - ''' + str(int(tries)) + ' ' + str(int(interval)) + ''' <<'PY'
+import json, subprocess, sys, time
+tries, interval = int(sys.argv[1]), int(sys.argv[2])
+def invocation_id():
+    return subprocess.check_output(['systemctl', 'show', 'judge-worker', '-p', 'InvocationID', '--value'], text=True).strip()
+# Match this systemd invocation, not a worker_started event from an earlier boot or start.
+invocation = invocation_id()
+if not invocation: raise SystemExit('worker invocation is missing')
+for _ in range(tries):
+    if invocation_id() != invocation: raise SystemExit('worker restarted during readiness check')
+    log = subprocess.check_output(['journalctl', '_SYSTEMD_INVOCATION_ID=' + invocation, '-o', 'cat', '--no-pager'], text=True)
+    events = []
+    for line in log.splitlines():
+        try: events.append(json.loads(line))
+        except ValueError: pass
+    # The worker takes live jobs at once; a problem author's failing checker is no worker fault.
+    if any(e.get('event') == 'failure' and e.get('category') != 'judge_code' for e in events):
+        raise SystemExit('worker reported a failure')
+    if any(e.get('event') == 'worker_started' for e in events):
+        subprocess.run(['systemctl', 'is-active', '--quiet', 'judge-worker'], check=True)
+        print('worker ready')
+        break
+    time.sleep(interval)
+else: raise SystemExit('worker readiness timed out')
+PY
+'''
+
+
 # Undoes hold-bursts on a host that was only stopped: its worker.env still names the lane and digest it judged with.
-ENABLE_WORKER = 'set -eu\nsystemctl enable --now judge-worker.service\n'
+ENABLE_WORKER = enable_worker_command()
 
 
 def restore_alarms(config, state):
@@ -1038,12 +1076,15 @@ def finish_unchanged(config, directory, state, bursts, verification):
     if not state.get('nothingToSwitch'):
         # From here a resumed run only finishes this restore; it never holds the bursts or disables the alarms again.
         checkpoint(directory, state, 'restore-unchanged', nothingToSwitch=True)
+    # First, before the burst starts, which wait minutes for each worker and can fail: the primaries' alarms must not
+    # stay off meanwhile. The held bursts' alarms are in alarm already, so turning the actions on notifies nothing.
+    restore_alarms(config, state)
     start_workers(verification, request_queue=lane)
     tag_digest(config, [first], digest)
     others = [node for node in bursts if node != first]
     if others:
+        # Waits until each worker logs worker_started, like verify.py start for the first burst above.
         ssm_step(directory, 'release-bursts', config, others, ENABLE_WORKER)
-    restore_alarms(config, state)
     lane_worker_ready(config, directory, bursts, lane, digest, label='bursts')
     checkpoint(directory, state, 'unchanged', status='unchanged', maintenanceHoldReleased=release_hold(config))
     print(UNCHANGED, flush=True)
@@ -1386,9 +1427,6 @@ def revert(config, directory, state):
         update_env(region, config['api'], dict(JUDGE_CPP_IMAGE=previous))
         state['apiReverted'] = True
         save(directory / 'state.json', state)
-    # A rolling killed mid-switch leaves its watcher submitting and maybe test users behind; nobody else retries them,
-    # because the run closes as reverted. Done after users are back on the old environment, so it never delays that.
-    end_stale_watch(config, directory, state)
     if not state.get('newWorkerStopped'):
         checkpoint(directory, state, 'revert-stop')
         # Stop the new worker before the purge and the requeue. A worker still running could take a job from the
@@ -1398,6 +1436,15 @@ def revert(config, directory, state):
         # host: it starts a stopped host only when the tag matches its dispatch digest. A missing tag is no error.
         aws(region, 'ec2', 'delete-tags', '--resources', first, '--tags', 'Key=JudgeInstalledDigest')
         state['newWorkerStopped'] = True
+        save(directory / 'state.json', state)
+    if not state.get('firstHostStopped'):
+        checkpoint(directory, state, 'revert-first-host')
+        # The first host holds the broken environment with its worker disabled. It would never idle-stop (idle stop runs
+        # in the worker), and a running host without a worker trips its worker alarm, so it is stopped before the alarm
+        # actions return. Stopped, it stays down: without its digest tag the bridge never starts it. The next rolling
+        # or run starts and prepares it again.
+        aws(region, 'ec2', 'stop-instances', '--instance-ids', first)
+        state['firstHostStopped'] = True
         save(directory / 'state.json', state)
     if not state.get('newLanePurgeSent'):
         checkpoint(directory, state, 'revert-purge')
@@ -1419,37 +1466,35 @@ def revert(config, directory, state):
         count = requeue(config, digest)
         state.update(requeued=state.get('requeued', 0) + count, revertRequeued=count)
         save(directory / 'state.json', state)
+    # The reverted state is made consistent before anything slow or failure-prone: the purge wait, the watcher and the
+    # burst restart can stop the run for a while, and meanwhile CI, Terraform and the alarms must match the bridge.
+    checkpoint(directory, state, 'revert-settings')
+    # Terraform's previous digest is the new one, as on the live bridge, so an apply keeps the bridge as it is.
+    sync_settings(config, directory, previous, config['runtimes'], previous=digest, lane=state['previousLane'])
+    restore_alarms(config, state)
     if not state.get('newLanePurged'):
         checkpoint(directory, state, 'revert-purge-wait')
         wait_purged(config, directory, state, state['activeQueue'])
         state['newLanePurged'] = True
         save(directory / 'state.json', state)
+    # A rolling killed mid-switch leaves its watcher submitting and maybe test users behind; nobody else retries them,
+    # because the run closes as reverted. Done once the broken worker is stopped and users are back, so it delays neither.
+    end_stale_watch(config, directory, state)
     if not state.get('revertBurstsReady'):
         checkpoint(directory, state, 'revert-bursts')
         # hold-bursts stopped every burst. The others still hold the old environment and their worker.env still names
-        # the old lane, so enabling them is enough; checked, because a burst that judges nothing gives no contest capacity.
+        # the old lane, so enabling them is enough. The enable waits until each worker is ready (minutes); the check
+        # then confirms the lane and digest, because a burst that judges nothing gives no contest capacity.
         others = [node for node in bursts if node != first]
         if others:
             ssm_step(directory, 'revert-bursts', config, others, ENABLE_WORKER)
             lane_worker_ready(config, directory, others, state['previousQueue'], previous, label='revert-bursts-check')
         state['revertBurstsReady'] = True
         save(directory / 'state.json', state)
-    if not state.get('firstHostStopped'):
-        checkpoint(directory, state, 'revert-first-host')
-        # The first host holds the broken environment with its worker disabled. It would never idle-stop (idle stop runs
-        # in the worker), and with the alarm actions back its worker alarm would fire. Stopped, it stays down: without
-        # its digest tag the bridge never starts it. The next rolling or run starts and prepares it again.
-        aws(region, 'ec2', 'stop-instances', '--instance-ids', first)
-        state['firstHostStopped'] = True
-        save(directory / 'state.json', state)
     if 'maintenanceHoldReleased' not in state:
         # The other bursts judge again, so they may power off once idle, as after a finished rolling.
         state['maintenanceHoldReleased'] = release_hold(config)
         save(directory / 'state.json', state)
-    checkpoint(directory, state, 'revert-settings')
-    # Terraform's previous digest is the new one, as on the live bridge, so an apply keeps the bridge as it is.
-    sync_settings(config, directory, previous, config['runtimes'], previous=digest, lane=state['previousLane'])
-    restore_alarms(config, state)
     if 'revertApiReport' not in state:
         checkpoint(directory, state, 'revert-smoke')
         # `reverted` means the old environment judges through the public API, not only that the settings went back.

@@ -1218,9 +1218,10 @@ class RollingTests(unittest.TestCase):
         state, events = self.run_rolling(events=events, prepared=self.old)
         self.assertEqual((state['status'], state['step']), ('unchanged', 'unchanged'))
         self.assertFalse(any(e[0] in ('env', 'standby', 'requeue') for e in events))
+        # The alarm actions return before the burst starts, which wait minutes for each worker and can fail.
         self.assertInOrder(events, ('ssm', 'hold-bursts', (self.first, self.other)), ('prepare', 'first', (self.first,), None),
-                           ('start', 'verify-first', 'qa'), ('ssm', 'release-bursts', (self.other,)),
-                           ('enable-alarm-actions', '--alarm-names', 'alarm'), ('ready', (self.first, self.other), 'qa', self.old))
+                           ('enable-alarm-actions', '--alarm-names', 'alarm'), ('start', 'verify-first', 'qa'),
+                           ('ssm', 'release-bursts', (self.other,)), ('ready', (self.first, self.other), 'qa', self.old))
         self.assertIn(('create-tags', '--resources', self.first, '--tags', 'Key=JudgeInstalledDigest,Value=' + self.old), events)
         holds = [e for e in events if e[0] == 'create-tags' and 'JudgeMaintenanceHoldUntil' in e[-1]]
         self.assertEqual(holds[-1][2:-2], (self.primary, self.first, self.other))
@@ -1286,16 +1287,16 @@ class RollingTests(unittest.TestCase):
         hold = ('create-tags', '--resources', self.primary, self.first, self.other, '--tags', 'Key=JudgeMaintenanceHoldUntil')
         events = [e[:-1] + ('Key=JudgeMaintenanceHoldUntil',) if e[0] == 'create-tags' else e for e in events]
         # The old workers are confirmed alive first. The requeue does not wait for the purged lane to read empty.
-        # The other bursts judge again and the broken first host is stopped before the alarm actions return.
+        # The settings and alarm actions are back before the slow burst restart, which can fail and be resumed.
         # Only a passed API smoke on the old environment ends the revert.
         self.assertEqual(events, [('ready', (self.primary,), 'qa', self.old),
                                   ('env', 'bridge', self.reverted()), ('sleep', 125), ('env', 'api', dict(JUDGE_CPP_IMAGE=self.old)),
-                                  ('ssm', 'revert-stop', (self.first,)), tag, ('purge-queue', '--queue-url', 'qb'),
-                                  ('requeue', self.new), ('count', 'qb'),
+                                  # Stopped before the alarm actions return: a running host without a worker trips its alarm.
+                                  ('ssm', 'revert-stop', (self.first,)), tag, ('stop-instances', '--instance-ids', self.first),
+                                  ('purge-queue', '--queue-url', 'qb'), ('requeue', self.new), ('sync', self.old, self.new, 'a'),
+                                  ('enable-alarm-actions', '--alarm-names', 'alarm'), ('count', 'qb'),
                                   ('ssm', 'revert-bursts', (self.other,)), ('ready', (self.other,), 'qa', self.old),
-                                  ('stop-instances', '--instance-ids', self.first), hold,
-                                  ('sync', self.old, self.new, 'a'), ('enable-alarm-actions', '--alarm-names', 'alarm'),
-                                  ('api', (self.primary,))])
+                                  hold, ('api', (self.primary,))])
         self.assertEqual((state['status'], state['step']), ('reverted', 'reverted'))
         self.assertEqual((state['requeued'], state['revertRequeued']), (3, 3))
         self.assertTrue(state['maintenanceHoldReleased'])
@@ -1369,9 +1370,10 @@ class RollingTests(unittest.TestCase):
                 events.append(('watch-collect', state.pop('switchWatcher', None)))
             state, events = self.run_revert(state, live, directory, events, extra=dict(collect_stale_watch=collect))
         self.assertEqual((state['status'], state['switchWatchLeftovers']), ('reverted', True))
-        # Users are back on the old environment before the revert waits on the watcher.
-        self.assertInOrder(events, ('env', 'api', dict(JUDGE_CPP_IMAGE=self.old)), ('watch-collect', dict(pid=1)),
-                           ('ssm', 'revert-stop', (self.first,)))
+        # The revert waits on the watcher only once the broken worker is stopped and the settings are back.
+        self.assertInOrder(events, ('ssm', 'revert-stop', (self.first,)), ('requeue', self.new),
+                           ('enable-alarm-actions', '--alarm-names', 'alarm'), ('watch-collect', dict(pid=1)),
+                           ('ssm', 'revert-bursts', (self.other,)))
 
     def test_revert_refused_outside_its_window(self):
         config = dict(region='test', api='api', bridge='bridge', runtimes=['python314'], worker_alarms=['alarm'])
@@ -1624,6 +1626,55 @@ class RollingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as name, patch.object(rollout, 'new_run', return_value={}), \
                 patch.object(rollout, 'submit'), patch.object(rollout, 'collect', return_value=1), self.assertRaises(RuntimeError):
             rollout.standby_ready(dict(region='test'), Path(name), self.first, url)
+
+    def test_enabling_a_worker_waits_for_its_new_invocation_to_start(self):
+        # systemctl returns once the unit forks; the worker logs worker_started only after hashing the runtime tree.
+        script = rollout.ENABLE_WORKER
+        subprocess.run(['bash', '-n'], input=script, text=True, check=True)
+        self.assertLess(script.index('systemctl enable --now judge-worker.service'), script.index("<<'PY'"))
+        code = compile(script.split("<<'PY'\n", 1)[1].rsplit('\nPY\n', 1)[0], '<enable worker>', 'exec')
+        # The host's command must finish inside SSM's execution timeout, as verify.py start does.
+        tries, interval = (int(v) for v in script.split("python3 - ", 1)[1].split(" <<'PY'", 1)[0].split())
+        self.assertLess(tries * interval, 7200)
+
+        def run(journals, invocations=('abc',), tries=3):
+            """Run the host script against journals returned poll by poll; returns the journalctl and sleep calls."""
+            reads, sleeps, invocations = [], [], list(invocations)
+
+            def check_output(args, text=False):
+                if args[0] == 'journalctl':
+                    reads.append(args[1])
+                    return '\n'.join(json.dumps(e) for e in journals[min(len(reads), len(journals)) - 1])
+                return (invocations.pop(0) if len(invocations) > 1 else invocations[0]) + '\n'
+            with patch.object(sys, 'argv', ['-', str(tries), '0']), patch('subprocess.check_output', side_effect=check_output), \
+                    patch('subprocess.run'), patch('time.sleep', side_effect=sleeps.append), patch('builtins.print'):
+                exec(code, {'__name__': '__main__'})
+            return reads, sleeps
+
+        # Ready only once this invocation logs worker_started, which takes a few polls.
+        reads, sleeps = run([[], [dict(event='worker_started')]])
+        self.assertEqual((reads, len(sleeps)), (['_SYSTEMD_INVOCATION_ID=abc'] * 2, 1))
+        with self.assertRaisesRegex(SystemExit, 'readiness timed out'):
+            run([[]])
+        with self.assertRaisesRegex(SystemExit, 'worker reported a failure'):
+            run([[dict(event='failure', category='platform', reason='runtime_verification_failed')]])
+        # A failing checker is the problem author's fault, as in the final health check.
+        run([[dict(event='worker_started'), dict(event='failure', category='judge_code')]])
+        with self.assertRaisesRegex(SystemExit, 'restarted'):
+            run([[], [dict(event='worker_started')]], invocations=('abc', 'abc', 'def'))
+
+    def test_revert_and_unchanged_runs_enable_bursts_with_the_waiting_script(self):
+        scripts = {}
+
+        def ssm_step(directory, step, config, nodes, script):
+            scripts[step] = script
+        self.run_rolling(prepared=self.old, extra=dict(ssm_step=ssm_step))
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            state, live = self.stopped_rolling(directory)
+            self.run_revert(state, live, directory, extra=dict(ssm_step=ssm_step))
+        self.assertIs(scripts['release-bursts'], rollout.ENABLE_WORKER)
+        self.assertIs(scripts['revert-bursts'], rollout.ENABLE_WORKER)
 
     def test_lane_check_can_require_the_digest_on_several_hosts(self):
         url = 'https://sqs.ap-northeast-1.amazonaws.com/123456789012/judge-dev-judge-requests'
