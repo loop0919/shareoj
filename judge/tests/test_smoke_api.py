@@ -47,9 +47,11 @@ class SummarizeTests(unittest.TestCase):
 
 
 class WatchTests(unittest.TestCase):
-    def run_watch(self, directory, stop_after=None, reject=False, stuck=False, extra=(), interval='0.05', switch_in=0.15):
+    def run_watch(self, directory, stop_after=None, reject=False, stuck=False, extra=(), interval='0.05', switch_in=0.15, limited=False):
         """Run `main --watch` against fakes; returns (report, cleanup calls, exit)."""
-        posts, deleted, polls = [], [], {}
+        posts, deleted, polls, logins, sent = [], [], {}, [], {}
+        # The API's limit (2 per 60 s per owner), scaled by the same factor as the test's shortened cadence.
+        window = smoke.LIMIT_WINDOW * float(interval) / smoke.WATCH_CADENCE
         directory = Path(directory)
         (directory / 'switch-at').write_text(str(time.time() + switch_in))
 
@@ -57,10 +59,16 @@ class WatchTests(unittest.TestCase):
             if path == '/runtimes':
                 return dict(maintenance=False, items=[dict(id='python314')])
             if path == '/auth/login':
-                return dict(access_token='secret')
+                logins.append(1)
+                return dict(access_token='secret-%d' % len(logins))
             if path == '/my/submissions':
                 if reject:
                     raise RuntimeError('refused')
+                if limited:
+                    recent = [t for t in sent.get(token, []) if time.monotonic() - t < window]
+                    sent[token] = recent + [time.monotonic()]
+                    if len(recent) >= smoke.SUBMIT_LIMIT:
+                        raise RuntimeError('429 submission_rate_limited')
                 posts.append(data)
                 return dict(id='s%d' % len(posts))
             if path.startswith('/my/submissions/'):
@@ -99,7 +107,9 @@ class WatchTests(unittest.TestCase):
             self.assertGreaterEqual(len(report['submissions']), 5)
             self.assertTrue(all(s['started'] and s['verdict'] == 'AC' for s in report['submissions']))
             self.assertEqual((report['rejected'], report['je']), (0, 0))
-            self.assertEqual(len(deleted), 1)
+            self.assertEqual(len(deleted), smoke.WATCH_USERS)
+            self.assertTrue(report['stopped'])
+            self.assertGreaterEqual(json.loads(Path(name, 'r.progress.json').read_text())['started'], 1)
             self.assertEqual(json.loads(Path(name, 'r.cleanup.json').read_text())['users'], [])
             self.assertIn('admin-delete-user', [c.args[1] for c in cognito.call_args_list])
 
@@ -117,13 +127,27 @@ class WatchTests(unittest.TestCase):
             self.assertFalse(stuck['started'])
             self.assertGreaterEqual(stuck['waitMs'], 300)
 
+    def test_rotation_keeps_every_user_under_the_submission_limit(self):
+        with tempfile.TemporaryDirectory() as name:
+            report, _, _ = self.run_watch(name, stop_after=1.3, limited=True)
+            self.assertGreater(len(report['submissions']), 3 * smoke.WATCH_USERS)
+            self.assertEqual(report['rejected'], 0)
+            self.assertEqual(report['status'], 'passed')
+
+    def test_a_single_user_would_hit_the_limit(self):
+        # The fake enforces the limit: with one user the same cadence is refused, so the rotation is what avoids it.
+        with tempfile.TemporaryDirectory() as name, patch.object(smoke, 'WATCH_USERS', 1):
+            report, _, _ = self.run_watch(name, stop_after=0.6, limited=True)
+            self.assertGreater(report['rejected'], 0)
+
     def test_the_hard_cap_ends_the_watch_without_a_stop_file(self):
         with tempfile.TemporaryDirectory() as name, patch.object(smoke, 'WATCH_CAP', 0.4), patch.object(smoke, 'WATCH_GRACE', 0.2):
             started = time.monotonic()
             report, deleted, _ = self.run_watch(name)
             self.assertLess(time.monotonic() - started, 5)
             self.assertTrue(report['capped'])
-            self.assertEqual(len(deleted), 1)
+            self.assertFalse(report['stopped'])
+            self.assertEqual(len(deleted), smoke.WATCH_USERS)
             self.assertEqual(report['cleanup'], 'complete')
 
     def test_sigterm_still_runs_cleanup(self):
@@ -136,7 +160,8 @@ class WatchTests(unittest.TestCase):
             timer.cancel()
             self.assertLess(time.monotonic() - started, 5)
             self.assertTrue(report['terminated'])
-            self.assertEqual(len(deleted), 1)
+            self.assertFalse(report['stopped'])
+            self.assertEqual(len(deleted), smoke.WATCH_USERS)
             self.assertEqual(signal.getsignal(signal.SIGTERM), before)
 
 

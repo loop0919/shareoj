@@ -4,6 +4,7 @@ import datetime
 import hashlib
 import io
 import json
+import os
 import subprocess
 from pathlib import Path
 import sys
@@ -638,7 +639,8 @@ class RollingTests(unittest.TestCase):
             run=lambda *a: events.append(('cmd',) + a[:3]),
             # By default the watcher is silent and passes; `watch` replaces any of these.
             **{'start_watch': lambda c, d, s: object(), 'stop_watch': lambda h, d: dict(status='passed', maxWaitMs=1200),
-               'collect_stale_watch': lambda c, d, s: None, **(watch or {})})
+               'collect_stale_watch': lambda c, d, s: None, 'wait_for_baseline': lambda h, d: None,
+               'abort_watch': lambda c, d, s, h: None, **(watch or {})})
         with contextlib.ExitStack() as stack:
             name = stack.enter_context(tempfile.TemporaryDirectory())
             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
@@ -706,7 +708,7 @@ class RollingTests(unittest.TestCase):
             if start:
                 raise start
             return object()
-        return dict(start_watch=begin, stop_watch=stop)
+        return dict(start_watch=begin, stop_watch=stop, wait_for_baseline=lambda h, d: events.append(('watch-baseline',)))
 
     def test_rolling_watches_the_switch(self):
         events = []
@@ -719,7 +721,7 @@ class RollingTests(unittest.TestCase):
         self.assertEqual((state['switchWatch']['status'], state['switchWatch']['maxWaitMs']), ('passed', 1200))
         self.assertFalse(state.get('switchWatchFailed'))
         bridge = [e for e in events if e[:2] == ('env', 'bridge')][0]
-        self.assertInOrder(events, ('standby', self.first, 'qb'), ('watch-start',), ('sleep', rollout.WATCH_LEAD), ('contest',), bridge,
+        self.assertInOrder(events, ('standby', self.first, 'qb'), ('watch-start',), ('watch-baseline',), ('contest',), bridge,
                            ('sleep', 125), ('env', 'api', dict(JUDGE_CPP_IMAGE=self.new)), ('sleep', rollout.WATCH_TAIL),
                            ('watch-stop',), ('sync', self.new, self.old, 'b'))
 
@@ -803,6 +805,131 @@ class RollingTests(unittest.TestCase):
             args = popen.call_args.args[0]
             self.assertIn('--watch', args)
             self.assertEqual(args[args.index('--interval') + 1], '5')
+
+    def test_a_failure_after_the_watcher_started_stops_it_and_keeps_the_error(self):
+        events = []
+        stops = []
+        watch = self.watching(events)
+        watch['abort_watch'] = lambda c, d, s, h: stops.append(h)
+        # The run stops right after the bridge update, between start_watch and settle_watch.
+        with self.assertRaises(Interrupted):
+            self.run_rolling(events=Interrupt(('env', 'bridge')), watch=dict(watch, start_watch=lambda c, d, s: events.append(('watch-start',)) or 'handle'))
+        self.assertEqual(stops, ['handle'])
+
+    def test_abort_watch_terminates_and_cleans_up_without_raising(self):
+        process = unittest.mock.Mock()
+        process.poll.return_value = None
+        state = dict(switchWatcher=dict(pid=1))
+        with tempfile.TemporaryDirectory() as name, patch.object(rollout, 'clean_leftovers') as clean:
+            rollout.abort_watch({}, Path(name), state, process)
+            process.terminate.assert_called_once()
+            clean.assert_called_once()
+            self.assertNotIn('switchWatcher', state)
+            clean.side_effect = RuntimeError('boom')
+            rollout.abort_watch({}, Path(name), state, process)
+
+    def test_resuming_a_switch_watch_failed_run_does_not_touch_the_pool(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            artifact = root / 'artifact'
+            artifact.write_bytes(b'x')
+            config = dict(account='123', region='test', api='api', release=str(artifact), bridge_package=str(artifact))
+            config_path = root / 'config.json'
+            config_path.write_text(json.dumps(config))
+            directory = root / 'run'
+            directory.mkdir()
+            (directory / 'state.json').write_text(json.dumps(dict(step='switch-watch-failed', status='failed', switchWatchFailed=True,
+                                                                  switchWatch=dict(status='failed', maxWaitMs=30000))))
+            argv = ['rollout.py', 'rolling', '--config', str(config_path), '--run-dir', str(directory)]
+            with patch.object(sys, 'argv', argv), patch.object(rollout, 'ROOT', root), patch.object(rollout.os, 'chdir'), \
+                    patch.object(rollout, 'LOG_DIRECTORY', None), patch.object(rollout, 'aws', return_value=dict(Account='123')), \
+                    patch.object(rollout, 'ensure_pool') as pool, patch.object(rollout, 'rolling') as rolling:
+                with self.assertRaisesRegex(ValueError, r'switch latency check failed; see switch-watch\.json .*30000'):
+                    rollout.main()
+            pool.assert_not_called()
+            rolling.assert_not_called()
+            self.assertEqual(json.loads((directory / 'state.json').read_text())['status'], 'failed')
+
+    def test_only_a_report_that_saw_the_stop_file_is_trusted(self):
+        with tempfile.TemporaryDirectory() as name:
+            path = Path(name, 'r.json')
+            good = dict(status='passed', stopped=True, terminated=False, capped=False)
+            for change, trusted in (({}, True), (dict(terminated=True), False), (dict(capped=True), False),
+                                    (dict(stopped=False), False), (dict(status='running'), False)):
+                with self.subTest(change):
+                    path.write_text(json.dumps(dict(good, **change)))
+                    self.assertEqual(rollout.read_watch_report(path) is not None, trusted)
+            path.write_text(json.dumps(dict(status='failed')))
+            self.assertIsNone(rollout.read_watch_report(path))
+
+    def test_leftover_test_users_block_a_new_watcher_and_are_cleaned_in_settle(self):
+        config = dict(api='api', api_url='https://api.invalid', region='test', smoke_runtime='python314')
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            leftovers = directory / 'switch-watch.cleanup.json'
+            leftovers.write_text(json.dumps(dict(users=[dict(username='u')])))
+            with patch.object(rollout, 'run', side_effect=RuntimeError('cleanup failed')) as command, \
+                    patch.object(rollout.subprocess, 'Popen') as popen:
+                with self.assertRaisesRegex(RuntimeError, 'left test users'):
+                    rollout.start_watch(config, directory, {})
+            popen.assert_not_called()
+            self.assertIn('--cleanup', command.call_args.args)
+            self.assertTrue(leftovers.exists())
+            # settle runs --cleanup too; users that remain fail the watch and are named in the error.
+            state = {}
+            with patch.object(rollout, 'run', side_effect=RuntimeError('cleanup failed')) as command, patch.object(rollout.time, 'sleep'):
+                rollout.settle_watch(config, directory, state, None)
+            self.assertIn('--cleanup', command.call_args.args)
+            self.assertTrue(state['switchWatchFailed'] and state['switchWatchLeftovers'])
+            self.assertIn('switchWatchLeftovers', rollout.watch_failed_message(state))
+            # Once cleanup succeeds the leftovers file lists nobody, and a watcher may start.
+            leftovers.write_text(json.dumps(dict(users=[])))
+            with patch.object(rollout.subprocess, 'Popen', return_value=unittest.mock.Mock(pid=1)) as popen:
+                rollout.start_watch(config, directory, {})
+            self.assertFalse(leftovers.exists())
+            self.assertEqual(popen.call_args.kwargs['start_new_session'], True)
+
+    def test_settle_watch_never_raises_into_the_switch(self):
+        config = dict(api='api', api_url='https://api.invalid', region='test')
+        for error in (ProcessLookupError(), PermissionError(), OSError('x')):
+            with self.subTest(error=error), tempfile.TemporaryDirectory() as name:
+                state = {}
+                with patch.object(rollout, 'collect_stale_watch', side_effect=error):
+                    rollout.settle_watch(config, Path(name), state, None)
+                self.assertEqual(state['switchWatch'], 'interrupted')
+                self.assertFalse(state.get('switchWatchFailed'))
+        # A kill that races with the watcher's own exit is swallowed.
+        with patch.object(rollout, 'watcher_alive', return_value=True), patch.object(rollout.os, 'kill', side_effect=ProcessLookupError):
+            rollout.signal_watcher(1, Path('r.json'), rollout.signal.SIGTERM)
+
+    def test_a_recorded_pid_is_signalled_only_when_it_is_this_runs_watcher(self):
+        with patch.object(rollout, 'watcher_alive', return_value=False), patch.object(rollout.os, 'kill') as kill:
+            rollout.signal_watcher(1, Path('r.json'), rollout.signal.SIGTERM)
+        kill.assert_not_called()
+        self.assertFalse(rollout.watcher_alive(os.getpid(), Path('r.json')))
+
+    def test_the_baseline_wait_ends_on_enough_samples_exit_or_timeout(self):
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            progress = directory / 'switch-watch.progress.json'
+            clock = [0.0]
+
+            def sleep(seconds):
+                clock[0] += seconds
+                progress.write_text(json.dumps(dict(started=int(clock[0] // 2))))
+            alive = unittest.mock.Mock(poll=lambda: None)
+            with patch.object(rollout.time, 'sleep', side_effect=sleep), patch.object(rollout.time, 'monotonic', side_effect=lambda: clock[0]):
+                rollout.wait_for_baseline(alive, directory)
+                self.assertEqual(clock[0], 2 * rollout.WATCH_BASELINE_SAMPLES)
+                clock[0] = 0.0
+                progress.unlink()
+                rollout.wait_for_baseline(unittest.mock.Mock(poll=lambda: 1), directory)
+                self.assertEqual(clock[0], 0.0)
+            clock[0] = 0.0
+            with patch.object(rollout.time, 'sleep', side_effect=lambda s: clock.__setitem__(0, clock[0] + s)), \
+                    patch.object(rollout.time, 'monotonic', side_effect=lambda: clock[0]):
+                rollout.wait_for_baseline(alive, directory)
+                self.assertGreaterEqual(clock[0], rollout.WATCH_BASELINE_TIMEOUT)
 
     def test_rolling_refuses_a_busy_standby_lane(self):
         # A fresh run refuses before preparing; a resumed run checks again right before the standby worker starts.

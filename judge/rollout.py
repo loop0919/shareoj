@@ -754,12 +754,20 @@ def api_smoke(config, directory, nodes):
     return report
 
 
-# The switch latency watcher (judge/smoke-api.py --watch): how many seconds of baseline it collects before the switch,
-# how long it keeps submitting after the API switch, and how long it may take to finish and clean up once stopped.
-WATCH_LEAD = 30
+# The switch latency watcher (judge/smoke-api.py --watch): the baseline it must collect before the switch, how long it
+# keeps submitting after the API switch, and how long it may take to finish and clean up once stopped.
+WATCH_BASELINE_SAMPLES = 6
+WATCH_BASELINE_TIMEOUT = 180
 WATCH_TAIL = 60
 WATCH_STOP_WAIT = 180
+WATCH_ABORT_WAIT = 120
 WATCH_FAILED = 'switch latency check failed; see switch-watch.json'
+
+
+def watch_failed_message(state):
+    """The failure with its cause: latency, a watcher that did not start or died, or test users left behind."""
+    detail = {key: state[key] for key in ('switchWatch', 'switchWatchLeftovers') if key in state}
+    return WATCH_FAILED + ' (' + json.dumps(detail, sort_keys=True) + ')'
 
 
 def watch_paths(directory):
@@ -767,46 +775,68 @@ def watch_paths(directory):
 
 
 def read_watch_report(path):
-    """The watcher's report once it has finished; None while it runs, if it was cut short, or if it never wrote one."""
+    """The watcher's report only if it saw the stop file and finished normally; a terminated, capped or crashed
+    watcher (or one still running) leaves a report that says nothing about the whole switch."""
     try:
         report = json.loads(path.read_text())
     except (OSError, ValueError):
         return None
-    if report.get('status') not in ('passed', 'failed') or report.get('terminated'):
+    if report.get('status') not in ('passed', 'failed') or report.get('terminated') or report.get('capped') \
+            or report.get('stopped') is not True:
         return None
     return report
 
 
-def watcher_alive(pid):
+def watcher_alive(pid, report):
+    """Whether `pid` is still this run's watcher (the pid may have been reused by something else)."""
     try:
-        return b'smoke-api.py' in Path('/proc/%d/cmdline' % pid).read_bytes()
+        command = Path('/proc/%d/cmdline' % pid).read_bytes().split(b'\0')
     except OSError:
         return False
+    return b'smoke-api.py' in command and b'--watch' in command and str(report).encode() in command
+
+
+def leftover_users(report):
+    try:
+        return json.loads(report.with_suffix('.cleanup.json').read_text())['users']
+    except (OSError, ValueError, KeyError):
+        return []
+
+
+def clean_leftovers(config, directory):
+    """Remove test users and problems a watcher left behind; True once none remain."""
+    report = watch_paths(directory)[0]
+    if not leftover_users(report):
+        return True
+    try:
+        run(sys.executable, 'judge/smoke-api.py', '--cleanup', '--function', config['api'], '--api-url', config['api_url'],
+            '--region', config['region'], '--report', str(report))
+    except Exception as error:
+        print('watch cleanup incomplete:', error, flush=True)
+    return not leftover_users(report)
+
+
+def signal_watcher(pid, report, number):
+    try:
+        if watcher_alive(pid, report):
+            os.kill(pid, number)
+    except (ProcessLookupError, PermissionError):
+        pass
 
 
 def collect_stale_watch(config, directory, state):
     """End a watcher left by an earlier process (SIGTERM, so it cleans up), then return its report if it had finished."""
     report_path = watch_paths(directory)[0]
     old = state.pop('switchWatcher', None)
-    if old and watcher_alive(old['pid']):
-        os.kill(old['pid'], signal.SIGTERM)
+    if old:
+        signal_watcher(old['pid'], report_path, signal.SIGTERM)
         for _ in range(90):
-            if not watcher_alive(old['pid']):
+            if not watcher_alive(old['pid'], report_path):
                 break
             time.sleep(1)
         else:
-            os.kill(old['pid'], signal.SIGKILL)
-    leftovers = report_path.with_suffix('.cleanup.json')
-    try:
-        pending = json.loads(leftovers.read_text())['users']
-    except (OSError, ValueError, KeyError):
-        pending = []
-    if pending:
-        try:
-            run(sys.executable, 'judge/smoke-api.py', '--cleanup', '--function', config['api'], '--api-url', config['api_url'],
-                '--region', config['region'], '--report', str(report_path))
-        except Exception as error:
-            print('stale watch cleanup incomplete:', error, flush=True)
+            signal_watcher(old['pid'], report_path, signal.SIGKILL)
+    clean_leftovers(config, directory)
     return read_watch_report(report_path)
 
 
@@ -814,16 +844,33 @@ def start_watch(config, directory, state):
     """Start the latency watcher as a child process. It stops itself after its hard cap even if nobody stops it."""
     collect_stale_watch(config, directory, state)
     report, stop, switch_at = watch_paths(directory)
-    for path in (report, stop, switch_at, report.with_suffix('.cleanup.json')):
+    # Never forget test users: a new watcher starts only when the earlier one left none.
+    if leftover_users(report):
+        raise RuntimeError('an earlier watch left test users; run smoke-api.py --cleanup with ' + str(report))
+    for path in (report, stop, switch_at, report.with_suffix('.cleanup.json'), report.with_suffix('.progress.json')):
         path.unlink(missing_ok=True)
     with (directory / 'switch-watch.log').open('ab') as log:
+        # Its own session: Ctrl-C or a closed terminal reaches the rollout only, which then stops the watcher itself.
         process = subprocess.Popen([sys.executable, 'judge/smoke-api.py', '--watch', '--function', config['api'],
             '--api-url', config['api_url'], '--region', config['region'], '--runtime', config['smoke_runtime'],
             '--stop-file', str(stop), '--switch-at-file', str(switch_at), '--interval', '5', '--report', str(report)],
-            cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
+            cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     state['switchWatcher'] = dict(pid=process.pid, stopFile=str(stop), report=str(report))
     save(directory / 'state.json', state)
     return process
+
+
+def wait_for_baseline(process, directory):
+    """Wait until the watcher has seen enough submissions start (or exited, or the timeout); the switch goes on either way."""
+    progress = watch_paths(directory)[0].with_suffix('.progress.json')
+    deadline = time.monotonic() + WATCH_BASELINE_TIMEOUT
+    while process.poll() is None and time.monotonic() < deadline:
+        try:
+            if json.loads(progress.read_text())['started'] >= WATCH_BASELINE_SAMPLES:
+                return
+        except (OSError, ValueError, KeyError):
+            pass
+        time.sleep(2)
 
 
 def stop_watch(process, directory):
@@ -842,38 +889,80 @@ def stop_watch(process, directory):
     return read_watch_report(report)
 
 
+def abort_watch(config, directory, state, process):
+    """End a watcher because the switch failed or was interrupted. SIGTERM makes it clean up; this never raises."""
+    if process is None:
+        return
+    try:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(WATCH_ABORT_WAIT)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        state.pop('switchWatcher', None)
+        clean_leftovers(config, directory)
+    except BaseException as error:
+        print('could not stop the switch watch:', error, flush=True)
+
+
 def settle_watch(config, directory, state, process):
-    """Record how the watch ended. It never changes what the switch does; a bad watch only fails the run at the end."""
+    """Record how the watch ended. It never changes what the switch does, and never raises into it; a bad watch only
+    fails the run at the end."""
     if 'switchWatch' in state:
         return
-    if process is not None:
-        time.sleep(WATCH_TAIL)
-        report = stop_watch(process, directory)
-        outcome = 'died'
-    else:
-        # The run was resumed after the switch: a watcher from the dead run is ended, and only a finished report counts.
-        report = collect_stale_watch(config, directory, state)
-        outcome = 'interrupted'
+    try:
+        if process is not None:
+            time.sleep(WATCH_TAIL)
+            report, outcome = stop_watch(process, directory), 'died'
+        else:
+            # The run was resumed after the switch: a watcher from the dead run is ended, and only a finished report counts.
+            report, outcome = collect_stale_watch(config, directory, state), 'interrupted'
+    except Exception as error:
+        print('switch watch could not be settled:', error, flush=True)
+        report, outcome = None, 'died' if process is not None else 'interrupted'
     state.pop('switchWatcher', None)
     if report is None:
         state['switchWatch'] = outcome
-        state['switchWatchFailed'] = outcome == 'died'
+        failed = outcome == 'died'
     else:
         state['switchWatch'] = dict(report=str(watch_paths(directory)[0]), status=report['status'], maxWaitMs=report.get('maxWaitMs'))
-        state['switchWatchFailed'] = report['status'] != 'passed'
-    if not state['switchWatchFailed']:
-        state.pop('switchWatchFailed')
-    save(directory / 'state.json', state)
+        failed = report['status'] != 'passed'
+    # Test users left behind are removed now; if some remain, say so rather than blaming latency.
+    try:
+        if not clean_leftovers(config, directory):
+            state['switchWatchLeftovers'] = True
+            failed = True
+    except Exception as error:
+        print('watch cleanup failed:', error, flush=True)
+    if failed:
+        state['switchWatchFailed'] = True
+    else:
+        state.pop('switchWatchFailed', None)
+    try:
+        save(directory / 'state.json', state)
+    except Exception as error:
+        print('could not save the watch result:', error, flush=True)
 
 
 def switch(config, directory, state, first, rest, verification):
+    """Switch the lane; if anything stops it before the watch is settled, the watcher is stopped too."""
+    handle = [None]
+    try:
+        switch_steps(config, directory, state, first, rest, verification, handle)
+    except BaseException:
+        abort_watch(config, directory, state, handle[0])
+        raise
+
+
+def switch_steps(config, directory, state, first, rest, verification, handle):
     """Start the prepared burst on the standby lane, move the bridge to it, then drain and stop the previous lane.
 
     Dispatch and admission stay open; old and new workers never read the same queue. Each step runs once:
     a resumed run continues after the last recorded one and never switches the bridge twice.
     """
     region, digest, previous = config['region'], state['runtimeDigest'], state['previousDigest']
-    watcher = None
     if not state.get('digestSwitched'):
         checkpoint(directory, state, 'standby-first')
         # A run stopped right after the bridge update finds the bridge already switched, and the new lane busy.
@@ -892,13 +981,13 @@ def switch(config, directory, state, first, rest, verification):
             state.pop('switchWatch', None)
             state.pop('switchWatchFailed', None)
             try:
-                watcher = start_watch(config, directory, state)
+                handle[0] = start_watch(config, directory, state)
             except Exception as error:
                 state.update(switchWatch='not-started', switchWatchFailed=True)
                 print('switch watch did not start:', error, flush=True)
             else:
                 # Baseline submissions from the old environment, before anything changes.
-                time.sleep(WATCH_LEAD)
+                wait_for_baseline(handle[0], directory)
             # Everything above leaves users on the old environment; the bridge update below is the first visible change.
             checkpoint(directory, state, 'switch-lane')
             contest_guard(config)
@@ -927,7 +1016,8 @@ def switch(config, directory, state, first, rest, verification):
         tag_digest(config, [first], digest)
         state['apiSwitched'] = True
         save(directory / 'state.json', state)
-    settle_watch(config, directory, state, watcher)
+    settle_watch(config, directory, state, handle[0])
+    handle[0] = None
     if 'firstApiReport' not in state:
         checkpoint(directory, state, 'sync-settings')
         sync_settings(config, directory, digest, config['runtimes'], previous=previous, lane=state['activeLane'])
@@ -979,8 +1069,7 @@ def rolling(config, directory, state):
     """Roll an OS update through the pool while admission and dispatch stay open (ADR 0014, two request lanes)."""
     refuse_reverted(state)
     if state.get('step') == 'switch-watch-failed':
-        # Everything else finished; resuming only repeats the verdict.
-        raise ValueError(WATCH_FAILED)
+        raise ValueError(watch_failed_message(state))
     region = config['region']
     if not config.get('pool') or config.get('retire_nodes'):
         raise ValueError('a rolling update needs an EC2 pool and no retired hosts')
@@ -1050,7 +1139,7 @@ def rolling(config, directory, state):
     if state.get('switchWatchFailed'):
         # The rollout itself is done, but it must not be reported as passed.
         checkpoint(directory, state, 'switch-watch-failed', apiReport=str(report), maintenanceHoldReleased=released)
-        raise ValueError(WATCH_FAILED)
+        raise ValueError(watch_failed_message(state))
     checkpoint(directory, state, 'complete', status='passed', apiReport=str(report), maintenanceHoldReleased=released)
 
 
@@ -1230,6 +1319,9 @@ def main():
                 cleanup_after_success(config, directory, state)
                 print('already complete for these artifact hashes')
                 return
+            if args.action == 'rolling' and state.get('step') == 'switch-watch-failed':
+                # Everything else finished and the hold was released; do not touch the pool, only repeat the verdict.
+                raise ValueError(watch_failed_message(state))
             save(state_path, state)
             ensure_pool(config, ROLLING_HOLD if args.action == 'rolling' else 4 * 3600)
             if args.action == 'rolling':
