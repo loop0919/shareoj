@@ -777,6 +777,10 @@ def switch(config, directory, state, first, rest, verification):
             # Everything above leaves users on the old environment; the bridge update below is the first visible change.
             checkpoint(directory, state, 'switch-lane')
             contest_guard(config)
+            # Saved before the update is sent. A run that stops after the update has switched without recording it,
+            # and only a run with this mark makes rolling-revert ask the bridge whether that happened.
+            state['laneSwitchAttempted'] = True
+            save(directory / 'state.json', state)
             # One update moves the queue, the digest and the previous digest together. The bridge then never sends
             # new-digest work to the old lane, and rebinds undispatched old-digest submissions to the new digest.
             update_env(region, config['bridge'], dict(JUDGE_REQUEST_QUEUE_URL=state['activeQueue'], JUDGE_RUNTIME_DIGEST=digest,
@@ -834,8 +838,17 @@ def publish_rolling_runtimes(config, directory, state):
     return dict(config, runtimes=requested)
 
 
+def refuse_reverted(state):
+    """Refuse a run that was reverted, or is being reverted: it must never drain or stop the workers users are back on."""
+    if state.get('status') == 'reverted':
+        raise ValueError('this run was reverted; start a new run')
+    if state.get('revertStarted'):
+        raise ValueError('this run is being reverted; finish it with rolling-revert')
+
+
 def rolling(config, directory, state):
     """Roll an OS update through the pool while admission and dispatch stay open (ADR 0014, two request lanes)."""
+    refuse_reverted(state)
     region = config['region']
     if not config.get('pool') or config.get('retire_nodes'):
         raise ValueError('a rolling update needs an EC2 pool and no retired hosts')
@@ -905,10 +918,125 @@ def rolling(config, directory, state):
     checkpoint(directory, state, 'complete', status='passed', apiReport=str(report), maintenanceHoldReleased=released)
 
 
+REVERT_WINDOW = 'revert is only possible between the lane switch and the old worker stop'
+# SQS accepts one purge of a queue every 60 seconds, and a purge deletes the queue's messages within 60 seconds.
+PURGE_INTERVAL = 65
+
+
+def bridge_reverted(config, state):
+    """Whether the live bridge sends the previous digest to the previous lane again; False while it is still switched."""
+    status = database_status(config)
+    live = status.get('requestQueueUrl'), status.get('runtimeDigest'), status.get('previousRuntimeDigest')
+    if live == (state['previousQueue'], state['previousDigest'], state['runtimeDigest']):
+        return True
+    if live == (state['activeQueue'], state['runtimeDigest'], state['previousDigest']):
+        return False
+    raise ValueError('bridge is on neither the new lane nor the reverted one; inspect deployment-status before resuming')
+
+
+def purge_lane(config, directory, state, url, timeout=180):
+    """Empty a lane that no worker reads. A resumed revert waits out the SQS purge interval before purging again."""
+    if state.get('purgeSent'):
+        # The previous run may have purged moments ago. Its purge finishes within the interval and SQS refuses
+        # another one inside it, so wait, then purge again only if messages are left.
+        time.sleep(PURGE_INTERVAL)
+    if not state.get('purgeSent') or queue_counts(config, url) != 0:
+        # Saved before the call, so a run that stops right after it knows a purge may be in progress.
+        state['purgeSent'] = True
+        save(directory / 'state.json', state)
+        aws(config['region'], 'sqs', 'purge-queue', '--queue-url', url)
+    deadline = time.monotonic() + timeout
+    while queue_counts(config, url) != 0:
+        if time.monotonic() >= deadline:
+            raise RuntimeError('the new lane did not empty after the purge; resume rolling-revert to purge it again')
+        time.sleep(10)
+
+
+def revert(config, directory, state):
+    """Move a switched rolling update back to the previous lane and digest while the old workers still run there.
+
+    The operator decides to revert; nothing calls this automatically. Each step is recorded, so the same command
+    resumes an interrupted revert without updating the bridge, purging the new lane or requeueing again.
+    """
+    if state.get('status') == 'reverted':
+        print('already reverted', flush=True)
+        return
+    # Users go back to the old workers, so those must still run. switch-stop exists from the moment they are told
+    # to stop, before oldWorkersStopped is saved. These checks read only local files, so a refusal touches nothing.
+    if state.get('oldWorkersStopped') or (directory / 'switch-stop').exists():
+        raise ValueError(REVERT_WINDOW)
+    if not state.get('revertStarted'):
+        if not state.get('digestSwitched'):
+            # A run can stop between the bridge update and saving digestSwitched. Only a run that went as far as
+            # sending the update asks the bridge, the way a resumed rolling update does; any other run is before the switch.
+            if not state.get('laneSwitchAttempted') or not bridge_switched(config, state):
+                raise ValueError(REVERT_WINDOW)
+    region, digest, previous, first = config['region'], state['runtimeDigest'], state['previousDigest'], state['firstHost']
+    if not state.get('bridgeReverted'):
+        # Saved before the bridge changes. From here rolling refuses the run, so nothing drains or stops the old
+        # workers, and a resumed revert skips the window check, which a reverted bridge would no longer pass.
+        checkpoint(directory, state, 'revert-bridge', revertStarted=True, digestSwitched=True)
+        # Bridge first, in one update. From then on new submissions go to the old workers, and new-digest submissions
+        # not yet dispatched are rebound to the old digest, because the new digest becomes the bridge's previous one.
+        if not bridge_reverted(config, state):
+            update_env(region, config['bridge'], dict(JUDGE_REQUEST_QUEUE_URL=state['previousQueue'], JUDGE_RUNTIME_DIGEST=previous,
+                                                      JUDGE_PREVIOUS_RUNTIME_DIGEST=digest))
+            if not bridge_reverted(config, state):
+                raise ValueError('bridge did not return to the previous lane')
+        state['bridgeReverted'] = True
+        save(directory / 'state.json', state)
+    if not state.get('apiReverted'):
+        checkpoint(directory, state, 'revert-api')
+        bridge = aws(region, 'lambda', 'get-function-configuration', '--function-name', config['bridge'])
+        # A bridge invocation still running with the pre-revert configuration treats an old-digest submission as the
+        # previous environment's: it rebinds it to the new digest and sends it to the new lane, or marks it JE for a
+        # runtime it does not publish. So the API creates old-digest submissions only once every such invocation is over.
+        # Meanwhile the reverted bridge rebinds the API's new-digest submissions to the old digest, so nobody waits.
+        # After the wait nothing sends to the new lane any more, which the purge below relies on.
+        time.sleep(bridge['Timeout'] + 5)
+        update_env(region, config['api'], dict(JUDGE_CPP_IMAGE=previous))
+        state['apiReverted'] = True
+        save(directory / 'state.json', state)
+    if not state.get('newWorkerStopped'):
+        checkpoint(directory, state, 'revert-stop')
+        # Stop the new worker before the purge and the requeue. A worker still running could take a job from the
+        # new lane, or finish one whose attempt the requeue is about to replace.
+        ssm_step(directory, 'revert-stop', config, [first], stop_command)
+        # The host now holds the new environment. Without the tag the bridge never starts it as an old-environment
+        # host: it starts a stopped host only when the tag matches its dispatch digest. A missing tag is no error.
+        aws(region, 'ec2', 'delete-tags', '--resources', first, '--tags', 'Key=JudgeInstalledDigest')
+        state['newWorkerStopped'] = True
+        save(directory / 'state.json', state)
+    if not state.get('newLanePurged'):
+        checkpoint(directory, state, 'revert-purge')
+        # Purge before the requeue. The requeue re-sends these submissions with new attempts through the old lane,
+        # so their messages on the new lane are stale. Left there, they would block the next rolling update,
+        # which starts its standby worker on this lane only when it is empty.
+        purge_lane(config, directory, state, state['activeQueue'])
+        state['newLanePurged'] = True
+        save(directory / 'state.json', state)
+    if 'revertRequeued' not in state:
+        checkpoint(directory, state, 'revert-requeue')
+        # Submissions the new environment did not finish go back to the old one. The bridge accepts only its previous
+        # digest, which the bridge update made the new one, and rebinds them to the old digest when it sends them.
+        # Submissions the new environment finished keep their results. A run that stops before saving the count
+        # requeues again on resume. That is safe: once the first call has run, nothing is dispatched with the new
+        # digest any more, because the reverted bridge rebinds before it dispatches.
+        count = requeue(config, digest)
+        state.update(requeued=state.get('requeued', 0) + count, revertRequeued=count)
+        save(directory / 'state.json', state)
+    checkpoint(directory, state, 'revert-settings')
+    # Terraform's previous digest is the new one, as on the live bridge, so an apply keeps the bridge as it is.
+    sync_settings(config, directory, previous, config['runtimes'], previous=digest, lane=state['previousLane'])
+    for name, enabled in state['alarm_actions'].items():
+        aws(region, 'cloudwatch', 'enable-alarm-actions' if enabled else 'disable-alarm-actions', '--alarm-names', name)
+    checkpoint(directory, state, 'reverted', status='reverted')
+
+
 def main():
     global LOG_DIRECTORY
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['prepare', 'finish', 'run', 'prune', 'rolling'])
+    parser.add_argument('action', choices=['prepare', 'finish', 'run', 'prune', 'rolling', 'rolling-revert'])
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--run-dir', type=Path, required=True)
     parser.add_argument('--report', type=Path)
@@ -939,6 +1067,20 @@ def main():
         if args.action == 'prune':
             cleanup_after_success(config, directory, state, strict=True)
             return
+        if args.action == 'rolling-revert':
+            # An emergency action uses no artifact and needs only the first host, so neither an artifact check, a pool
+            # start nor preflight runs; a stale local file or an unrelated offline host must not keep users on a broken environment.
+            try:
+                revert(config, directory, state)
+            except BaseException as error:
+                # A refusal changes nothing; a started revert records where it stopped.
+                if state.get('revertStarted'):
+                    state.update(status='failed', error=str(error))
+                    save(state_path, state)
+                raise
+            return
+        # Before anything is saved, so a reverted run keeps its status and stays closed.
+        refuse_reverted(state)
         try:
             for key in ('release', 'bridge_package'):
                 if key == 'release' and args.action == 'rolling' and not config.get('release'):

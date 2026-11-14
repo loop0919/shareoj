@@ -521,9 +521,28 @@ class RolloutTests(unittest.TestCase):
                 check(dict(event='failure', category=category, reason='x'))
 
 
+class Interrupted(Exception):
+    pass
+
+
+class Interrupt(list):
+    """An event list that stops the run right after the first event starting with `at`, like a killed process."""
+
+    def __init__(self, at=None):
+        super().__init__()
+        self.at = at
+
+    def append(self, event):
+        super().append(event)
+        if self.at is not None and event[:len(self.at)] == self.at:
+            self.at = None
+            raise Interrupted(event)
+
+
 class RollingTests(unittest.TestCase):
     first, primary, other = 'i-0123456789abcdef1', 'i-0123456789abcdef0', 'i-0123456789abcdef2'
     old, new = 'sha256:' + 'a' * 64, 'sha256:' + 'b' * 64
+    window = 'revert is only possible between the lane switch and the old worker stop'
 
     def live_lambdas(self, url='qa'):
         """The live Lambda environments; update_env writes to them and the bridge status reads them."""
@@ -532,8 +551,11 @@ class RollingTests(unittest.TestCase):
                     api=dict(JUDGE_CPP_IMAGE=self.old, JUDGE_ENABLED_RUNTIMES='python314'))
 
     def run_rolling(self, state=None, events=None, live=None, directory=None, queues=None, in_flight=(0,), requeued=0,
-                    prepared=None, **overrides):
-        """Run rolling against fakes; lane a is 'qa' (queues[0]) and lane b is 'qb' (request_queue_b)."""
+                    prepared=None, action=None, clock=None, purges=None, **overrides):
+        """Run rolling (or another action) against fakes; lane a is 'qa' (queues[0]) and lane b is 'qb' (request_queue_b).
+
+        Pass the same live, queues, clock and purges to a resumed run: they are the AWS side, which outlives a process.
+        """
         events = [] if events is None else events
         prepared = prepared or self.new
         config = dict(region='test', api='api', bridge='bridge', pool='judge-dev', nodes=[self.primary, self.first, self.other],
@@ -542,7 +564,8 @@ class RollingTests(unittest.TestCase):
         state = {} if state is None else state
         live = self.live_lambdas() if live is None else live
         queues = {} if queues is None else queues
-        counted, clock = [], [0.0]
+        counted, clock = [], [0.0] if clock is None else clock
+        purges = {} if purges is None else purges
 
         def aws(region, service, operation, *args):
             if operation == 'get-function-configuration':
@@ -550,14 +573,28 @@ class RollingTests(unittest.TestCase):
                 return dict(Environment=dict(Variables=dict(variables)), Timeout=120)
             if operation == 'describe-alarms':
                 return dict(MetricAlarms=[dict(AlarmName='alarm', ActionsEnabled=True)])
+            if operation == 'purge-queue':
+                url = args[args.index('--queue-url') + 1]
+                # SQS rejects a second purge of the same queue within 60 seconds.
+                if url in purges and clock[0] - purges[url] < 60:
+                    raise RuntimeError('PurgeQueueInProgress')
+                purges[url] = clock[0]
+                queues.pop(url, None)
             events.append((operation, *args))
             return {}
 
         def update_env(region, function, changes, remove=()):
-            events.append(('env', function, changes))
             live[function].update(changes)
             for name in remove:
                 live[function].pop(name, None)
+            events.append(('env', function, changes))
+
+        def requeue(config, digest):
+            # The bridge requeues only its current previous digest.
+            if digest != live['bridge']['JUDGE_PREVIOUS_RUNTIME_DIGEST']:
+                raise RuntimeError('bridge did not requeue the previous digest')
+            events.append(('requeue', digest))
+            return requeued
 
         def prepare_hosts(config, directory, state, nodes, label, expected_digest=None):
             events.append(('prepare', label, tuple(nodes), expected_digest))
@@ -586,16 +623,15 @@ class RollingTests(unittest.TestCase):
             clock[0] += seconds
 
         fakes = dict(
-            preflight=None, pool_bursts=lambda c: [self.first, self.other], aws=aws, update_env=update_env,
-            deploy_bridge=lambda *a, **k: events.append(('bridge-code',)),
+            preflight=lambda c: events.append(('preflight',)), pool_bursts=lambda c: [self.first, self.other], aws=aws,
+            update_env=update_env, deploy_bridge=lambda *a, **k: events.append(('bridge-code',)),
             contest_guard=lambda c: events.append(('contest',)),
             ssm_step=lambda d, step, c, nodes, script: events.append(('ssm', step, tuple(nodes))),
             prepare_hosts=prepare_hosts, database_status=status, queue_counts=queue_counts,
-            set_dispatch=lambda c, d, s, paused: events.append(('dispatch', paused)),
-            requeue=lambda c, digest: events.append(('requeue', digest)) or requeued,
+            set_dispatch=lambda c, d, s, paused: events.append(('dispatch', paused)), requeue=requeue,
             standby_ready=lambda c, d, node, url: events.append(('standby', node, url)),
             start_workers=lambda v, request_queue=None: events.append(('start', v.name, request_queue)),
-            sync_settings=lambda *a, **k: events.append(('sync', k.get('previous'), k.get('lane'))),
+            sync_settings=lambda c, d, digest, runtimes, **k: events.append(('sync', digest, k.get('previous'), k.get('lane'))),
             api_smoke=lambda c, d, nodes: events.append(('api', tuple(nodes))) or d / 'api.json',
             healthy_workers=lambda c, d, digest: events.append(('healthy', digest)),
             run=lambda *a: events.append(('cmd',) + a[:3]))
@@ -603,11 +639,25 @@ class RollingTests(unittest.TestCase):
             name = stack.enter_context(tempfile.TemporaryDirectory())
             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
             for function, fake in fakes.items():
-                stack.enter_context(patch.object(rollout, function) if fake is None else patch.object(rollout, function, side_effect=fake))
+                stack.enter_context(patch.object(rollout, function, side_effect=fake))
             stack.enter_context(patch.object(rollout.time, 'sleep', side_effect=sleep))
             stack.enter_context(patch.object(rollout.time, 'monotonic', side_effect=lambda: clock[0]))
-            rollout.rolling(config, directory or Path(name), state)
+            (action or rollout.rolling)(config, directory or Path(name), state)
         return state, events
+
+    def stopped_rolling(self, directory, at=None):
+        """Run rolling until it stops at the event `at`, or else at the drain timeout with the old workers on lane a."""
+        state, live = {}, self.live_lambdas()
+        with self.assertRaises(Interrupted if at else TimeoutError):
+            self.run_rolling(state, Interrupt(at), live=live, directory=directory, in_flight=(2,))
+        return state, live
+
+    def run_revert(self, state, live, directory, events=None, **kwargs):
+        return self.run_rolling(state, events, live=live, directory=directory, action=rollout.revert, **kwargs)
+
+    def reverted(self):
+        """The bridge configuration a revert sets: the previous lane and digest, with the new digest as the previous one."""
+        return dict(JUDGE_REQUEST_QUEUE_URL='qa', JUDGE_RUNTIME_DIGEST=self.old, JUDGE_PREVIOUS_RUNTIME_DIGEST=self.new)
 
     def assertInOrder(self, events, *expected):
         position = 0
@@ -629,7 +679,7 @@ class RollingTests(unittest.TestCase):
         self.assertInOrder(events, ('ssm', 'hold-bursts', (self.first, self.other)), ('prepare', 'first', (self.first,), None),
                            ('count', 'qb'), ('start', 'verify-first', 'qb'), ('sleep', 35), ('standby', self.first, 'qb'),
                            ('contest',), ('env', 'bridge', switch), ('sleep', 125), ('env', 'api', dict(JUDGE_CPP_IMAGE=self.new)),
-                           ('sync', self.old, 'b'), ('api', (self.first,)), ('count', 'qa'), ('ssm', 'switch-stop', rest),
+                           ('sync', self.new, self.old, 'b'), ('api', (self.first,)), ('count', 'qa'), ('ssm', 'switch-stop', rest),
                            ('prepare', 'rest', rest, self.new), ('start', 'verify-rest', 'qb'), ('healthy', self.new),
                            ('api', (self.primary, self.first, self.other)))
         # One bridge update switches the lane, the digest and the previous digest together; dispatch is never paused.
@@ -698,7 +748,7 @@ class RollingTests(unittest.TestCase):
         self.assertFalse(any(e[:2] == ('start', 'verify-first') for e in events))
         resumed = events.index(('prepare', 'first', (self.first,), None)) + 1
         self.assertEqual(events[resumed:resumed + 2], [('sleep', 125), ('env', 'api', dict(JUDGE_CPP_IMAGE=self.new))])
-        self.assertInOrder(events[resumed:], ('sync', self.old, 'a'), ('api', (self.first,)), ('count', 'qb'),
+        self.assertInOrder(events[resumed:], ('sync', self.new, self.old, 'a'), ('api', (self.first,)), ('count', 'qb'),
                            ('ssm', 'switch-stop', (self.primary, self.other)), ('start', 'verify-rest', 'qa'))
 
     def test_resume_after_an_unrecorded_switch_does_not_switch_again(self):
@@ -734,6 +784,207 @@ class RollingTests(unittest.TestCase):
                 state, events = self.run_rolling(state, live=live, prepared=self.old)
                 self.assertEqual((state['status'], state['step'], state['digestSwitched']), ('passed', 'complete', True))
                 self.assertFalse(any(e[:2] == ('env', 'bridge') or e[0] == 'standby' for e in events))
+
+    def test_revert_restores_the_previous_lane_and_digest(self):
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            # The drain timed out: users are judged on lane b, the old workers still run on lane a.
+            state, live = self.stopped_rolling(directory)
+            self.assertTrue(state['digestSwitched'] and state['apiSwitched'])
+            # The new lane still holds work the new worker had not taken.
+            state, events = self.run_revert(state, live, directory, queues={'qb': 2}, requeued=3)
+        tag = ('delete-tags', '--resources', self.first, '--tags', 'Key=JudgeInstalledDigest')
+        self.assertEqual(events, [('env', 'bridge', self.reverted()), ('sleep', 125), ('env', 'api', dict(JUDGE_CPP_IMAGE=self.old)),
+                                  ('ssm', 'revert-stop', (self.first,)), tag, ('purge-queue', '--queue-url', 'qb'), ('count', 'qb'),
+                                  ('requeue', self.new), ('sync', self.old, self.new, 'a'),
+                                  ('enable-alarm-actions', '--alarm-names', 'alarm')])
+        self.assertEqual((state['status'], state['step']), ('reverted', 'reverted'))
+        self.assertEqual((state['requeued'], state['revertRequeued']), (3, 3))
+        self.assertEqual({key: live['bridge'][key] for key in self.reverted()}, self.reverted())
+        self.assertEqual(live['api']['JUDGE_CPP_IMAGE'], self.old)
+
+    def test_revert_refused_outside_its_window(self):
+        config = dict(region='test', api='api', bridge='bridge', runtimes=['python314'], worker_alarms=['alarm'])
+        saved = dict(previousLane='a', previousQueue='qa', activeLane='b', activeQueue='qb', previousDigest=self.old,
+                     runtimeDigest=self.new, firstHost=self.first, alarm_actions={'alarm': True})
+        with tempfile.TemporaryDirectory() as name:
+            before, _ = self.stopped_rolling(Path(name), at=('standby',))
+        cases = [('a fresh run', {}, False),
+                 ('stopped before the switch', before, False),
+                 ('refused right before the bridge update', dict(saved, step='switch-lane'), False),
+                 ('old workers stopped', dict(digestSwitched=True, oldWorkersStopped=True), False),
+                 # switch-stop exists from the moment the old workers are told to stop, before oldWorkersStopped is saved.
+                 ('old workers told to stop', dict(saved, digestSwitched=True, apiSwitched=True), True)]
+        for case, state, stopping in cases:
+            with self.subTest(case), tempfile.TemporaryDirectory() as name, patch.object(subprocess, 'run') as process, \
+                    patch.object(rollout.time, 'sleep') as sleep:
+                directory, unchanged = Path(name), json.dumps(state, sort_keys=True)
+                if stopping:
+                    (directory / 'switch-stop').mkdir()
+                with self.assertRaisesRegex(ValueError, self.window):
+                    rollout.revert(config, directory, state)
+                # Not one AWS, gh or Terraform call, and no state change.
+                process.assert_not_called()
+                sleep.assert_not_called()
+                self.assertEqual(json.dumps(state, sort_keys=True), unchanged)
+                self.assertFalse((directory / 'state.json').exists())
+
+    def test_rolling_refuses_a_reverted_run(self):
+        for state, message in [(dict(status='reverted'), 'this run was reverted; start a new run'),
+                               (dict(status='failed', step='revert-purge', digestSwitched=True, revertStarted=True),
+                                'this run is being reverted; finish it with rolling-revert')]:
+            with self.subTest(state['status']):
+                events = []
+                with self.assertRaisesRegex(ValueError, message):
+                    self.run_rolling(state, events)
+                self.assertEqual(events, [])
+
+    def test_revert_after_an_unrecorded_switch(self):
+        # The bridge took the update, but the run stopped before saving digestSwitched or switching the API.
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            state, live = self.stopped_rolling(directory, at=('env', 'bridge'))
+            self.assertNotIn('digestSwitched', state)
+            self.assertEqual(live['bridge']['JUDGE_REQUEST_QUEUE_URL'], 'qb')
+            state, events = self.run_revert(state, live, directory)
+        self.assertEqual((state['status'], state['digestSwitched']), ('reverted', True))
+        self.assertEqual([e for e in events if e[0] == 'env'],
+                         [('env', 'bridge', self.reverted()), ('env', 'api', dict(JUDGE_CPP_IMAGE=self.old))])
+        self.assertInOrder(events, ('env', 'bridge', self.reverted()), ('sleep', 125), ('env', 'api', dict(JUDGE_CPP_IMAGE=self.old)),
+                           ('ssm', 'revert-stop', (self.first,)), ('purge-queue', '--queue-url', 'qb'), ('requeue', self.new),
+                           ('sync', self.old, self.new, 'a'))
+        self.assertEqual({key: live['bridge'][key] for key in self.reverted()}, self.reverted())
+
+    def test_revert_refuses_a_switch_the_bridge_did_not_take(self):
+        # The run sent the bridge update, which did not take effect; the bridge still sends the old digest to lane a.
+        state = dict(previousLane='a', previousQueue='qa', activeLane='b', activeQueue='qb', previousDigest=self.old,
+                     runtimeDigest=self.new, firstHost=self.first, alarm_actions={'alarm': True}, laneSwitchAttempted=True,
+                     step='switch-lane', status='failed')
+        unchanged, events = json.dumps(state, sort_keys=True), []
+        with tempfile.TemporaryDirectory() as name:
+            with self.assertRaisesRegex(ValueError, self.window):
+                self.run_revert(state, self.live_lambdas(), Path(name), events)
+            self.assertFalse((Path(name) / 'state.json').exists())
+        self.assertEqual(events, [])
+        self.assertEqual(json.dumps(state, sort_keys=True), unchanged)
+
+    def test_revert_sets_the_api_back_whether_or_not_it_was_switched(self):
+        tag = ('delete-tags', '--resources', self.first, '--tags', 'Key=JudgeInstalledDigest')
+        # Stopped in the bridge wait (API not switched), after the API update but before saving it, and after the switch.
+        for at in (('sleep', 125), ('env', 'api'), None):
+            with self.subTest(at=at), tempfile.TemporaryDirectory() as name:
+                directory = Path(name)
+                state, live = self.stopped_rolling(directory, at=at)
+                self.assertEqual(live['api']['JUDGE_CPP_IMAGE'], self.old if at == ('sleep', 125) else self.new)
+                state, events = self.run_revert(state, live, directory)
+                self.assertEqual(state['status'], 'reverted')
+                self.assertEqual(live['api']['JUDGE_CPP_IMAGE'], self.old)
+                self.assertEqual([e for e in events if e[:2] == ('env', 'api')], [('env', 'api', dict(JUDGE_CPP_IMAGE=self.old))])
+                self.assertInOrder(events, ('env', 'bridge', self.reverted()), ('sleep', 125), ('env', 'api', dict(JUDGE_CPP_IMAGE=self.old)),
+                                   ('ssm', 'revert-stop', (self.first,)), tag)
+
+    def test_interrupted_revert_resumes_without_repeating_its_changes(self):
+        points = [('env', 'bridge'), ('sleep', 125), ('env', 'api'), ('ssm', 'revert-stop'), ('delete-tags',), ('purge-queue',),
+                  ('count', 'qb'), ('requeue',), ('sync',), ('enable-alarm-actions',)]
+        for at in points:
+            with self.subTest(at=at), tempfile.TemporaryDirectory() as name:
+                directory = Path(name)
+                state, live = self.stopped_rolling(directory)
+                world = dict(queues={'qb': 2}, clock=[0.0], purges={}, requeued=3)
+                first = Interrupt(at)
+                with self.assertRaises(Interrupted):
+                    self.run_revert(state, live, directory, first, **world)
+                self.assertTrue(state['revertStarted'])
+                state, second = self.run_revert(state, live, directory, **world)
+                events = first + second
+                self.assertEqual((state['status'], state['step']), ('reverted', 'reverted'))
+                # The bridge update and the purge happen once; a requeue whose answer was lost is sent again (a no-op then).
+                self.assertEqual([e for e in events if e[:2] == ('env', 'bridge')], [('env', 'bridge', self.reverted())])
+                self.assertEqual(sum(e[0] == 'purge-queue' for e in events), 1)
+                self.assertEqual(sum(e[0] == 'requeue' for e in events), 2 if at == ('requeue',) else 1)
+                self.assertEqual((state['requeued'], state['revertRequeued']), (3, 3))
+                self.assertInOrder(events, ('env', 'bridge', self.reverted()), ('sleep', 125), ('env', 'api', dict(JUDGE_CPP_IMAGE=self.old)),
+                                   ('ssm', 'revert-stop', (self.first,)), ('purge-queue', '--queue-url', 'qb'), ('requeue', self.new),
+                                   ('sync', self.old, self.new, 'a'), ('enable-alarm-actions', '--alarm-names', 'alarm'))
+                # Whichever run sets the API back has waited out the bridge timeout itself.
+                for run in (first, second):
+                    for index, event in enumerate(run):
+                        if event[:2] == ('env', 'api'):
+                            self.assertIn(('sleep', 125), run[:index])
+                self.assertEqual({key: live['bridge'][key] for key in self.reverted()}, self.reverted())
+                self.assertEqual(live['api']['JUDGE_CPP_IMAGE'], self.old)
+
+    def test_resumed_revert_purges_again_only_after_the_sqs_interval(self):
+        # SQS deletes a purge's messages within 60 seconds and rejects another purge of the queue within 60 seconds.
+        for left in (0, 1):
+            with self.subTest(left=left), tempfile.TemporaryDirectory() as name:
+                directory = Path(name)
+                state, live = self.stopped_rolling(directory)
+                world = dict(queues={'qb': 2}, clock=[0.0], purges={})
+                with self.assertRaises(Interrupted):
+                    self.run_revert(state, live, directory, Interrupt(('purge-queue',)), **world)
+                purged = world['purges']['qb']
+                world['queues']['qb'] = left  # what the lane still holds when the revert resumes at once
+                state, events = self.run_revert(state, live, directory, **world)
+                self.assertEqual(events[:2], [('sleep', rollout.PURGE_INTERVAL), ('count', 'qb')])
+                self.assertGreaterEqual(rollout.PURGE_INTERVAL, 60)
+                self.assertEqual(sum(e[0] == 'purge-queue' for e in events), left)
+                if left:
+                    self.assertGreaterEqual(world['purges']['qb'] - purged, 60)
+                self.assertEqual(state['status'], 'reverted')
+                self.assertFalse(any(e[0] == 'env' for e in events))
+
+    def test_main_reverts_without_rollout_checks_and_keeps_reverted_runs_closed(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            # The artifacts are gone: a revert uses neither, and a refused run never reads them.
+            config = dict(account='123', region='test', api='api', release=str(root / 'gone'), bridge_package=str(root / 'gone'))
+            config_path = root / 'config.json'
+            config_path.write_text(json.dumps(config))
+            directory = root / 'run'
+            directory.mkdir()
+            state_path = directory / 'state.json'
+
+            def main(action, revert=None):
+                argv = ['rollout.py', action, '--config', str(config_path), '--run-dir', str(directory)]
+                with contextlib.ExitStack() as stack:
+                    for patcher in (patch.object(sys, 'argv', argv), patch.object(rollout, 'ROOT', root), patch.object(rollout.os, 'chdir'),
+                                    patch.object(rollout, 'LOG_DIRECTORY', None)):
+                        stack.enter_context(patcher)
+                    aws = stack.enter_context(patch.object(rollout, 'aws', return_value=dict(Account='123')))
+                    pool = stack.enter_context(patch.object(rollout, 'ensure_pool'))
+                    output = stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+                    if revert:
+                        stack.enter_context(patch.object(rollout, 'revert', side_effect=revert))
+                    try:
+                        rollout.main()
+                    finally:
+                        # Only the account check reaches AWS, and no host is started or held.
+                        self.assertEqual(aws.call_count, 1)
+                        pool.assert_not_called()
+                return output.getvalue()
+
+            with self.assertRaisesRegex(ValueError, self.window):
+                main('rolling-revert')
+            self.assertFalse(state_path.exists())
+
+            def stopped(config, directory, state):
+                state['revertStarted'] = True
+                raise RuntimeError('purge failed')
+            with self.assertRaisesRegex(RuntimeError, 'purge failed'):
+                main('rolling-revert', stopped)
+            saved = json.loads(state_path.read_text())
+            self.assertEqual((saved['status'], saved['error'], saved['revertStarted']), ('failed', 'purge failed', True))
+            with self.assertRaisesRegex(ValueError, 'this run is being reverted; finish it with rolling-revert'):
+                main('rolling')
+            self.assertEqual(json.loads(state_path.read_text()), saved)
+
+            state_path.write_text(json.dumps(dict(saved, status='reverted', step='reverted')))
+            for action in ('rolling', 'run'):
+                with self.subTest(action), self.assertRaisesRegex(ValueError, 'this run was reverted; start a new run'):
+                    main(action)
+            self.assertIn('already reverted', main('rolling-revert'))
+            self.assertEqual(json.loads(state_path.read_text())['status'], 'reverted')
 
     def test_requeue_returns_the_count_and_rejects_function_errors(self):
         payloads = []
