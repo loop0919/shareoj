@@ -160,6 +160,26 @@ markdown.renderer.rules.judge_status = (tokens, index) => {
   return `<span class="verdict-badge"${verdict === 'WJ' ? '' : ` data-verdict="${verdict}"`}>${verdict}</span>`
 }
 
+// Same markup as DifficultyBadge.vue, so a level reads the same in prose as in the problem list.
+markdown.inline.ruler.before('text', 'difficulty_level', (state, silent) => {
+  if (state.src[state.pos] !== ':') return false
+  const match = /^:lv([1-9]|10):/.exec(state.src.slice(state.pos))
+  if (!match) return false
+  if (!silent) {
+    const token = state.push('difficulty_level', 'span', 0)
+    token.content = match[1]!
+  }
+  state.pos += match[0].length
+  return true
+})
+markdown.renderer.rules.difficulty_level = (tokens, index) => {
+  const level = tokens[index]!.content
+  const mark = level === '10'
+    ? '<svg class="difficulty-crown" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6l5 4 4-7 4 7 5-4-2 12H5Z" /><path d="M5 21h14" /></svg>'
+    : '<span class="difficulty-dot" aria-hidden="true"></span>'
+  return `<span class="difficulty" data-level="${level}">${mark}Lv.${level}</span>`
+}
+
 // The title is inline Markdown too, so math and code render in the summary. Links keep only their text:
 // a link inside <summary> would navigate instead of toggling the fold.
 function renderFoldTitle(title: string) {

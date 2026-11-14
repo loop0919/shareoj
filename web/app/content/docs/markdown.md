@@ -151,3 +151,11 @@ print(a + b)
 ````example
 :AC: :WA: :TLE: :MLE: :OLE: :RE: :CE: :JE: :WJ:
 ````
+
+## 難易度を表示する {#difficulty-level}
+
+`:lv1:` のように小文字の `lv` と1から10までの数字をコロンで囲むと、問題一覧と同じ色の難易度として表示します。コードや数式の中では変換されません。
+
+````example
+:lv1: :lv2: :lv3: :lv4: :lv5: :lv6: :lv7: :lv8: :lv9: :lv10:
+````

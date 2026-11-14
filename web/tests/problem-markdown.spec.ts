@@ -134,6 +134,22 @@ test('judge status shortcodes reuse badges and respect Markdown boundaries', () 
   }
 })
 
+test('level shortcodes render difficulty badges and respect Markdown boundaries', () => {
+  for (let level = 1; level <= 9; level++) {
+    expect(renderProblemMarkdown(`想定は:lv${level}:です。`)).toContain(
+      `想定は<span class="difficulty" data-level="${level}"><span class="difficulty-dot" aria-hidden="true"></span>Lv.${level}</span>です。`,
+    )
+  }
+  const crown = renderProblemMarkdown(':lv10:')
+  expect(crown).toContain('<span class="difficulty" data-level="10"><svg class="difficulty-crown"')
+  expect(crown).toContain('</svg>Lv.10</span>')
+  expect(crown).not.toContain('difficulty-dot')
+  expect(renderProblemMarkdown('**:lv3:**:lv4:')).toContain('Lv.3</span></strong><span class="difficulty" data-level="4">')
+  for (const source of ['`:lv1:`', '```text\n:lv2:\n```', '```input\n:lv3:\n```', '$:lv4:$', '\\:lv5:', ':lv0: :lv11: :lv01: :lv100: :LV1: :Lv1: :lv:', '[link](https://example.com/:lv6:)']) {
+    expect(renderProblemMarkdown(source)).not.toContain('class="difficulty"')
+  }
+})
+
 test('details render Markdown while preserving code fences and escaping titles', () => {
   expect(renderProblemMarkdown(':::details タイトル\n内容\n:::')).toBe('<details><summary>タイトル</summary>\n<p>内容</p>\n</details>\n')
   const html = renderProblemMarkdown([

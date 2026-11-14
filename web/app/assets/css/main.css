@@ -139,6 +139,23 @@ code { font-family: var(--font-code); }
 .verdict-badge[data-verdict] { background: #f2c94c; color: #493600; }
 .verdict-badge[data-verdict="AC"] { background: #18794e; color: #fff; }
 .verdict-badge[data-verdict="JE"] { background: #b42318; color: #fff; }
+.difficulty { --grade-black: var(--color-ink); --grade-gray: #808080; --grade-brown: #9a6324; --grade-green: #18794e; --grade-cyan: #00b8d4; --grade-blue: #2463d4; --grade-yellow: #e6c700; --grade-orange: #ed8617; --grade-red: #d83232; --grade-gold: #c49a23; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.difficulty-dot { width: .75rem; height: .75rem; border-radius: 50%; background: var(--grade); border: 1px solid var(--color-muted); }
+.difficulty-crown { width: 1rem; height: 1rem; fill: var(--grade); stroke: var(--grade); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+/* In prose the text must sit on the line's baseline; a flex box would take its baseline from the mark. */
+.markdown-body .difficulty { display: inline; }
+.markdown-body .difficulty-dot, .markdown-body .difficulty-crown { display: inline-block; margin-inline-end: 6px; vertical-align: -.06em; }
+.markdown-body .difficulty-crown { vertical-align: -.16em; }
+.difficulty[data-level="1"] { --grade: var(--grade-black); }
+.difficulty[data-level="2"] { --grade: var(--grade-gray); }
+.difficulty[data-level="3"] { --grade: var(--grade-brown); }
+.difficulty[data-level="4"] { --grade: var(--grade-green); }
+.difficulty[data-level="5"] { --grade: var(--grade-cyan); }
+.difficulty[data-level="6"] { --grade: var(--grade-blue); }
+.difficulty[data-level="7"] { --grade: var(--grade-yellow); }
+.difficulty[data-level="8"] { --grade: var(--grade-orange); }
+.difficulty[data-level="9"] { --grade: var(--grade-red); }
+.difficulty[data-level="10"] { --grade: var(--grade-gold); }
 .return-link { gap: 16px; margin-top: 20px; }
 .math-expression { vertical-align: baseline; }
 .math-expression--display { display: block; max-width: 100%; overflow-x: auto; overflow-y: hidden; padding-block: 4px; margin-block: 20px; }
