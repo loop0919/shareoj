@@ -9,6 +9,7 @@ import os
 import re
 from pathlib import Path
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
@@ -753,6 +754,118 @@ def api_smoke(config, directory, nodes):
     return report
 
 
+# The switch latency watcher (judge/smoke-api.py --watch): how many seconds of baseline it collects before the switch,
+# how long it keeps submitting after the API switch, and how long it may take to finish and clean up once stopped.
+WATCH_LEAD = 30
+WATCH_TAIL = 60
+WATCH_STOP_WAIT = 180
+WATCH_FAILED = 'switch latency check failed; see switch-watch.json'
+
+
+def watch_paths(directory):
+    return directory / 'switch-watch.json', directory / 'switch-watch.stop', directory / 'switch-at'
+
+
+def read_watch_report(path):
+    """The watcher's report once it has finished; None while it runs, if it was cut short, or if it never wrote one."""
+    try:
+        report = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    if report.get('status') not in ('passed', 'failed') or report.get('terminated'):
+        return None
+    return report
+
+
+def watcher_alive(pid):
+    try:
+        return b'smoke-api.py' in Path('/proc/%d/cmdline' % pid).read_bytes()
+    except OSError:
+        return False
+
+
+def collect_stale_watch(config, directory, state):
+    """End a watcher left by an earlier process (SIGTERM, so it cleans up), then return its report if it had finished."""
+    report_path = watch_paths(directory)[0]
+    old = state.pop('switchWatcher', None)
+    if old and watcher_alive(old['pid']):
+        os.kill(old['pid'], signal.SIGTERM)
+        for _ in range(90):
+            if not watcher_alive(old['pid']):
+                break
+            time.sleep(1)
+        else:
+            os.kill(old['pid'], signal.SIGKILL)
+    leftovers = report_path.with_suffix('.cleanup.json')
+    try:
+        pending = json.loads(leftovers.read_text())['users']
+    except (OSError, ValueError, KeyError):
+        pending = []
+    if pending:
+        try:
+            run(sys.executable, 'judge/smoke-api.py', '--cleanup', '--function', config['api'], '--api-url', config['api_url'],
+                '--region', config['region'], '--report', str(report_path))
+        except Exception as error:
+            print('stale watch cleanup incomplete:', error, flush=True)
+    return read_watch_report(report_path)
+
+
+def start_watch(config, directory, state):
+    """Start the latency watcher as a child process. It stops itself after its hard cap even if nobody stops it."""
+    collect_stale_watch(config, directory, state)
+    report, stop, switch_at = watch_paths(directory)
+    for path in (report, stop, switch_at, report.with_suffix('.cleanup.json')):
+        path.unlink(missing_ok=True)
+    with (directory / 'switch-watch.log').open('ab') as log:
+        process = subprocess.Popen([sys.executable, 'judge/smoke-api.py', '--watch', '--function', config['api'],
+            '--api-url', config['api_url'], '--region', config['region'], '--runtime', config['smoke_runtime'],
+            '--stop-file', str(stop), '--switch-at-file', str(switch_at), '--interval', '5', '--report', str(report)],
+            cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
+    state['switchWatcher'] = dict(pid=process.pid, stopFile=str(stop), report=str(report))
+    save(directory / 'state.json', state)
+    return process
+
+
+def stop_watch(process, directory):
+    """Ask the watcher to finish, wait for its report and cleanup, and return the report (None if it never finished)."""
+    report, stop, _ = watch_paths(directory)
+    stop.touch()
+    try:
+        process.wait(WATCH_STOP_WAIT)
+    except subprocess.TimeoutExpired:
+        process.terminate()
+        try:
+            process.wait(60)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+    return read_watch_report(report)
+
+
+def settle_watch(config, directory, state, process):
+    """Record how the watch ended. It never changes what the switch does; a bad watch only fails the run at the end."""
+    if 'switchWatch' in state:
+        return
+    if process is not None:
+        time.sleep(WATCH_TAIL)
+        report = stop_watch(process, directory)
+        outcome = 'died'
+    else:
+        # The run was resumed after the switch: a watcher from the dead run is ended, and only a finished report counts.
+        report = collect_stale_watch(config, directory, state)
+        outcome = 'interrupted'
+    state.pop('switchWatcher', None)
+    if report is None:
+        state['switchWatch'] = outcome
+        state['switchWatchFailed'] = outcome == 'died'
+    else:
+        state['switchWatch'] = dict(report=str(watch_paths(directory)[0]), status=report['status'], maxWaitMs=report.get('maxWaitMs'))
+        state['switchWatchFailed'] = report['status'] != 'passed'
+    if not state['switchWatchFailed']:
+        state.pop('switchWatchFailed')
+    save(directory / 'state.json', state)
+
+
 def switch(config, directory, state, first, rest, verification):
     """Start the prepared burst on the standby lane, move the bridge to it, then drain and stop the previous lane.
 
@@ -760,6 +873,7 @@ def switch(config, directory, state, first, rest, verification):
     a resumed run continues after the last recorded one and never switches the bridge twice.
     """
     region, digest, previous = config['region'], state['runtimeDigest'], state['previousDigest']
+    watcher = None
     if not state.get('digestSwitched'):
         checkpoint(directory, state, 'standby-first')
         # A run stopped right after the bridge update finds the bridge already switched, and the new lane busy.
@@ -774,12 +888,26 @@ def switch(config, directory, state, first, rest, verification):
             start_workers(verification, request_queue=state['activeQueue'])
             time.sleep(STANDBY_WAIT)
             standby_ready(config, directory, first, state['activeQueue'])
+            # The watch only measures; a watcher that cannot start fails the watch, never the switch.
+            state.pop('switchWatch', None)
+            state.pop('switchWatchFailed', None)
+            try:
+                watcher = start_watch(config, directory, state)
+            except Exception as error:
+                state.update(switchWatch='not-started', switchWatchFailed=True)
+                print('switch watch did not start:', error, flush=True)
+            else:
+                # Baseline submissions from the old environment, before anything changes.
+                time.sleep(WATCH_LEAD)
             # Everything above leaves users on the old environment; the bridge update below is the first visible change.
             checkpoint(directory, state, 'switch-lane')
             contest_guard(config)
             # Saved before the update is sent. A run that stops after the update has switched without recording it,
             # and only a run with this mark makes rolling-revert ask the bridge whether that happened.
             state['laneSwitchAttempted'] = True
+            # The watcher compares submissions made before and after this wall-clock moment.
+            state['switchAt'] = time.time()
+            save(watch_paths(directory)[2], state['switchAt'])
             save(directory / 'state.json', state)
             # One update moves the queue, the digest and the previous digest together. The bridge then never sends
             # new-digest work to the old lane, and rebinds undispatched old-digest submissions to the new digest.
@@ -799,6 +927,7 @@ def switch(config, directory, state, first, rest, verification):
         tag_digest(config, [first], digest)
         state['apiSwitched'] = True
         save(directory / 'state.json', state)
+    settle_watch(config, directory, state, watcher)
     if 'firstApiReport' not in state:
         checkpoint(directory, state, 'sync-settings')
         sync_settings(config, directory, digest, config['runtimes'], previous=previous, lane=state['activeLane'])
@@ -849,6 +978,9 @@ def refuse_reverted(state):
 def rolling(config, directory, state):
     """Roll an OS update through the pool while admission and dispatch stay open (ADR 0014, two request lanes)."""
     refuse_reverted(state)
+    if state.get('step') == 'switch-watch-failed':
+        # Everything else finished; resuming only repeats the verdict.
+        raise ValueError(WATCH_FAILED)
     region = config['region']
     if not config.get('pool') or config.get('retire_nodes'):
         raise ValueError('a rolling update needs an EC2 pool and no retired hosts')
@@ -915,6 +1047,10 @@ def rolling(config, directory, state):
         aws(region, 'ec2', 'create-tags', '--resources', *config['nodes'], '--tags', 'Key=JudgeMaintenanceHoldUntil,Value=' + hold_time(900))
     except Exception:
         released = False
+    if state.get('switchWatchFailed'):
+        # The rollout itself is done, but it must not be reported as passed.
+        checkpoint(directory, state, 'switch-watch-failed', apiReport=str(report), maintenanceHoldReleased=released)
+        raise ValueError(WATCH_FAILED)
     checkpoint(directory, state, 'complete', status='passed', apiReport=str(report), maintenanceHoldReleased=released)
 
 

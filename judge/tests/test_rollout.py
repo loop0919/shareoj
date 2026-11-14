@@ -9,6 +9,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -551,7 +552,7 @@ class RollingTests(unittest.TestCase):
                     api=dict(JUDGE_CPP_IMAGE=self.old, JUDGE_ENABLED_RUNTIMES='python314'))
 
     def run_rolling(self, state=None, events=None, live=None, directory=None, queues=None, in_flight=(0,), requeued=0,
-                    prepared=None, action=None, clock=None, purges=None, **overrides):
+                    prepared=None, action=None, clock=None, purges=None, watch=None, **overrides):
         """Run rolling (or another action) against fakes; lane a is 'qa' (queues[0]) and lane b is 'qb' (request_queue_b).
 
         Pass the same live, queues, clock and purges to a resumed run: they are the AWS side, which outlives a process.
@@ -634,7 +635,10 @@ class RollingTests(unittest.TestCase):
             sync_settings=lambda c, d, digest, runtimes, **k: events.append(('sync', digest, k.get('previous'), k.get('lane'))),
             api_smoke=lambda c, d, nodes: events.append(('api', tuple(nodes))) or d / 'api.json',
             healthy_workers=lambda c, d, digest: events.append(('healthy', digest)),
-            run=lambda *a: events.append(('cmd',) + a[:3]))
+            run=lambda *a: events.append(('cmd',) + a[:3]),
+            # By default the watcher is silent and passes; `watch` replaces any of these.
+            **{'start_watch': lambda c, d, s: object(), 'stop_watch': lambda h, d: dict(status='passed', maxWaitMs=1200),
+               'collect_stale_watch': lambda c, d, s: None, **(watch or {})})
         with contextlib.ExitStack() as stack:
             name = stack.enter_context(tempfile.TemporaryDirectory())
             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
@@ -690,6 +694,115 @@ class RollingTests(unittest.TestCase):
         self.assertFalse(any(e[0] == 'requeue' for e in events))
         tags = [e for e in events if e[0] == 'create-tags' and 'JudgeInstalledDigest' in e[-1]]
         self.assertEqual([t[2:-2] for t in tags], [(self.first,), rest])
+
+    def watching(self, events, report=None, start=None):
+        """Watcher fakes that leave their place in the event list; `report` is what the stopped watcher wrote."""
+        def stop(handle, directory):
+            events.append(('watch-stop',))
+            return report
+
+        def begin(config, directory, state):
+            events.append(('watch-start',))
+            if start:
+                raise start
+            return object()
+        return dict(start_watch=begin, stop_watch=stop)
+
+    def test_rolling_watches_the_switch(self):
+        events = []
+        with tempfile.TemporaryDirectory() as name:
+            state, events = self.run_rolling(events=events, directory=Path(name),
+                                             watch=self.watching(events, dict(status='passed', maxWaitMs=1200)))
+            switch_at = float((Path(name) / 'switch-at').read_text())
+        self.assertEqual((state['status'], state['step']), ('passed', 'complete'))
+        self.assertEqual(state['switchAt'], switch_at)
+        self.assertEqual((state['switchWatch']['status'], state['switchWatch']['maxWaitMs']), ('passed', 1200))
+        self.assertFalse(state.get('switchWatchFailed'))
+        bridge = [e for e in events if e[:2] == ('env', 'bridge')][0]
+        self.assertInOrder(events, ('standby', self.first, 'qb'), ('watch-start',), ('sleep', rollout.WATCH_LEAD), ('contest',), bridge,
+                           ('sleep', 125), ('env', 'api', dict(JUDGE_CPP_IMAGE=self.new)), ('sleep', rollout.WATCH_TAIL),
+                           ('watch-stop',), ('sync', self.new, self.old, 'b'))
+
+    def test_a_failed_watch_finishes_every_step_but_never_reaches_complete(self):
+        events, state = [], {}
+        failed = dict(status='failed', maxWaitMs=30000)
+        with tempfile.TemporaryDirectory() as name:
+            directory, live, queues, clock = Path(name), self.live_lambdas(), {}, [0.0]
+            with self.assertRaisesRegex(ValueError, r'switch latency check failed; see switch-watch\.json'):
+                self.run_rolling(state, events, live=live, directory=directory, queues=queues, clock=clock,
+                                 watch=self.watching(events, failed))
+            self.assertTrue(state['switchWatchFailed'])
+            self.assertNotEqual(state['step'], 'complete')
+            self.assertNotEqual(state.get('status'), 'passed')
+            self.assertInOrder(events, ('watch-stop',), ('prepare', 'rest', (self.primary, self.other), self.new),
+                               ('healthy', self.new), ('api', (self.primary, self.first, self.other)),
+                               ('enable-alarm-actions', '--alarm-names', 'alarm'), ('cmd', 'terraform', '-chdir=infra/api', 'apply'),
+                               ('cmd', 'terraform', '-chdir=infra/judge', 'apply'))
+            self.assertTrue(any(e[0] == 'create-tags' and 'JudgeMaintenanceHoldUntil' in e[-1] for e in events[events.index(('watch-stop',)):]))
+            # Resuming reaches the same error without redoing a step or starting another watcher.
+            again = []
+            with self.assertRaisesRegex(ValueError, 'switch latency check failed'):
+                self.run_rolling(state, again, live=live, directory=directory, queues=queues, clock=clock,
+                                 watch=self.watching(again, failed))
+            self.assertEqual([e for e in again if e[0] in ('prepare', 'start', 'api', 'env', 'watch-start', 'watch-stop')], [])
+
+    def test_a_watcher_that_cannot_start_does_not_stop_the_switch(self):
+        events, state = [], {}
+        with self.assertRaisesRegex(ValueError, 'switch latency check failed'):
+            self.run_rolling(state, events, watch=self.watching(events, start=OSError('no spawn')))
+        self.assertTrue(state['switchWatchFailed'])
+        self.assertTrue(any(e[:2] == ('env', 'bridge') for e in events))
+        self.assertTrue(state['digestSwitched'] and state['apiSwitched'] and state['oldWorkersStopped'])
+        self.assertFalse(('watch-stop',) in events)
+
+    def test_a_watcher_that_died_without_a_report_fails_the_watch(self):
+        events, state = [], {}
+        with self.assertRaisesRegex(ValueError, 'switch latency check failed'):
+            self.run_rolling(state, events, watch=self.watching(events, None))
+        self.assertTrue(state['switchWatchFailed'])
+
+    def test_resume_after_the_switch_without_a_watch_report_is_interrupted(self):
+        live = self.live_lambdas('qa')
+        live['bridge'].update(JUDGE_RUNTIME_DIGEST=self.new, JUDGE_PREVIOUS_RUNTIME_DIGEST=self.old)
+        state = dict(firstHost=self.first, previousDigest=self.old, runtimeDigest=self.new, packages='c' * 64,
+                     alarm_actions={'alarm': False}, previousLane='b', previousQueue='qb', activeLane='a', activeQueue='qa',
+                     digestSwitched=True, apiSwitched=False, switchWatcher=dict(pid=1))
+        events = []
+        state, events = self.run_rolling(state, events, live=live, watch=self.watching(events))
+        self.assertEqual((state['status'], state['step']), ('passed', 'complete'))
+        self.assertEqual(state['switchWatch'], 'interrupted')
+        self.assertFalse(state.get('switchWatchFailed'))
+        self.assertFalse(('watch-start',) in events or ('watch-stop',) in events)
+
+    def test_resume_uses_a_watch_report_that_finished_before_the_run_died(self):
+        live = self.live_lambdas('qa')
+        live['bridge'].update(JUDGE_RUNTIME_DIGEST=self.new, JUDGE_PREVIOUS_RUNTIME_DIGEST=self.old)
+        state = dict(firstHost=self.first, previousDigest=self.old, runtimeDigest=self.new, packages='c' * 64,
+                     alarm_actions={'alarm': False}, previousLane='b', previousQueue='qb', activeLane='a', activeQueue='qa',
+                     digestSwitched=True, apiSwitched=True, firstApiReport='x')
+        with self.assertRaisesRegex(ValueError, 'switch latency check failed'):
+            self.run_rolling(state, live=live, watch=dict(collect_stale_watch=lambda c, d, s: dict(status='failed', maxWaitMs=99999)))
+        self.assertEqual(state['switchWatch']['status'], 'failed')
+
+    def test_the_watcher_before_a_resumed_switch_is_replaced_not_duplicated(self):
+        # Resumed before the switch: start_watch stops the recorded watcher first, then starts exactly one new process.
+        stale = subprocess.Popen([sys.executable, '-c', 'pass'])
+        stale.wait()
+        state = dict(switchWatcher=dict(pid=stale.pid, stopFile='old-stop', report='old-report'))
+        new = unittest.mock.Mock(pid=4242)
+        with tempfile.TemporaryDirectory() as name:
+            directory = Path(name)
+            (directory / 'switch-watch.json').write_text('{"status": "failed"}')
+            (directory / 'switch-watch.stop').write_text('')
+            config = dict(api='api', api_url='https://api.invalid', region='test', smoke_runtime='python314')
+            with patch.object(rollout.subprocess, 'Popen', return_value=new) as popen:
+                self.assertIs(rollout.start_watch(config, directory, state), new)
+            self.assertEqual(popen.call_count, 1)
+            self.assertFalse((directory / 'switch-watch.json').exists() or (directory / 'switch-watch.stop').exists())
+            self.assertEqual(state['switchWatcher']['pid'], 4242)
+            args = popen.call_args.args[0]
+            self.assertIn('--watch', args)
+            self.assertEqual(args[args.index('--interval') + 1], '5')
 
     def test_rolling_refuses_a_busy_standby_lane(self):
         # A fresh run refuses before preparing; a resumed run checks again right before the standby worker starts.
