@@ -7,6 +7,8 @@ locals {
     "${local.arn}:iam::${local.account}:role/${var.api_execution_role_name}",
     "${local.arn}:iam::${local.account}:role/${local.name}-web",
   ]
+  # Written out so the deploy policy is known at plan time.
+  rds_monitoring_role = "${local.arn}:iam::${local.account}:role/${local.name}-rds-monitoring"
 }
 # Adopt the role created in the console; only this bootstrap stack manages its trust.
 resource "aws_iam_role" "github_deploy" {
@@ -100,6 +102,13 @@ resource "aws_iam_role_policy" "deploy" {
         Effect   = "Allow"
         Action   = ["iam:GetRole", "iam:CreateRole", "iam:DeleteRole", "iam:ListInstanceProfilesForRole", "iam:UpdateRole", "iam:UpdateAssumeRolePolicy", "iam:TagRole", "iam:UntagRole", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies", "iam:GetRolePolicy", "iam:PutRolePolicy", "iam:DeleteRolePolicy"]
         Resource = local.execution_roles
+      },
+      {
+        Sid       = "PassMonitoringRoleToRDS"
+        Effect    = "Allow"
+        Action    = ["iam:PassRole"]
+        Resource  = local.rds_monitoring_role
+        Condition = { StringEquals = { "iam:PassedToService" = "monitoring.rds.amazonaws.com" } }
       },
       {
         Sid       = "PassExecutionRoleToLambda"
@@ -228,3 +237,20 @@ resource "aws_iam_role_policy" "deploy" {
   })
 }
 output "deploy_role_arn" { value = aws_iam_role.github_deploy.arn }
+# RDS Enhanced Monitoring publishes OS metrics through this role. It is created here because the
+# deploy role may pass it but must not manage roles other than the execution roles.
+resource "aws_iam_role" "rds_monitoring" {
+  name = "${local.name}-rds-monitoring"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "monitoring.rds.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+resource "aws_iam_role_policy_attachment" "rds_monitoring" {
+  role       = aws_iam_role.rds_monitoring.name
+  policy_arn = "${local.arn}:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
+}

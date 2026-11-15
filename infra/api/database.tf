@@ -76,7 +76,7 @@ resource "aws_db_instance" "application" {
   identifier                      = "${local.name}-postgres"
   engine                          = "postgres"
   engine_version                  = "17"
-  instance_class                  = "db.t4g.micro"
+  instance_class                  = "db.t4g.small"
   allocated_storage               = 20
   max_allocated_storage           = 100
   storage_type                    = "gp3"
@@ -95,7 +95,10 @@ resource "aws_db_instance" "application" {
   final_snapshot_identifier       = "${local.name}-postgres-final"
   auto_minor_version_upgrade      = true
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
-  depends_on                      = [aws_cloudwatch_log_group.postgres]
+  # OS metrics (swap and disk I/O per device); the role lives in infra/deploy-access.
+  monitoring_interval = 60
+  monitoring_role_arn = "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:role/${local.name}-rds-monitoring"
+  depends_on          = [aws_cloudwatch_log_group.postgres]
   lifecycle { prevent_destroy = true }
 }
 resource "aws_cloudwatch_log_group" "postgres" {

@@ -185,6 +185,17 @@ run "observability" {
     error_message = "Author errors must be separate from infrastructure errors; inactivity is healthy."
   }
   assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.database_burst.dimensions.DBInstanceIdentifier == "judge-dev-postgres" &&
+      aws_cloudwatch_metric_alarm.database_burst.metric_name == "EBSByteBalance%" &&
+      aws_cloudwatch_metric_alarm.database_burst.comparison_operator == "LessThanThreshold" &&
+      aws_cloudwatch_metric_alarm.database_burst.threshold == 50 &&
+      aws_cloudwatch_metric_alarm.database_burst.treat_missing_data == "notBreaching" &&
+      length(aws_cloudwatch_metric_alarm.database_burst.alarm_actions) == 1
+    )
+    error_message = "The database throughput credit must alert well before it reaches 0, where every query stalls."
+  }
+  assert {
     condition     = aws_cloudwatch_log_group.worker.retention_in_days == 14 && length(aws_cloudwatch_metric_alarm.dead["requests"].alarm_actions) == 1 && length(aws_cloudwatch_metric_alarm.dead["results"].ok_actions) == 1
     error_message = "Bound retention and connect existing DLQ alarm/recovery actions."
   }

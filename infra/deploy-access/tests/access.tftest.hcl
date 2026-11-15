@@ -44,6 +44,15 @@ run "deployment_boundary" {
   assert {
     condition = anytrue([for statement in jsondecode(aws_iam_role_policy.deploy.policy).Statement : (
       statement.Effect == "Allow" &&
+      toset(statement.Action) == toset(["iam:PassRole"]) &&
+      statement.Resource == "arn:aws:iam::123456789012:role/judge-dev-rds-monitoring" &&
+      tomap(statement.Condition.StringEquals) == tomap({ "iam:PassedToService" = "monitoring.rds.amazonaws.com" })
+    ) if statement.Sid == "PassMonitoringRoleToRDS"]) && aws_iam_role.rds_monitoring.name == "judge-dev-rds-monitoring"
+    error_message = "The deploy role may pass only the monitoring role, and only to RDS Enhanced Monitoring."
+  }
+  assert {
+    condition = anytrue([for statement in jsondecode(aws_iam_role_policy.deploy.policy).Statement : (
+      statement.Effect == "Allow" &&
       toset(statement.Action) == toset(["s3:*"]) &&
       statement.Resource == "arn:aws:s3:::judge-dev-test-data-*"
     ) if statement.Sid == "ApplicationTestDataBucket"])

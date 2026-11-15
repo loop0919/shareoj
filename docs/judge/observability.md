@@ -57,6 +57,7 @@ fields @timestamp, service, event, category, reason, submissionId, attemptId, ph
 | `platform` | 基盤または未分類のエラーが5分間に1件以上 | `category`と`reason`、該当提出のログ |
 | `judge-code` | 作問コードのエラーが5分間に1件以上 | 該当提出の検証コードと診断 |
 | `bridge-failure` | Lambda ErrorsとThrottlesの合計が1件以上 | bridgeのログ、Lambda同時実行上限 |
+| `database-burst` | RDSの`EBSByteBalance%`が50%未満で3期間（15分） | RDSの`SwapUsage`、`FreeableMemory`、`ReadLatency`、接続数。0%になるとDBが詰まり、bridgeが送り出せない |
 | `requests-dead` / `results-dead` | DLQに可視メッセージが1件以上 | 対応する配送失敗。原因修正前に再投入しない |
 | `memory` | ホストメモリ90%以上が5期間 | ワーカーとAgentのメモリ、OOMのjournal |
 | `disk` | `/`の使用率85%以上が5期間 | 配布物、退避ランタイム、ログ。必要な復旧物を確認して整理 |
@@ -126,8 +127,8 @@ CloudWatchの試験的な状態変更で、SNS経由の異常通知と解除通�
 ## 費用の目安
 
 カスタムメトリクスはAgentの4系列、ログ由来の3系列を想定する。
-アラームは既存DLQの2個を含めて10個で、bridgeの数式アラームは2メトリクス分を評価する。
-標準メトリクス月0.30 USD、標準アラームの評価メトリクス月0.10 USDで計算すると、メトリクス約2.10 USD、アラーム約1.10 USDになる。
+アラームは既存DLQの2個を含めて11個で、bridgeの数式アラームは2メトリクス分を評価する。
+標準メトリクス月0.30 USD、標準アラームの評価メトリクス月0.10 USDで計算すると、メトリクス約2.10 USD、アラーム約1.20 USDになる。
 既存DLQ分を除く追加分は約3 USDで、ログ取り込み、保存、API、SNS、Lambda、Secrets Managerの利用料金が加わる。
 月0.1 GB程度のログと少量の通知を想定し、追加月5 USD程度を目安とする。
 これは予算上限を強制する仕組みではない。

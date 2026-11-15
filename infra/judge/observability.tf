@@ -145,6 +145,24 @@ moved {
   from = aws_cloudwatch_metric_alarm.additional_worker[0]
   to   = aws_cloudwatch_metric_alarm.worker["judge-dev-judge-worker-2"]
 }
+# The database's EBS throughput credit. At 0 every query stalls and the bridge cannot dispatch.
+resource "aws_cloudwatch_metric_alarm" "database_burst" {
+  alarm_name          = "${local.name}-judge-database-burst"
+  alarm_description   = "See docs/judge/observability.md"
+  namespace           = "AWS/RDS"
+  metric_name         = "EBSByteBalance%"
+  dimensions          = { DBInstanceIdentifier = "${local.name}-postgres" }
+  comparison_operator = "LessThanThreshold"
+  threshold           = 50
+  evaluation_periods  = 3
+  datapoints_to_alarm = 3
+  period              = 300
+  statistic           = "Minimum"
+  treat_missing_data  = "notBreaching"
+  actions_enabled     = var.alerts_enabled
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
 resource "aws_cloudwatch_metric_alarm" "bridge_failure" {
   alarm_name          = "${local.name}-judge-bridge-failure"
   comparison_operator = "GreaterThanThreshold"

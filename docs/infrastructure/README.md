@@ -31,7 +31,7 @@ VPC は `10.42.0.0/16` と自動割当の IPv6 CIDR を持ち、2 AZ に非公�
 API、migration、bridge の各 Lambda がこのサブネットと application Security Group を利用する。
 図では配置をノード内に記し、VPC の枠線は省略している。
 
-RDS PostgreSQL 17 は `db.t4g.micro`、Single-AZ、暗号化 gp3 20 GB（最大100 GB）、バックアップ保持7日である。
+RDS PostgreSQL 17 は `db.t4g.small`、Single-AZ、暗号化 gp3 20 GB（最大100 GB）、バックアップ保持7日である。
 サブネットが2 AZ に存在しても、DB が Multi-AZ になるわけではない。
 DB は非公開で、application Security Group からの TCP 5432 のみを受け付ける。
 RDS 管理パスワードは Secrets Manager に保存され、Lambda に取得権限を付与する。
