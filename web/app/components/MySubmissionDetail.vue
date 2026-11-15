@@ -38,7 +38,7 @@ const problemList = computed(() => {
   return contestSubmissionsPath(contest, 'my-submissions', submission.contestId === contest ? submission.problemIndex : undefined)
 })
 onMounted(load)
-usePolling(load, 2000, () => !message.value && (!!item.value && item.value.status !== 'DONE'))
+usePolling(load, 2000, { enabled: () => !message.value && (!!item.value && item.value.status !== 'DONE') })
 </script>
 
 <template>

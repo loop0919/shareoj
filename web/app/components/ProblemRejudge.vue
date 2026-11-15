@@ -2,7 +2,7 @@
 // Rejudging uses the saved problem, so unsaved edits block it instead of being silently ignored.
 const props = defineProps<{ problemId: string, saved: boolean, disabled?: boolean }>()
 const { pending, busy, message, refresh, rejudge } = useRejudge(() => props.problemId)
-usePolling(refresh, 5000, () => pending.value > 0)
+usePolling(refresh, 5000, { enabled: () => pending.value > 0 })
 async function rejudgeAll() {
   if (!window.confirm('この問題への提出をすべてリジャッジしますか？\n保存済みの問題の内容で採点し直します。サンプル検証は対象外です。')) return
   await rejudge()

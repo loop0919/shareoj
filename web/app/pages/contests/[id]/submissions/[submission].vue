@@ -13,7 +13,7 @@ useSeoMeta({ title: () => `提出 | ${item.value?.problemTitle} | ShareOJ`, robo
 // The problem's lists are the contest's, narrowed to it (ADR 0034). A staff test outside the contest has no position.
 const problemIndex = computed(() => item.value?.contestId === id ? item.value.problemIndex : undefined)
 // Follow a submission that is still being judged, such as one just rejudged.
-usePolling(refresh, 2000, () => !!item.value && item.value.status !== 'DONE')
+usePolling(refresh, 2000, { enabled: () => !!item.value && item.value.status !== 'DONE' })
 </script>
 <template>
   <div v-if="item" class="submission-page">

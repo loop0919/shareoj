@@ -376,6 +376,7 @@ a public URL with the [Discord Embed Debugger](https://discord.com/developers/em
 - API の共有スキーマは `shared/types/` に置き、画面のエラー表示や編集補助は `app/utils/` に置く。`server/` と `shared/` から `app/` を参照しない。
 - 一覧取得は `useLatestRequest` で同じキーの同時実行をまとめ、条件変更や破棄後の古い応答を無視する。取得条件を変えたらキーを変え、取得をやめる場合は `invalidate()` を呼ぶ。
 - `usePolling` は取得完了後に次のタイマーを設定し、非表示タブでは取得を控え、スコープ破棄時に終了する。取得エラーの表示は呼び出し側が担当する。
+- `usePolling` は、操作が3分ないページで間隔を4倍に延ばす。次の操作やタブの再表示で、間隔を過ぎた取得をすぐに行い、元の間隔に戻す。10秒未満の間隔（採点中の追跡）は延ばさない。操作せずに見続ける画面（通知ベル、開催前と開催中のコンテスト）は `whileIdle` で元の間隔を保つ。
 - サーバーのセッション処理は `private-session.ts`、Origin・ボディ検証と非公開レスポンスヘッダーは `private-request.ts`、上流 API 通信は `private-api.ts` が担当する。
 
 保存の機能テストは `data-save-state`、API への書き込み、再読み込み後の値を検証する。

@@ -53,7 +53,7 @@ async function refresh() {
     if (!action.value) team.value = latest
   } catch { /* A removal shows in the polled contest; the next round tries again. */ }
 }
-usePolling(refresh, 15000, () => running.value)
+usePolling(refresh, 15000, { enabled: () => running.value })
 async function renewCode() {
   if (action.value || !window.confirm('参加コードを作り直しますか？今のコードではチームに入れなくなります。')) return
   action.value = 'code'; report('')

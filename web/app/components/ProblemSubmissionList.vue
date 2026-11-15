@@ -49,7 +49,7 @@ async function rejudgeSelected() {
   if (await rejudge([...selected.value])) { selected.value = []; await load() }
 }
 // Follow rejudged rows more closely than the regular refresh.
-usePolling(load, 3000, () => canRejudge.value && !!data.value?.items.some(item => item.status !== 'DONE'))
+usePolling(load, 3000, { enabled: () => canRejudge.value && !!data.value?.items.some(item => item.status !== 'DONE') })
 </script>
 <template>
   <section class="problem-submissions" :aria-label="title">

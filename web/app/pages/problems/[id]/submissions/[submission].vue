@@ -10,7 +10,7 @@ const { data: item, error, refresh } = await useFetch<Submission>(`/api/problems
 if (error.value || !item.value) throw createError({ statusCode: error.value?.statusCode === 404 ? 404 : 502, statusMessage: '提出が見つからないか、まだ公開されていません', fatal: true })
 useSeoMeta({ title: () => `提出 | ${item.value?.problemTitle} | ShareOJ`, robots: 'noindex, nofollow' })
 // Follow a submission that is still being judged, such as one just rejudged.
-usePolling(refresh, 2000, () => !!item.value && item.value.status !== 'DONE')
+usePolling(refresh, 2000, { enabled: () => !!item.value && item.value.status !== 'DONE' })
 </script>
 <template>
   <div v-if="item" class="submission-page">

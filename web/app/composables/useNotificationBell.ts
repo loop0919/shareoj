@@ -88,6 +88,7 @@ export function useNotificationPolling() {
   onMounted(() => { void refresh() })
   watch(() => user.value?.id, () => { reset(); void refresh() })
   watch(() => route.fullPath, () => { void refresh() })
-  // Hidden tabs keep polling only for browser notifications of questions.
-  usePolling(refresh, 30_000, () => !!user.value, () => wants('clarifications'))
+  // Hidden tabs keep polling only for browser notifications of questions. Announcements and answers arrive here,
+  // so an idle page keeps the pace.
+  usePolling(refresh, 30_000, { enabled: () => !!user.value, whileHidden: () => wants('clarifications'), whileIdle: () => true })
 }

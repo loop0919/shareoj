@@ -157,7 +157,8 @@ watch(submissionList, () => { invalidateSubmissions(); submissions.value = null 
 watch([submissionsOffset, submissionsSize, filterSubmissions, submissionList, () => chosenProblem.value?.id], () => { void loadSubmissions() })
 watch([activeView, () => contest.value?.status], () => { void loadEditorials() })
 onMounted(() => { void loadSubmissions(); void loadEditorials() })
-usePolling(update, 15000)
+// People watch the countdown and the standings without touching the page, so only an ended contest slows down.
+usePolling(update, 15000, { whileIdle: () => contest.value?.status !== 'ended' })
 const freezeTime = computed(() => contest.value ? contestFreezeTime(contest.value) : '')
 const frozenNote = computed(() => contest.value ? frozenSubmissionsNote(contest.value) : '')
 // Setters and operators publish the frozen results after the end; the server refuses while runs are still pending.
@@ -210,7 +211,7 @@ async function rejudgeSelected() {
   if (await rejudge([...selected.value])) { selected.value = []; await loadSubmissions() }
 }
 // Follow rejudged rows more closely than the regular refresh.
-usePolling(loadSubmissions, 3000, () => canRejudge.value && !!submissions.value?.items.some(item => item.status !== 'DONE'))
+usePolling(loadSubmissions, 3000, { enabled: () => canRejudge.value && !!submissions.value?.items.some(item => item.status !== 'DONE') })
 function elapsed(acceptedAt: string) { return duration(new Date(acceptedAt).getTime() - new Date(contest.value!.startsAt).getTime()) }
 const problemStats = computed(() => contest.value!.problems.map(problem => {
   let submitted = 0

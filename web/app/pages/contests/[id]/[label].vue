@@ -31,7 +31,11 @@ const team = computed(() => !!contest.value?.team)
 useSeoMeta({ title: () => `${title.value} | ${contest.value?.title} | ShareOJ` })
 // The viewer's roles decide the form, so it follows a login or logout.
 watch(() => user.value?.id, () => { void Promise.all([refresh(), refreshContest()]) })
-usePolling(() => Promise.all([refresh(), refreshContest()]), 15000)
+// The contest decides the form and the editorial, so it is followed closely. The statement rarely changes; it is
+// read again every minute and whenever the contest starts or ends.
+usePolling(() => refreshContest(), 15000)
+usePolling(() => refresh(), 60000)
+watch(() => contest.value?.status, () => { void refresh() })
 useSharePreview({ title: () => title.value, path: problemPath, description: () => problem.value!.markdown.slice(0, 160), enabled: () => !!problem.value && !!contest.value && contest.value.status !== 'scheduled' })
 </script>
 <template>
