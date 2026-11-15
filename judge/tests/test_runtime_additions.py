@@ -1,3 +1,4 @@
+import json
 import sys
 import subprocess
 import tempfile
@@ -63,6 +64,32 @@ with open(sys.argv[1], 'wb', buffering=0) as file:
         self.assertEqual(nursery(64), [6])
         self.assertEqual(nursery(1024, compile_phase=True), [51])
         self.assertEqual(nursery(256, interactor=True), [25])
+
+    def test_fsharp_compiles_without_msbuild_and_ships_its_core_library(self):
+        runtime = RUNTIMES['fsharp10-isolate']
+        self.assertEqual(runtime['artifact'], 'dotnet')
+        self.assertEqual(runtime['compile'][:2], ['/opt/judge-runtimes/dotnet/dotnet', '/opt/judge-runtimes/fsharp-tools/fsc.dll'])
+        self.assertEqual(runtime['run'], RUNTIMES['csharp14-isolate']['run'])
+        self.assertIn('FSharp.Core.dll', runtime['files'])
+        self.assertEqual(RUNTIMES['csharp14-isolate']['files'],
+                         ['main.runtimeconfig.json', 'main.deps.json', 'MathNet.Numerics.dll', 'ac-library-csharp.dll'])
+
+    def test_fsharp_box_gets_one_dll_per_locked_package(self):
+        # The build checks fsharp-libs against the same lock.
+        lock = Path(__file__).resolve().parents[1] / 'runtime/deps/additions/fsharp/packages.lock.json'
+        packages = json.loads(lock.read_text())['dependencies']['net10.0']
+        self.assertEqual(sorted(RUNTIMES['fsharp10-isolate']['files']),
+                         sorted(['main.runtimeconfig.json', *[name + '.dll' for name in packages]]))
+        self.assertEqual(RUNTIMES['fsharp10-isolate']['files_root'], 'fsharp-libs')
+
+    def test_fsharp_runs_in_the_same_sandbox_as_csharp_without_write_xor_execute(self):
+        # Same heap caps per role and the compiler's 256 open files. W^X would cap fsc's code at the file size limit.
+        wx = '--env=DOTNET_EnableWriteXorExecute=0'
+        for memory, role in ((512, {}), (64, {}), (1024, dict(compile_phase=True)), (256, dict(interactor=True))):
+            with self.subTest(memory=memory, **role):
+                fsharp = sandbox.run_args('fsharp10-isolate', 1, 4, memory, **role)
+                self.assertIn(wx, fsharp)
+                self.assertEqual([arg for arg in fsharp if arg != wx], sandbox.run_args('csharp14-isolate', 1, 4, memory, **role))
 
     def test_compiled_typescript_is_collected_and_keeps_javascript_suffix(self):
         runtime = RUNTIMES['typescript-node24-isolate']

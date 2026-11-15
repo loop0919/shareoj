@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "ac-library-csharp": {
+        "type": "Direct",
+        "requested": "[4.1.4, )",
+        "resolved": "4.1.4",
+        "contentHash": "XaD0CTpqWcsyPDwlRTG/8yhq2qNhaAy+KHANvWCDezvaFSspXJS++NA9rRRQgNfDMqgpKOOrLjZ2Ra8xrQ+vFA=="
+      },
+      "FSharp.Core": {
+        "type": "Direct",
+        "requested": "[10.1.401, )",
+        "resolved": "10.1.401",
+        "contentHash": "/lvOK51KD8IangBYkfDVna3/HrE/r4VUnX3dI01KDspctoYXmind3POeoYkqWKeXHwiKlf6Hc9TxwSnoSCWcjw=="
+      },
+      "FSharpPlus": {
+        "type": "Direct",
+        "requested": "[1.9.1, )",
+        "resolved": "1.9.1",
+        "contentHash": "dY4uEg7M8Hnn4n/BRTndGvkmk7PjZwoeDa02TKpmB9xhNve4QcLirUP57uY5EZYa/AjgHomDYNzgE3SpWpOeqQ==",
+        "dependencies": {
+          "FSharp.Core": "6.0.6"
+        }
+      },
+      "FSharpx.Collections": {
+        "type": "Direct",
+        "requested": "[3.1.0, )",
+        "resolved": "3.1.0",
+        "contentHash": "VKK+/6zD4GoAYam1MLNd5NQTL+sG9i69MkCy7f67PUhGTuoXFVNgym1mcxKvD0Kt3Cbua3aoKlNP3G5WwT9mYw==",
+        "dependencies": {
+          "FSharp.Core": "4.3.4"
+        }
+      },
+      "FSharpx.Extras": {
+        "type": "Direct",
+        "requested": "[3.3.0, )",
+        "resolved": "3.3.0",
+        "contentHash": "HtWX38ctZ3vSOy7/FIZ2rXnpAZUchrYfw7ioxyCPz/6qfkqSexIkGmd+qPTUVh3ObZStv2OTXLAF/yssKoZpog==",
+        "dependencies": {
+          "FSharp.Core": "6.0.6",
+          "FSharpx.Collections": "3.0.1"
+        }
+      },
+      "FsToolkit.ErrorHandling": {
+        "type": "Direct",
+        "requested": "[5.2.0, )",
+        "resolved": "5.2.0",
+        "contentHash": "Y7NfN1gDJ5eOANmi8/aEjGHTWrJOYyqwmgtdA3BIZggd0Ph0IIsbewtgNaLkDYFGgkKw6mGlk0iw4RZ2ZRKZhA==",
+        "dependencies": {
+          "FSharp.Core": "9.0.300"
+        }
+      },
+      "MathNet.Numerics": {
+        "type": "Direct",
+        "requested": "[5.0.0, )",
+        "resolved": "5.0.0",
+        "contentHash": "pg1W2VwaEQMAiTpGK840hZgzavnqjlCMTVSbtVCXVyT+7AX4mc1o89SPv4TBlAjhgCOo9c1Y+jZ5m3ti2YgGgA=="
+      },
+      "MathNet.Numerics.FSharp": {
+        "type": "Direct",
+        "requested": "[5.0.0, )",
+        "resolved": "5.0.0",
+        "contentHash": "lKYhd68fReW5odX/q+Uzxw3357Duq3zmvkYvnZVqqcc2r/EmrYGDoOdUGuHnhfr8yj9V34js5gQH/7IWcxZJxg==",
+        "dependencies": {
+          "FSharp.Core": "6.0.2",
+          "MathNet.Numerics": "5.0.0"
+        }
+      }
+    }
+  }
+}

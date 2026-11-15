@@ -374,6 +374,78 @@ def sbcl():
         raise RuntimeError('SBCL compiled a program with a compile-time error')
 
 
+def fsharp():
+    # C#'s pinned SDK archive; verify it here too, so this step can extend an already deployed runtime tree.
+    item = json.loads((INPUT / 'sources.json').read_text())['files']['dotnet.tar.gz']
+    with (INPUT / 'dotnet.tar.gz').open('rb') as f:
+        if hashlib.file_digest(f, 'sha256').hexdigest() != item['sha256']:
+            raise RuntimeError('.NET SDK archive checksum changed')
+    # The deployed dotnet/ has no SDK. Take only the F# compiler and the reference assemblies of the deployed runtime.
+    sdk = WORK / 'dotnet-sdk'
+    unpack('dotnet.tar.gz', sdk, strip=False)
+    compiler = sdk / 'sdk' / item['version'] / 'FSharp'
+    runtime = next((ROOT / 'dotnet/shared/Microsoft.NETCore.App').iterdir()).name
+    tools, libraries = ROOT / 'fsharp-tools', ROOT / 'fsharp-libs'
+    shutil.copytree(compiler, tools)
+    (tools / 'ref').mkdir()
+    for path in (sdk / 'packs/Microsoft.NETCore.App.Ref' / runtime / 'ref/net10.0').glob('*.dll'):
+        shutil.copy2(path, tools / 'ref')
+    # Restore the libraries by the lock with the unpacked SDK; MSBuild never runs for submissions.
+    project = WORK / 'fsharp'
+    (WORK / 'fsharp-home').mkdir(parents=True, exist_ok=True)
+    project.mkdir(exist_ok=True)
+    shutil.copyfile(DEPS / 'fsharp/main.fsproj', project / 'main.fsproj')
+    copy_lock('fsharp/packages.lock.json', project / 'packages.lock.json')
+    (project / 'main.fs').write_text('printfn "%d" 3\n')
+    env = dict(os.environ, HOME=str(WORK / 'fsharp-home'), DOTNET_CLI_TELEMETRY_OPTOUT='1', DOTNET_NOLOGO='1')
+    run(sdk / 'dotnet', 'restore', 'main.fsproj', *([] if RESOLVE else ['--locked-mode']), '--packages', WORK / 'nuget',
+        '--source', 'https://api.nuget.org/v3/index.json', cwd=project, env=env)
+    run(sdk / 'dotnet', 'build', 'main.fsproj', '--no-restore', '--disable-build-servers', '-c', 'Release',
+        '-o', WORK / 'fsharp-out', cwd=project, env=env)
+    lock = json.loads((project / 'packages.lock.json').read_text())['dependencies']['net10.0']
+    shutil.copyfile(project / 'packages.lock.json', tools / 'packages.lock.json')
+    libraries.mkdir()
+    shutil.copy2(WORK / 'fsharp-out/main.runtimeconfig.json', libraries)
+    for path in (WORK / 'fsharp-out').glob('*.dll'):
+        if path.name != 'main.dll':
+            shutil.copy2(path, libraries)
+    # runtimes.py lists one DLL per locked package; a new transitive package must be added there too.
+    if {path.stem for path in libraries.glob('*.dll')} != set(lock):
+        raise RuntimeError('F# library DLLs no longer match the locked packages')
+    # The SDK's FSharp.Core is the locked version, compiled ahead of time, so programs start faster with it.
+    if not (compiler / 'library-packs' / ('FSharp.Core.' + lock['FSharp.Core']['resolved'] + '.nupkg')).exists():
+        raise RuntimeError('The locked FSharp.Core is not the SDK version')
+    shutil.copy2(compiler / 'FSharp.Core.dll', libraries / 'FSharp.Core.dll')
+    for name in ('MathNet.Numerics.dll', 'ac-library-csharp.dll'):
+        if (libraries / name).read_bytes() != (ROOT / 'dotnet-libs' / name).read_bytes():
+            raise RuntimeError(name + ' differs from the copy C# uses')
+    (tools / 'licenses').mkdir()
+    for package in (WORK / 'nuget').iterdir():
+        for path in package.glob('*/*'):
+            if path.suffix == '.nuspec' or path.name.lower().startswith(('license', 'copying', 'notice')):
+                (tools / 'licenses' / package.name).mkdir(exist_ok=True)
+                shutil.copy2(path, tools / 'licenses' / package.name)
+    references = sorted((tools / 'ref').glob('*.dll')) + sorted(libraries.glob('*.dll'))
+    # fsc copies FSharp.Core.dll beside its output unless told not to; the box gets it from fsharp-libs.
+    (tools / 'compile.args').write_text('\n'.join([
+        '--targetprofile:netcore', '--noframework', '--simpleresolution', '--target:exe', '--optimize+', '--debug-',
+        '--nologo', '--nocopyfsharpcore', *['-r:' + str(path) for path in references],
+        '--out:/box/main.dll', '/box/main.fs']) + '\n')
+    run('chmod', '-R', 'a+rX', tools, libraries)
+    # Build and run a program the way submissions are, with the deployed runtime.
+    probe = WORK / 'fsharp-probe'
+    probe.mkdir(exist_ok=True)
+    (probe / 'main.fs').write_text('printfn "%d" (1 + 2)\n')
+    (probe / 'compile.args').write_text((tools / 'compile.args').read_text().replace('/box/', str(probe) + '/'))
+    env = dict(env, DOTNET_gcServer='0', DOTNET_PROCESSOR_COUNT='1')
+    run(ROOT / 'dotnet/dotnet', tools / 'fsc.dll', '@' + str(probe / 'compile.args'), env=env)
+    for path in libraries.iterdir():
+        if path.is_file():
+            shutil.copy2(path, probe)
+    if subprocess.check_output([ROOT / 'dotnet/dotnet', probe / 'main.dll'], text=True, env=env) != '3\n':
+        raise RuntimeError('F# probe printed the wrong output')
+
+
 def finish():
     save_lock(INPUT / 'sources.json')
     save_lock(DEPS / 'catalog.json')
@@ -436,18 +508,20 @@ def finish():
     (ROOT / 'build-manifest/additions' / native_lock).write_text(json.dumps(native_hashes, indent=2) + '\n')
     # Keep inventory of vendored native objects and source cache alongside package-manager locks.
     checksums = {}
-    for subtree in ('ruby-deps', 'truffleruby-deps', 'haskell-deps', 'deno-deps', 'addition-native', 'golf', 'goose', 'sbcl'):
+    for subtree in ('ruby-deps', 'truffleruby-deps', 'haskell-deps', 'deno-deps', 'addition-native', 'golf', 'goose', 'sbcl',
+                    'fsharp-tools', 'fsharp-libs'):
         for path in sorted((ROOT / subtree).rglob('*')):
             if path.is_file() and not path.is_symlink():
                 with path.open('rb') as f:
                     checksums[str(path.relative_to(ROOT))] = hashlib.file_digest(f, 'sha256').hexdigest()
     (ROOT / 'build-manifest/additions/content-sha256.json').write_text(json.dumps(checksums, sort_keys=True) + '\n')
     for name in ('node', 'bun', 'deno', 'ghc', 'cabal', 'ruby', 'truffleruby', 'js-deps',
-                 'deno-deps', 'ruby-deps', 'truffleruby-deps', 'haskell-deps', 'addition-native', 'golf', 'goose', 'sbcl'):
+                 'deno-deps', 'ruby-deps', 'truffleruby-deps', 'haskell-deps', 'addition-native', 'golf', 'goose', 'sbcl',
+                 'fsharp-tools', 'fsharp-libs'):
         run('chmod', '-R', 'a+rX', ROOT / name)
 
 
 if __name__ == '__main__':
     {'toolchains': toolchains, 'javascript': javascript, 'ruby-native': ruby_native,
      'ruby': ruby, 'truffleruby': lambda: ruby(True), 'haskell': haskell, 'golf': golf, 'goose': goose, 'sbcl': sbcl,
-     'finish': finish}[sys.argv[1]]()
+     'fsharp': fsharp, 'finish': finish}[sys.argv[1]]()

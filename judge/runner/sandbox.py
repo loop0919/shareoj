@@ -211,7 +211,7 @@ def run_args(runtime, cpu, wall, memory, *, compile_phase=False, meta=None, inte
         # Compilation and the interactor keep fixed caps; a submission's cap scales with its memory limit.
         return compiling if compile_phase else interacting if interactor else scaled_heap(at_512, memory)
 
-    if runtime == 'csharp14-isolate':
+    if runtime in ('csharp14-isolate', 'fsharp10-isolate'):
         environment.append('DOTNET_GCHeapHardLimit=' + hex(heap(512, 128, 192) * 1024 * 1024))
     if runtime == 'go127-isolate':
         environment.append('GOMEMLIMIT=' + str(heap(384, 160, 384)) + 'MiB')
@@ -230,7 +230,7 @@ def run_args(runtime, cpu, wall, memory, *, compile_phase=False, meta=None, inte
             # Pure Go compilation does not execute submitted code; execution keeps all filters.
             *(['--syscalls=65531'] if compile_phase and runtime == 'go127-isolate' else []),
             '--open-files=256' if compile_phase and runtime in (
-                'csharp14-isolate', 'typescript-node24-isolate', 'typescript-bun14-isolate') else '--open-files=64',
+                'csharp14-isolate', 'fsharp10-isolate', 'typescript-node24-isolate', 'typescript-bun14-isolate') else '--open-files=64',
             # Leave one KiB beyond the output budget so catching SIGXFSZ/EFBIG still yields OLE.
             '--fsize=32768' if compile_phase else f'--fsize={OUTPUT_LIMIT // 1024 + 1}',
             *([] if interactive else ['--stdout=stdout']), '--stderr=stderr',
@@ -273,7 +273,7 @@ def prepare_program(box, runtime, artifact, files=None, *, protocol='legacy', in
     shutil.copyfile(artifact, box / program)
     (box / program).chmod(0o555)
     for name in runtime.get('files', []):
-        shutil.copyfile(ROOT + '/dotnet-libs/' + name, box / name)
+        shutil.copyfile(ROOT + '/' + runtime.get('files_root', 'dotnet-libs') + '/' + name, box / name)
         (box / name).chmod(0o444)
     command = list(runtime['run'])
     if files is not None:

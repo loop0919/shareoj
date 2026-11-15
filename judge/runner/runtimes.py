@@ -54,6 +54,15 @@ SBCL = ROOT + '/sbcl/bin/sbcl-judge'
 RUNTIMES['commonlisp-sbcl26-isolate'] = dict(source='main.lisp', artifact='native',
     compile=[SBCL, '--script', ROOT + '/sbcl/compile.lisp', '/box/main.lisp', '/box/main'],
     run=[SBCL, '--script', '/box/main'], env=['LD_LIBRARY_PATH=' + ROOT + '/addition-native/lib'])
+# F# runs on C#'s runtime and calls fsc without MSBuild. The box gets FSharp.Core and the libraries from fsharp-libs.
+# isolate leaves the main thread's stack unlimited, so deep recursion needs nothing from the program.
+# W^X caps .NET's JIT code at the file size limit (32 MiB while compiling); fsc used 21 MiB for Hello World, 28 for 100 lines.
+RUNTIMES['fsharp10-isolate'] = dict(source='main.fs', artifact='dotnet',
+    compile=[ROOT + '/dotnet/dotnet', ROOT + '/fsharp-tools/fsc.dll', '@' + ROOT + '/fsharp-tools/compile.args'],
+    run=list(RUNTIMES['csharp14-isolate']['run']), files_root='fsharp-libs',
+    files=['main.runtimeconfig.json', 'FSharp.Core.dll', 'FSharpPlus.dll', 'FSharpx.Collections.dll', 'FSharpx.Extras.dll',
+           'FsToolkit.ErrorHandling.dll', 'MathNet.Numerics.dll', 'MathNet.Numerics.FSharp.dll', 'ac-library-csharp.dll'],
+    env=[*RUNTIMES['csharp14-isolate']['env'], 'DOTNET_EnableWriteXorExecute=0'])
 
 # Module resolution requires the original suffix; dependencies are operator-owned mounts.
 NODE = ROOT + '/node/bin/node'

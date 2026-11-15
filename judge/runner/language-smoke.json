@@ -656,6 +656,85 @@
       "verdict": "AC"
     }
   ],
+  "fsharp10-isolate": [
+    {
+      "name": "stdin",
+      "source": "let a, b =\n    match stdin.ReadLine().Split() |> Array.map int with\n    | [| a; b |] -> a, b\n    | _ -> failwith \"expected two numbers\"\nprintfn \"%d\" (a + b)\n",
+      "verdict": "AC",
+      "input": "1 2\n"
+    },
+    {
+      "name": "wrong",
+      "source": "printfn \"%d\" 4\n",
+      "verdict": "WA"
+    },
+    {
+      "name": "syntax",
+      "source": "let main (\n",
+      "verdict": "CE"
+    },
+    {
+      "name": "exception",
+      "source": "failwith \"failure\"\n",
+      "verdict": "RE"
+    },
+    {
+      "name": "timeout",
+      "source": "while true do ()\n",
+      "verdict": "TLE"
+    },
+    {
+      "name": "output",
+      "source": "let line = String.replicate 64 \"x\"\nwhile true do\n    stdout.WriteLine line\n",
+      "verdict": "OLE",
+      "timeLimitMs": 5000
+    },
+    {
+      "name": "memory",
+      "source": "// Unmanaged memory is outside the GC heap limit, so only the memory limit stops it.\nlet blocks = System.Collections.Generic.List<nativeint>()\nwhile true do\n    let block = System.Runtime.InteropServices.Marshal.AllocHGlobal(16 <<< 20)\n    System.Span<byte>(block.ToPointer(), 16 <<< 20).Fill 1uy\n    blocks.Add block\n",
+      "verdict": "MLE"
+    },
+    {
+      "name": "heap",
+      "source": "// The GC heap is capped below the memory limit, so exhausting it throws OutOfMemoryException.\nlet arrays = System.Collections.Generic.List<byte[]>()\nwhile true do\n    arrays.Add(Array.create (16 <<< 20) 1uy)\n",
+      "verdict": "RE"
+    },
+    {
+      "name": "libraries",
+      "source": "open FsToolkit.ErrorHandling\nopen MathNet.Numerics.LinearAlgebra\n\n// Each included library once, with FSharp.Core underneath all of them.\nif FSharpPlus.Operators.map ((+) 1) (Some 2) <> Some 3 then failwith \"FSharpPlus\"\nif FSharpx.Collections.Heap.ofSeq false [ 3; 1; 2 ] |> FSharpx.Collections.Heap.head <> 1 then failwith \"FSharpx.Collections\"\nif FSharpx.Option.maybe { let! a = Some 1 in return a + 2 } <> Some 3 then failwith \"FSharpx.Extras\"\nlet sum: Result<int, string> = result { let! a = Ok 1 in let! b = Ok 2 in return a + b }\nif sum <> Ok 3 then failwith \"FsToolkit.ErrorHandling\"\nif abs (MathNet.Numerics.SpecialFunctions.Gamma 4.0 - 6.0) > 1e-9 then failwith \"MathNet.Numerics\"\nif vector [ 1.0; 2.0 ] |> Vector.sum <> 3.0 then failwith \"MathNet.Numerics.FSharp\"\nlet dsu = AtCoder.Dsu 3\ndsu.Merge(0, 1) |> ignore\nif dsu.Size 0 <> 2 then failwith \"ac-library-csharp\"\nprintfn \"%d\" 3\n",
+      "verdict": "AC",
+      "timeLimitMs": 5000
+    },
+    {
+      "name": "cleanup",
+      "source": "if System.IO.File.Exists \"marker\" then failwith \"marker exists\"\nSystem.IO.File.WriteAllText(\"marker\", \"x\")\nprintfn \"%d\" 3\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "interactive",
+      "source": "for n in 10 .. 11 do\n    printfn \"%d\" n\n    stdout.Flush()\n    if int (stdin.ReadLine()) <> 2 * n then failwith \"answer\"\n",
+      "verdict": "AC",
+      "input": "20\n22\n",
+      "output": "10\n11\n"
+    },
+    {
+      "name": "response",
+      "source": "for _ in 1 .. 2 do\n    printfn \"%d\" (2 * int (stdin.ReadLine()))\n    stdout.Flush()\n",
+      "verdict": "AC",
+      "input": "10\n11\n",
+      "output": "20\n22\n"
+    },
+    {
+      "name": "args",
+      "source": "// A submission gets no arguments; judge code gets its files, the test input first.\n[<EntryPoint>]\nlet main argv =\n    if argv.Length > 0 then\n        if argv[0] <> \"/box/test-input\" then failwith \"unexpected argument\"\n        System.IO.File.ReadAllText argv[0] |> ignore\n    printfn \"%d\" 3\n    0\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "recursion",
+      "source": "let rec sumTo n = if n = 0 then 0L else int64 n + sumTo (n - 1)\nif sumTo 1000000 <> 500000500000L then failwith \"sum\"\nprintfn \"%d\" 3\n",
+      "verdict": "AC"
+    }
+  ],
   "javascript-node24-isolate": [
     {
       "name": "stdin",

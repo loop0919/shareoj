@@ -21,6 +21,7 @@ def failure_program(name):
         'nim22-isolate': 'doAssert false',
         'goose20263-isolate': 'fn main() { abort("rejected"); }',
         'commonlisp-sbcl26-isolate': '(error "rejected")',
+        'fsharp10-isolate': 'failwith "rejected"',
         'haskell-ghc910-isolate': 'main :: IO ()\nmain = error "rejected"',
         'ruby40-isolate': 'raise "rejected"',
         'ruby-truffle40-isolate': 'raise "rejected"',
