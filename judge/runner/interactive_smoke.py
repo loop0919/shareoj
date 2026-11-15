@@ -22,6 +22,7 @@ def failure_program(name):
         'goose20263-isolate': 'fn main() { abort("rejected"); }',
         'commonlisp-sbcl26-isolate': '(error "rejected")',
         'fsharp10-isolate': 'failwith "rejected"',
+        'gleam119-isolate': 'pub fn main() {\n  panic as "rejected"\n}\n',
         'haskell-ghc910-isolate': 'main :: IO ()\nmain = error "rejected"',
         'ruby40-isolate': 'raise "rejected"',
         'ruby-truffle40-isolate': 'raise "rejected"',

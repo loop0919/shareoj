@@ -1,0 +1,23 @@
+# The template project: each submission becomes src/main.gleam; the dependencies are compiled at build time.
+name = "judge"
+version = "1.0.0"
+target = "erlang"
+
+# The newest releases that resolve together. stdin 2.0.2, the newest, needs gleam_stdlib < 1.0.0,
+# so ieee_float and gleam_community_maths stay on their newest releases that accept gleam_stdlib 0.x.
+[dependencies]
+bidict = ">= 1.0.0 and < 2.0.0"
+bigdecimal = ">= 1.4.0 and < 2.0.0"
+bitsandbobs = ">= 1.1.0 and < 2.0.0"
+dijkstra = ">= 1.0.0 and < 2.0.0"
+gleam_community_maths = ">= 2.0.1 and < 3.0.0"
+gleam_deque = ">= 1.0.0 and < 2.0.0"
+gleam_regexp = ">= 1.1.1 and < 2.0.0"
+gleam_stdlib = ">= 0.71.0 and < 1.0.0"
+gleam_yielder = ">= 1.1.0 and < 2.0.0"
+gleamy_structures = ">= 1.3.0 and < 2.0.0"
+glearray = ">= 2.1.2 and < 3.0.0"
+ieee_float = ">= 1.6.0 and < 2.0.0"
+iv = ">= 1.4.4 and < 2.0.0"
+stdin = ">= 2.0.2 and < 3.0.0"
+trie_again = ">= 1.1.4 and < 2.0.0"

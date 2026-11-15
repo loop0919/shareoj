@@ -91,6 +91,54 @@ with open(sys.argv[1], 'wb', buffering=0) as file:
                 self.assertIn(wx, fsharp)
                 self.assertEqual([arg for arg in fsharp if arg != wx], sandbox.run_args('csharp14-isolate', 1, 4, memory, **role))
 
+    def test_gleam_runs_on_one_scheduler_without_the_gleam_cli(self):
+        runtime = RUNTIMES['gleam119-isolate']
+        self.assertEqual(runtime['compile'], ['/usr/bin/sh', '/opt/judge-runtimes/gleam/compile.sh'])
+        run = runtime['run']
+        self.assertEqual(run[0], '/opt/judge-runtimes/erlang/bin/erl')
+        for flag, value in (('+S', '1:1'), ('+SDcpu', '1:1'), ('+SDio', '1'), ('+A', '1')):
+            self.assertEqual(run[run.index(flag) + 1], value)
+        self.assertIn('-noshell', run)
+        self.assertFalse(any(arg.endswith('/gleam') for arg in run))
+
+    def test_gleam_stays_within_the_file_size_limit_and_keeps_stdin(self):
+        runtime = RUNTIMES['gleam119-isolate']
+        # The double-mapped JIT memory is a memfd that the file size limit kills with SIGXFSZ.
+        self.assertEqual(runtime['run'][runtime['run'].index('+JMsingle') + 1], 'true')
+        # A crash dump in /box could turn an RE into OLE; -noinput would cut stdin off.
+        self.assertIn('ERL_CRASH_DUMP_SECONDS=0', runtime['env'])
+        self.assertNotIn('-noinput', runtime['run'])
+
+    def test_gleam_judge_files_are_plain_arguments(self):
+        runtime = RUNTIMES['gleam119-isolate']
+        self.assertEqual(runtime['run'][-1], '-extra')
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact = root / 'artifact'
+            artifact.write_bytes(b'FOR1')
+            for files, extra in ((None, []), (dict.fromkeys(('test-input', 'expected-output', 'submission-source'), b''),
+                                              ['/box/test-input', '/box/expected-output', '/box/submission-source', '/box/score'])):
+                box = root / ('judge' if files else 'submission')
+                box.mkdir()
+                command = sandbox.prepare_program(box, runtime, artifact, files)
+                self.assertEqual(command[command.index('-extra') + 1:], extra)
+                self.assertEqual((box / 'main.beam').read_bytes(), b'FOR1')
+
+    def test_gleam_template_pins_every_listed_library(self):
+        import tomllib
+        deps = Path(__file__).resolve().parents[1] / 'runtime/deps/additions/gleam'
+        listed = tomllib.loads((deps / 'gleam.toml').read_text())['dependencies']
+        self.assertEqual(sorted(listed), ['bidict', 'bigdecimal', 'bitsandbobs', 'dijkstra', 'gleam_community_maths',
+                                          'gleam_deque', 'gleam_regexp', 'gleam_stdlib', 'gleam_yielder', 'gleamy_structures',
+                                          'glearray', 'ieee_float', 'iv', 'stdin', 'trie_again'])
+        manifest = tomllib.loads((deps / 'manifest.toml').read_text())
+        packages = {package['name']: package for package in manifest['packages']}
+        self.assertLessEqual(set(listed), set(packages))
+        for name, package in packages.items():
+            self.assertEqual(package['source'], 'hex', name)
+            self.assertRegex(package['outer_checksum'], '^[0-9A-F]{64}$', name)
+        self.assertEqual({name: value['version'] for name, value in manifest['requirements'].items()}, listed)
+
     def test_compiled_typescript_is_collected_and_keeps_javascript_suffix(self):
         runtime = RUNTIMES['typescript-node24-isolate']
         with tempfile.TemporaryDirectory() as tmp:

@@ -735,6 +735,79 @@
       "verdict": "AC"
     }
   ],
+  "gleam119-isolate": [
+    {
+      "name": "stdin",
+      "source": "import gleam/int\nimport gleam/io\nimport gleam/list\nimport gleam/string\nimport gleam/yielder\nimport stdin\n\npub fn main() {\n  let assert Ok(numbers) =\n    stdin.read_lines()\n    |> yielder.to_list\n    |> list.flat_map(fn(line) { string.split(string.trim(line), \" \") })\n    |> list.try_map(int.parse)\n  io.println(int.to_string(int.sum(numbers)))\n}\n",
+      "verdict": "AC",
+      "input": "1 2\n"
+    },
+    {
+      "name": "wrong",
+      "source": "import gleam/io\n\npub fn main() {\n  io.println(\"4\")\n}\n",
+      "verdict": "WA"
+    },
+    {
+      "name": "syntax",
+      "source": "pub fn main( {\n",
+      "verdict": "CE"
+    },
+    {
+      "name": "exception",
+      "source": "pub fn main() {\n  panic as \"failure\"\n}\n",
+      "verdict": "RE"
+    },
+    {
+      "name": "timeout",
+      "source": "fn spin(n: Int) -> Int {\n  spin(n + 1)\n}\n\npub fn main() {\n  spin(0)\n}\n",
+      "verdict": "TLE"
+    },
+    {
+      "name": "output",
+      "source": "import gleam/io\nimport gleam/string\n\n// Each write to standard output costs about 50 microseconds, so write 64 KiB at a time.\npub fn main() {\n  write(string.repeat(\"x\", 65_535))\n}\n\nfn write(line: String) -> Nil {\n  io.println(line)\n  write(line)\n}\n",
+      "verdict": "OLE",
+      "timeLimitMs": 5000
+    },
+    {
+      "name": "memory",
+      "source": "// Each 16 MiB binary stays referenced from the list, so memory grows until the limit.\n// Copying 64 bytes 262144 times fills 16 MiB quickly; one byte at a time is 60 times slower.\n@external(erlang, \"binary\", \"copy\")\nfn copy(bytes: BitArray, times: Int) -> BitArray\n\nfn grow(blocks: List(BitArray)) -> List(BitArray) {\n  grow([copy(<<1:size(512)>>, 262_144), ..blocks])\n}\n\npub fn main() {\n  grow([])\n}\n",
+      "verdict": "MLE"
+    },
+    {
+      "name": "libraries",
+      "source": "import bidict\nimport bigdecimal\nimport bitsandbobs/bitwise\nimport dijkstra\nimport gleam/deque\nimport gleam/dict\nimport gleam/int\nimport gleam/io\nimport gleam/order\nimport gleam/regexp\nimport gleam/yielder\nimport gleam_community/maths\nimport gleamy/priority_queue\nimport glearray\nimport ieee_float\nimport iv\nimport stdin\nimport trie\n\npub fn main() {\n  let assert Ok(2) = bidict.from_list([#(1, 2)]) |> bidict.get_a(1)\n  let assert Ok(half) = bigdecimal.from_string(\"1.5\")\n  let assert Ok(three) = bigdecimal.from_string(\"3\")\n  let assert order.Eq = bigdecimal.compare(bigdecimal.add(half, half), three)\n  let assert <<6>> = bitwise.and(<<7>>, <<14>>)\n  let edges = fn(node) {\n    case node {\n      1 -> dict.from_list([#(2, 1), #(3, 5)])\n      2 -> dict.from_list([#(3, 1)])\n      _ -> dict.new()\n    }\n  }\n  let assert #([1, 2, 3], 2) =\n    dijkstra.dijkstra(edges, 1) |> dijkstra.shortest_path(3)\n  let assert 6 = maths.lcm(2, 3)\n  let assert Ok(#(1, _)) = deque.from_list([1, 2]) |> deque.pop_front\n  let assert Ok(pattern) = regexp.from_string(\"b+\")\n  let assert [regexp.Match(content: \"bbb\", ..)] = regexp.scan(pattern, \"abbbc\")\n  let assert Ok(#(1, _)) =\n    priority_queue.from_list([3, 1, 2], int.compare) |> priority_queue.pop\n  let assert Ok(20) = glearray.from_list([10, 20]) |> glearray.get(1)\n  let assert Ok(1.5) =\n    ieee_float.finite(1.5)\n    |> ieee_float.to_bytes_64_le\n    |> ieee_float.from_bytes_64_le\n    |> ieee_float.to_finite\n  let assert Ok(30) = iv.from_list([10, 20, 30]) |> iv.get(2)\n  let assert Ok(1) =\n    trie.new() |> trie.insert(at: [1, 2], value: 1) |> trie.get(at: [1, 2])\n  // Building the yielder reads nothing; this fixture also runs as an interactor, whose stdin stays open.\n  let assert [] = stdin.read_lines() |> yielder.take(0) |> yielder.to_list\n  io.println(int.to_string(1 + 2))\n}\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "cleanup",
+      "source": "import gleam/dynamic.{type Dynamic}\nimport gleam/io\n\n@external(erlang, \"filelib\", \"is_file\")\nfn is_file(path: String) -> Bool\n\n@external(erlang, \"file\", \"write_file\")\nfn write_file(path: String, data: String) -> Dynamic\n\npub fn main() {\n  let assert False = is_file(\"marker\")\n  let _ = write_file(\"marker\", \"x\")\n  let assert True = is_file(\"marker\")\n  io.println(\"3\")\n}\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "interactive",
+      "source": "import gleam/int\nimport gleam/io\nimport gleam/string\nimport gleam/yielder\nimport stdin\n\n// Erlang writes standard output without buffering, so each question is out before the answer is read.\npub fn main() {\n  ask(stdin.read_lines(), 10)\n}\n\nfn ask(lines: yielder.Yielder(String), n: Int) -> Nil {\n  case n < 12 {\n    False -> Nil\n    True -> {\n      io.println(int.to_string(n))\n      let assert yielder.Next(line, rest) = yielder.step(lines)\n      let assert Ok(x) = int.parse(string.trim(line))\n      let assert True = x == 2 * n\n      ask(rest, n + 1)\n    }\n  }\n}\n",
+      "verdict": "AC",
+      "input": "20\n22\n",
+      "output": "10\n11\n"
+    },
+    {
+      "name": "response",
+      "source": "import gleam/int\nimport gleam/io\nimport gleam/string\nimport gleam/yielder\nimport stdin\n\n// The yielder reads a line only when the next one is needed, so each answer goes out before the next question.\npub fn main() {\n  stdin.read_lines()\n  |> yielder.take(2)\n  |> yielder.each(fn(line) {\n    let assert Ok(n) = int.parse(string.trim(line))\n    io.println(int.to_string(2 * n))\n  })\n}\n",
+      "verdict": "AC",
+      "input": "10\n11\n",
+      "output": "20\n22\n"
+    },
+    {
+      "name": "args",
+      "source": "import gleam/dynamic.{type Dynamic}\nimport gleam/io\nimport gleam/list\n\n// A submission gets no arguments; judge code gets its files after -extra, the test input first.\n@external(erlang, \"init\", \"get_plain_arguments\")\nfn plain_arguments() -> List(Dynamic)\n\n@external(erlang, \"unicode\", \"characters_to_binary\")\nfn to_string(characters: Dynamic) -> String\n\n@external(erlang, \"file\", \"read_file\")\nfn read_file(path: String) -> Result(BitArray, Dynamic)\n\npub fn main() {\n  case list.map(plain_arguments(), to_string) {\n    [] -> Nil\n    [input, ..] -> {\n      let assert \"/box/test-input\" = input\n      let assert Ok(_) = read_file(input)\n      Nil\n    }\n  }\n  io.println(\"3\")\n}\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "recursion",
+      "source": "import gleam/io\n\n// Not a tail call: every level waits for the sum below it, so 10^6 frames are live at once.\nfn sum_to(n: Int) -> Int {\n  case n {\n    0 -> 0\n    _ -> n + sum_to(n - 1)\n  }\n}\n\npub fn main() {\n  let assert 500_000_500_000 = sum_to(1_000_000)\n  io.println(\"3\")\n}\n",
+      "verdict": "AC"
+    }
+  ],
   "javascript-node24-isolate": [
     {
       "name": "stdin",

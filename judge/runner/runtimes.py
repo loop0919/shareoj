@@ -63,6 +63,24 @@ RUNTIMES['fsharp10-isolate'] = dict(source='main.fs', artifact='dotnet',
     files=['main.runtimeconfig.json', 'FSharp.Core.dll', 'FSharpPlus.dll', 'FSharpx.Collections.dll', 'FSharpx.Extras.dll',
            'FsToolkit.ErrorHandling.dll', 'MathNet.Numerics.dll', 'MathNet.Numerics.FSharp.dll', 'ac-library-csharp.dll'],
     env=[*RUNTIMES['csharp14-isolate']['env'], 'DOTNET_EnableWriteXorExecute=0'])
+# Gleam runs on erl directly (gleam run would check the build again). The artifact is one BEAM file, collected like
+# generated JavaScript. The template's judge@@main sets stdin to binary (stdin.read_lines needs it) and exits 1 on a
+# panic. Judge files come after -extra, so init:get_plain_arguments() has exactly them.
+RUNTIMES['gleam119-isolate'] = dict(source='main.gleam', artifact='generated-source', compile_output='main.beam',
+    program='main.beam', compile=['/usr/bin/sh', ROOT + '/gleam/compile.sh'],
+    run=[ROOT + '/erlang/bin/erl',
+         # One thread of each kind, none busy waiting, and erlc's -mode minimal (no distribution) halve the startup.
+         '+S', '1:1', '+SDcpu', '1:1', '+SDio', '1', '+A', '1', '+sbwt', 'none', '+sbwtdcpu', 'none', '+sbwtdio', 'none',
+         '-mode', 'minimal', '-boot', 'no_dot_erlang',
+         # The JIT's default double mapping is a memfd larger than the file size limit (SIGXFSZ at start).
+         '+JMsingle', 'true',
+         # The default table for 2^20 processes takes 16 MiB; 2^18 live processes would need over 512 MiB anyway.
+         '+P', '262144',
+         # The default cache of 10 freed segments keeps old heaps resident; with one, a growing heap peaks at about half.
+         '+MMmcs', '1',
+         '-noshell', '-pa', '/box', '-pa', ROOT + '/gleam-project/ebin', '-eval', 'judge@@main:run(main)', '-extra'],
+    # A crash dump would be written into /box and could reach the file size limit.
+    env=['LD_LIBRARY_PATH=' + ROOT + '/addition-native/lib', 'ERL_CRASH_DUMP_SECONDS=0'])
 
 # Module resolution requires the original suffix; dependencies are operator-owned mounts.
 NODE = ROOT + '/node/bin/node'

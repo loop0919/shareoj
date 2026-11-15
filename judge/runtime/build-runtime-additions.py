@@ -5,9 +5,11 @@ import json
 import os
 from pathlib import Path
 import re
+import resource
 import shutil
 import subprocess
 import sys
+import tomllib
 import urllib.request
 import zipfile
 
@@ -446,6 +448,82 @@ def fsharp():
         raise RuntimeError('F# probe printed the wrong output')
 
 
+def gleam():
+    # Verify the inputs here too, so this step can extend an already deployed runtime tree.
+    files = json.loads((INPUT / 'sources.json').read_text())['files']
+    for name in ('otp.tar.gz', 'gleam.tar.gz'):
+        with (INPUT / name).open('rb') as f:
+            if hashlib.file_digest(f, 'sha256').hexdigest() != files[name]['sha256']:
+                raise RuntimeError(name + ' checksum changed')
+    erlang, tools, project = ROOT / 'erlang', ROOT / 'gleam', ROOT / 'gleam-project'
+    # hex.pm's build runs from any root once Install has written it into the launchers.
+    unpack('otp.tar.gz', erlang)
+    run('./Install', '-minimal', erlang, cwd=erlang)
+    unpack('gleam.tar.gz', tools, strip=False)
+    shutil.copy2(DEPS / 'gleam/compile.sh', tools / 'compile.sh')
+    # Fetch the locked Hex packages and compile them once; a submission compiles only its own module.
+    project.mkdir()
+    shutil.copyfile(DEPS / 'gleam/gleam.toml', project / 'gleam.toml')
+    copy_lock('gleam/manifest.toml', project / 'manifest.toml')
+    (project / 'src').mkdir()
+    (project / 'src/main.gleam').write_text('pub fn main() {\n  Nil\n}\n')
+    home = WORK / 'gleam-home'
+    env = dict(os.environ, PATH=str(erlang / 'bin') + ':' + os.environ['PATH'], HOME=str(home))
+    run(tools / 'gleam', 'deps', 'update' if RESOLVE else 'download', cwd=project, env=env)
+    if not RESOLVE and (project / 'manifest.toml').read_bytes() != (DEPS / 'gleam/manifest.toml').read_bytes():
+        raise RuntimeError('Gleam lock changed')
+    # Gleam caches each Hex tarball under its outer checksum; check the bytes against the lock ourselves.
+    for package in tomllib.loads((project / 'manifest.toml').read_text())['packages']:
+        with (home / '.cache/gleam/hex/hexpm/packages' / (package['outer_checksum'] + '.tar')).open('rb') as f:
+            if hashlib.file_digest(f, 'sha256').hexdigest().upper() != package['outer_checksum']:
+                raise RuntimeError('Hex package checksum changed: ' + package['name'])
+    run(tools / 'gleam', 'build', cwd=project, env=env)
+    # Keep the dependencies and the entry module gleam generates for the package (judge@@main), not the placeholder.
+    (project / 'src/main.gleam').unlink()
+    for path in (project / 'build/dev/erlang/judge').glob('*/main.*'):
+        path.unlink()
+    # The run puts one directory on the code path: erl looks through every -pa directory for each module it loads.
+    ebin = project / 'ebin'
+    ebin.mkdir()
+    packages = project / 'build/dev/erlang'
+    if any(packages.glob('*/priv')):
+        raise RuntimeError('A Gleam package has a priv directory, which one shared ebin cannot serve')
+    for path in sorted(packages.glob('*/ebin/*')):
+        if (ebin / path.name).exists():
+            raise RuntimeError('Two Gleam packages ship ' + path.name)
+        shutil.copy2(path, ebin)
+    run('chmod', '-R', 'a+rX', erlang, tools, project)
+    # Build and run a program the way submissions are: under the sandbox's file size limits (32 MiB compiling,
+    # 16 MiB + 1 KiB running) and with a dead proxy for Hex, so a template that would fetch packages, a JIT
+    # mapping the limit kills or a launcher that cuts off stdin stops here.
+    def file_limit(kib):
+        return lambda: resource.setrlimit(resource.RLIMIT_FSIZE, (kib * 1024, kib * 1024))
+    probe = WORK / 'gleam-probe'
+    probe.mkdir(exist_ok=True)
+    (probe / 'compile.sh').write_text((tools / 'compile.sh').read_text().replace('/box/', str(probe) + '/'))
+    offline = dict(os.environ, HOME=str(probe), HTTP_PROXY='http://127.0.0.1:9', HTTPS_PROXY='http://127.0.0.1:9',
+                   ERL_CRASH_DUMP_SECONDS='0')
+    (probe / 'main.gleam').write_text('import gleam/int\nimport gleam/io\nimport gleam/list\nimport gleam/string\n'
+        'import gleam/yielder\nimport stdin\n\npub fn main() {\n  stdin.read_lines()\n  |> yielder.to_list\n'
+        '  |> list.flat_map(fn(line) { string.split(string.trim(line), " ") })\n'
+        '  |> list.filter_map(int.parse)\n  |> int.sum\n  |> int.to_string\n  |> io.println\n}\n')
+    run('sh', probe / 'compile.sh', env=offline, preexec_fn=file_limit(32768))
+    output = subprocess.run([erlang / 'bin/erl', '+S', '1:1', '+SDcpu', '1:1', '+SDio', '1', '+A', '1',
+                             '+sbwt', 'none', '+sbwtdcpu', 'none', '+sbwtdio', 'none', '-mode', 'minimal',
+                             '-boot', 'no_dot_erlang', '+JMsingle', 'true', '+P', '262144', '+MMmcs', '1',
+                             '-noshell', '-pa', probe, '-pa', ebin, '-eval', 'judge@@main:run(main)', '-extra'],
+                            input='1 2\n', text=True,
+                            stdout=subprocess.PIPE, env=offline, preexec_fn=file_limit(16385), check=True).stdout
+    if output != '3\n':
+        raise RuntimeError('Gleam probe printed the wrong output')
+    # compile.sh must reject a module without pub fn main(), which would otherwise only fail when it runs.
+    shutil.rmtree(probe / 'project')
+    (probe / 'main.gleam').write_text('pub fn helper() {\n  Nil\n}\n')
+    if subprocess.run(['sh', probe / 'compile.sh'], env=offline, preexec_fn=file_limit(32768),
+                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+        raise RuntimeError('Gleam compiled a program without main')
+
+
 def finish():
     save_lock(INPUT / 'sources.json')
     save_lock(DEPS / 'catalog.json')
@@ -481,6 +559,7 @@ def finish():
     pending += [ROOT / 'golf' / name for name in ('clay', 'dc', 'tritium', 'wsc', 'nibbles')]
     pending.append(ROOT / 'goose/goose')
     pending.append(ROOT / 'sbcl/bin/sbcl-judge')
+    pending += list((ROOT / 'erlang').glob('erts-*/bin/beam.smp'))
     seen = set()
     while pending:
         path = pending.pop()
@@ -509,7 +588,7 @@ def finish():
     # Keep inventory of vendored native objects and source cache alongside package-manager locks.
     checksums = {}
     for subtree in ('ruby-deps', 'truffleruby-deps', 'haskell-deps', 'deno-deps', 'addition-native', 'golf', 'goose', 'sbcl',
-                    'fsharp-tools', 'fsharp-libs'):
+                    'fsharp-tools', 'fsharp-libs', 'erlang', 'gleam', 'gleam-project'):
         for path in sorted((ROOT / subtree).rglob('*')):
             if path.is_file() and not path.is_symlink():
                 with path.open('rb') as f:
@@ -517,11 +596,11 @@ def finish():
     (ROOT / 'build-manifest/additions/content-sha256.json').write_text(json.dumps(checksums, sort_keys=True) + '\n')
     for name in ('node', 'bun', 'deno', 'ghc', 'cabal', 'ruby', 'truffleruby', 'js-deps',
                  'deno-deps', 'ruby-deps', 'truffleruby-deps', 'haskell-deps', 'addition-native', 'golf', 'goose', 'sbcl',
-                 'fsharp-tools', 'fsharp-libs'):
+                 'fsharp-tools', 'fsharp-libs', 'erlang', 'gleam', 'gleam-project'):
         run('chmod', '-R', 'a+rX', ROOT / name)
 
 
 if __name__ == '__main__':
     {'toolchains': toolchains, 'javascript': javascript, 'ruby-native': ruby_native,
      'ruby': ruby, 'truffleruby': lambda: ruby(True), 'haskell': haskell, 'golf': golf, 'goose': goose, 'sbcl': sbcl,
-     'fsharp': fsharp, 'finish': finish}[sys.argv[1]]()
+     'fsharp': fsharp, 'gleam': gleam, 'finish': finish}[sys.argv[1]]()

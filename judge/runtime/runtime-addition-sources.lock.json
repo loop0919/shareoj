@@ -52,6 +52,13 @@
       "url": "https://downloads.haskell.org/~ghc/9.10.3/ghc-9.10.3-x86_64-deb12-linux.tar.xz",
       "version": "9.10.3"
     },
+    "gleam.tar.gz": {
+      "license": "Apache-2.0",
+      "note": "Statically linked (musl). The SHA-256 matches the release asset digest and its .sha256 file.",
+      "sha256": "2ba2afb66ca9f6dcc01a4a6e9169b6942963bad6483bec9571ddc078cfe6f41f",
+      "url": "https://github.com/gleam-lang/gleam/releases/download/v1.19.2/gleam-v1.19.2-x86_64-unknown-linux-musl.tar.gz",
+      "version": "1.19.2"
+    },
     "golf-rust.tar.xz": {
       "sha256": "5326b36c53de11d148c8f8dab6553a3d1006c2cfd32123683073fad3c302605b",
       "url": "https://static.rust-lang.org/dist/rust-1.98.1-x86_64-unknown-linux-gnu.tar.xz"
@@ -84,6 +91,13 @@
       "sha256": "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6",
       "url": "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.xz",
       "version": "24.21.0"
+    },
+    "otp.tar.gz": {
+      "license": "Apache-2.0",
+      "note": "hex.pm's Ubuntu 24.04 build of OTP-29.1.2 (erts 17.1.1, git d199a49a01a2079afb6f2c5c9ae047cd4555e68d). The SHA-256 matches builds.hex.pm/builds/otp/amd64/ubuntu-24.04/builds.txt.",
+      "sha256": "2cfca446976fc61962585a1c77e5d11ddb6f5fed83e84668a2c4acfaad60d22e",
+      "url": "https://builds.hex.pm/builds/otp/amd64/ubuntu-24.04/OTP-29.1.2.tar.gz",
+      "version": "29.1.2"
     },
     "ruby.tar.xz": {
       "sha256": "47ef59413f7a4587ba6a6b78b14036eb5e36eec2ec0b90964801e88d56a3d375",

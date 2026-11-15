@@ -245,6 +245,22 @@ class RunnerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'class directory'):
                 sandbox.collect_artifact(box, RUNTIMES['java25-isolate'])
 
+    def test_gleam_artifact_is_one_beam_file_and_rejects_links_and_directories(self):
+        import tempfile
+        runtime = RUNTIMES['gleam119-isolate']
+        with tempfile.TemporaryDirectory() as tmp:
+            box = Path(tmp)
+            (box / 'main.beam').write_bytes(b'FOR1 beam')
+            self.assertEqual(sandbox.collect_artifact(box, runtime), b'FOR1 beam')
+            (box / 'main.beam').unlink()
+            (box / 'main.beam').symlink_to('/etc/passwd')
+            with self.assertRaises(OSError):
+                sandbox.collect_artifact(box, runtime)
+            (box / 'main.beam').unlink()
+            (box / 'main.beam').mkdir()
+            with self.assertRaises(IsADirectoryError):
+                sandbox.collect_artifact(box, runtime)
+
     def test_java_artifact_preserves_nested_classes(self):
         import tempfile
         import zipfile
