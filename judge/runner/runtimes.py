@@ -81,6 +81,12 @@ RUNTIMES['gleam119-isolate'] = dict(source='main.gleam', artifact='generated-sou
          '-noshell', '-pa', '/box', '-pa', ROOT + '/gleam-project/ebin', '-eval', 'judge@@main:run(main)', '-extra'],
     # A crash dump would be written into /box and could reach the file size limit.
     env=['LD_LIBRARY_PATH=' + ROOT + '/addition-native/lib', 'ERL_CRASH_DUMP_SECONDS=0'])
+# Fix builds main.fix in a copy of fix-project, whose libraries are fetched and type-checked at build time. fix compiles
+# its runtime and links with the gcc on PATH, and the libraries' make finds their lib.o built. The executable needs
+# libgmp (gmp-fix) at run time, from addition-native as for SBCL.
+RUNTIMES['fix16-isolate'] = dict(source='main.fix', artifact='native',
+    compile=['/usr/bin/sh', ROOT + '/fix/compile.sh'], run=['/box/main'],
+    env=['PATH=' + ROOT + '/gcc/bin:/usr/bin:/bin', 'LD_LIBRARY_PATH=' + ROOT + '/addition-native/lib'])
 
 # Module resolution requires the original suffix; dependencies are operator-owned mounts.
 NODE = ROOT + '/node/bin/node'

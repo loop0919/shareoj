@@ -139,6 +139,36 @@ with open(sys.argv[1], 'wb', buffering=0) as file:
             self.assertRegex(package['outer_checksum'], '^[0-9A-F]{64}$', name)
         self.assertEqual({name: value['version'] for name, value in manifest['requirements'].items()}, listed)
 
+    def test_fix_links_with_the_judge_gcc_and_builds_inside_the_box(self):
+        runtime = RUNTIMES['fix16-isolate']
+        self.assertEqual(runtime['compile'], ['/usr/bin/sh', '/opt/judge-runtimes/fix/compile.sh'])
+        self.assertEqual(runtime['run'], ['/box/main'])
+        path = next(env for env in runtime['env'] if env.startswith('PATH='))
+        self.assertEqual(path.split('=', 1)[1].split(':')[0], '/opt/judge-runtimes/gcc/bin')
+
+    def test_fix_template_pins_every_listed_library_to_a_commit(self):
+        import tomllib
+        deps = Path(__file__).resolve().parents[1] / 'runtime/deps/additions/fix'
+        project = tomllib.loads((deps / 'fixproj.toml').read_text())
+        # fix build runs a project's preliminary_commands; the template must have none of its own.
+        self.assertNotIn('preliminary_commands', project['build'])
+        self.assertEqual(project['build']['files'], ['main.fix'])
+        listed = {dep['name']: dep['version'] for dep in project['dependencies']}
+        self.assertEqual(sorted(listed), sorted(['character', 'hash', 'hashmap', 'hashset', 'math', 'random', 'time',
+            'binary-heap', 'bool-array', 'cp-library', 'ring-buffer', 'gmp-fix', *('minilib-' + name for name in (
+                'common', 'text', 'binary', 'collection', 'monad', 'comonad', 'random', 'math', 'crypto', 'app', 'json',
+                'xml'))]))
+        lock = {dep['name']: dep for dep in tomllib.loads((deps / 'fixdeps.lock').read_text())['dependencies']}
+        digests = json.loads((deps / 'fixdeps.sha256.json').read_text())
+        self.assertEqual(set(lock), set(listed))
+        self.assertEqual(set(digests), set(lock))
+        for name, version in listed.items():
+            self.assertEqual(version, '=' + lock[name]['version'], name)
+            self.assertRegex(lock[name]['git']['rev'], '^[0-9a-f]{40}$', name)
+            self.assertRegex(digests[name], '^[0-9a-f]{64}$', name)
+        # Using regexp alone takes the whole compile limit; see excluded.json.
+        self.assertEqual(list(json.loads((deps / 'excluded.json').read_text())), ['regexp'])
+
     def test_compiled_typescript_is_collected_and_keeps_javascript_suffix(self):
         runtime = RUNTIMES['typescript-node24-isolate']
         with tempfile.TemporaryDirectory() as tmp:

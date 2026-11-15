@@ -808,6 +808,94 @@
       "verdict": "AC"
     }
   ],
+  "fix16-isolate": [
+    {
+      "name": "stdin",
+      "source": "module Main;\n\n// Reads all of standard input and prints the sum of the integers on it.\nmain : IO ();\nmain = (\n    let text = *read_string(stdin).try(exit_with_msg(1));\n    let words = text.split(\" \").map(strip_spaces).filter(|word| word != \"\");\n    println(words.fold(0, |word, sum| sum + from_string(word).as_ok).to_string)\n);\n",
+      "verdict": "AC",
+      "input": "1 2\n"
+    },
+    {
+      "name": "wrong",
+      "source": "module Main;\n\nmain : IO ();\nmain = println(\"4\");\n",
+      "verdict": "WA"
+    },
+    {
+      "name": "syntax",
+      "source": "module Main;\n\nmain : IO ();\nmain = (\n",
+      "verdict": "CE"
+    },
+    {
+      "name": "exception",
+      "source": "module Main;\n\nmain : IO ();\nmain = undefined(\"failure\");\n",
+      "verdict": "RE"
+    },
+    {
+      "name": "timeout",
+      "source": "module Main;\n\nmain : IO ();\nmain = println((loop(0, |i| continue $ i + 1) : I64).to_string);\n",
+      "verdict": "TLE"
+    },
+    {
+      "name": "output",
+      "source": "module Main;\n\nmain : IO ();\nmain = loop_m((), |_| println(\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\");; continue_m $ ());\n",
+      "verdict": "OLE",
+      "timeLimitMs": 5000
+    },
+    {
+      "name": "memory",
+      "source": "module Main;\n\n// Every 32 MiB array stays reachable from the loop's state, so memory grows until the limit.\nmain : IO ();\nmain = (\n    let blocks : Array (Array I64) = loop(([], 0), |(blocks, i)|\n        continue $ (blocks.push_back(Array::fill(4194304, i)), i + 1)\n    );\n    println(blocks.@size.to_string)\n);\n",
+      "verdict": "MLE"
+    },
+    {
+      "name": "libraries",
+      "source": "module Main;\n\nimport BinaryHeap;\nimport BoolArray;\nimport CPLib.UnionFind;\nimport Character;\nimport GMP.Z;\nimport Hash;\nimport HashMap;\nimport HashSet;\nimport Math;\nimport Minilib.Collection.Deque;\nimport Minilib.Comonad.Store;\nimport Minilib.Crypto.SHA256;\nimport Minilib.Encoding.Base64;\nimport Minilib.Math.BigInt;\nimport Minilib.Monad.State;\nimport Minilib.Random.XorShift;\nimport Minilib.Text.Hex;\nimport Minilib.Text.SimpleParser;\nimport Minilib.Text.StringEx;\nimport Minilib.Trait.Rng;\nimport Random;\nimport RingBuffer;\nimport Time;\n\n// Uses each library but minilib-json, minilib-xml and minilib-app, which compile slowly and have fixtures of their own.\n// It reads no input: it also runs as an interactor, whose standard input stays open.\ncheck : String -> Bool -> IO ();\ncheck = |name, ok| assert(|_| name, ok);\n\nmain : IO ();\nmain = (\n    check(\"binary-heap\", [3, 1, 2].to_iter.fold(MinBinaryHeap::empty, BinaryHeap::push).get_top == some(1));;\n    check(\"bool-array\", BoolArray::fill(8, false).set(3, true).@(3));;\n    check(\"cp-library\", UnionFind::create(3).unite(0, 1).is_united(0, 1).@1);;\n    check(\"character\", Character::is_digit('7'));;\n    check(\"gmp-fix\", (MPZ::mpz(6) * MPZ::mpz(7)).to_string == \"42\");;\n    check(\"hash\", Hash::combine_hash(1_U64, 2_U64) == Hash::combine_hash(1_U64, 2_U64));;\n    check(\"hashmap\", HashMap::empty(0).HashMap::insert(1, 2).HashMap::find(1) == some(2));;\n    check(\"hashset\", HashSet::empty(0).HashSet::insert(3).HashSet::contains(3));;\n    check(\"math\", Math::floor(2.5) == 2.0);;\n    check(\"minilib-collection\", Deque::empty(0).push_back(1).push_back(2).get_front == some(1));;\n    check(\"minilib-comonad\", Minilib.Comonad.Store::store((1, |p| p * 3)).peek(2) == 6);;\n    check(\"minilib-crypto\", Minilib.Crypto.SHA256::digest(\"abc\".get_bytes.pop_back).@size == 32);;\n    check(\"minilib-binary\", base64_encode(\"abc\".get_bytes.pop_back) == \"YWJj\" && to_string_hex(255_U8) == \"ff\");;\n    check(\"minilib-math\", (BigInt::from_I64(3) * BigInt::from_I64(4)).to_string == \"12\");;\n    check(\"minilib-monad\", run_state(1, Minilib.Monad.State::state(|s| (s + 1, s * 2))) == (2, 2));;\n    let xor_shift = XorShift::init_by_seed(1_U64);\n    check(\"minilib-random\", xor_shift.rng_U64.@data.@1 == xor_shift.rng_U64.@data.@1);;\n    check(\"minilib-text\", eval_parser_str(\"42\", match_integer) == ok(42));;\n    check(\"minilib-common\", Minilib.Text.StringEx::to_upper(\"abc\") == \"ABC\");;\n    check(\"random\", Random::init_by_seed(1_U64).generate_U64.@1 == Random::init_by_seed(1_U64).generate_U64.@1);;\n    check(\"ring-buffer\", RingBuffer::create([1, 2]).push_back(3).get_back == some(3));;\n    check(\"time\", (*Time::get_now).@sec > 0);;\n    println(\"3\")\n);\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "libraries-json",
+      "source": "module Main;\n\nimport Minilib.Encoding.Json;\nimport Minilib.Encoding.Json.JsonDecoder;\nimport Minilib.Encoding.Json.JsonEncoder;\n\n// A program that uses minilib-json takes about 8 s to compile, so the other libraries are in fixtures of their own.\nmain : IO ();\nmain = (\n    assert(|_| \"minilib-json\", encode(JsonDecoder::decode(\"[1,2]\").as_ok) == \"[1,2]\");;\n    println(\"3\")\n);\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "libraries-xml",
+      "source": "module Main;\n\nimport Minilib.Encoding.Xml;\nimport Minilib.Encoding.Xml.XmlParser;\n\n// A program that uses minilib-xml takes about 6 s to compile, so the other libraries are in fixtures of their own.\nmain : IO ();\nmain = (\n    assert(|_| \"minilib-xml\", parse_element_from_string(\"<a>3</a>\").is_ok);;\n    println(\"3\")\n);\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "libraries-app",
+      "source": "module Main;\n\nimport Minilib.App.Clap;\n\n// A program that uses minilib-app takes about 8 s to compile, so the other libraries are in fixtures of their own.\n// The arguments are given here: judge code gets files as its own.\nmain : IO ();\nmain = (\n    let command = Command::new(\"judge\").arg(Arg::new(\"n\").long(\"n\").takes_value);\n    assert(|_| \"minilib-app\", command.get_matches_from([\"judge\", \"--n\", \"3\"]).as_ok.get_one(\"n\") == some(\"3\"));;\n    println(\"3\")\n);\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "cleanup",
+      "source": "module Main;\n\nmain : IO ();\nmain = (\n    assert(|_| \"marker exists\", (*read_file_string(\"marker\").to_result).is_err);;\n    write_file_string(\"marker\", \"x\").try(exit_with_msg(1));;\n    println(\"3\")\n);\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "interactive",
+      "source": "module Main;\n\n// Standard output goes to a pipe, which the C library buffers: flush each question before reading the answer.\nmain : IO ();\nmain = loop_m(10, |n| (\n    if n == 12 { break_m $ () };\n    println(n.to_string);;\n    let _ = *stdout.flush;\n    let line = *read_line(stdin).try(exit_with_msg(1));\n    assert(|_| \"wrong answer\", from_string(line.strip_spaces) == ok(2 * n));;\n    continue_m $ n + 1\n));\n",
+      "verdict": "AC",
+      "input": "20\n22\n",
+      "output": "10\n11\n"
+    },
+    {
+      "name": "response",
+      "source": "module Main;\n\nmain : IO ();\nmain = loop_m(0, |i| (\n    if i == 2 { break_m $ () };\n    let line = *read_line(stdin).try(exit_with_msg(1));\n    let n : I64 = from_string(line.strip_spaces).as_ok;\n    println((2 * n).to_string);;\n    let _ = *stdout.flush;\n    continue_m $ i + 1\n));\n",
+      "verdict": "AC",
+      "input": "10\n11\n",
+      "output": "20\n22\n"
+    },
+    {
+      "name": "args",
+      "source": "module Main;\n\n// A submission gets no arguments; judge code gets its files, the test input first. get_args starts with the program.\nmain : IO ();\nmain = (\n    let args = *get_args;\n    if args.@size > 1 {\n        assert(|_| \"unexpected first argument\", args.@(1) == \"/box/test-input\");;\n        let _ = *read_file_string(args.@(1)).try(exit_with_msg(1));\n        pure()\n    };\n    println(\"3\")\n);\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "recursion",
+      "source": "module Main;\n\n// Not a tail call: every level looks at the sum below it before adding to it, so 10^6 frames are live at once.\n// (LLVM turns a plain n + sum_to(n - 1) into a loop.)\nsum_to : I64 -> I64;\nsum_to = |n| (\n    if n == 0 { 0 } else {\n        let below = sum_to(n - 1);\n        if below < 0 { below } else { below + n }\n    }\n);\n\nmain : IO ();\nmain = (\n    assert_eq(|_| \"wrong sum\", sum_to(1000000), 500000500000);;\n    println(\"3\")\n);\n",
+      "verdict": "AC"
+    }
+  ],
   "javascript-node24-isolate": [
     {
       "name": "stdin",

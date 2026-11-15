@@ -524,6 +524,89 @@ def gleam():
         raise RuntimeError('Gleam compiled a program without main')
 
 
+def tree_sha256(directory):
+    """One SHA-256 over the paths and contents of a checked-out tree, without its .git."""
+    lines = []
+    for path in sorted(directory.rglob('*')):
+        name = path.relative_to(directory)
+        if name.parts[0] == '.git':
+            continue
+        if path.is_symlink():
+            lines.append('%s -> %s\n' % (name, os.readlink(path)))
+        elif path.is_file():
+            with path.open('rb') as f:
+                lines.append('%s %s\n' % (name, hashlib.file_digest(f, 'sha256').hexdigest()))
+    return hashlib.sha256(''.join(lines).encode()).hexdigest()
+
+
+def fix():
+    # Verify the input here too, so this step can extend an already deployed runtime tree.
+    item = json.loads((INPUT / 'sources.json').read_text())['files']['fix']
+    with (INPUT / 'fix').open('rb') as f:
+        if hashlib.file_digest(f, 'sha256').hexdigest() != item['sha256']:
+            raise RuntimeError('Fix binary checksum changed')
+    tools, project = ROOT / 'fix', ROOT / 'fix-project'
+    tools.mkdir()
+    shutil.copyfile(INPUT / 'fix', tools / 'fix')
+    (tools / 'fix').chmod(0o755)
+    shutil.copy2(DEPS / 'fix/compile.sh', tools / 'compile.sh')
+    # Clone the locked commit of each library; a submission's build finds them installed and fetches nothing.
+    project.mkdir()
+    shutil.copyfile(DEPS / 'fix/fixproj.toml', project / 'fixproj.toml')
+    copy_lock('fix/fixdeps.lock', project / 'fixdeps.lock')
+    # Fix compiles its runtime and links with the gcc on PATH, and four libraries make a lib.o; all use the judge's GCC.
+    env = dict(os.environ, PATH=str(ROOT / 'gcc/bin') + ':' + os.environ['PATH'], CC='gcc', HOME=str(WORK / 'fix-home'))
+    run(tools / 'fix', 'deps', 'update' if RESOLVE else 'install', cwd=project, env=env)
+    if not RESOLVE and (project / 'fixdeps.lock').read_bytes() != (DEPS / 'fix/fixdeps.lock').read_bytes():
+        raise RuntimeError('Fix lock changed')
+    # fix checks out each locked commit; check that here, and pin the checked-out files by SHA-256 besides git's SHA-1.
+    lock = tomllib.loads((project / 'fixdeps.lock').read_text())['dependencies']
+    digests = {}
+    for dep in lock:
+        source = project / dep['path']
+        if (source / '.git/HEAD').read_text().strip() != dep['git']['rev']:
+            raise RuntimeError('Fix dependency is not at its locked commit: ' + dep['name'])
+        digests[dep['name']] = tree_sha256(source)
+    (tools / 'fixdeps.sha256.json').write_text(json.dumps(digests, indent=2, sort_keys=True) + '\n')
+    if not RESOLVE and digests != json.loads((DEPS / 'fix/fixdeps.sha256.json').read_text()):
+        raise RuntimeError('Fix dependency contents changed')
+    # Type checking covers every module of every dependency and is cached in the project, so one build of a program
+    # that imports them all leaves a submission only its own module to check. The objects are not kept (AtCoder's way).
+    modules = []
+    for dep in lock:
+        source = project / dep['path']
+        for name in tomllib.loads((source / 'fixproj.toml').read_text())['build']['files']:
+            modules.append(re.search(r'^module ([\w.]+);', (source / name).read_text(), re.M).group(1))
+    (project / 'main.fix').write_text('module Main;\n\n' + ''.join('import %s;\n' % name for name in modules) +
+                                      '\nmain : IO ();\nmain = println("3");\n')
+    run(tools / 'fix', 'build', '-O', 'none', cwd=project, env=env)
+    if subprocess.check_output([project / 'a.out'], text=True) != '3\n':
+        raise RuntimeError('Fix warm-up program printed the wrong output')
+    for path in (project / 'main.fix', project / 'a.out'):
+        path.unlink()
+    for path in (project / '.fixlang/intermediate', project / '.fixlang/cache/units'):
+        shutil.rmtree(path)
+    run('chmod', '-R', 'a+rX', tools, project)
+    # Build and run a program the way submissions are, under the compile's file size limit.
+    probe = WORK / 'fix-probe'
+    probe.mkdir(exist_ok=True)
+    (probe / 'compile.sh').write_text((tools / 'compile.sh').read_text().replace('/box/', str(probe) + '/'))
+    (probe / 'main.fix').write_text('module Main;\n\nimport CPLib.IO;\n\nmain : IO ();\n'
+                                    'main = println((*read_i + *read_i).to_string);\n')
+    run('sh', probe / 'compile.sh', env=dict(env, HOME=str(probe)),
+        preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_FSIZE, (32 << 20, 32 << 20)))
+    output = subprocess.run([probe / 'main'], input='1 2\n', text=True, stdout=subprocess.PIPE, check=True,
+                            env=dict(env, LD_LIBRARY_PATH=str(ROOT / 'addition-native/lib'))).stdout
+    if output != '3\n':
+        raise RuntimeError('Fix probe printed the wrong output')
+    # The copy keeps modification times, so a build that resolved the lock again, cloned a library again (both need
+    # the network) or rebuilt a library's lib.o shows here.
+    for name in ['fixdeps.lock', *[dep['path'] + '/' + name for dep in lock for name in ('.git/HEAD', 'lib.o')]]:
+        template, copy = project / name, probe / 'project' / name
+        if template.exists() and copy.stat().st_mtime_ns != template.stat().st_mtime_ns:
+            raise RuntimeError('A Fix build changed ' + name)
+
+
 def finish():
     save_lock(INPUT / 'sources.json')
     save_lock(DEPS / 'catalog.json')
@@ -560,6 +643,7 @@ def finish():
     pending.append(ROOT / 'goose/goose')
     pending.append(ROOT / 'sbcl/bin/sbcl-judge')
     pending += list((ROOT / 'erlang').glob('erts-*/bin/beam.smp'))
+    pending.append(ROOT / 'fix/fix')
     seen = set()
     while pending:
         path = pending.pop()
@@ -588,7 +672,7 @@ def finish():
     # Keep inventory of vendored native objects and source cache alongside package-manager locks.
     checksums = {}
     for subtree in ('ruby-deps', 'truffleruby-deps', 'haskell-deps', 'deno-deps', 'addition-native', 'golf', 'goose', 'sbcl',
-                    'fsharp-tools', 'fsharp-libs', 'erlang', 'gleam', 'gleam-project'):
+                    'fsharp-tools', 'fsharp-libs', 'erlang', 'gleam', 'gleam-project', 'fix', 'fix-project'):
         for path in sorted((ROOT / subtree).rglob('*')):
             if path.is_file() and not path.is_symlink():
                 with path.open('rb') as f:
@@ -596,11 +680,11 @@ def finish():
     (ROOT / 'build-manifest/additions/content-sha256.json').write_text(json.dumps(checksums, sort_keys=True) + '\n')
     for name in ('node', 'bun', 'deno', 'ghc', 'cabal', 'ruby', 'truffleruby', 'js-deps',
                  'deno-deps', 'ruby-deps', 'truffleruby-deps', 'haskell-deps', 'addition-native', 'golf', 'goose', 'sbcl',
-                 'fsharp-tools', 'fsharp-libs', 'erlang', 'gleam', 'gleam-project'):
+                 'fsharp-tools', 'fsharp-libs', 'erlang', 'gleam', 'gleam-project', 'fix', 'fix-project'):
         run('chmod', '-R', 'a+rX', ROOT / name)
 
 
 if __name__ == '__main__':
     {'toolchains': toolchains, 'javascript': javascript, 'ruby-native': ruby_native,
      'ruby': ruby, 'truffleruby': lambda: ruby(True), 'haskell': haskell, 'golf': golf, 'goose': goose, 'sbcl': sbcl,
-     'fsharp': fsharp, 'gleam': gleam, 'finish': finish}[sys.argv[1]]()
+     'fsharp': fsharp, 'gleam': gleam, 'fix': fix, 'finish': finish}[sys.argv[1]]()
