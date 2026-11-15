@@ -31,11 +31,13 @@ RUNTIMES = {
         run=[ROOT + '/java25/bin/java', '-Xms16m', '-Xmx256m', '-Xss1m', '-XX:MaxMetaspaceSize=96m', '-XX:ReservedCodeCacheSize=32m', '-XX:MaxDirectMemorySize=32m', '-XX:+UseSerialGC', '-XX:ActiveProcessorCount=1', '-XX:+ExitOnOutOfMemoryError', '-XX:-UsePerfData', '-cp', '/box/main:' + JAVA_CP, 'Main'], artifact='java'),
 }
 
+# W^X caps .NET's JIT code at the file size limit (32 MiB while compiling, 16 while running); csc used 17-20 MiB for Hello World.
 RUNTIMES['csharp14-isolate'] = dict(source='main.cs',
     compile=[ROOT + '/dotnet/dotnet', ROOT + '/csharp-tools/csc.dll', '@' + ROOT + '/csharp-tools/compile.args'],
     run=[ROOT + '/dotnet/dotnet', '/box/main.dll'], artifact='dotnet',
     files=['main.runtimeconfig.json', 'main.deps.json', 'MathNet.Numerics.dll', 'ac-library-csharp.dll'],
-    env=['DOTNET_CLI_TELEMETRY_OPTOUT=1', 'DOTNET_EnableDiagnostics=0', 'DOTNET_gcServer=0', 'DOTNET_PROCESSOR_COUNT=1'])
+    env=['DOTNET_CLI_TELEMETRY_OPTOUT=1', 'DOTNET_EnableDiagnostics=0', 'DOTNET_gcServer=0', 'DOTNET_PROCESSOR_COUNT=1',
+         'DOTNET_EnableWriteXorExecute=0'])
 RUNTIMES['go127-isolate'] = dict(source='main.go',
     compile=[ROOT + '/go/bin/go', '-C', '/box', 'build', '-buildmode=exe', '-mod=vendor', '-p=1', '-trimpath', '-buildvcs=false', '-o', '/box/main', '/box/main.go'],
     run=['/box/main'], artifact='native',
@@ -56,13 +58,13 @@ RUNTIMES['commonlisp-sbcl26-isolate'] = dict(source='main.lisp', artifact='nativ
     run=[SBCL, '--script', '/box/main'], env=['LD_LIBRARY_PATH=' + ROOT + '/addition-native/lib'])
 # F# runs on C#'s runtime and calls fsc without MSBuild. The box gets FSharp.Core and the libraries from fsharp-libs.
 # isolate leaves the main thread's stack unlimited, so deep recursion needs nothing from the program.
-# W^X caps .NET's JIT code at the file size limit (32 MiB while compiling); fsc used 21 MiB for Hello World, 28 for 100 lines.
+# Without C#'s W^X switch fsc would not fit: it used 21 MiB of JIT code for Hello World, 28 for 100 lines.
 RUNTIMES['fsharp10-isolate'] = dict(source='main.fs', artifact='dotnet',
     compile=[ROOT + '/dotnet/dotnet', ROOT + '/fsharp-tools/fsc.dll', '@' + ROOT + '/fsharp-tools/compile.args'],
     run=list(RUNTIMES['csharp14-isolate']['run']), files_root='fsharp-libs',
     files=['main.runtimeconfig.json', 'FSharp.Core.dll', 'FSharpPlus.dll', 'FSharpx.Collections.dll', 'FSharpx.Extras.dll',
            'FsToolkit.ErrorHandling.dll', 'MathNet.Numerics.dll', 'MathNet.Numerics.FSharp.dll', 'ac-library-csharp.dll'],
-    env=[*RUNTIMES['csharp14-isolate']['env'], 'DOTNET_EnableWriteXorExecute=0'])
+    env=list(RUNTIMES['csharp14-isolate']['env']))
 # Gleam runs on erl directly (gleam run would check the build again). The artifact is one BEAM file, collected like
 # generated JavaScript. The template's judge@@main sets stdin to binary (stdin.read_lines needs it) and exits 1 on a
 # panic. Judge files come after -extra, so init:get_plain_arguments() has exactly them.

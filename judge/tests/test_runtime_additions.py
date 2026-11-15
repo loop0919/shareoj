@@ -82,14 +82,14 @@ with open(sys.argv[1], 'wb', buffering=0) as file:
                          sorted(['main.runtimeconfig.json', *[name + '.dll' for name in packages]]))
         self.assertEqual(RUNTIMES['fsharp10-isolate']['files_root'], 'fsharp-libs')
 
-    def test_fsharp_runs_in_the_same_sandbox_as_csharp_without_write_xor_execute(self):
-        # Same heap caps per role and the compiler's 256 open files. W^X would cap fsc's code at the file size limit.
+    def test_dotnet_languages_share_one_sandbox_without_write_xor_execute(self):
+        # Same heap caps per role and the compiler's 256 open files. W^X would cap the JIT's code at the file size limit.
         wx = '--env=DOTNET_EnableWriteXorExecute=0'
         for memory, role in ((512, {}), (64, {}), (1024, dict(compile_phase=True)), (256, dict(interactor=True))):
             with self.subTest(memory=memory, **role):
-                fsharp = sandbox.run_args('fsharp10-isolate', 1, 4, memory, **role)
-                self.assertIn(wx, fsharp)
-                self.assertEqual([arg for arg in fsharp if arg != wx], sandbox.run_args('csharp14-isolate', 1, 4, memory, **role))
+                csharp = sandbox.run_args('csharp14-isolate', 1, 4, memory, **role)
+                self.assertIn(wx, csharp)
+                self.assertEqual(sandbox.run_args('fsharp10-isolate', 1, 4, memory, **role), csharp)
 
     def test_gleam_runs_on_one_scheduler_without_the_gleam_cli(self):
         runtime = RUNTIMES['gleam119-isolate']
