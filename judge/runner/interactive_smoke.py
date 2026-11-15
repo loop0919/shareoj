@@ -20,6 +20,7 @@ def failure_program(name):
         'go127-isolate': 'package main\nfunc main(){panic("rejected")}',
         'nim22-isolate': 'doAssert false',
         'goose20263-isolate': 'fn main() { abort("rejected"); }',
+        'commonlisp-sbcl26-isolate': '(error "rejected")',
         'haskell-ghc910-isolate': 'main :: IO ()\nmain = error "rejected"',
         'ruby40-isolate': 'raise "rejected"',
         'ruby-truffle40-isolate': 'raise "rejected"',

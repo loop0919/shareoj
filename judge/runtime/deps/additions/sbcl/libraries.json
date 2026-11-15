@@ -1,0 +1,19 @@
+{
+  "build_systems": ["cl-unicode/build"],
+  "contribs": ["sb-gmp", "sb-queue", "sb-rotate-byte", "sb-simd"],
+  "quicklisp": "2026-01-01",
+  "systems": [
+    "cl-ppcre",
+    "gsll",
+    "iterate",
+    "pileup",
+    "queues",
+    "queues.simple-queue",
+    "queues.priority-queue",
+    "queues.simple-cqueue",
+    "queues.priority-cqueue",
+    "str",
+    "trees",
+    "trivia"
+  ]
+}

@@ -49,6 +49,11 @@ RUNTIMES['nim22-isolate'] = dict(source='main.nim',
 RUNTIMES['goose20263-isolate'] = dict(source='main.goose', artifact='native',
     compile=[ROOT + '/goose/goose', 'build', '--standalone', '--cc', GCC + 'gcc', '-O2', '/box/main.goose', '-o', '/box/main'],
     run=['/box/main'], env=['GOOSE_HOME=/box/goose-home'])
+# The image has the libraries loaded; the artifact is a fasl. --script skips init files and the debugger.
+SBCL = ROOT + '/sbcl/bin/sbcl-judge'
+RUNTIMES['commonlisp-sbcl26-isolate'] = dict(source='main.lisp', artifact='native',
+    compile=[SBCL, '--script', ROOT + '/sbcl/compile.lisp', '/box/main.lisp', '/box/main'],
+    run=[SBCL, '--script', '/box/main'], env=['LD_LIBRARY_PATH=' + ROOT + '/addition-native/lib'])
 
 # Module resolution requires the original suffix; dependencies are operator-owned mounts.
 NODE = ROOT + '/node/bin/node'

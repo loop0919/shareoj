@@ -583,6 +583,79 @@
       "output": "20\n22\n"
     }
   ],
+  "commonlisp-sbcl26-isolate": [
+    {
+      "name": "stdin",
+      "source": "(let ((a (read))\n      (b (read)))\n  (format t \"~a~%\" (+ a b)))\n",
+      "verdict": "AC",
+      "input": "1 2\n"
+    },
+    {
+      "name": "wrong",
+      "source": "(format t \"~a~%\" 4)\n",
+      "verdict": "WA"
+    },
+    {
+      "name": "syntax",
+      "source": "(defun main (\n",
+      "verdict": "CE"
+    },
+    {
+      "name": "exception",
+      "source": "(error \"failure\")\n",
+      "verdict": "RE"
+    },
+    {
+      "name": "timeout",
+      "source": "(loop)\n",
+      "verdict": "TLE"
+    },
+    {
+      "name": "output",
+      "source": "(loop (write-line \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"))\n",
+      "verdict": "OLE",
+      "timeLimitMs": 5000
+    },
+    {
+      "name": "memory",
+      "source": "(let ((arrays '()))\n  (loop (push (make-array 16777216 :element-type '(unsigned-byte 8) :initial-element 1) arrays)))\n",
+      "verdict": "MLE"
+    },
+    {
+      "name": "libraries",
+      "source": "(assert (equal (cl-ppcre:scan-to-strings \"b+\" \"abbbc\") \"bbb\"))\n(assert (< (abs (- (gsll:cylindrical-bessel-j0 1d0) 0.7651976865579666d0)) 1d-12))\n(assert (= (iterate:iter (iterate:for i :from 1 :to 3) (iterate:sum i)) 6))\n(let ((heap (pileup:make-heap #'<)))\n  (pileup:heap-insert 2 heap)\n  (pileup:heap-insert 1 heap)\n  (assert (= (pileup:heap-pop heap) 1)))\n(dolist (kind '(:simple-queue :simple-cqueue :priority-queue :priority-cqueue))\n  (let ((queue (queues:make-queue kind :compare #'<)))\n    (queues:qpush queue 2)\n    (queues:qpush queue 1)\n    (assert (= (queues:qpop queue) (if (member kind '(:simple-queue :simple-cqueue)) 2 1)))))\n(assert (equal (str:join \",\" '(\"a\" \"b\")) \"a,b\"))\n(let ((tree (trees:make-binary-tree :red-black #'< :key #'identity)))\n  (trees:insert 1 tree)\n  (assert (eql (trees:find 1 tree) 1)))\n(assert (= (trivia:match '(1 2) ((list a b) (+ a b))) 3))\n(assert (= (sb-gmp:mpz-mul (expt 2 100) 3) (* (expt 2 100) 3)))\n(let ((queue (sb-queue:make-queue)))\n  (sb-queue:enqueue 1 queue)\n  (assert (= (sb-queue:dequeue queue) 1)))\n(assert (= (sb-rotate-byte:rotate-byte 1 (byte 8 0) 128) 1))\n(assert (= (sb-simd:f64+ 1d0 2d0) 3d0))\n(format t \"~a~%\" (+ 1 2))\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "cleanup",
+      "source": "(assert (not (probe-file \"marker\")))\n(with-open-file (marker \"marker\" :direction :output)\n  (write-string \"x\" marker))\n(format t \"~a~%\" 3)\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "interactive",
+      "source": "(loop for n from 10 below 12\n      do (format t \"~a~%\" n)\n         (finish-output)\n         (assert (= (parse-integer (read-line)) (* 2 n))))\n",
+      "verdict": "AC",
+      "input": "20\n22\n",
+      "output": "10\n11\n"
+    },
+    {
+      "name": "response",
+      "source": "(dotimes (i 2)\n  (format t \"~a~%\" (* 2 (parse-integer (read-line))))\n  (finish-output))\n",
+      "verdict": "AC",
+      "input": "10\n11\n",
+      "output": "20\n22\n"
+    },
+    {
+      "name": "args",
+      "source": ";; A submission gets no arguments; judge code gets its files, the test input first.\n(let ((arguments (rest sb-ext:*posix-argv*)))\n  (when arguments\n    (assert (equal (first arguments) \"/box/test-input\"))\n    (with-open-file (input (first arguments))\n      (read-line input)))\n  (format t \"~a~%\" 3))\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "recursion",
+      "source": "(defun sum-to (n)\n  (if (zerop n)\n      0\n      (+ n (sum-to (1- n)))))\n(assert (= (sum-to 1000000) 500000500000))\n(format t \"~a~%\" 3)\n",
+      "verdict": "AC"
+    }
+  ],
   "javascript-node24-isolate": [
     {
       "name": "stdin",

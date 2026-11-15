@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.request
 import zipfile
 
 ROOT = Path('/opt/judge-runtimes')
@@ -289,6 +290,90 @@ def goose():
         raise RuntimeError('Goose probe printed the wrong output')
 
 
+def fetch(url):
+    with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'OpenOJ-runtime-build'}),
+                                timeout=60) as response:
+        return response.read()
+
+
+def resolve_quicklisp(libraries):
+    """Each Quicklisp release the listed systems need, from the pinned dist."""
+    base = 'https://beta.quicklisp.org/dist/quicklisp/' + libraries['quicklisp'] + '/'
+    index = {name: [line.split() for line in fetch(base + name).decode().splitlines() if not line.startswith('#')]
+             for name in ('systems.txt', 'releases.txt')}
+    # systems.txt: project, system file, system, dependencies. releases.txt: project, URL, ...
+    systems = {fields[2]: fields for fields in index['systems.txt']}
+    urls = {fields[0]: fields[1] for fields in index['releases.txt']}
+    # ASDF also loads build_systems while loading the libraries (cl-unicode generates its tables).
+    lock, seen, pending = {}, set(), [*libraries['systems'], *libraries['build_systems']]
+    while pending:
+        name = pending.pop()
+        # Systems outside the dist (ASDF, SBCL's contribs) ship with SBCL.
+        if name in seen or name not in systems:
+            continue
+        seen.add(name)
+        pending += systems[name][3:]
+        project = systems[name][0]
+        lock[project] = dict(url=urls[project].replace('http://', 'https://', 1))
+    for release in lock.values():
+        release['sha256'] = hashlib.sha256(fetch(release['url'])).hexdigest()
+    return dict(sorted(lock.items()))
+
+
+def sbcl():
+    # Verify the input here too, so this step can extend an already deployed runtime tree.
+    item = json.loads((INPUT / 'sources.json').read_text())['files']['sbcl.tar.bz2']
+    with (INPUT / 'sbcl.tar.bz2').open('rb') as f:
+        if hashlib.file_digest(f, 'sha256').hexdigest() != item['sha256']:
+            raise RuntimeError('SBCL archive checksum changed')
+    target = ROOT / 'sbcl'
+    unpack('sbcl.tar.bz2', WORK / 'sbcl')
+    run('sh', 'install.sh', '--prefix=' + str(target), cwd=WORK / 'sbcl')
+    shutil.rmtree(target / 'share')
+    shutil.copy2(WORK / 'sbcl/COPYING', target / 'COPYING')
+    # Fetch each Quicklisp release by its locked URL and SHA-256; the Quicklisp client never runs.
+    libraries = json.loads((DEPS / 'sbcl/libraries.json').read_text())
+    lock = resolve_quicklisp(libraries) if RESOLVE else json.loads((DEPS / 'sbcl/quicklisp.lock.json').read_text())
+    (target / 'quicklisp.lock.json').write_text(json.dumps(lock, indent=2) + '\n')
+    # The archives keep the libraries' licences and sources beside the image built from them.
+    (target / 'sources').mkdir()
+    tree = WORK / 'sbcl-libraries'
+    tree.mkdir(exist_ok=True)
+    for project, release in lock.items():
+        archive = target / 'sources' / release['url'].rsplit('/', 1)[1]
+        archive.write_bytes(fetch(release['url']))
+        with archive.open('rb') as f:
+            if hashlib.file_digest(f, 'sha256').hexdigest() != release['sha256']:
+                raise RuntimeError('Quicklisp archive checksum changed: ' + project)
+        run('tar', '-xzf', archive, '-C', tree)
+    forms = ['(require :asdf)',
+             '(asdf:initialize-source-registry \'(:source-registry (:tree "%s/") :ignore-inherited-configuration))' % tree,
+             *['(require :%s)' % name for name in libraries['contribs']],
+             '(asdf:load-systems %s)' % ' '.join(json.dumps(name) for name in libraries['systems'])]
+    # gsll's groveller needs gcc and the GSL and libffi headers here. The image reopens libgmp, GSL and libffi
+    # by name each time it starts, so the build and every run take them from addition-native.
+    env = dict(os.environ, XDG_CACHE_HOME=str(WORK / 'sbcl-cache'), LD_LIBRARY_PATH=str(ROOT / 'addition-native/lib'))
+    # The saved image keeps these sizes; the dynamic space must exceed every memory limit so that running out is MLE.
+    run(target / 'bin/sbcl', '--dynamic-space-size', '1GB', '--control-stack-size', '512MB',
+        '--non-interactive', '--no-sysinit', '--no-userinit', *[arg for form in forms for arg in ('--eval', form)],
+        '--load', DEPS / 'sbcl/save-image.lisp', env=env)
+    shutil.copy2(DEPS / 'sbcl/compile.lisp', target / 'compile.lisp')
+    run('chmod', '-R', 'a+rX', target)
+    # Build and run a program the way submissions are, so an image that cannot compile stops here.
+    probe = WORK / 'sbcl-probe'
+    probe.mkdir(exist_ok=True)
+    judge = [target / 'bin/sbcl-judge', '--script']
+    (probe / 'main.lisp').write_text('(format t "~a~%" (+ 1 2))\n')
+    run(*judge, target / 'compile.lisp', probe / 'main.lisp', probe / 'main', env=env)
+    if subprocess.check_output([*judge, probe / 'main'], text=True, env=env) != '3\n':
+        raise RuntimeError('SBCL probe printed the wrong output')
+    # SBCL still writes a fasl after a compile-time error; compile.lisp must reject it.
+    (probe / 'error.lisp').write_text('(defmacro fails () (error "expansion"))\n(fails)\n')
+    if subprocess.run([*judge, target / 'compile.lisp', probe / 'error.lisp', probe / 'error'], env=env,
+                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+        raise RuntimeError('SBCL compiled a program with a compile-time error')
+
+
 def finish():
     save_lock(INPUT / 'sources.json')
     save_lock(DEPS / 'catalog.json')
@@ -323,6 +408,7 @@ def finish():
     pending += [ROOT / 'ghc/bin/ghc', ROOT / 'ruby/bin/ruby']
     pending += [ROOT / 'golf' / name for name in ('clay', 'dc', 'tritium', 'wsc', 'nibbles')]
     pending.append(ROOT / 'goose/goose')
+    pending.append(ROOT / 'sbcl/bin/sbcl-judge')
     seen = set()
     while pending:
         path = pending.pop()
@@ -350,17 +436,18 @@ def finish():
     (ROOT / 'build-manifest/additions' / native_lock).write_text(json.dumps(native_hashes, indent=2) + '\n')
     # Keep inventory of vendored native objects and source cache alongside package-manager locks.
     checksums = {}
-    for subtree in ('ruby-deps', 'truffleruby-deps', 'haskell-deps', 'deno-deps', 'addition-native', 'golf', 'goose'):
+    for subtree in ('ruby-deps', 'truffleruby-deps', 'haskell-deps', 'deno-deps', 'addition-native', 'golf', 'goose', 'sbcl'):
         for path in sorted((ROOT / subtree).rglob('*')):
             if path.is_file() and not path.is_symlink():
                 with path.open('rb') as f:
                     checksums[str(path.relative_to(ROOT))] = hashlib.file_digest(f, 'sha256').hexdigest()
     (ROOT / 'build-manifest/additions/content-sha256.json').write_text(json.dumps(checksums, sort_keys=True) + '\n')
     for name in ('node', 'bun', 'deno', 'ghc', 'cabal', 'ruby', 'truffleruby', 'js-deps',
-                 'deno-deps', 'ruby-deps', 'truffleruby-deps', 'haskell-deps', 'addition-native', 'golf', 'goose'):
+                 'deno-deps', 'ruby-deps', 'truffleruby-deps', 'haskell-deps', 'addition-native', 'golf', 'goose', 'sbcl'):
         run('chmod', '-R', 'a+rX', ROOT / name)
 
 
 if __name__ == '__main__':
     {'toolchains': toolchains, 'javascript': javascript, 'ruby-native': ruby_native,
-     'ruby': ruby, 'truffleruby': lambda: ruby(True), 'haskell': haskell, 'golf': golf, 'goose': goose, 'finish': finish}[sys.argv[1]]()
+     'ruby': ruby, 'truffleruby': lambda: ruby(True), 'haskell': haskell, 'golf': golf, 'goose': goose, 'sbcl': sbcl,
+     'finish': finish}[sys.argv[1]]()

@@ -221,6 +221,9 @@ def run_args(runtime, cpu, wall, memory, *, compile_phase=False, meta=None, inte
         environment.append('NODE_OPTIONS=--max-old-space-size=' + str(heap(640, 128, 320)))
     if runtime.startswith(('javascript-deno', 'typescript-deno')):
         environment.append('DENO_V8_FLAGS=--max-old-space-size=' + str(heap(640, 128, 320)))
+    if runtime == 'commonlisp-sbcl26-isolate':
+        # SBCL's default (5% of its 1 GiB dynamic space) suits 512 MiB; the dynamic space itself stays above the limit.
+        environment.append('SBCL_BYTES_CONSED_BETWEEN_GCS=' + str(heap(51, 25, 51) * 1024 * 1024))
     return [f'--meta={META if meta is None else meta}', f'--time={cpu}', f'--wall-time={wall}',
             f'--cg-mem={memory * 1024}', '--processes=32' if interactive else '--processes=64',
             # Pinned isolate 2.7: allow file locks only for the fixed Go build command.

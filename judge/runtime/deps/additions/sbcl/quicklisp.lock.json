@@ -1,0 +1,130 @@
+{
+  "alexandria": {
+    "url": "https://beta.quicklisp.org/archive/alexandria/2024-10-12/alexandria-20241012-git.tgz",
+    "sha256": "dcdfc5bac229a952358dfe661f0860e8a02480e406d0d95dee4300cdc3d45b31"
+  },
+  "antik": {
+    "url": "https://beta.quicklisp.org/archive/antik/2024-10-12/antik-master-df14cb8c-git.tgz",
+    "sha256": "02e8860d468d79c4d8c8236d88b4b5eca3448d8f3bbf928c7bb48a1360cf1397"
+  },
+  "babel": {
+    "url": "https://beta.quicklisp.org/archive/babel/2026-01-01/babel-20260101-git.tgz",
+    "sha256": "e30d399fdcdf6f540ba28185fb6d9e3ebb4219c1df314d861ef3ed26be38d08d"
+  },
+  "bordeaux-threads": {
+    "url": "https://beta.quicklisp.org/archive/bordeaux-threads/2024-10-12/bordeaux-threads-v0.9.4.tgz",
+    "sha256": "7646fe243a5f12274e7d3296b03b178c12c21d03f8eab4805147d6f1ecac3024"
+  },
+  "cffi": {
+    "url": "https://beta.quicklisp.org/archive/cffi/2026-01-01/cffi-20260101-git.tgz",
+    "sha256": "c4935fbb8ed96a062e9f2315f6566b53d3ec90a1d00c001cac908d242a8d84e6"
+  },
+  "cl-change-case": {
+    "url": "https://beta.quicklisp.org/archive/cl-change-case/2025-06-22/cl-change-case-20250622-git.tgz",
+    "sha256": "51de260269e65df403ad515447369501b4e3ebfe98d507fa4b55c186128670ac"
+  },
+  "cl-ppcre": {
+    "url": "https://beta.quicklisp.org/archive/cl-ppcre/2025-06-22/cl-ppcre-20250622-git.tgz",
+    "sha256": "a9d6a9ca9eb862283f6079856629c8b19254f108fcde065d61f280e7c2c6ec39"
+  },
+  "cl-str": {
+    "url": "https://beta.quicklisp.org/archive/cl-str/2026-01-01/cl-str-20260101-git.tgz",
+    "sha256": "3ec7f98286ab52ac94995ef538d6fef7553dab87ab8e6ed88f93ff84351ca58b"
+  },
+  "cl-unicode": {
+    "url": "https://beta.quicklisp.org/archive/cl-unicode/2024-10-12/cl-unicode-20241012-git.tgz",
+    "sha256": "8a4b2daff451054e6885de774fb27214e4a63b8595d4a30e4c6b1f6dab6a7d70"
+  },
+  "closer-mop": {
+    "url": "https://beta.quicklisp.org/archive/closer-mop/2026-01-01/closer-mop-20260101-git.tgz",
+    "sha256": "bea987c69b906d9a94b5e19e6d3f1665a1646d511f080076637195ed4bc7089f"
+  },
+  "flexi-streams": {
+    "url": "https://beta.quicklisp.org/archive/flexi-streams/2024-10-12/flexi-streams-20241012-git.tgz",
+    "sha256": "f0437d3f4432e1ddab720da7de0df277baa7a05ec86fad297e00ec8045a3dd54"
+  },
+  "global-vars": {
+    "url": "https://beta.quicklisp.org/archive/global-vars/2014-11-06/global-vars-20141106-git.tgz",
+    "sha256": "f294843bb31144034e1370df1634dd74f24e617e3abb9c00c17927eda2ae4f2e"
+  },
+  "gsll": {
+    "url": "https://beta.quicklisp.org/archive/gsll/2018-08-31/gsll-quicklisp-eeeda841-git.tgz",
+    "sha256": "f84ee8b15da7ad2cb47797eec83495564304fbd1b815029d6a54f3b33344e218"
+  },
+  "introspect-environment": {
+    "url": "https://beta.quicklisp.org/archive/introspect-environment/2024-10-12/introspect-environment-20241012-git.tgz",
+    "sha256": "f6bee76d2fb6db2af111ca5466244ea4ba57f3725d33602c8c87bf8f220a58f9"
+  },
+  "iterate": {
+    "url": "https://beta.quicklisp.org/archive/iterate/2026-01-01/iterate-release-d27d7ff4-git.tgz",
+    "sha256": "f3215e4bcfe6156bfe565b2a15ff432dd5257cb2fd90549cbe385fe425a0a669"
+  },
+  "lisp-namespace": {
+    "url": "https://beta.quicklisp.org/archive/lisp-namespace/2022-11-06/lisp-namespace-20221106-git.tgz",
+    "sha256": "c5cf0a065b4834bb2d795132d95e05691e5b7b0f5665dec4c0ad233fe6c5d1db"
+  },
+  "lisp-unit": {
+    "url": "https://beta.quicklisp.org/archive/lisp-unit/2017-01-24/lisp-unit-20170124-git.tgz",
+    "sha256": "9560c6edf8fc23444a10bce35f8d71973e60293e1f418ae6cde6e47d720a6c01"
+  },
+  "metabang-bind": {
+    "url": "https://beta.quicklisp.org/archive/metabang-bind/2023-06-18/metabang-bind-20230618-git.tgz",
+    "sha256": "ff349506f5f201d13bf875358d1c69805427c7523d5a4b550162f768438f5281"
+  },
+  "mgl-pax": {
+    "url": "https://beta.quicklisp.org/archive/mgl-pax/2026-01-01/mgl-pax-20260101-git.tgz",
+    "sha256": "2c7efd402c1814ae4bb4d809e704a6b1f547841725b80e8c4203ee3185a523ad"
+  },
+  "named-readtables": {
+    "url": "https://beta.quicklisp.org/archive/named-readtables/2026-01-01/named-readtables-20260101-git.tgz",
+    "sha256": "d6ce94191b559d9b1cc521aca026161a6b67d9d51676ef9daee8c50bdfa04491"
+  },
+  "pileup": {
+    "url": "https://beta.quicklisp.org/archive/pileup/2015-07-09/pileup-20150709-git.tgz",
+    "sha256": "b1cced00743d32d666e2c81b3e3572d93d08fef0c2bf58c0b10b8a7b9bf27fd4"
+  },
+  "queues": {
+    "url": "https://beta.quicklisp.org/archive/queues/2017-01-24/queues-20170124-git.tgz",
+    "sha256": "59ad663177bf7fc8d5b86899768d9aa03ee019bc37925ec2a17edd08dc5a29a5"
+  },
+  "split-sequence": {
+    "url": "https://beta.quicklisp.org/archive/split-sequence/2021-05-31/split-sequence-v2.0.1.tgz",
+    "sha256": "ca47962ad1e2275e9c9092abedb392459c93b25b1f6f0565057e715bfa6dd274"
+  },
+  "static-vectors": {
+    "url": "https://beta.quicklisp.org/archive/static-vectors/2024-10-12/static-vectors-v1.9.3.tgz",
+    "sha256": "a6854338f83af33ee9bcb0d79af82bcaca795bec4de4d4011f86404fc70b5e36"
+  },
+  "trees": {
+    "url": "https://beta.quicklisp.org/archive/trees/2018-01-31/trees-20180131-git.tgz",
+    "sha256": "cfb15f6bbc0e3d705f4ec648e202819d9de85dbd4dd7c2657b6f87ada690a4dc"
+  },
+  "trivia": {
+    "url": "https://beta.quicklisp.org/archive/trivia/2026-01-01/trivia-20260101-git.tgz",
+    "sha256": "81f5eacce946f0ffd713f3ecfc97c92dcf5cf1773cbad12cbf378905e24d4913"
+  },
+  "trivial-cltl2": {
+    "url": "https://beta.quicklisp.org/archive/trivial-cltl2/2021-12-30/trivial-cltl2-20211230-git.tgz",
+    "sha256": "c467a4bd20f186a027dd676772e71d9293495f7fcbb98bfef9c8bb2d37d1ad47"
+  },
+  "trivial-features": {
+    "url": "https://beta.quicklisp.org/archive/trivial-features/2025-06-22/trivial-features-20250622-git.tgz",
+    "sha256": "d8c9686e0425ea6f2cc8e18139a80bb082c44a23ac68fd455e5c74848b42257a"
+  },
+  "trivial-garbage": {
+    "url": "https://beta.quicklisp.org/archive/trivial-garbage/2023-10-21/trivial-garbage-20231021-git.tgz",
+    "sha256": "b29529bc3615ef373bcd8705b991709939dbcdf1071da494b1bf8e33c46d006a"
+  },
+  "trivial-gray-streams": {
+    "url": "https://beta.quicklisp.org/archive/trivial-gray-streams/2024-10-12/trivial-gray-streams-20241012-git.tgz",
+    "sha256": "be7c33e82fdc8f4834b93b697df98a3b06486e6492928841dc26bb824d091cca"
+  },
+  "type-i": {
+    "url": "https://beta.quicklisp.org/archive/type-i/2023-02-14/type-i-20230214-git.tgz",
+    "sha256": "a9a8fc3578ed8bda773c7749500de0df511cd2d6201c7b35b38a52c73bc15a6a"
+  },
+  "uiop": {
+    "url": "https://beta.quicklisp.org/archive/uiop/2024-10-12/uiop-3.3.7.tgz",
+    "sha256": "426c05ee22b6ba6c0ecd66b890498c588a8a239c16c7062ba85fcfed191a4175"
+  }
+}

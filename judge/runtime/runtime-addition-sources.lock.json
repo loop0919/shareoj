@@ -90,6 +90,13 @@
       "url": "https://cache.ruby-lang.org/pub/ruby/4.0/ruby-4.0.7.tar.xz",
       "version": "4.0.7"
     },
+    "sbcl.tar.bz2": {
+      "license": "Public domain and BSD-style (COPYING)",
+      "note": "The decompressed tar matches the SHA-256 listed in the release's sbcl-2.6.10-crhodes.asc.",
+      "sha256": "96e26b0be3aa6ca2a3f03dfd5fc117647fffb96790a9c235e8dcf27df2eba726",
+      "url": "https://downloads.sourceforge.net/project/sbcl/sbcl/2.6.10/sbcl-2.6.10-x86-64-linux-binary.tar.bz2",
+      "version": "2.6.10"
+    },
     "truffleruby.tar.gz": {
       "sha256": "4d744085f48c8ba789228f3686e3c256fcc6b77ce1ff736e456b72031d0cb973",
       "url": "https://github.com/truffleruby/truffleruby/releases/download/graal-40.0.0/truffleruby-community-40.0.0-linux-amd64.tar.gz",

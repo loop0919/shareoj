@@ -1,0 +1,4 @@
+{
+  "fast-generic-functions": "条件4: Quicklisp 2026-01-01版（上流の最新と同じ）は、SBCL 2.6.10で消えた内部関数sb-pcl::check-applicable-keywordsを参照し、読み込みでパッケージロックの違反になる。",
+  "sb-mpfr": "条件1: libmpfrがaddition-native/libにない。"
+}

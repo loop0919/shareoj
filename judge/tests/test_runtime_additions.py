@@ -47,6 +47,23 @@ with open(sys.argv[1], 'wb', buffering=0) as file:
         self.assertEqual(compile[compile.index('--cc') + 1], '/opt/judge-runtimes/gcc/bin/gcc')
         self.assertEqual([env for env in runtime['env'] if env.startswith('GOOSE_HOME=')], ['GOOSE_HOME=/box/goose-home'])
 
+    def test_sbcl_compiles_and_runs_with_the_preloaded_image(self):
+        runtime = RUNTIMES['commonlisp-sbcl26-isolate']
+        self.assertEqual(runtime['source'], 'main.lisp')
+        self.assertEqual(runtime['compile'][0], '/opt/judge-runtimes/sbcl/bin/sbcl-judge')
+        self.assertEqual(runtime['run'][0], '/opt/judge-runtimes/sbcl/bin/sbcl-judge')
+        # No init files: a submission must not depend on the operator's home.
+        self.assertFalse(any('sbclrc' in arg for arg in runtime['compile'] + runtime['run']))
+
+    def test_sbcl_collects_garbage_before_its_heap_growth_reaches_the_memory_limit(self):
+        def nursery(memory, **role):
+            args = sandbox.run_args('commonlisp-sbcl26-isolate', 1, 4, memory, **role)
+            return [int(arg.split('=')[2]) >> 20 for arg in args if arg.startswith('--env=SBCL_BYTES_CONSED_BETWEEN_GCS=')]
+        self.assertEqual(nursery(512), [51])
+        self.assertEqual(nursery(64), [6])
+        self.assertEqual(nursery(1024, compile_phase=True), [51])
+        self.assertEqual(nursery(256, interactor=True), [25])
+
     def test_compiled_typescript_is_collected_and_keeps_javascript_suffix(self):
         runtime = RUNTIMES['typescript-node24-isolate']
         with tempfile.TemporaryDirectory() as tmp:
