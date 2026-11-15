@@ -184,6 +184,7 @@ test('all runtime families highlight comments using their selected language', as
     ['codon020', '# hello'], ['rust2024', '// hello'], ['java25', '// hello'],
     ['csharp14', '// hello'], ['nim22', '#[ outer #[ inner ]# end ]#'],
     ['go127', '// hello'], ['goose20263', '/* outer /* inner */ end */'], ['haskell-ghc910', '-- hello'],
+    ['commonlisp-sbcl26', '; hello'], ['fsharp10', '// hello'], ['gleam119', '// hello'], ['fix16', '// hello'],
     ['javascript-deno29', '// hello'], ['typescript-bun14', '// hello'], ['ruby-truffle40', '# hello'],
   ]
   await page.route('**/api/runtimes', route => route.fulfill({ json: {
