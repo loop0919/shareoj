@@ -2,7 +2,7 @@ module judge/cli
 
 go 1.26.0
 
-toolchain go1.26.10
+toolchain go1.26.11
 
 require (
 	github.com/pelletier/go-toml/v2 v2.2.4
