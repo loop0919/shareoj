@@ -873,21 +873,21 @@
     },
     {
       "name": "interactive",
-      "source": "module Main;\n\n// Standard output goes to a pipe, which the C library buffers: flush each question before reading the answer.\nmain : IO ();\nmain = loop_m(10, |n| (\n    if n == 12 { break_m $ () };\n    println(n.to_string);;\n    let _ = *stdout.flush;\n    let line = *read_line(stdin).try(exit_with_msg(1));\n    assert(|_| \"wrong answer\", from_string(line.strip_spaces) == ok(2 * n));;\n    continue_m $ n + 1\n));\n",
+      "source": "module Main;\n\n// Standard output goes to a pipe, which the C library buffers: flush each question before reading the answer.\nmain : IO ();\nmain = loop_m(10, |n| (\n    if n == 12 { break_m $ () };\n    println(n.to_string);;\n    stdout.flush;;\n    let line = *read_line(stdin).try(exit_with_msg(1));\n    assert(|_| \"wrong answer\", from_string(line.strip_spaces) == ok(2 * n));;\n    continue_m $ n + 1\n));\n",
       "verdict": "AC",
       "input": "20\n22\n",
       "output": "10\n11\n"
     },
     {
       "name": "response",
-      "source": "module Main;\n\nmain : IO ();\nmain = loop_m(0, |i| (\n    if i == 2 { break_m $ () };\n    let line = *read_line(stdin).try(exit_with_msg(1));\n    let n : I64 = from_string(line.strip_spaces).as_ok;\n    println((2 * n).to_string);;\n    let _ = *stdout.flush;\n    continue_m $ i + 1\n));\n",
+      "source": "module Main;\n\nmain : IO ();\nmain = loop_m(0, |i| (\n    if i == 2 { break_m $ () };\n    let line = *read_line(stdin).try(exit_with_msg(1));\n    let n : I64 = from_string(line.strip_spaces).as_ok;\n    println((2 * n).to_string);;\n    stdout.flush;;\n    continue_m $ i + 1\n));\n",
       "verdict": "AC",
       "input": "10\n11\n",
       "output": "20\n22\n"
     },
     {
       "name": "args",
-      "source": "module Main;\n\n// A submission gets no arguments; judge code gets its files, the test input first. get_args starts with the program.\nmain : IO ();\nmain = (\n    let args = *get_args;\n    if args.@size > 1 {\n        assert(|_| \"unexpected first argument\", args.@(1) == \"/box/test-input\");;\n        let _ = *read_file_string(args.@(1)).try(exit_with_msg(1));\n        pure()\n    };\n    println(\"3\")\n);\n",
+      "source": "module Main;\n\n// A submission gets no arguments; judge code gets its files, the test input first. get_args starts with the program.\nread_test_input : Array String -> IO ();\nread_test_input = |args| (\n    if args.@size == 1 { pure() };\n    assert(|_| \"unexpected first argument\", args.@(1) == \"/box/test-input\");;\n    let _ = *read_file_string(args.@(1)).try(exit_with_msg(1));\n    pure()\n);\n\nmain : IO ();\nmain = (\n    read_test_input(*get_args);;\n    println(\"3\")\n);\n",
       "verdict": "AC"
     },
     {

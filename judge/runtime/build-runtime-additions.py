@@ -587,16 +587,18 @@ def fix():
     for path in (project / '.fixlang/intermediate', project / '.fixlang/cache/units'):
         shutil.rmtree(path)
     run('chmod', '-R', 'a+rX', tools, project)
-    # Build and run a program the way submissions are, under the compile's file size limit.
+    # Build and run a program the way submissions are: with runtimes.py's environment and the compile's file size limit.
     probe = WORK / 'fix-probe'
     probe.mkdir(exist_ok=True)
     (probe / 'compile.sh').write_text((tools / 'compile.sh').read_text().replace('/box/', str(probe) + '/'))
     (probe / 'main.fix').write_text('module Main;\n\nimport CPLib.IO;\n\nmain : IO ();\n'
                                     'main = println((*read_i + *read_i).to_string);\n')
-    run('sh', probe / 'compile.sh', env=dict(env, HOME=str(probe)),
+    box = dict(PATH=str(ROOT / 'gcc/bin') + ':/usr/bin:/bin', LD_LIBRARY_PATH=str(ROOT / 'addition-native/lib'),
+               HOME=str(probe), LANG='C.UTF-8')
+    run('sh', probe / 'compile.sh', env=box,
         preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_FSIZE, (32 << 20, 32 << 20)))
     output = subprocess.run([probe / 'main'], input='1 2\n', text=True, stdout=subprocess.PIPE, check=True,
-                            env=dict(env, LD_LIBRARY_PATH=str(ROOT / 'addition-native/lib'))).stdout
+                            env=box).stdout
     if output != '3\n':
         raise RuntimeError('Fix probe printed the wrong output')
     # The copy keeps modification times, so a build that resolved the lock again, cloned a library again (both need
