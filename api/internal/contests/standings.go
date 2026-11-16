@@ -17,15 +17,18 @@ import (
 // ScoredAt, which the penalty counts. Pending counts the runs waiting for a verdict before the full score.
 // Frozen counts the submissions made after the freeze, whatever their verdict (ADR 0023); it stays 0 on a
 // problem with the full score before the freeze, and without a freeze or after the results are final.
+// SubmissionID names the submission made at ScoredAt, the one that set the score; the standings link the score to it.
+// The ID opens nothing by itself: the submission is read under the rules of the submission lists.
 type Score struct {
-	Points     int        `json:"points"`
-	Score      int64      `json:"score"`
-	ScoreText  string     `json:"scoreText"`
-	Wrong      int        `json:"wrong"`
-	Pending    int        `json:"pending"`
-	Frozen     int        `json:"frozen"`
-	AcceptedAt *time.Time `json:"acceptedAt,omitempty"`
-	ScoredAt   *time.Time `json:"scoredAt,omitempty"`
+	Points       int        `json:"points"`
+	Score        int64      `json:"score"`
+	ScoreText    string     `json:"scoreText"`
+	Wrong        int        `json:"wrong"`
+	Pending      int        `json:"pending"`
+	Frozen       int        `json:"frozen"`
+	AcceptedAt   *time.Time `json:"acceptedAt,omitempty"`
+	ScoredAt     *time.Time `json:"scoredAt,omitempty"`
+	SubmissionID string     `json:"submissionId,omitempty"`
 }
 
 // Standing is a row of the standings: a team, or a participant who is in no team (ADR 0024). Handle names the
@@ -47,8 +50,9 @@ type Standing struct {
 
 // Attempt is a submission to rank. Team is the submitter's team, if any; the attempt counts toward its row. Points is
 // the problem's points, its full score. Groups holds a partially scored result's group scores in hundredths; nil
-// means an all-or-nothing result, which scores the full points with an AC.
+// means an all-or-nothing result, which scores the full points with an AC. ID is the submission's own.
 type Attempt struct {
+	ID                         string
 	Handle, ProblemID, Verdict string
 	Team                       string
 	Points                     int
@@ -183,7 +187,7 @@ func RankRows(rows []Standing, attempts []Attempt, start time.Time, penaltyMinut
 			continue
 		}
 		at := a.CreatedAt
-		p.Score, p.ScoredAt, state.before = score, &at, state.wrong
+		p.Score, p.ScoredAt, p.SubmissionID, state.before = score, &at, a.ID, state.wrong
 		if score >= int64(a.Points)*100 {
 			p.AcceptedAt = &at
 		}
@@ -301,7 +305,7 @@ func (s *Store) Standings(ctx context.Context, id, viewer string, live, onsite b
 		return nil, err
 	}
 	// A partially scored result brings its group scores; the others score by their verdict.
-	rows, err = s.Pool.Query(ctx, `SELECT s.owner_id,s.problem_id,COALESCE(s.result->>'verdict',''),cp.points,
+	rows, err = s.Pool.Query(ctx, `SELECT s.id::text,s.owner_id,s.problem_id,COALESCE(s.result->>'verdict',''),cp.points,
  CASE WHEN jsonb_typeof(s.result->'scoring'->'groups')='array' THEN ARRAY(SELECT (g->>'score')::bigint
   FROM jsonb_array_elements(s.result->'scoring'->'groups') WITH ORDINALITY x(g,i) ORDER BY i) END,s.created_at
  FROM submissions s JOIN contests c ON c.id=s.contest_id JOIN contest_problems cp ON cp.contest_id=c.id AND cp.problem_id=s.problem_id
@@ -314,7 +318,7 @@ func (s *Store) Standings(ctx context.Context, id, viewer string, live, onsite b
 	attempts, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Attempt, error) {
 		var a Attempt
 		var by string
-		e := row.Scan(&by, &a.ProblemID, &a.Verdict, &a.Points, &a.Groups, &a.CreatedAt)
+		e := row.Scan(&a.ID, &by, &a.ProblemID, &a.Verdict, &a.Points, &a.Groups, &a.CreatedAt)
 		a.Handle, a.Team = handleOf[by], teamOf[by]
 		return a, e
 	})

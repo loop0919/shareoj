@@ -178,3 +178,27 @@ func TestRankRowsMixesTeamsAndIndividuals(t *testing.T) {
 		t.Fatalf("onsite: %+v", onsite)
 	}
 }
+
+// A cell names the submission that set its score: the last one that raised it. Wrong runs, later runs and the runs
+// hidden by the freeze never name one.
+func TestRankRowsNamesTheSubmissionThatSetTheScore(t *testing.T) {
+	start := time.Date(2026, 11, 17, 0, 0, 0, 0, time.UTC)
+	attempt := func(id, problem, verdict string, minute int, groups ...int64) Attempt {
+		return Attempt{ID: id, Handle: "alice", ProblemID: problem, Verdict: verdict, CreatedAt: start.Add(time.Duration(minute) * time.Minute), Points: 100, Groups: groups}
+	}
+	attempts := []Attempt{
+		attempt("a1", "A", "WA", 1), attempt("a2", "A", "AC", 2), attempt("a3", "A", "AC", 3),
+		attempt("b1", "B", "WA", 4, 3000, 0), attempt("b2", "B", "WA", 5, 0, 2000), attempt("b3", "B", "WA", 6, 1000, 1000),
+		attempt("c1", "C", "WA", 7), attempt("c2", "C", "", 8),
+		attempt("d1", "D", "AC", 50),
+	}
+	cells := RankRows(nil, attempts, start, 5, start.Add(40*time.Minute))[0].Problems
+	for problem, want := range map[string]string{"A": "a2", "B": "b2", "C": "", "D": ""} {
+		if got := cells[problem].SubmissionID; got != want {
+			t.Errorf("%s: got %q, want %q", problem, got, want)
+		}
+	}
+	if live := RankRows(nil, attempts, start, 5, time.Time{})[0].Problems["D"].SubmissionID; live != "d1" {
+		t.Errorf("without the freeze: got %q", live)
+	}
+}
