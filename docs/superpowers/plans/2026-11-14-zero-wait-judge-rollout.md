@@ -255,7 +255,7 @@ Expected: FAIL
 - `preflight`：`len(set(config['queues'])) != 4`の検査は残す。`request_queue_b`があれば、4つと重ならないこと、bridgeのURLが`lanes`で解決できること、レーンbの`RedrivePolicy`が`queues[2]`を指すことを確かめる。Terraformを呼ぶ前に`sync_lane(config, lanes(config)['active'])`を呼ぶ。`request_queue_b`がなければ`sync_lane`は呼ばない。
 - 既存の`bridge[...]['JUDGE_REQUEST_QUEUE_URL'] != config['queues'][0]`の検査は、`lanes`の検査に置き換える。
 - `wait_empty`は`all_queues(config)`を回す。
-- `rollout.example.json`に`"request_queue_b": "https://sqs.ap-northeast-1.amazonaws.com/907170969801/judge-dev-judge-requests-b"`を足す。
+- `rollout.example.json`に`"request_queue_b": "https://sqs.ap-northeast-1.amazonaws.com/123456789012/judge-dev-judge-requests-b"`を足す。
 
 - [ ] **Step 4: 合格を確かめる**
 

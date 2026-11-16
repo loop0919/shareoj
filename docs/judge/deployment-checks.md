@@ -30,8 +30,10 @@ mkdir -p judge/.build
 make -C api package-judge
 bash judge/build-assets.sh
 cp judge/rollout.example.json judge/.build/rollout.json
+sed -i "s/123456789012/$(aws configure get sso_account_id)/g" judge/.build/rollout.json
 ```
 
+例のAWSアカウントIDはダミー（`123456789012`）なので、`sed`でプロファイルのアカウントIDに置き換える。
 `rollout.json`の配布物パス、対象の全台、公開言語一覧を確認する。
 言語のIDを更新した場合は`runtimes`も更新し、API確認用の`smoke_runtime`へ公開するCPythonまたはPyPyのIDを指定する。
 例のリソース名とSSM IDは2026-09-19時点の本番値であり、ホスト交換後は置き換える。
