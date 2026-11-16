@@ -14,6 +14,7 @@ type Favorite struct {
 
 // Favorite reads or sets this user's favorite. Lock the public problem until
 // commit so unpublishing/deletion cannot race with a new favorite.
+// A contest problem is not published until the end, so whoever may open it in the contest may favorite it (ADR 0040).
 func (s *Store) Favorite(ctx context.Context, owner, id string, value *bool) (Favorite, error) {
 	var result Favorite
 	tx, err := s.pool.Begin(ctx)
@@ -22,7 +23,9 @@ func (s *Store) Favorite(ctx context.Context, owner, id string, value *bool) (Fa
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var found string
-	err = tx.QueryRow(ctx, `SELECT id FROM problem_drafts WHERE id=$1 AND published_draft IS NOT NULL FOR SHARE`, id).Scan(&found)
+	err = tx.QueryRow(ctx, `SELECT d.id FROM problem_drafts d WHERE d.id=$1 AND (d.published_draft IS NOT NULL OR EXISTS(
+ SELECT 1 FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id
+ WHERE cp.problem_id=d.id AND (statement_timestamp()>=c.starts_at OR contest_problem_access(c.id,cp.problem_id,$2)))) FOR SHARE OF d`, id, owner).Scan(&found)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return result, ErrNotFound
 	}

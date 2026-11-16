@@ -464,9 +464,9 @@ func (s *Store) Problem(ctx context.Context, id, pid, viewer string) (ContestPro
 	var editorial bool
 	var others []string
 	err := s.Pool.QueryRow(ctx, `SELECT cp.problem_id,cp.draft,u.handle,`+coSetters+`,c.ends_at,featured_reveal_at(d.id),COALESCE(statement_timestamp()<featured_reveal_at(d.id),false),
- (statement_timestamp()>=c.ends_at OR contest_problem_access(c.id,cp.problem_id,$3))
+ (statement_timestamp()>=c.ends_at OR contest_problem_access(c.id,cp.problem_id,$3)),(SELECT count(*) FROM problem_favorites f WHERE f.problem_id=cp.problem_id)
  FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id JOIN problem_drafts d ON d.id=cp.problem_id JOIN user_profiles u ON u.owner_id=c.owner_id
- WHERE c.id=$1 AND cp.problem_id=$2 AND (statement_timestamp()>=c.starts_at OR contest_problem_access(c.id,cp.problem_id,$3))`, id, pid, viewer).Scan(&p.ID, &raw, &p.Author, &others, &p.PublishedAt, &p.EditorialRevealAt, &p.EditorialHidden, &editorial)
+ WHERE c.id=$1 AND cp.problem_id=$2 AND (statement_timestamp()>=c.starts_at OR contest_problem_access(c.id,cp.problem_id,$3))`, id, pid, viewer).Scan(&p.ID, &raw, &p.Author, &others, &p.PublishedAt, &p.EditorialRevealAt, &p.EditorialHidden, &editorial, &p.FavoriteCount)
 	if err != nil {
 		return p, err
 	}

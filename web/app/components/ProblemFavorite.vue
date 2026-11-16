@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { shortId } from '~~/shared/utils/short-id'
-const props = defineProps<{ problemId: string, count: number }>()
+// next is where a signed-out viewer returns after logging in; a contest problem has no /problems page until the end.
+const props = defineProps<{ problemId: string, count: number, next?: string }>()
 const { user } = useAccount()
 const count = ref(props.count)
 const favorited = ref(false)
@@ -41,7 +42,7 @@ onBeforeUnmount(() => { requestVersion++ })
 <template>
   <div class="favorite-control">
     <button v-if="user" class="editor-button" :disabled="loading || !ready" :aria-pressed="favorited" @click="toggle"><span aria-hidden="true">{{ favorited ? '★' : '☆' }}</span> お気に入り {{ count }}</button>
-    <NuxtLink v-else class="editor-button" :to="{ path: '/login', query: { next: `/problems/${shortId(problemId)}` } }"><span aria-hidden="true">☆</span> お気に入り {{ count }}</NuxtLink>
+    <NuxtLink v-else class="editor-button" :to="{ path: '/login', query: { next: next ?? `/problems/${shortId(problemId)}` } }"><span aria-hidden="true">☆</span> お気に入り {{ count }}</NuxtLink>
     <LoadingSpinner v-if="loading" inline class="favorite-loading" />
     <p v-if="message" role="alert">{{ message }} <button v-if="!ready" class="editor-button" :disabled="loading" @click="load">再試行</button></p>
   </div>
