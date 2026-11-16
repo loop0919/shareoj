@@ -279,7 +279,7 @@ EC2の採点台では、2026年10月10日から`judge/rollout.py rolling`でOS�
 | カーネル | `7.0.0-1013-aws` → `7.0.0-1014-aws` |
 | runtime digest | `sha256:4485aef2…` → `sha256:de2388f5f5c815c8e23df1fa7d5994ff0ba0325e1b92a369f1df28c3131b1026` |
 | 配布物SHA-256 | `544431144986c58d6e3155c2cd64f274a680f6d3150d992e473edbc697a9a324` |
-| 開始前のEBSスナップショット | primary `snap-0cf6b109df7f90bb1`、burst-1 `snap-0baab857f48df4ba0`、burst-2 `snap-0457c87c24a166e6c` |
+| 開始前のEBSスナップショット | primary、burst-1、burst-2の3台分を取得 |
 
 最初の実行（`rolling-20261010T074154Z`）は切り替えの前に中止した。
 APTをsnapshot.ubuntu.comに固定したが、IPv6のアドレスがなく一覧を取得できなかった。
@@ -296,7 +296,6 @@ LightsailのSSH公開ポートは閉じている。
 | 項目 | 値 |
 | --- | --- |
 | worker | `judge-dev-judge-worker` |
-| SSM管理対象 | `mi-08a9ccbdc9116b369` |
 | runtime digest | `sha256:10047476b58253f8f6d657187cccb70b48ad5260031853f74f3a28626d3a6b61` |
 | 配布物SHA-256 | `bde49ffcaa566ef3d60288241cf825746826ce25631427125930b4c500eb797b` |
 | 実機smokeのSSMコマンドID | `03875889-2430-4d9c-a13c-f2f19782aca4` |
@@ -397,7 +396,6 @@ OS、コンパイラ、ライブラリ、インスタンス構成は変更して
 | 項目 | 値 |
 | --- | --- |
 | worker | `judge-dev-judge-worker` |
-| SSM管理対象 | `mi-08a9ccbdc9116b369` |
 | 実装コミット | `1eea4f1` |
 | runtime digest | `sha256:7c71bb6883d092fa7a109f88082ec2e8e91447c3de4d8379b5cb0d0497e8156f` |
 | コード配布物SHA-256 | `2ab6134cd6ccba11eec14fb7a648c587d9ba3e09d838504a475789e792712772` |
@@ -454,7 +452,6 @@ OS、コンパイラ、ライブラリ、インスタンス構成は変更して
 | 項目 | 値 |
 | --- | --- |
 | worker | `judge-dev-judge-worker` |
-| SSM管理対象 | `mi-08a9ccbdc9116b369` |
 | 実装コミット | `253ffe9` |
 | runtime digest | `sha256:065f76fb60572a1612463fc4705a62a8484a3990109a759bc106b53e7ee5d584` |
 | 初回コード配布物SHA-256 | `096d08b7992d0073bc1772adfb2c6c0b9071b6042ca107db74f6069e2440d5ff` |
@@ -523,7 +520,6 @@ Web/APIへの反映だけでは、この提出の入力・期待出力・実際�
 | 項目 | 値 |
 | --- | --- |
 | ビルド元コミット | `d214361` |
-| SSM管理対象 | `mi-08a9ccbdc9116b369` |
 | runtime digest | `sha256:60b4506b3bd0f4554b18719a52b8eaadaa5e6a5d0839df09d9d3552253c2f570` |
 | bridge ZIP SHA-256 | `bcc6b02da473ff6399f1db3ea8fe1b815223ace43a71442ee7865440120421c2` |
 | worker配布物SHA-256 | `cbe13b3e2ecdce345c3e55541e74f243518e0d65968125f23c8acdcd4477a8e1` |
@@ -804,10 +800,7 @@ API、bridge、workerのdigestとGitHub Environment変数を同期し、既存�
 複製時はworkerと管理エージェントの自動起動を抑止し、追加ホストを別のSSM管理対象として登録した。
 再起動後のRun Commandの成功を確認してから公開SSHポートを閉じた。
 
-| ホスト | SSM管理対象ID |
-| --- | --- |
-| `judge-dev-judge-worker` | `mi-08a9ccbdc9116b369` |
-| `judge-dev-judge-worker-2` | `mi-07cb78f3b979951e7` |
+ホストは`judge-dev-judge-worker`と`judge-dev-judge-worker-2`の2台である。
 
 両ホストは`small_ipv6_3_0`を使う。
 追加時点のLightsail bundle料金は1台あたり月額10 USDで、2台の基本料金は月額20 USDとなる。
@@ -858,7 +851,7 @@ APIとfrontendは`ab9680a`の[Actions run 39609119983](https://github.com/loop09
 固定済みの既存ランタイムを保持してRubyと追加5言語を再構築し、入力アーカイブと再構築手順のSHA-256を`build-input-sha256.txt`へ保存した。
 新しい採点環境は`sha256:02d24de587c4a84ec7b0419993e1d4ccc2d118c45394db07c95296b925329b60`で、3台のOSパッケージとkernel `7.0.0-1014-aws`も一致した。
 
-先行台`i-0ea862364b0f1cfe5`の結果は`verify-first/report.json`、残りの`i-0ac1465ccde7188b2`と`i-01fb59a0d1acbfd13`の結果は`verify-rest/report.json`に保存した。
+先行台の結果は`verify-first/report.json`、残りの2台の結果は`verify-rest/report.json`に保存した。
 各台で全28ランタイムが合格し、`failedRuntimes=[]`、両レポートの`ready=true`を確認した。
 YJITのコンパイル、cLayのBoost・ACL、追加言語の通常実行・対話実行・制限超過の判定を含む。
 
@@ -870,5 +863,5 @@ CI変数とTerraform入力を同期し、Terraform stateをrefresh-onlyで更新
 監視通知を戻し、保守用の保持期限を15分へ短縮した。
 
 成功後、標準処理で古いS3配布物1世代（6,041,409,932 bytes）を削除し、`releasePruned: true`を確認した。
-復旧用のEBSスナップショット`snap-09026c940938f0bbe`、`snap-050988fa0058640e5`、`snap-0d847ff5f3b2d6777`は配布前にcompletedを確認し、保持している。
+復旧用のEBSスナップショットは3台分を取得し、配布前にcompletedを確認した。
 作成結果と完了確認は`snapshots.json`と`snapshots-completed.json`に保存した。

@@ -482,8 +482,9 @@ AWS CLIのprofileとregionを設定し、SSMノードはTerraformのホスト一
 export AWS_PROFILE=loop0919
 export AWS_DEFAULT_REGION=ap-northeast-1
 export JUDGE_RELEASE_RUN="judge/.build/rollout-$(date -u +%Y%m%dT%H%M%SZ)"
-export JUDGE_NODE_1=mi-08a9ccbdc9116b369
-export JUDGE_NODE_2=mi-07cb78f3b979951e7
+# 配布対象のSSMノードのIDに置き換える。
+export JUDGE_NODE_1=i-0123456789abcdef0
+export JUDGE_NODE_2=i-0123456789abcdef1
 export JUDGE_RELEASE_BUCKET="$(python3 -c "import json; print(json.load(open('judge/.build/rollout.json'))['bucket'])")"
 mkdir -p "$JUDGE_RELEASE_RUN"
 ```
