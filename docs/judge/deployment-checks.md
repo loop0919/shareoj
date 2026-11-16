@@ -29,14 +29,30 @@ mkdir -p judge/.build
 # ランタイム本体のビルド方法は、変更した言語のビルド手順に従う。
 make -C api package-judge
 bash judge/build-assets.sh
-cp judge/rollout.example.json judge/.build/rollout.json
+# 設定がまだないときだけ例を写す。既にある設定は上書きしない。
+cp -n judge/rollout.example.json judge/.build/rollout.json
 sed -i "s/123456789012/$(aws configure get sso_account_id)/g" judge/.build/rollout.json
 ```
 
-例のAWSアカウントIDはダミー（`123456789012`）なので、`sed`でプロファイルのアカウントIDに置き換える。
+例のAWSアカウントID、`bucket`、`result_mapping`、`nodes`はダミーである。
+例から写した設定は、次の値を本番の値にしてから使う。
+ダミーのまま実行すると、`rollout.py`はAWSとの対応の確認で止まる。
+
+| 値 | 本番の値の調べ方 |
+| --- | --- |
+| アカウントID（`account`とキューのURL） | 上の`sed`がプロファイルの値に置き換える |
+| `bucket` | `terraform -chdir=infra/judge output -raw job_bucket` |
+| `nodes` | `terraform -chdir=infra/judge output pool_hosts`の全台の`id` |
+| `result_mapping` | 下のコマンドが返すUUID |
+
+```sh
+aws lambda list-event-source-mappings --function-name judge-dev-judge-bridge \
+  --query 'EventSourceMappings[].[UUID,EventSourceArn]' --output text
+```
+
 `rollout.json`の配布物パス、対象の全台、公開言語一覧を確認する。
 言語のIDを更新した場合は`runtimes`も更新し、API確認用の`smoke_runtime`へ公開するCPythonまたはPyPyのIDを指定する。
-例のリソース名とSSM IDは2026-09-19時点の本番値であり、ホスト交換後は置き換える。
+例のリソース名（関数、キュー、アラーム）は本番の名前であり、構成を変えたら置き換える。
 要求、結果、要求DLQ、結果DLQの順で`queues`へ指定する。
 スクリプトはAWSアカウントと、bridge、キュー、dispatch、結果受信の対応も確認する。
 
@@ -468,7 +484,7 @@ export AWS_DEFAULT_REGION=ap-northeast-1
 export JUDGE_RELEASE_RUN="judge/.build/rollout-$(date -u +%Y%m%dT%H%M%SZ)"
 export JUDGE_NODE_1=mi-08a9ccbdc9116b369
 export JUDGE_NODE_2=mi-07cb78f3b979951e7
-export JUDGE_RELEASE_BUCKET=judge-dev-judge-5983370c65ca9cd6b9cd685c8d
+export JUDGE_RELEASE_BUCKET="$(python3 -c "import json; print(json.load(open('judge/.build/rollout.json'))['bucket'])")"
 mkdir -p "$JUDGE_RELEASE_RUN"
 ```
 

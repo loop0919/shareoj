@@ -695,7 +695,7 @@ Actions run `35359023513`でAPIとfrontendの配布も成功した。
 | `runtime-fix.tar.gz` | `88df1f6146d481a58df6d64733bc013217a7d91a23307a832c2119b76fc2fa25` |
 | 全ランタイムの`runtime-tree.json` | `7769fce9f981e9988743468f25b6b38bc778f78b3473c6b3b5b018e2c7a2b8e2` |
 
-配布先は非公開の`judge-dev-judge-5983370c65ca9cd6b9cd685c8d`バケットで、`releases/workerのSHA-256/`配下に完成品と差分を保存した。
+配布先は非公開のジョブ用バケットで、`releases/workerのSHA-256/`配下に完成品と差分を保存した。
 修正の適用はSSM command `d14f65ff-b32c-45e1-b91b-98aa2aa88b9c`で成功した。
 workerのディスク使用量を抑えるため差分を適用し、適用後の全ランタイムツリーが完成品アーカイブと一致することを検証した。
 初回インストールでOSの`libsqlite3-0`が`3.45.1-1ubuntu2.8`へ更新されたため、その状態をfingerprintへ含めた。
