@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { Contest, Standing } from '../shared/types/contest'
+import { shortId } from '../shared/utils/short-id'
 import { test as signedIn } from './fixtures/account'
 
 const id = '88888888-8888-4888-8888-888888888888'
@@ -408,4 +409,92 @@ test('a page change is announced and keeps focus in the list', async ({ page }) 
   await size.selectOption('50')
   await expect(status).toHaveText('全 1,001 件中 401〜450 件目')
   await expect(size).toBeFocused()
+})
+
+// A score links to the submission that set it. A cell without a score, or from an API that names no submission, stays
+// plain text.
+const scoring = { a1: 'aaaaaaaa-0000-4000-8000-000000000001', a2: 'aaaaaaaa-0000-4000-8000-000000000002', b1: 'bbbbbbbb-0000-4000-8000-000000000001', t1: 'cccccccc-0000-4000-8000-000000000001' }
+const linked = (): Standing[] => [
+  { rank: 1, handle: 'ui_test', points: 137, score: 13750, scoreText: '137.50', timeMs: 900000, problems: {
+    a: { points: 100, score: 10000, scoreText: '100', wrong: 1, pending: 0, acceptedAt: '2026-09-15T12:10:00Z', scoredAt: '2026-09-15T12:10:00Z', submissionId: scoring.a1 },
+    b: { points: 37, score: 3750, scoreText: '37.50', wrong: 0, pending: 0, scoredAt: '2026-09-15T12:15:00Z', submissionId: scoring.a2 },
+    c: { points: 0, score: 0, scoreText: '0', wrong: 2, pending: 0 },
+  } },
+  { rank: 2, handle: 'bob', points: 100, score: 10000, scoreText: '100', timeMs: 300000, problems: {
+    a: { points: 100, score: 10000, scoreText: '100', wrong: 0, pending: 0, acceptedAt: '2026-09-15T12:05:00Z', scoredAt: '2026-09-15T12:05:00Z', submissionId: scoring.b1 },
+    b: { points: 100, score: 10000, scoreText: '100', wrong: 0, pending: 0, acceptedAt: '2026-09-15T12:06:00Z', scoredAt: '2026-09-15T12:06:00Z' },
+  } },
+]
+const scoreLinks = (page: Page, handle: string) => page.locator('.standings-table tbody tr').filter({ has: page.locator('th', { hasText: handle }) }).locator('td a')
+
+test('after the end every score links to the submission that set it', async ({ page }) => {
+  await routeThousand(page, { ...contest, status: 'ended', canViewSubmissions: true, partialScoring: true }, linked)
+  await openStandings(page, '')
+  const path = `/contests/${shortId(id)}/submissions`
+  const mine = scoreLinks(page, 'ui_test')
+  await expect(mine).toHaveCount(2)
+  await expect(mine.nth(0)).toHaveAttribute('href', `${path}/${shortId(scoring.a1)}?from=standings`)
+  await expect(mine.nth(0)).toHaveAccessibleName('100 点の提出結果')
+  await expect(mine.nth(1)).toHaveAttribute('href', `${path}/${shortId(scoring.a2)}?from=standings`)
+  await expect(mine.nth(1)).toHaveAccessibleName('37.50 点の提出結果（部分点）')
+  // The link keeps the score's colour, and the rest of the cell stays as it was.
+  await expect(mine.nth(0)).toHaveCSS('color', 'rgb(24, 121, 78)')
+  await expect(mine.nth(1)).toHaveCSS('color', 'rgb(25, 36, 49)')
+  const row = page.locator('.standings-table tbody tr').first()
+  await expect(row.locator('td').nth(3)).toHaveText('100点の提出結果(1)誤答 1 回10:00')
+  // The wrong answers of a problem without a score lead nowhere, and neither does a score with no submission named.
+  await expect(row.locator('td').nth(5)).toContainText('(2)')
+  await expect(row.locator('td').nth(5).getByRole('link')).toHaveCount(0)
+  const bob = scoreLinks(page, 'bob')
+  await expect(bob).toHaveCount(1)
+  await expect(bob).toHaveAttribute('href', `${path}/${shortId(scoring.b1)}?from=standings`)
+})
+
+signedIn('while the contest runs only the own row links its scores', async ({ page }) => {
+  await routeThousand(page, { ...contest, partialScoring: true }, linked)
+  await openStandings(page, '')
+  const mine = scoreLinks(page, 'ui_test')
+  await expect(mine).toHaveCount(2)
+  await expect(mine.nth(0)).toHaveAttribute('href', `/contests/${shortId(id)}/my-submissions/${shortId(scoring.a1)}?from=standings`)
+  await expect(scoreLinks(page, 'bob')).toHaveCount(0)
+})
+
+test('while the contest runs a visitor gets no link', async ({ page }) => {
+  await routeThousand(page, contest, linked)
+  await openStandings(page, '')
+  await expect(page.locator('.standings-table tbody tr')).toHaveCount(2)
+  await expect(page.locator('.standings-table tbody td a')).toHaveCount(0)
+})
+
+signedIn('staff follow every score while the contest runs', async ({ page }) => {
+  await routeThousand(page, { ...contest, canViewSubmissions: true }, linked)
+  await openStandings(page, '')
+  await expect(scoreLinks(page, 'bob')).toHaveAttribute('href', `/contests/${shortId(id)}/submissions/${shortId(scoring.b1)}?from=standings`)
+})
+
+// A teammate's submission opens on the shared page, which the team reads throughout the contest.
+signedIn('the own team row links to the shared page while the contest runs', async ({ page }) => {
+  const teams: Standing[] = [
+    { rank: 1, handle: '', team: { id: 't1', name: 'チームA', members: ['bob', 'ui_test'], onsite: false }, points: 100, timeMs: 300000, problems: { a: { points: 100, score: 10000, scoreText: '100', wrong: 0, pending: 0, acceptedAt: '2026-09-15T12:05:00Z', scoredAt: '2026-09-15T12:05:00Z', submissionId: scoring.t1 } } },
+    linked()[1]!,
+  ]
+  await routeThousand(page, { ...contest, teamMode: true, canViewSubmissions: true, team: { id: 't1', name: 'チームA', members: ['bob', 'ui_test'], onsite: false } } as Contest, () => teams)
+  await openStandings(page, '')
+  await expect(scoreLinks(page, 'チームA')).toHaveAttribute('href', `/contests/${shortId(id)}/submissions/${shortId(scoring.t1)}?from=standings`)
+  await expect(page.locator('.standings-table tbody tr').nth(1).locator('td a')).toHaveCount(0)
+})
+
+test('a submission opened from the standings leads back to them', async ({ page }) => {
+  await page.goto(`/contests/${shortId(id)}/submissions/${shortId('22222222-2222-4222-8222-222222222222')}?from=standings`)
+  const crumb = page.getByRole('navigation', { name: 'パンくずリスト' }).getByRole('link')
+  await expect(crumb).toHaveText('順位表')
+  await expect(crumb).toHaveAttribute('href', `/contests/${shortId(id)}?view=standings`)
+})
+
+signedIn('an own submission opened from the standings leads back to them', async ({ page }) => {
+  await page.route(`**/api/my/submissions/${scoring.a1}`, route => route.fulfill({ json: { id: scoring.a1, contestId: id, problemIndex: 0, problemId: 'a', problemTitle: 'a', problemVersion: 1, author: 'ui_test', runtime: 'cpp17', source: 'int main(){}', status: 'DONE', createdAt: '2026-09-15T12:10:00Z', result: { verdict: 'AC', passed: 1, total: 1, cpuTimeMs: 2, memoryBytes: 1048576, cases: [] } } }))
+  await page.goto(`/contests/${shortId(id)}/my-submissions/${shortId(scoring.a1)}?from=standings`)
+  const crumb = page.getByRole('navigation', { name: 'パンくずリスト' }).getByRole('link')
+  await expect(crumb).toHaveText('順位表')
+  await expect(crumb).toHaveAttribute('href', `/contests/${shortId(id)}?view=standings`)
 })

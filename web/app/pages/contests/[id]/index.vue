@@ -3,7 +3,7 @@ import { submissionUsage } from '~/utils/submission-usage'
 import { runtimeLabel } from '~/utils/runtime-label'
 import { formatScore } from '~/utils/score'
 import { clampPage, lastPage, pageOffset } from '~/utils/pagination'
-import { isOwnStanding, pinnedStanding } from '~/utils/standings-page'
+import { isOwnStanding, pinnedStanding, standingSubmissionPath } from '~/utils/standings-page'
 import type { PageSize } from '~/composables/usePageSize'
 import { canViewAllSubmissions, contestAuthors, contestDate, contestFreezeTime, contestProblemPath, contestProblemTitle, contestStatus, contestView, contestViews, frozenSubmissionsNote, labelIndex, ownSubmissionsLabel, problemLabel, type Standing, type StandingCell } from '~~/shared/types/contest'
 import { fullId, shortId } from '~~/shared/utils/short-id'
@@ -190,6 +190,8 @@ function cellScore(cell: StandingCell) {
   if (cell.score === undefined) return cell.acceptedAt ? String(cell.points) : ''
   return cell.score > 0 ? cell.scoreText ?? formatScore(cell.score) : ''
 }
+// The score links to the submission that set it, for whoever may read that submission.
+const cellLink = (row: Standing, cell: StandingCell) => standingSubmissionPath(id, row, cell, { all: canViewAll.value, handle: profile.value?.handle })
 // The time of the last submission that raised the score; for a full score it is when the score was reached.
 function cellTime(cell: StandingCell) {
   return cell.score === undefined ? cell.acceptedAt : cell.score > 0 ? cell.scoredAt ?? cell.acceptedAt : undefined
@@ -295,7 +297,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
               <td v-for="(p, i) in contest.problems" :key="p.id || i">
                 <template v-if="row.problems[p.id]">
                   <span class="standing-result">
-                    <strong v-if="cellScore(row.problems[p.id]!)" :class="row.problems[p.id]!.acceptedAt ? 'standing-accepted' : 'standing-partial'">{{ cellScore(row.problems[p.id]!) }}<span v-if="!row.problems[p.id]!.acceptedAt" class="visually-hidden">（部分点）</span></strong>
+                    <strong v-if="cellScore(row.problems[p.id]!)" :class="row.problems[p.id]!.acceptedAt ? 'standing-accepted' : 'standing-partial'"><NuxtLink v-if="cellLink(row, row.problems[p.id]!)" :to="cellLink(row, row.problems[p.id]!)">{{ cellScore(row.problems[p.id]!) }}<span class="visually-hidden">点の提出結果<template v-if="!row.problems[p.id]!.acceptedAt">（部分点）</template></span></NuxtLink><template v-else>{{ cellScore(row.problems[p.id]!) }}<span v-if="!row.problems[p.id]!.acceptedAt" class="visually-hidden">（部分点）</span></template></strong>
                     <span v-else-if="!row.problems[p.id]!.wrong && !row.problems[p.id]!.pending && !row.problems[p.id]!.frozen" class="muted">—</span>
                     <span v-if="row.problems[p.id]!.wrong" class="standing-wrong"><span aria-hidden="true">({{ row.problems[p.id]!.wrong }})</span><span class="visually-hidden">誤答 {{ row.problems[p.id]!.wrong }} 回</span></span>
                     <svg v-if="row.problems[p.id]!.pending" class="standing-pending" viewBox="0 0 24 24" role="img" aria-label="判定待ち"><path d="M5 3h14M5 21h14M7 3v4l5 5-5 5v4M17 3v4l-5 5 5 5v4" /></svg>
@@ -395,6 +397,8 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 .standing-accepted, .standing-fa { color: var(--color-accent); }
 /* A partial score keeps the ordinary colour; the accent marks the full score (ADR 0025). */
 .standing-partial { color: var(--color-ink); }
+/* A linked score keeps the colour that tells a full score from a partial one; the underline marks the link. */
+.standing-result a { color: inherit; }
 .standing-wrong { color: var(--color-error); }
 .standings-filters { display: flex; flex-wrap: wrap; gap: 0 24px; margin-bottom: 8px; }
 .standings-pages, .submissions-pages { margin-top: 16px; }

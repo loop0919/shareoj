@@ -58,7 +58,8 @@ export type SetterInvitation = { id: string, title: string, author: string, publ
 // Scores (ADR 0025): score is in hundredths and scoreText its display form ("37.50", "100"); points is the whole part,
 // kept for older readers. scoredAt is the last submission that raised a problem's score, acceptedAt the one that reached
 // its full score.
-export type StandingCell = { points: number, score?: number, scoreText?: string, wrong: number, pending: number, frozen?: number, acceptedAt?: string, scoredAt?: string }
+// submissionId names the submission that set the score, made at scoredAt; servers before it leave it out.
+export type StandingCell = { points: number, score?: number, scoreText?: string, wrong: number, pending: number, frozen?: number, acceptedAt?: string, scoredAt?: string, submissionId?: string }
 export type Standing = {
   rank: number, overallRank?: number, handle: string, team?: TeamSummary | null, onsite?: boolean, points: number, score?: number, scoreText?: string, timeMs: number,
   problems: Record<string, StandingCell>,
