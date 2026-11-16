@@ -535,8 +535,9 @@ func TestContestsPostgres(t *testing.T) {
 	if err := json.Unmarshal([]byte(detail), &public); err != nil {
 		t.Fatal(err)
 	}
-	if !public.PublishedAt.Equal(end) {
-		t.Fatal(public.PublishedAt, end)
+	// a is the contest's second problem, so it is published a millisecond after the end.
+	if want := end.Add(time.Millisecond); !public.PublishedAt.Equal(want) {
+		t.Fatal(public.PublishedAt, want)
 	}
 	published, err := store.Get(ctx, "alice", a)
 	if err != nil {

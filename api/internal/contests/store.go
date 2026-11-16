@@ -420,7 +420,8 @@ func save(ctx context.Context, tx pgx.Tx, actor, id string, in Input, policy Jud
 }
 
 // Release materializes due publications from the periodic dispatcher and before API requests.
-// PublishedAt is the scheduled end, even if there was no traffic at that instant.
+// PublishedAt is the scheduled end, even if there was no traffic at that instant. Each problem after A is published a
+// millisecond after the one before, so lists by publication time keep the contest's order instead of following the IDs.
 // No resident timer is needed, so the same behavior works in Lambda and locally.
 func (s *Store) Release(ctx context.Context) error {
 	tx, err := s.Pool.Begin(ctx)
@@ -439,7 +440,7 @@ func (s *Store) Release(ctx context.Context) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	_, err = tx.Exec(ctx, `UPDATE problem_drafts d SET published_draft=cp.draft,published_version=d.version+1,published_at=c.ends_at,version=d.version+1
+	_, err = tx.Exec(ctx, `UPDATE problem_drafts d SET published_draft=cp.draft,published_version=d.version+1,published_at=c.ends_at+cp.position*interval '1 millisecond',version=d.version+1
  FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE d.id=cp.problem_id AND c.id=ANY($1::uuid[])`, ids)
 	if err != nil {
 		return err
