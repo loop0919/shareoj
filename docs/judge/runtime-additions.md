@@ -125,7 +125,7 @@ runtime digestは`sha256:5910a1dfcf9f4ad2318da12612ba779a92844f35dd4c20251a0352d
 
 Common Lisp、F#、Gleam、Fixの4言語である。
 判断の経緯は[ADR 0041](../adr/0041-add-functional-languages.md)に記録している。
-2026年11月15日の時点で、未配布、実機smoke未実施である。
+2026年11月18日の時点で、未配布、実機smoke未実施である。
 
 | 公開ID | 処理系 | 入手元 | `/opt/judge-runtimes`の下に置くもの |
 | --- | --- | --- | --- |
@@ -444,10 +444,32 @@ $2 \times 10^5$行の入出力は、ローカルで次のとおりだった（CP
 
 - Common LispとF#の時間は経過時間、GleamとFixはcgroupのCPU時間である。
 - F#の64 MiBの値は、isolateと同じく、ボックスのファイルをcgroupの外から置いたときのものである。
-- Fixの$2 \times 10^5$個の整数の読み込みは、`CPLib.IO::read_is`でCPU 7 msだった。
-  Common LispとF#の$2 \times 10^5$行の読み込みは、まだ測っていない。
-- 4言語を足した配布物での検証（Task 7）と、実機の値はまだない。
+- 実機の値はまだない。
 - これらは実機のisolate内での判定検証や公開判定を代替しない。
+
+2026年11月18日に、下の手順で作った`runtime-functional.tar.gz`（SHA-256 `98d7ce12c4edc28237793784a00ae1fb8ad6e8fb4c68817afbcda594daf3d1a4`）のツリーで、同じ条件の検証をやり直した。
+
+- 元のツリー（`runtime-goose.tar.gz`）との差は、4言語の8つのディレクトリ、`addition-native/lib`の`libtinfo.so.6`と`libzstd.so.1`、`build-manifest/additions`の4ファイルだけだった（`diff -rq --no-dereference`）。
+- 4言語の全fixtureと、C#の6つのfixtureが期待どおりになった。
+- `addition-native/lib`を使う既存の言語（Haskell、Ruby、TruffleRuby、Nibbles、Brainfuck、Whitespace）のfixtureも通した。
+  Nibblesの`output-stderr`だけはREになったが、元のツリーでも同じである。
+  検証に使ったコンテナは、標準エラー出力の量の上限を再現しない。
+- Hello Worldは、4言語とも実行時のメモリを64 MiBにしても動いた。
+- 時間はほかの処理と並行して測ったので、上の表は11月15日の値のままにした。
+
+$2 \times 10^5$行の整数を読んで和を出す時間は、次のとおりである（CPU時間、2回ずつ）。
+
+| 言語 | 読み方 | CPU時間 | ピーク |
+| --- | --- | --- | --- |
+| Common Lisp | `(read)` | 70〜71 ms | 6 MiB |
+| Common Lisp | `(parse-integer (read-line))` | 50〜51 ms | 10〜11 MiB |
+| F# | `stdin.ReadLine()` | 74〜80 ms | 9 MiB |
+| Gleam | `stdin.read_lines()` | 1.7〜2.3秒 | 30 MiB |
+| Gleam | `io:get_chars`でまとめて読み、`string.split`で分ける | 0.73〜0.80秒 | 64〜65 MiB |
+| Fix | `CPLib.IO::read_is` | 7〜8 ms | 5 MiB |
+
+- 時間制限1秒を超えるのは、Gleamの`stdin.read_lines()`だけである。
+  速い読み方を「使える言語」のページに書いている。
 
 ### 配布済みのランタイムへ4言語を加える手順
 
@@ -456,11 +478,12 @@ $2 \times 10^5$行の入出力は、ローカルで次のとおりだった（CP
 既存の処理系はビルドし直さない。
 
 ```sh
+set -e
 python3 judge/runtime/prepare-runtime-inputs.py --additions
 runtime_stage=$(mktemp -d)
 tar -xzf judge/.build/runtime-goose.tar.gz -C "$runtime_stage"
 for name in sbcl fsharp-tools fsharp-libs erlang gleam gleam-project fix fix-project; do
-  test ! -e "$runtime_stage/judge-runtimes/$name" || echo "already exists: $name"
+  test ! -e "$runtime_stage/judge-runtimes/$name"
 done
 build_step() {
   step=$1
@@ -473,10 +496,10 @@ build_step() {
     "apt-get update && apt-get install -y --no-install-recommends python3 $* &&
      python3 /build/build-runtime-additions.py $step; s=\$?; chown -R \"\$OWNER\" /opt/judge-runtimes; exit \$s"
 }
-build_step sbcl bzip2 ca-certificates gcc libc6-dev libgsl-dev libffi-dev pkg-config &&
-build_step fsharp ca-certificates libicu74 &&
-build_step gleam ca-certificates &&
-build_step fix ca-certificates libc6-dev libmpc3 binutils make &&
+build_step sbcl bzip2 ca-certificates gcc libc6-dev libgsl-dev libffi-dev pkg-config
+build_step fsharp ca-certificates libicu74
+build_step gleam ca-certificates
+build_step fix ca-certificates libc6-dev libmpc3 binutils make
 build_step finish build-essential ca-certificates curl xz-utils bzip2 unzip git pkg-config cmake libssl-dev \
   libyaml-dev libreadline-dev zlib1g-dev libffi-dev libgmp-dev libnuma-dev libncurses-dev libopenblas-dev \
   liblapack-dev libgsl-dev libglpk-dev libgeos-dev libz3-dev libicu74
@@ -488,10 +511,10 @@ sha256sum judge/.build/runtime-functional.tar.gz
 - ステップの順は`sbcl`、`fsharp`、`gleam`、`fix`、`finish`である。
 - `sbcl`から`fix`までの4行は、2026年11月15日に共有のステージで実行したものと同じパッケージである。
   各ステップは30秒から1分ほどで終わった。
-- `finish`の行はまだ実行していない（Task 7）。
-  パッケージは`runtime-additions.Dockerfile`のtoolchainsと同じにした。
+- `finish`のパッケージは`runtime-additions.Dockerfile`のtoolchainsと同じである。
   `finish`は`addition-native/lib`のライブラリを`native-library-sha256.json`と照らし合わせるので、Ubuntuのパッケージが更新されていると止まる。
   差をレビューしてから、ロックを更新する。
+  2026年11月18日の実行では一致した。
 - `finish`は4言語のディレクトリを`content-sha256.json`に加え、`beam.smp`と`fix`のlddからlibtinfo.so.6とlibzstd.so.1を`addition-native/lib`へ複製する。
   ruby-depsとtruffleruby-depsの共有ライブラリにも`strip`をかけ直す。
   4言語のディレクトリ、`build-manifest`、`addition-native/lib`に加わる2つのファイルのほかに差がないことを、`diff -r`で確かめる。
@@ -537,22 +560,18 @@ sha256sum judge/.build/runtime-functional.tar.gz
 
 ### 公開までに残っていること
 
-1. 上の手順で`runtime-functional.tar.gz`を作り、4言語を足した配布物で全fixtureと測定をやり直す（Task 7）。
-   $2 \times 10^5$行の整数の読み込みも測る。
-   `finish`の後に、`addition-native/lib`を使う既存の言語のfixtureも通す。
-   SHA-256と値をこの節に書く。
-2. `RUNTIME_ARCHIVE=.build/runtime-functional.tar.gz bash judge/build-assets.sh`で、workerの配布物を作る。
-3. 利用者の了承を得てから、`rollout.json`の`runtimes`に4つの公開IDを加え、`judge/rollout.py rolling`で配布する。
-   手順と完了の条件は[配布と検証の定型コマンド](deployment-checks.md#os更新はローリング更新で配布する)に従う。
+1. `RUNTIME_ARCHIVE=.build/runtime-functional.tar.gz bash judge/build-assets.sh`で、workerの配布物を作る。
+2. `judge/rollout.py rolling`で配布する。
+   `rollout.json`の`runtimes`は公開中の一覧のままにし、`publish_runtimes`に4つの公開IDを加えた一覧を書く。
+   APIとWebは、4言語に対応した版を先にGitHub Actionsで配布しておく。
+   手順と完了の条件は[配布と検証の定型コマンド](deployment-checks.md#rollingを使える配布)に従う。
    C#を含む全言語の実機smokeに合格することを確かめる。
-4. 実機で、次を測る。
+3. 実機で、次を測る。
    - 4言語のHello Worldのコンパイル時間と実行時間。コンパイルが10秒を超えた言語は公開しない。
    - Gleamの起動のCPU時間。「使える言語」のページの約0.15秒（ローカルの値）を置き換える。
    - Gleamのコンパイル時間（`cp -R`の複製で依存がコンパイルし直されないこと）。
    - F#のケースごとのDLLの複製の時間。
    - Fixの`libraries-json`、`libraries-xml`、`libraries-app`のコンパイル時間と、サンドボックスの中の`make`。
-5. 全台のsmokeに合格した言語だけを`judge_enabled_runtimes`に加えて公開し、`judge/smoke-api.py`で本番の提出を確かめる。
-   一部の言語だけが落ちたときは、合格した言語だけを公開する。
 
 ## 依存の固定
 
