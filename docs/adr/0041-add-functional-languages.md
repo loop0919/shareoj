@@ -48,11 +48,19 @@ ShareOJの提出はisolateの中で動き、プロセス数は64（対話では3
 | --- | --- | --- | --- |
 | Common Lisp | ライブラリを読み込んで保存したSBCLのイメージで`compile-file`する | 同じイメージでfaslを読み込む | fasl 1個 |
 | F# | `fsc.dll`を`dotnet`で直接起動する。MSBuildは使わない | C#と同じ`dotnet main.dll` | `main.dll`。ライブラリのDLLは運用側の固定ファイルから置く |
-| Gleam | 依存をコンパイル済みのひな形をボックスへ複製し、提出のモジュールだけをコンパイルする | `erl`を直接起動する | BEAMファイル1個 |
+| Gleam | `gleam compile-package`で、提出のモジュールだけをコンパイルする。依存はコンパイル済みのひな形をその場で読む | `erl`を直接起動する | BEAMファイル1個 |
 | Fix | 依存を取得済みのひな形をボックスへ複製し、`fix build -O max`を実行する。リンクは既存のGCC 16で行う | ネイティブの実行ファイル | 実行ファイル1個 |
 
 - 成果物の取り出しは既存の種類（`native`、`dotnet`、`generated-source`）を使う。
 - コンパイルの上限は、どの言語でも変えない。
+
+### Gleamは`gleam build`を使わずにコンパイルする
+
+`gleam build`は、ビルドのディレクトリを`flock`でロックする。
+isolateは、サンドボックスの間の抜け道になり得るファイルロックを拒み、許すのはGoのコンパイルだけである（[ADR 0010](0010-extend-judge-languages-and-libraries.md)）。
+最初の実機smoke（2026-11-18）では、`gleam build`がこのロックで失敗し、GleamだけがCEになった。
+そこで、ロックを取らない`gleam compile-package`に替えた。
+Gleamのためにファイルロックの制限を外すことはしない。
 
 ### Gleamは`erl`を直接起動する
 

@@ -101,6 +101,15 @@ with open(sys.argv[1], 'wb', buffering=0) as file:
         self.assertIn('-noshell', run)
         self.assertFalse(any(arg.endswith('/gleam') for arg in run))
 
+    def test_gleam_compiles_without_a_file_lock(self):
+        # isolate refuses flock (ENOSYS) outside the Go compile, and gleam build locks its build directory.
+        script = (Path(__file__).resolve().parents[1] / 'runtime/deps/additions/gleam/compile.sh').read_text()
+        commands = [line for line in script.splitlines() if '/gleam/gleam"' in line]
+        self.assertEqual(len(commands), 1)
+        self.assertIn(' compile-package ', commands[0])
+        args = sandbox.run_args('gleam119-isolate', 30, 40, 1024, compile_phase=True)
+        self.assertFalse(any(arg.startswith('--syscalls=') for arg in args))
+
     def test_gleam_stays_within_the_file_size_limit_and_keeps_stdin(self):
         runtime = RUNTIMES['gleam119-isolate']
         # The double-mapped JIT memory is a memfd that the file size limit kills with SIGXFSZ.

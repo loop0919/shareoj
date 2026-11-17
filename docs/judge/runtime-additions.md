@@ -235,16 +235,19 @@ Common Lisp、F#、Gleam、Fixの4言語である。
 
 コンパイルは`sh gleam/compile.sh`で、次の順に行う。
 
-1. ひな形`gleam-project`の`gleam.toml`、`manifest.toml`、`src`、`build`を`/box/project`へ複製し、`/box/main.gleam`を`src/main.gleam`に置く。
-2. `gleam build --no-print-progress`を実行する。
-   依存はコンパイル済みで、提出のモジュールだけをコンパイルする。
+1. ひな形`gleam-project`の`gleam.toml`を`/box/project`へ複製し、`/box/main.gleam`を`src/main.gleam`に置く。
+2. `gleam compile-package --target erlang`を実行する。
+   依存は、ひな形の`build/dev/erlang`にあるコンパイル済みのものを`--lib`でその場で読む。
+   コンパイルするのは提出のモジュールだけである。
 3. `beam_lib`で`main/0`があるかを確かめ、なければ「main.gleam must define pub fn main()」でCEにする（約135 ms）。
 4. `main.beam`を`/box/main.beam`へ置く。
 
-- 複製は`cp -R`なので、更新時刻を引き継がない。
-  ローカルでは、更新時刻が新しくなっても、`gleam build`は依存をコンパイルし直さず、提出のパッケージ（`judge`）だけをコンパイルした（2026年11月15日、tmpfsのボックスで確認）。
-  ビルドは、複製した`build/`のキャッシュをgleamがそのまま使うことに頼っている。
-  実機でもコンパイル時間で確かめる。
+- `gleam build`は使わない。
+  `gleam build`はビルドのディレクトリを`flock`でロックするが、isolateはGoのコンパイル以外で`flock`を拒む（`ENOSYS`）。
+  2026年11月18日の実機smokeでは、`gleam build`を使っていた版がこのロックでCEになった。
+  `compile-package`はロックを取らず、ひな形の`build/`をボックスへ複製する必要もない。
+- ローカルの検証は、isolateと同じ制限（`flock`、ロックの`fcntl`、`keyctl`、`io_uring_setup`を拒むseccomp）をコンテナに付けて行う。
+  11月15日の検証はこの制限を付けておらず、ロックの失敗を見つけられなかった。
 - `compile.sh`は`HOME`を設定せず、サンドボックスの`HOME=/box`に頼る。
 - gleamは、生成したErlangをescriptでコンパイルする。
   そのため`ERL_FLAGS`で、実行と同じスケジューラーの指定と`+JMsingle true`を渡す。
@@ -456,6 +459,11 @@ $2 \times 10^5$行の入出力は、ローカルで次のとおりだった（CP
   検証に使ったコンテナは、標準エラー出力の量の上限を再現しない。
 - Hello Worldは、4言語とも実行時のメモリを64 MiBにしても動いた。
 - 時間はほかの処理と並行して測ったので、上の表は11月15日の値のままにした。
+- この配布物は、実機smokeでGleamがCEになった（[Gleam](#gleam)の節）。
+  `compile.sh`を直して同じ手順で作り直した配布物のSHA-256は、`41680b3e5b5399146859969d8913ff0045611b70404fec277d8f59b8c1c172fd`である。
+  作り直しの前後の差は、4言語のディレクトリの中の生成物（gitのpack、型のキャッシュ、SBCLのイメージなど）と`build-manifest`だけだった。
+  作り直した配布物では、isolateと同じシステムコールの制限を付けたコンテナで、4言語の全fixtureとC#の6つのfixtureが期待どおりになった。
+  Gleamのコンパイルは、Hello WorldでCPU約0.5秒である。
 
 $2 \times 10^5$行の整数を読んで和を出す時間は、次のとおりである（CPU時間、2回ずつ）。
 
@@ -569,7 +577,7 @@ sha256sum judge/.build/runtime-functional.tar.gz
 3. 実機で、次を測る。
    - 4言語のHello Worldのコンパイル時間と実行時間。コンパイルが10秒を超えた言語は公開しない。
    - Gleamの起動のCPU時間。「使える言語」のページの約0.15秒（ローカルの値）を置き換える。
-   - Gleamのコンパイル時間（`cp -R`の複製で依存がコンパイルし直されないこと）。
+   - Gleamのコンパイル時間。
    - F#のケースごとのDLLの複製の時間。
    - Fixの`libraries-json`、`libraries-xml`、`libraries-app`のコンパイル時間と、サンドボックスの中の`make`。
 
