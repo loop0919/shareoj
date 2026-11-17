@@ -1,0 +1,133 @@
+# The template project: each submission becomes main.fix; the dependencies are fetched and type-checked at build time.
+# Written by `fix init` and `fix deps add name@=version` (AtCoder's list, at the newest versions that resolve together,
+# without regexp: see excluded.json), without the comments. fix build runs a project's preliminary_commands, so this
+# file must never have any.
+[general]
+name = "judge"
+version = "1.0.0"
+fix_version = "1.6.1"
+
+[build]
+files = ["main.fix"]
+# gmp-fix links -lgmp; the worker has the shared library but no development package with the linker name.
+library_paths = ["/opt/judge-runtimes/addition-native/lib"]
+
+[[dependencies]]
+name = "character"
+version = "=1.0.1"
+git = { url = "https://github.com/tttmmmyyyy/fixlang-character.git" }
+
+[[dependencies]]
+name = "hash"
+version = "=1.1.3"
+git = { url = "https://github.com/tttmmmyyyy/fixlang-hash.git" }
+
+[[dependencies]]
+name = "hashmap"
+version = "=2.2.0"
+git = { url = "https://github.com/tttmmmyyyy/fixlang-hashmap.git" }
+
+[[dependencies]]
+name = "hashset"
+version = "=2.1.0"
+git = { url = "https://github.com/tttmmmyyyy/fixlang-hashset.git" }
+
+[[dependencies]]
+name = "math"
+version = "=2.0.2"
+git = { url = "https://github.com/tttmmmyyyy/fixlang-math.git" }
+
+[[dependencies]]
+name = "random"
+version = "=1.1.3"
+git = { url = "https://github.com/tttmmmyyyy/fixlang-random.git" }
+
+[[dependencies]]
+name = "time"
+version = "=2.0.1"
+git = { url = "https://github.com/tttmmmyyyy/fixlang-time.git" }
+
+[[dependencies]]
+name = "binary-heap"
+version = "=0.2.1"
+git = { url = "https://github.com/tttmmmyyyy/fixlang-binary-heap.git" }
+
+[[dependencies]]
+name = "bool-array"
+version = "=0.2.0"
+git = { url = "https://github.com/tttmmmyyyy/bool-array.git" }
+
+[[dependencies]]
+name = "cp-library"
+version = "=0.16.0"
+git = { url = "https://github.com/tttmmmyyyy/cp-library.git" }
+
+[[dependencies]]
+name = "ring-buffer"
+version = "=0.1.2"
+git = { url = "https://github.com/tttmmmyyyy/ring-buffer.git" }
+
+[[dependencies]]
+name = "gmp-fix"
+version = "=0.12.0"
+git = { url = "https://github.com/tttmmmyyyy/fixlang-gmp.git" }
+
+[[dependencies]]
+name = "minilib-common"
+version = "=0.15.2"
+git = { url = "https://github.com/pt9999/fixlang-minilib-common.git" }
+
+[[dependencies]]
+name = "minilib-text"
+version = "=0.11.1"
+git = { url = "https://github.com/pt9999/fixlang-minilib-text.git" }
+
+[[dependencies]]
+name = "minilib-binary"
+version = "=0.8.0"
+git = { url = "https://github.com/pt9999/fixlang-minilib-binary.git" }
+
+[[dependencies]]
+name = "minilib-collection"
+version = "=0.10.0"
+git = { url = "https://github.com/pt9999/fixlang-minilib-collection.git" }
+
+[[dependencies]]
+name = "minilib-monad"
+version = "=0.13.0"
+git = { url = "https://github.com/pt9999/fixlang-minilib-monad.git" }
+
+[[dependencies]]
+name = "minilib-comonad"
+version = "=0.8.0"
+git = { url = "https://github.com/pt9999/fixlang-minilib-comonad.git" }
+
+[[dependencies]]
+name = "minilib-random"
+version = "=0.9.0"
+git = { url = "https://github.com/pt9999/fixlang-minilib-random.git" }
+
+[[dependencies]]
+name = "minilib-math"
+version = "=0.10.0"
+git = { url = "https://github.com/pt9999/fixlang-minilib-math.git" }
+
+[[dependencies]]
+name = "minilib-crypto"
+version = "=0.8.0"
+git = { url = "https://github.com/pt9999/fixlang-minilib-crypto.git" }
+
+[[dependencies]]
+name = "minilib-app"
+version = "=0.9.0"
+git = { url = "https://github.com/pt9999/fixlang-minilib-app.git" }
+
+[[dependencies]]
+name = "minilib-json"
+version = "=0.8.0"
+git = { url = "https://github.com/pt9999/fixlang-minilib-json.git" }
+
+[[dependencies]]
+name = "minilib-xml"
+version = "=0.8.0"
+git = { url = "https://github.com/pt9999/fixlang-minilib-xml.git" }

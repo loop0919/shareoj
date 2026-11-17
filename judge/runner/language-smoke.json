@@ -583,6 +583,319 @@
       "output": "20\n22\n"
     }
   ],
+  "commonlisp-sbcl26-isolate": [
+    {
+      "name": "stdin",
+      "source": "(let ((a (read))\n      (b (read)))\n  (format t \"~a~%\" (+ a b)))\n",
+      "verdict": "AC",
+      "input": "1 2\n"
+    },
+    {
+      "name": "wrong",
+      "source": "(format t \"~a~%\" 4)\n",
+      "verdict": "WA"
+    },
+    {
+      "name": "syntax",
+      "source": "(defun main (\n",
+      "verdict": "CE"
+    },
+    {
+      "name": "exception",
+      "source": "(error \"failure\")\n",
+      "verdict": "RE"
+    },
+    {
+      "name": "timeout",
+      "source": "(loop)\n",
+      "verdict": "TLE"
+    },
+    {
+      "name": "output",
+      "source": "(loop (write-line \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"))\n",
+      "verdict": "OLE",
+      "timeLimitMs": 5000
+    },
+    {
+      "name": "memory",
+      "source": "(let ((arrays '()))\n  (loop (push (make-array 16777216 :element-type '(unsigned-byte 8) :initial-element 1) arrays)))\n",
+      "verdict": "MLE"
+    },
+    {
+      "name": "libraries",
+      "source": "(assert (equal (cl-ppcre:scan-to-strings \"b+\" \"abbbc\") \"bbb\"))\n(assert (< (abs (- (gsll:cylindrical-bessel-j0 1d0) 0.7651976865579666d0)) 1d-12))\n(assert (= (iterate:iter (iterate:for i :from 1 :to 3) (iterate:sum i)) 6))\n(let ((heap (pileup:make-heap #'<)))\n  (pileup:heap-insert 2 heap)\n  (pileup:heap-insert 1 heap)\n  (assert (= (pileup:heap-pop heap) 1)))\n(dolist (kind '(:simple-queue :simple-cqueue :priority-queue :priority-cqueue))\n  (let ((queue (queues:make-queue kind :compare #'<)))\n    (queues:qpush queue 2)\n    (queues:qpush queue 1)\n    (assert (= (queues:qpop queue) (if (member kind '(:simple-queue :simple-cqueue)) 2 1)))))\n(assert (equal (str:join \",\" '(\"a\" \"b\")) \"a,b\"))\n(let ((tree (trees:make-binary-tree :red-black #'< :key #'identity)))\n  (trees:insert 1 tree)\n  (assert (eql (trees:find 1 tree) 1)))\n(assert (= (trivia:match '(1 2) ((list a b) (+ a b))) 3))\n(assert (= (sb-gmp:mpz-mul (expt 2 100) 3) (* (expt 2 100) 3)))\n(let ((queue (sb-queue:make-queue)))\n  (sb-queue:enqueue 1 queue)\n  (assert (= (sb-queue:dequeue queue) 1)))\n(assert (= (sb-rotate-byte:rotate-byte 1 (byte 8 0) 128) 1))\n(assert (= (sb-simd:f64+ 1d0 2d0) 3d0))\n(format t \"~a~%\" (+ 1 2))\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "cleanup",
+      "source": "(assert (not (probe-file \"marker\")))\n(with-open-file (marker \"marker\" :direction :output)\n  (write-string \"x\" marker))\n(format t \"~a~%\" 3)\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "interactive",
+      "source": "(loop for n from 10 below 12\n      do (format t \"~a~%\" n)\n         (finish-output)\n         (assert (= (parse-integer (read-line)) (* 2 n))))\n",
+      "verdict": "AC",
+      "input": "20\n22\n",
+      "output": "10\n11\n"
+    },
+    {
+      "name": "response",
+      "source": "(dotimes (i 2)\n  (format t \"~a~%\" (* 2 (parse-integer (read-line))))\n  (finish-output))\n",
+      "verdict": "AC",
+      "input": "10\n11\n",
+      "output": "20\n22\n"
+    },
+    {
+      "name": "args",
+      "source": ";; A submission gets no arguments; judge code gets its files, the test input first.\n(let ((arguments (rest sb-ext:*posix-argv*)))\n  (when arguments\n    (assert (equal (first arguments) \"/box/test-input\"))\n    (with-open-file (input (first arguments))\n      (read-line input)))\n  (format t \"~a~%\" 3))\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "recursion",
+      "source": "(defun sum-to (n)\n  (if (zerop n)\n      0\n      (+ n (sum-to (1- n)))))\n(assert (= (sum-to 1000000) 500000500000))\n(format t \"~a~%\" 3)\n",
+      "verdict": "AC"
+    }
+  ],
+  "fsharp10-isolate": [
+    {
+      "name": "stdin",
+      "source": "let a, b =\n    match stdin.ReadLine().Split() |> Array.map int with\n    | [| a; b |] -> a, b\n    | _ -> failwith \"expected two numbers\"\nprintfn \"%d\" (a + b)\n",
+      "verdict": "AC",
+      "input": "1 2\n"
+    },
+    {
+      "name": "wrong",
+      "source": "printfn \"%d\" 4\n",
+      "verdict": "WA"
+    },
+    {
+      "name": "syntax",
+      "source": "let main (\n",
+      "verdict": "CE"
+    },
+    {
+      "name": "exception",
+      "source": "failwith \"failure\"\n",
+      "verdict": "RE"
+    },
+    {
+      "name": "timeout",
+      "source": "while true do ()\n",
+      "verdict": "TLE"
+    },
+    {
+      "name": "output",
+      "source": "let line = String.replicate 64 \"x\"\nwhile true do\n    stdout.WriteLine line\n",
+      "verdict": "OLE",
+      "timeLimitMs": 5000
+    },
+    {
+      "name": "memory",
+      "source": "// Unmanaged memory is outside the GC heap limit, so only the memory limit stops it.\nlet blocks = System.Collections.Generic.List<nativeint>()\nwhile true do\n    let block = System.Runtime.InteropServices.Marshal.AllocHGlobal(16 <<< 20)\n    System.Span<byte>(block.ToPointer(), 16 <<< 20).Fill 1uy\n    blocks.Add block\n",
+      "verdict": "MLE"
+    },
+    {
+      "name": "heap",
+      "source": "// The GC heap is capped below the memory limit, so exhausting it throws OutOfMemoryException.\nlet arrays = System.Collections.Generic.List<byte[]>()\nwhile true do\n    arrays.Add(Array.create (16 <<< 20) 1uy)\n",
+      "verdict": "RE"
+    },
+    {
+      "name": "libraries",
+      "source": "open FsToolkit.ErrorHandling\nopen MathNet.Numerics.LinearAlgebra\n\n// Each included library once, with FSharp.Core underneath all of them.\nif FSharpPlus.Operators.map ((+) 1) (Some 2) <> Some 3 then failwith \"FSharpPlus\"\nif FSharpx.Collections.Heap.ofSeq false [ 3; 1; 2 ] |> FSharpx.Collections.Heap.head <> 1 then failwith \"FSharpx.Collections\"\nif FSharpx.Option.maybe { let! a = Some 1 in return a + 2 } <> Some 3 then failwith \"FSharpx.Extras\"\nlet sum: Result<int, string> = result { let! a = Ok 1 in let! b = Ok 2 in return a + b }\nif sum <> Ok 3 then failwith \"FsToolkit.ErrorHandling\"\nif abs (MathNet.Numerics.SpecialFunctions.Gamma 4.0 - 6.0) > 1e-9 then failwith \"MathNet.Numerics\"\nif vector [ 1.0; 2.0 ] |> Vector.sum <> 3.0 then failwith \"MathNet.Numerics.FSharp\"\nlet dsu = AtCoder.Dsu 3\ndsu.Merge(0, 1) |> ignore\nif dsu.Size 0 <> 2 then failwith \"ac-library-csharp\"\nprintfn \"%d\" 3\n",
+      "verdict": "AC",
+      "timeLimitMs": 5000
+    },
+    {
+      "name": "cleanup",
+      "source": "if System.IO.File.Exists \"marker\" then failwith \"marker exists\"\nSystem.IO.File.WriteAllText(\"marker\", \"x\")\nprintfn \"%d\" 3\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "interactive",
+      "source": "for n in 10 .. 11 do\n    printfn \"%d\" n\n    stdout.Flush()\n    if int (stdin.ReadLine()) <> 2 * n then failwith \"answer\"\n",
+      "verdict": "AC",
+      "input": "20\n22\n",
+      "output": "10\n11\n"
+    },
+    {
+      "name": "response",
+      "source": "for _ in 1 .. 2 do\n    printfn \"%d\" (2 * int (stdin.ReadLine()))\n    stdout.Flush()\n",
+      "verdict": "AC",
+      "input": "10\n11\n",
+      "output": "20\n22\n"
+    },
+    {
+      "name": "args",
+      "source": "// A submission gets no arguments; judge code gets its files, the test input first.\n[<EntryPoint>]\nlet main argv =\n    if argv.Length > 0 then\n        if argv[0] <> \"/box/test-input\" then failwith \"unexpected argument\"\n        System.IO.File.ReadAllText argv[0] |> ignore\n    printfn \"%d\" 3\n    0\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "recursion",
+      "source": "let rec sumTo n = if n = 0 then 0L else int64 n + sumTo (n - 1)\nif sumTo 1000000 <> 500000500000L then failwith \"sum\"\nprintfn \"%d\" 3\n",
+      "verdict": "AC"
+    }
+  ],
+  "gleam119-isolate": [
+    {
+      "name": "stdin",
+      "source": "import gleam/int\nimport gleam/io\nimport gleam/list\nimport gleam/string\nimport gleam/yielder\nimport stdin\n\npub fn main() {\n  let assert Ok(numbers) =\n    stdin.read_lines()\n    |> yielder.to_list\n    |> list.flat_map(fn(line) { string.split(string.trim(line), \" \") })\n    |> list.try_map(int.parse)\n  io.println(int.to_string(int.sum(numbers)))\n}\n",
+      "verdict": "AC",
+      "input": "1 2\n"
+    },
+    {
+      "name": "wrong",
+      "source": "import gleam/io\n\npub fn main() {\n  io.println(\"4\")\n}\n",
+      "verdict": "WA"
+    },
+    {
+      "name": "syntax",
+      "source": "pub fn main( {\n",
+      "verdict": "CE"
+    },
+    {
+      "name": "exception",
+      "source": "pub fn main() {\n  panic as \"failure\"\n}\n",
+      "verdict": "RE"
+    },
+    {
+      "name": "timeout",
+      "source": "fn spin(n: Int) -> Int {\n  spin(n + 1)\n}\n\npub fn main() {\n  spin(0)\n}\n",
+      "verdict": "TLE"
+    },
+    {
+      "name": "output",
+      "source": "import gleam/io\nimport gleam/string\n\n// Each write to standard output costs about 50 microseconds, so write 64 KiB at a time.\npub fn main() {\n  write(string.repeat(\"x\", 65_535))\n}\n\nfn write(line: String) -> Nil {\n  io.println(line)\n  write(line)\n}\n",
+      "verdict": "OLE",
+      "timeLimitMs": 5000
+    },
+    {
+      "name": "memory",
+      "source": "// Each 16 MiB binary stays referenced from the list, so memory grows until the limit.\n// Copying 64 bytes 262144 times fills 16 MiB quickly; one byte at a time is 60 times slower.\n@external(erlang, \"binary\", \"copy\")\nfn copy(bytes: BitArray, times: Int) -> BitArray\n\nfn grow(blocks: List(BitArray)) -> List(BitArray) {\n  grow([copy(<<1:size(512)>>, 262_144), ..blocks])\n}\n\npub fn main() {\n  grow([])\n}\n",
+      "verdict": "MLE"
+    },
+    {
+      "name": "libraries",
+      "source": "import bidict\nimport bigdecimal\nimport bitsandbobs/bitwise\nimport dijkstra\nimport gleam/deque\nimport gleam/dict\nimport gleam/int\nimport gleam/io\nimport gleam/order\nimport gleam/regexp\nimport gleam/yielder\nimport gleam_community/maths\nimport gleamy/priority_queue\nimport glearray\nimport ieee_float\nimport iv\nimport stdin\nimport trie\n\npub fn main() {\n  let assert Ok(2) = bidict.from_list([#(1, 2)]) |> bidict.get_a(1)\n  let assert Ok(half) = bigdecimal.from_string(\"1.5\")\n  let assert Ok(three) = bigdecimal.from_string(\"3\")\n  let assert order.Eq = bigdecimal.compare(bigdecimal.add(half, half), three)\n  let assert <<6>> = bitwise.and(<<7>>, <<14>>)\n  let edges = fn(node) {\n    case node {\n      1 -> dict.from_list([#(2, 1), #(3, 5)])\n      2 -> dict.from_list([#(3, 1)])\n      _ -> dict.new()\n    }\n  }\n  let assert #([1, 2, 3], 2) =\n    dijkstra.dijkstra(edges, 1) |> dijkstra.shortest_path(3)\n  let assert 6 = maths.lcm(2, 3)\n  let assert Ok(#(1, _)) = deque.from_list([1, 2]) |> deque.pop_front\n  let assert Ok(pattern) = regexp.from_string(\"b+\")\n  let assert [regexp.Match(content: \"bbb\", ..)] = regexp.scan(pattern, \"abbbc\")\n  let assert Ok(#(1, _)) =\n    priority_queue.from_list([3, 1, 2], int.compare) |> priority_queue.pop\n  let assert Ok(20) = glearray.from_list([10, 20]) |> glearray.get(1)\n  let assert Ok(1.5) =\n    ieee_float.finite(1.5)\n    |> ieee_float.to_bytes_64_le\n    |> ieee_float.from_bytes_64_le\n    |> ieee_float.to_finite\n  let assert Ok(30) = iv.from_list([10, 20, 30]) |> iv.get(2)\n  let assert Ok(1) =\n    trie.new() |> trie.insert(at: [1, 2], value: 1) |> trie.get(at: [1, 2])\n  // Building the yielder reads nothing; this fixture also runs as an interactor, whose stdin stays open.\n  let assert [] = stdin.read_lines() |> yielder.take(0) |> yielder.to_list\n  io.println(int.to_string(1 + 2))\n}\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "cleanup",
+      "source": "import gleam/dynamic.{type Dynamic}\nimport gleam/io\n\n@external(erlang, \"filelib\", \"is_file\")\nfn is_file(path: String) -> Bool\n\n@external(erlang, \"file\", \"write_file\")\nfn write_file(path: String, data: String) -> Dynamic\n\npub fn main() {\n  let assert False = is_file(\"marker\")\n  let _ = write_file(\"marker\", \"x\")\n  let assert True = is_file(\"marker\")\n  io.println(\"3\")\n}\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "interactive",
+      "source": "import gleam/int\nimport gleam/io\nimport gleam/string\nimport gleam/yielder\nimport stdin\n\n// Erlang writes standard output without buffering, so each question is out before the answer is read.\npub fn main() {\n  ask(stdin.read_lines(), 10)\n}\n\nfn ask(lines: yielder.Yielder(String), n: Int) -> Nil {\n  case n < 12 {\n    False -> Nil\n    True -> {\n      io.println(int.to_string(n))\n      let assert yielder.Next(line, rest) = yielder.step(lines)\n      let assert Ok(x) = int.parse(string.trim(line))\n      let assert True = x == 2 * n\n      ask(rest, n + 1)\n    }\n  }\n}\n",
+      "verdict": "AC",
+      "input": "20\n22\n",
+      "output": "10\n11\n"
+    },
+    {
+      "name": "response",
+      "source": "import gleam/int\nimport gleam/io\nimport gleam/string\nimport gleam/yielder\nimport stdin\n\n// The yielder reads a line only when the next one is needed, so each answer goes out before the next question.\npub fn main() {\n  stdin.read_lines()\n  |> yielder.take(2)\n  |> yielder.each(fn(line) {\n    let assert Ok(n) = int.parse(string.trim(line))\n    io.println(int.to_string(2 * n))\n  })\n}\n",
+      "verdict": "AC",
+      "input": "10\n11\n",
+      "output": "20\n22\n"
+    },
+    {
+      "name": "args",
+      "source": "import gleam/dynamic.{type Dynamic}\nimport gleam/io\nimport gleam/list\n\n// A submission gets no arguments; judge code gets its files after -extra, the test input first.\n@external(erlang, \"init\", \"get_plain_arguments\")\nfn plain_arguments() -> List(Dynamic)\n\n@external(erlang, \"unicode\", \"characters_to_binary\")\nfn to_string(characters: Dynamic) -> String\n\n@external(erlang, \"file\", \"read_file\")\nfn read_file(path: String) -> Result(BitArray, Dynamic)\n\npub fn main() {\n  case list.map(plain_arguments(), to_string) {\n    [] -> Nil\n    [input, ..] -> {\n      let assert \"/box/test-input\" = input\n      let assert Ok(_) = read_file(input)\n      Nil\n    }\n  }\n  io.println(\"3\")\n}\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "recursion",
+      "source": "import gleam/io\n\n// Not a tail call: every level waits for the sum below it, so 10^6 frames are live at once.\nfn sum_to(n: Int) -> Int {\n  case n {\n    0 -> 0\n    _ -> n + sum_to(n - 1)\n  }\n}\n\npub fn main() {\n  let assert 500_000_500_000 = sum_to(1_000_000)\n  io.println(\"3\")\n}\n",
+      "verdict": "AC"
+    }
+  ],
+  "fix16-isolate": [
+    {
+      "name": "stdin",
+      "source": "module Main;\n\n// Reads all of standard input and prints the sum of the integers on it.\nmain : IO ();\nmain = (\n    let text = *read_string(stdin).try(exit_with_msg(1));\n    let words = text.split(\" \").map(strip_spaces).filter(|word| word != \"\");\n    println(words.fold(0, |word, sum| sum + from_string(word).as_ok).to_string)\n);\n",
+      "verdict": "AC",
+      "input": "1 2\n"
+    },
+    {
+      "name": "wrong",
+      "source": "module Main;\n\nmain : IO ();\nmain = println(\"4\");\n",
+      "verdict": "WA"
+    },
+    {
+      "name": "syntax",
+      "source": "module Main;\n\nmain : IO ();\nmain = (\n",
+      "verdict": "CE"
+    },
+    {
+      "name": "exception",
+      "source": "module Main;\n\nmain : IO ();\nmain = undefined(\"failure\");\n",
+      "verdict": "RE"
+    },
+    {
+      "name": "timeout",
+      "source": "module Main;\n\nmain : IO ();\nmain = println((loop(0, |i| continue $ i + 1) : I64).to_string);\n",
+      "verdict": "TLE"
+    },
+    {
+      "name": "output",
+      "source": "module Main;\n\nmain : IO ();\nmain = loop_m((), |_| println(\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\");; continue_m $ ());\n",
+      "verdict": "OLE",
+      "timeLimitMs": 5000
+    },
+    {
+      "name": "memory",
+      "source": "module Main;\n\n// Every 32 MiB array stays reachable from the loop's state, so memory grows until the limit.\nmain : IO ();\nmain = (\n    let blocks : Array (Array I64) = loop(([], 0), |(blocks, i)|\n        continue $ (blocks.push_back(Array::fill(4194304, i)), i + 1)\n    );\n    println(blocks.@size.to_string)\n);\n",
+      "verdict": "MLE"
+    },
+    {
+      "name": "libraries",
+      "source": "module Main;\n\nimport BinaryHeap;\nimport BoolArray;\nimport CPLib.UnionFind;\nimport Character;\nimport GMP.Z;\nimport Hash;\nimport HashMap;\nimport HashSet;\nimport Math;\nimport Minilib.Collection.Deque;\nimport Minilib.Comonad.Store;\nimport Minilib.Crypto.SHA256;\nimport Minilib.Encoding.Base64;\nimport Minilib.Math.BigInt;\nimport Minilib.Monad.State;\nimport Minilib.Random.XorShift;\nimport Minilib.Text.Hex;\nimport Minilib.Text.SimpleParser;\nimport Minilib.Text.StringEx;\nimport Minilib.Trait.Rng;\nimport Random;\nimport RingBuffer;\nimport Time;\n\n// Uses each library but minilib-json, minilib-xml and minilib-app, which compile slowly and have fixtures of their own.\n// It reads no input: it also runs as an interactor, whose standard input stays open.\ncheck : String -> Bool -> IO ();\ncheck = |name, ok| assert(|_| name, ok);\n\nmain : IO ();\nmain = (\n    check(\"binary-heap\", [3, 1, 2].to_iter.fold(MinBinaryHeap::empty, BinaryHeap::push).get_top == some(1));;\n    check(\"bool-array\", BoolArray::fill(8, false).set(3, true).@(3));;\n    check(\"cp-library\", UnionFind::create(3).unite(0, 1).is_united(0, 1).@1);;\n    check(\"character\", Character::is_digit('7'));;\n    check(\"gmp-fix\", (MPZ::mpz(6) * MPZ::mpz(7)).to_string == \"42\");;\n    check(\"hash\", Hash::combine_hash(1_U64, 2_U64) == Hash::combine_hash(1_U64, 2_U64));;\n    check(\"hashmap\", HashMap::empty(0).HashMap::insert(1, 2).HashMap::find(1) == some(2));;\n    check(\"hashset\", HashSet::empty(0).HashSet::insert(3).HashSet::contains(3));;\n    check(\"math\", Math::floor(2.5) == 2.0);;\n    check(\"minilib-collection\", Deque::empty(0).push_back(1).push_back(2).get_front == some(1));;\n    check(\"minilib-comonad\", Minilib.Comonad.Store::store((1, |p| p * 3)).peek(2) == 6);;\n    check(\"minilib-crypto\", Minilib.Crypto.SHA256::digest(\"abc\".get_bytes.pop_back).@size == 32);;\n    check(\"minilib-binary\", base64_encode(\"abc\".get_bytes.pop_back) == \"YWJj\" && to_string_hex(255_U8) == \"ff\");;\n    check(\"minilib-math\", (BigInt::from_I64(3) * BigInt::from_I64(4)).to_string == \"12\");;\n    check(\"minilib-monad\", run_state(1, Minilib.Monad.State::state(|s| (s + 1, s * 2))) == (2, 2));;\n    let xor_shift = XorShift::init_by_seed(1_U64);\n    check(\"minilib-random\", xor_shift.rng_U64.@data.@1 == xor_shift.rng_U64.@data.@1);;\n    check(\"minilib-text\", eval_parser_str(\"42\", match_integer) == ok(42));;\n    check(\"minilib-common\", Minilib.Text.StringEx::to_upper(\"abc\") == \"ABC\");;\n    check(\"random\", Random::init_by_seed(1_U64).generate_U64.@1 == Random::init_by_seed(1_U64).generate_U64.@1);;\n    check(\"ring-buffer\", RingBuffer::create([1, 2]).push_back(3).get_back == some(3));;\n    check(\"time\", (*Time::get_now).@sec > 0);;\n    println(\"3\")\n);\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "libraries-json",
+      "source": "module Main;\n\nimport Minilib.Encoding.Json;\nimport Minilib.Encoding.Json.JsonDecoder;\nimport Minilib.Encoding.Json.JsonEncoder;\n\n// A program that uses minilib-json takes about 8 s to compile, so the other libraries are in fixtures of their own.\nmain : IO ();\nmain = (\n    assert(|_| \"minilib-json\", encode(JsonDecoder::decode(\"[1,2]\").as_ok) == \"[1,2]\");;\n    println(\"3\")\n);\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "libraries-xml",
+      "source": "module Main;\n\nimport Minilib.Encoding.Xml;\nimport Minilib.Encoding.Xml.XmlParser;\n\n// A program that uses minilib-xml takes about 6 s to compile, so the other libraries are in fixtures of their own.\nmain : IO ();\nmain = (\n    assert(|_| \"minilib-xml\", parse_element_from_string(\"<a>3</a>\").is_ok);;\n    println(\"3\")\n);\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "libraries-app",
+      "source": "module Main;\n\nimport Minilib.App.Clap;\n\n// A program that uses minilib-app takes about 8 s to compile, so the other libraries are in fixtures of their own.\n// The arguments are given here: judge code gets files as its own.\nmain : IO ();\nmain = (\n    let command = Command::new(\"judge\").arg(Arg::new(\"n\").long(\"n\").takes_value);\n    assert(|_| \"minilib-app\", command.get_matches_from([\"judge\", \"--n\", \"3\"]).as_ok.get_one(\"n\") == some(\"3\"));;\n    println(\"3\")\n);\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "cleanup",
+      "source": "module Main;\n\nmain : IO ();\nmain = (\n    assert(|_| \"marker exists\", (*read_file_string(\"marker\").to_result).is_err);;\n    write_file_string(\"marker\", \"x\").try(exit_with_msg(1));;\n    println(\"3\")\n);\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "interactive",
+      "source": "module Main;\n\n// Standard output goes to a pipe, which the C library buffers: flush each question before reading the answer.\nmain : IO ();\nmain = loop_m(10, |n| (\n    if n == 12 { break_m $ () };\n    println(n.to_string);;\n    stdout.flush;;\n    let line = *read_line(stdin).try(exit_with_msg(1));\n    assert(|_| \"wrong answer\", from_string(line.strip_spaces) == ok(2 * n));;\n    continue_m $ n + 1\n));\n",
+      "verdict": "AC",
+      "input": "20\n22\n",
+      "output": "10\n11\n"
+    },
+    {
+      "name": "response",
+      "source": "module Main;\n\nmain : IO ();\nmain = loop_m(0, |i| (\n    if i == 2 { break_m $ () };\n    let line = *read_line(stdin).try(exit_with_msg(1));\n    let n : I64 = from_string(line.strip_spaces).as_ok;\n    println((2 * n).to_string);;\n    stdout.flush;;\n    continue_m $ i + 1\n));\n",
+      "verdict": "AC",
+      "input": "10\n11\n",
+      "output": "20\n22\n"
+    },
+    {
+      "name": "args",
+      "source": "module Main;\n\n// A submission gets no arguments; judge code gets its files, the test input first. get_args starts with the program.\nread_test_input : Array String -> IO ();\nread_test_input = |args| (\n    if args.@size == 1 { pure() };\n    assert(|_| \"unexpected first argument\", args.@(1) == \"/box/test-input\");;\n    let _ = *read_file_string(args.@(1)).try(exit_with_msg(1));\n    pure()\n);\n\nmain : IO ();\nmain = (\n    read_test_input(*get_args);;\n    println(\"3\")\n);\n",
+      "verdict": "AC"
+    },
+    {
+      "name": "recursion",
+      "source": "module Main;\n\n// Not a tail call: every level looks at the sum below it before adding to it, so 10^6 frames are live at once.\n// (LLVM turns a plain n + sum_to(n - 1) into a loop.)\nsum_to : I64 -> I64;\nsum_to = |n| (\n    if n == 0 { 0 } else {\n        let below = sum_to(n - 1);\n        if below < 0 { below } else { below + n }\n    }\n);\n\nmain : IO ();\nmain = (\n    assert_eq(|_| \"wrong sum\", sum_to(1000000), 500000500000);;\n    println(\"3\")\n);\n",
+      "verdict": "AC"
+    }
+  ],
   "javascript-node24-isolate": [
     {
       "name": "stdin",

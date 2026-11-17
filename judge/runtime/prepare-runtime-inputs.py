@@ -69,6 +69,10 @@ if __name__ == '__main__':
         LOCK = HERE / ('runtime-addition-sources.lock.json' if args.additions else 'runtime-extension-sources.lock.json')
         DEST = HERE.parent / ('.build/addition-inputs' if args.additions else '.build/extension-inputs')
     manifest = sources() if args.lock else json.loads(LOCK.read_text())
+    if args.additions:
+        # F# takes its compiler from the SDK archive C# was built from; that lock stays its only pin.
+        extensions = json.loads((HERE / 'runtime-extension-sources.lock.json').read_text())
+        manifest['files']['dotnet.tar.gz'] = extensions['files']['dotnet.tar.gz']
     if not args.lock and any(len(entry.get('sha256', '')) != 64 for entry in manifest['files'].values()):
         parser.error('every locked input must have a SHA-256 checksum')
     DEST.mkdir(parents=True, exist_ok=True)

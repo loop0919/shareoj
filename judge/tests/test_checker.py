@@ -156,10 +156,11 @@ class CheckerTests(unittest.TestCase):
                 box.mkdir()
                 artifact = root / 'checker'
                 artifact.write_bytes(b'compiled checker')
-                (root / 'dotnet-libs').mkdir()
+                files_root = root / runtime.get('files_root', 'dotnet-libs')
+                files_root.mkdir()
                 (root / 'deno-deps/cache').mkdir(parents=True)
                 for filename in runtime.get('files', []):
-                    (root / 'dotnet-libs' / filename).write_bytes(b'operator library')
+                    (files_root / filename).write_bytes(b'operator library')
                 meta = root / 'meta'
                 commands = []
                 def invoke(args, timeout=10):

@@ -26,6 +26,10 @@
 | Go 1.27 | Go 1.27.1 | `go127` |
 | Goose 2026.3 | Goose v2026.3 / GCC 16.2.0 | `goose20263` |
 | Haskell (GHC 9.10 LTS) | GHC 9.10.3 / Stackage LTS 24系列 | `haskell-ghc910` |
+| Common Lisp (SBCL 2.6) | SBCL 2.6.10 | `commonlisp-sbcl26` |
+| F# 10 (.NET 10) | .NET 10.0.12 / SDK 10.0.401 | `fsharp10` |
+| Gleam 1.19 (Erlang/OTP 29) | Gleam 1.19.2 / Erlang/OTP 29.1.2 | `gleam119` |
+| Fix 1.6 | Fix 1.6.1 / GCC 16.2.0 | `fix16` |
 | JavaScript (Node.js 24 LTS) | Node.js 24.21.0 LTS | `javascript-node24` |
 | TypeScript (Node.js 24 LTS) | Node.js 24.21.0 LTS / TypeScript 7.0.2 | `typescript-node24` |
 | JavaScript (Deno 2.9) | Deno 2.9.7 | `javascript-deno29` |
@@ -47,6 +51,33 @@ CとC++は`main`関数、Rustは`fn main()`を含めてください。
 Javaは`Main`クラスの`public static void main(String[] args)`から実行します。 C#は`static void Main()`またはトップレベルステートメント、Goは`package main`と`func main()`、Haskellは`main :: IO ()`を含めてください。 C#のusingはソースに記述してください。プロジェクトファイルやモジュール定義の提出は不要です。
 
 Gooseは`fn main()`を含めてください。 標準入力は`import os;`で使える`read_stdin`や`read_line`で読み、インタラクティブ問題では`flush_stdout()`でフラッシュしてください。 整数の桁あふれは検査せずに折り返します。 使えるのは標準ライブラリだけで、gitから取得するパッケージには対応していません。
+
+Common Lispはソースのトップレベルのフォームを上から順に実行します。
+インタラクティブ問題では出力のたびに`(finish-output)`でフラッシュしてください。
+捕捉しなかったエラーはデバッガーに入らずに:RE:になります。
+制御スタックは512 MBあり、$10^6$段の再帰も動きます。
+
+F#はトップレベルのコードを上から順に実行します。
+`[<EntryPoint>]`を付けた関数から始めることもできます。
+`printfn`は書くたびにフラッシュするので、インタラクティブ問題でもそのまま使えます。
+`StreamWriter`などで出力をためるときは、次の入力を読む前に`Flush()`を呼んでください。
+GCのヒープはC#と同じくメモリ上限の3/8（512 MiBなら192 MiB）までで、超えると:MLE:ではなく:RE:になります。
+コンパイルにはHello Worldでも数秒かかります。
+
+Gleamはモジュール名が`main`になるので、`pub fn main()`を含めてください。
+標準入力は`stdin.read_lines()`と`gleam/yielder`で読めます。
+`stdin.read_lines()`は1行ずつ読むので遅く、行数の多い入力では時間制限を超えることがあります。
+速く読むには、`@external(erlang, "io", "get_chars")`で標準入力をまとめて読み、`string.split`で分けてください。
+`io.println`も呼ぶたびに時間がかかるので、行が多いときは`string.join`でつないで1回で出力してください。
+インタラクティブ問題ではフラッシュは不要です。
+実行のたびにErlangの起動だけで約0.15秒のCPU時間を使います。
+
+Fixは`module Main;`と`main : IO ();`を含めてください。
+標準入力は`read_line(stdin)`や`read_string(stdin)`、cp-libraryの`CPLib.IO`で読めます。
+インタラクティブ問題では出力のたびに`stdout.flush`でフラッシュしてください。
+最適化は`-O max`です。
+配列の範囲外アクセスや`undefined`の呼び出しは:RE:になります。
+整数の桁あふれは検査せずに折り返します。
 
 CPythonとPyPyは実行前に構文検査を行います。 Codonはネイティブコードへコンパイルする環境で、利用できるのはCodonが対応するPythonの機能です。 CPython連携やPyPIパッケージの追加には対応していません。
 
@@ -110,6 +141,18 @@ output only問題の答えの提出に使います。
 - Haskell (GHC 9.10 LTS)
   - コンパイル: `ghc -O2 -threaded -rtsopts Main.hs -o main`
   - 実行: `./main +RTS -N1 -RTS`
+- Common Lisp (SBCL 2.6)
+  - コンパイル: `sbcl --non-interactive --eval '(compile-file "main.lisp")'`
+  - 実行: `sbcl --control-stack-size 512MB --script main.fasl`
+- F# 10 (.NET 10)
+  - コンパイル: `fsc --optimize+ --target:exe --out:main.dll main.fs`
+  - 実行: `dotnet main.dll`
+- Gleam 1.19 (Erlang/OTP 29)
+  - コンパイル: `gleam build`
+  - 実行: `gleam run -m main`
+- Fix 1.6
+  - コンパイル: `fix build -f main.fix -O max -o main`
+  - 実行: `./main`
 - JavaScript (Node.js 24 LTS)
   - 構文検査: `node --check main.js`
   - 実行: `node main.js`
@@ -195,6 +238,18 @@ output only問題の答えの提出に使います。
 - Haskell (GHC 9.10 LTS)
   - コンパイル: `/opt/judge-runtimes/ghc/bin/ghc -O2 -threaded -rtsopts -j1 -L/opt/judge-runtimes/addition-native/lib @/opt/judge-runtimes/haskell-deps/compile.args /box/Main.hs -o /box/main`
   - 実行: `/box/main +RTS -N1 -RTS`
+- Common Lisp (SBCL 2.6)
+  - コンパイル: `/opt/judge-runtimes/sbcl/bin/sbcl-judge --script /opt/judge-runtimes/sbcl/compile.lisp /box/main.lisp /box/main`
+  - 実行: `/opt/judge-runtimes/sbcl/bin/sbcl-judge --script /box/main`
+- F# 10 (.NET 10)
+  - コンパイル: `/opt/judge-runtimes/dotnet/dotnet /opt/judge-runtimes/fsharp-tools/fsc.dll @/opt/judge-runtimes/fsharp-tools/compile.args`
+  - 実行: `/opt/judge-runtimes/dotnet/dotnet /box/main.dll`
+- Gleam 1.19 (Erlang/OTP 29)
+  - コンパイル: `/usr/bin/sh /opt/judge-runtimes/gleam/compile.sh`
+  - 実行: `/opt/judge-runtimes/erlang/bin/erl +S 1:1 +SDcpu 1:1 +SDio 1 +A 1 +sbwt none +sbwtdcpu none +sbwtdio none -mode minimal -boot no_dot_erlang +JMsingle true +P 262144 +MMmcs 1 -noshell -pa /box -pa /opt/judge-runtimes/gleam-project/ebin -eval 'judge@@main:run(main)' -extra`
+- Fix 1.6
+  - コンパイル: `/usr/bin/sh /opt/judge-runtimes/fix/compile.sh`
+  - 実行: `/box/main`
 - JavaScript (Node.js 24 LTS)
   - 構文検査: `/opt/judge-runtimes/node/bin/node --check /box/main.js`
   - 実行: `/opt/judge-runtimes/node/bin/node /box/main.js`
@@ -395,6 +450,99 @@ Nimのメモリ管理は`refc`です。bignumとそのGMPバインディング�
 | witherable | 0.5 | `import Witherable` | [Hackage](https://hackage.haskell.org/package/witherable) |
 
 GHC付属のパッケージ（`containers`、`bytestring`、`text`など）はGHC 9.10.3の版を使えます。 依存関係は設定済みで、`.cabal`ファイルの提出は不要です。
+
+### Common Lisp
+
+| ライブラリ | バージョン | 読み込み例 | リンク |
+| --- | --- | --- | --- |
+| cl-ppcre | Quicklisp 2026-01-01 | `cl-ppcre:scan` | [GitHub](https://github.com/edicl/cl-ppcre) |
+| gsll | Quicklisp 2026-01-01 | `gsll:cylindrical-bessel-j0` | [GitLab](https://gitlab.common-lisp.net/antik/gsll) |
+| iterate | Quicklisp 2026-01-01 | `iterate:iter` | [GitLab](https://gitlab.common-lisp.net/iterate/iterate) |
+| pileup | Quicklisp 2026-01-01 | `pileup:make-heap` | [GitHub](https://github.com/nikodemus/pileup) |
+| queues | Quicklisp 2026-01-01 | `queues:make-queue` | [GitHub](https://github.com/oconnore/queues) |
+| str | Quicklisp 2026-01-01 | `str:join` | [GitHub](https://github.com/vindarel/cl-str) |
+| trees | Quicklisp 2026-01-01 | `trees:make-binary-tree` | [GitHub](https://github.com/froydnj/trees) |
+| trivia | Quicklisp 2026-01-01 | `trivia:match` | [GitHub](https://github.com/guicho271828/trivia) |
+| sb-gmp | SBCL 2.6.10付属 | `sb-gmp:mpz-mul` | [公式サイト](https://www.sbcl.org/) |
+| sb-queue | SBCL 2.6.10付属 | `sb-queue:make-queue` | [公式サイト](https://www.sbcl.org/) |
+| sb-rotate-byte | SBCL 2.6.10付属 | `sb-rotate-byte:rotate-byte` | [公式サイト](https://www.sbcl.org/) |
+| sb-simd | SBCL 2.6.10付属 | `sb-simd:f64+` | [公式サイト](https://www.sbcl.org/) |
+
+ライブラリは読み込み済みで、`cl-ppcre:scan`のようにそのまま使えます。
+`ql:quickload`はないので、書くと:CE:になります。
+fast-generic-functionsはSBCL 2.6.10で読み込めないため入れていません。
+sb-mpfrは必要なMPFRがないため入れていません。
+
+### F# 10
+
+| ライブラリ | バージョン | 読み込み例 | リンク |
+| --- | --- | --- | --- |
+| FSharpPlus | 1.9.1 | `open FSharpPlus` | [NuGet](https://www.nuget.org/packages/FSharpPlus) |
+| FSharpx.Collections | 3.1.0 | `open FSharpx.Collections` | [NuGet](https://www.nuget.org/packages/FSharpx.Collections) |
+| FSharpx.Extras | 3.3.0 | `open FSharpx` | [NuGet](https://www.nuget.org/packages/FSharpx.Extras) |
+| FsToolkit.ErrorHandling | 5.2.0 | `open FsToolkit.ErrorHandling` | [NuGet](https://www.nuget.org/packages/FsToolkit.ErrorHandling) |
+| MathNet.Numerics | 5.0.0 | `open MathNet.Numerics` | [NuGet](https://www.nuget.org/packages/MathNet.Numerics) |
+| MathNet.Numerics.FSharp | 5.0.0 | `open MathNet.Numerics.LinearAlgebra` | [NuGet](https://www.nuget.org/packages/MathNet.Numerics.FSharp) |
+| ac-library-csharp | 4.1.4 | `open AtCoder` | [NuGet](https://www.nuget.org/packages/ac-library-csharp) |
+
+ライブラリは参照済みで、プロジェクトファイルの提出は不要です。
+MathNet.Numericsとac-library-csharpはC#と同じ版です。
+
+### Gleam
+
+| ライブラリ | バージョン | 読み込み例 | リンク |
+| --- | --- | --- | --- |
+| bidict | 1.0.0 | `import bidict` | [Hex](https://hex.pm/packages/bidict) |
+| bigdecimal | 1.4.0 | `import bigdecimal` | [Hex](https://hex.pm/packages/bigdecimal) |
+| bitsandbobs | 1.1.0 | `import bitsandbobs/bitwise` | [Hex](https://hex.pm/packages/bitsandbobs) |
+| dijkstra | 1.0.0 | `import dijkstra` | [Hex](https://hex.pm/packages/dijkstra) |
+| gleam_community_maths | 2.0.1 | `import gleam_community/maths` | [Hex](https://hex.pm/packages/gleam_community_maths) |
+| gleam_deque | 1.0.0 | `import gleam/deque` | [Hex](https://hex.pm/packages/gleam_deque) |
+| gleam_regexp | 1.1.1 | `import gleam/regexp` | [Hex](https://hex.pm/packages/gleam_regexp) |
+| gleam_stdlib | 0.71.0 | `import gleam/list` | [Hex](https://hex.pm/packages/gleam_stdlib) |
+| gleam_yielder | 1.1.0 | `import gleam/yielder` | [Hex](https://hex.pm/packages/gleam_yielder) |
+| gleamy_structures | 1.3.0 | `import gleamy/priority_queue` | [Hex](https://hex.pm/packages/gleamy_structures) |
+| glearray | 2.1.2 | `import glearray` | [Hex](https://hex.pm/packages/glearray) |
+| ieee_float | 1.6.0 | `import ieee_float` | [Hex](https://hex.pm/packages/ieee_float) |
+| iv | 1.4.4 | `import iv` | [Hex](https://hex.pm/packages/iv) |
+| stdin | 2.0.2 | `import stdin` | [Hex](https://hex.pm/packages/stdin) |
+| trie_again | 1.1.4 | `import trie` | [Hex](https://hex.pm/packages/trie_again) |
+
+依存関係は設定済みで、`gleam.toml`の提出は不要です。
+stdinが1.0未満のgleam_stdlibにしか対応していないため、gleam_stdlibは0.71.0です。
+
+### Fix
+
+| ライブラリ | バージョン | 読み込み例 | リンク |
+| --- | --- | --- | --- |
+| binary-heap | 0.2.1 | `import BinaryHeap;` | [GitHub](https://github.com/tttmmmyyyy/fixlang-binary-heap) |
+| bool-array | 0.2.0 | `import BoolArray;` | [GitHub](https://github.com/tttmmmyyyy/bool-array) |
+| character | 1.0.1 | `import Character;` | [GitHub](https://github.com/tttmmmyyyy/fixlang-character) |
+| cp-library | 0.16.0 | `import CPLib.UnionFind;` | [GitHub](https://github.com/tttmmmyyyy/cp-library) |
+| gmp-fix | 0.12.0 | `import GMP.Z;` | [GitHub](https://github.com/tttmmmyyyy/fixlang-gmp) |
+| hash | 1.1.3 | `import Hash;` | [GitHub](https://github.com/tttmmmyyyy/fixlang-hash) |
+| hashmap | 2.2.0 | `import HashMap;` | [GitHub](https://github.com/tttmmmyyyy/fixlang-hashmap) |
+| hashset | 2.1.0 | `import HashSet;` | [GitHub](https://github.com/tttmmmyyyy/fixlang-hashset) |
+| math | 2.0.2 | `import Math;` | [GitHub](https://github.com/tttmmmyyyy/fixlang-math) |
+| random | 1.1.3 | `import Random;` | [GitHub](https://github.com/tttmmmyyyy/fixlang-random) |
+| ring-buffer | 0.1.2 | `import RingBuffer;` | [GitHub](https://github.com/tttmmmyyyy/ring-buffer) |
+| time | 2.0.1 | `import Time;` | [GitHub](https://github.com/tttmmmyyyy/fixlang-time) |
+| minilib-app | 0.9.0 | `import Minilib.App.Clap;` | [GitHub](https://github.com/pt9999/fixlang-minilib-app) |
+| minilib-binary | 0.8.0 | `import Minilib.Encoding.Base64;` | [GitHub](https://github.com/pt9999/fixlang-minilib-binary) |
+| minilib-collection | 0.10.0 | `import Minilib.Collection.TreeMap;` | [GitHub](https://github.com/pt9999/fixlang-minilib-collection) |
+| minilib-common | 0.15.2 | `import Minilib.Text.StringEx;` | [GitHub](https://github.com/pt9999/fixlang-minilib-common) |
+| minilib-comonad | 0.8.0 | `import Minilib.Comonad.Store;` | [GitHub](https://github.com/pt9999/fixlang-minilib-comonad) |
+| minilib-crypto | 0.8.0 | `import Minilib.Crypto.SHA256;` | [GitHub](https://github.com/pt9999/fixlang-minilib-crypto) |
+| minilib-json | 0.8.0 | `import Minilib.Encoding.Json;` | [GitHub](https://github.com/pt9999/fixlang-minilib-json) |
+| minilib-math | 0.10.0 | `import Minilib.Math.BigInt;` | [GitHub](https://github.com/pt9999/fixlang-minilib-math) |
+| minilib-monad | 0.13.0 | `import Minilib.Monad.State;` | [GitHub](https://github.com/pt9999/fixlang-minilib-monad) |
+| minilib-random | 0.9.0 | `import Minilib.Random.XorShift;` | [GitHub](https://github.com/pt9999/fixlang-minilib-random) |
+| minilib-text | 0.11.1 | `import Minilib.Text.SimpleParser;` | [GitHub](https://github.com/pt9999/fixlang-minilib-text) |
+| minilib-xml | 0.8.0 | `import Minilib.Encoding.Xml;` | [GitHub](https://github.com/pt9999/fixlang-minilib-xml) |
+
+依存関係は設定済みで、`fixproj.toml`の提出は不要です。
+minilib-json、minilib-xml、minilib-appを使うと、コンパイルが数秒長くなります。
+regexpは、使うプログラムのコンパイルに上限の30秒近くかかるため入れていません。
 
 ### JavaScriptとTypeScript
 

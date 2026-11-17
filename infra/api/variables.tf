@@ -129,7 +129,8 @@ variable "judge_enabled_runtimes" {
     condition = alltrue([for id in var.judge_enabled_runtimes : contains([
       "cpp17", "c23-gcc", "c23-clang", "cpp23-gcc", "cpp23-clang", "python314", "pypy311", "codon020", "rust2024", "java24",
       "java25", "csharp14", "nim22", "go127", "goose20263",
-      "haskell-ghc910", "javascript-node24", "typescript-node24", "javascript-deno29", "typescript-deno29", "javascript-bun14", "typescript-bun14", "ruby40", "ruby-truffle40",
+      "haskell-ghc910", "commonlisp-sbcl26", "fsharp10", "gleam119", "fix16",
+      "javascript-node24", "typescript-node24", "javascript-deno29", "typescript-deno29", "javascript-bun14", "typescript-bun14", "ruby40", "ruby-truffle40",
       "clay20250308", "dc152", "nibbles101", "brainfuck-tritium", "whitespace13", "text"
     ], id)])
     error_message = "Unknown judge runtime."

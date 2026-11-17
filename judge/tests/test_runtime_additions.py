@@ -1,3 +1,4 @@
+import json
 import sys
 import subprocess
 import tempfile
@@ -46,6 +47,127 @@ with open(sys.argv[1], 'wb', buffering=0) as file:
         self.assertIn('--standalone', compile)
         self.assertEqual(compile[compile.index('--cc') + 1], '/opt/judge-runtimes/gcc/bin/gcc')
         self.assertEqual([env for env in runtime['env'] if env.startswith('GOOSE_HOME=')], ['GOOSE_HOME=/box/goose-home'])
+
+    def test_sbcl_compiles_and_runs_with_the_preloaded_image(self):
+        runtime = RUNTIMES['commonlisp-sbcl26-isolate']
+        self.assertEqual(runtime['source'], 'main.lisp')
+        self.assertEqual(runtime['compile'][0], '/opt/judge-runtimes/sbcl/bin/sbcl-judge')
+        self.assertEqual(runtime['run'][0], '/opt/judge-runtimes/sbcl/bin/sbcl-judge')
+        # No init files: a submission must not depend on the operator's home.
+        self.assertFalse(any('sbclrc' in arg for arg in runtime['compile'] + runtime['run']))
+
+    def test_sbcl_collects_garbage_before_its_heap_growth_reaches_the_memory_limit(self):
+        def nursery(memory, **role):
+            args = sandbox.run_args('commonlisp-sbcl26-isolate', 1, 4, memory, **role)
+            return [int(arg.split('=')[2]) >> 20 for arg in args if arg.startswith('--env=SBCL_BYTES_CONSED_BETWEEN_GCS=')]
+        self.assertEqual(nursery(512), [51])
+        self.assertEqual(nursery(64), [6])
+        self.assertEqual(nursery(1024, compile_phase=True), [51])
+        self.assertEqual(nursery(256, interactor=True), [25])
+
+    def test_fsharp_compiles_without_msbuild_and_ships_its_core_library(self):
+        runtime = RUNTIMES['fsharp10-isolate']
+        self.assertEqual(runtime['artifact'], 'dotnet')
+        self.assertEqual(runtime['compile'][:2], ['/opt/judge-runtimes/dotnet/dotnet', '/opt/judge-runtimes/fsharp-tools/fsc.dll'])
+        self.assertEqual(runtime['run'], RUNTIMES['csharp14-isolate']['run'])
+        self.assertIn('FSharp.Core.dll', runtime['files'])
+        self.assertEqual(RUNTIMES['csharp14-isolate']['files'],
+                         ['main.runtimeconfig.json', 'main.deps.json', 'MathNet.Numerics.dll', 'ac-library-csharp.dll'])
+
+    def test_fsharp_box_gets_one_dll_per_locked_package(self):
+        # The build checks fsharp-libs against the same lock.
+        lock = Path(__file__).resolve().parents[1] / 'runtime/deps/additions/fsharp/packages.lock.json'
+        packages = json.loads(lock.read_text())['dependencies']['net10.0']
+        self.assertEqual(sorted(RUNTIMES['fsharp10-isolate']['files']),
+                         sorted(['main.runtimeconfig.json', *[name + '.dll' for name in packages]]))
+        self.assertEqual(RUNTIMES['fsharp10-isolate']['files_root'], 'fsharp-libs')
+
+    def test_dotnet_languages_share_one_sandbox_without_write_xor_execute(self):
+        # Same heap caps per role and the compiler's 256 open files. W^X would cap the JIT's code at the file size limit.
+        wx = '--env=DOTNET_EnableWriteXorExecute=0'
+        for memory, role in ((512, {}), (64, {}), (1024, dict(compile_phase=True)), (256, dict(interactor=True))):
+            with self.subTest(memory=memory, **role):
+                csharp = sandbox.run_args('csharp14-isolate', 1, 4, memory, **role)
+                self.assertIn(wx, csharp)
+                self.assertEqual(sandbox.run_args('fsharp10-isolate', 1, 4, memory, **role), csharp)
+
+    def test_gleam_runs_on_one_scheduler_without_the_gleam_cli(self):
+        runtime = RUNTIMES['gleam119-isolate']
+        self.assertEqual(runtime['compile'], ['/usr/bin/sh', '/opt/judge-runtimes/gleam/compile.sh'])
+        run = runtime['run']
+        self.assertEqual(run[0], '/opt/judge-runtimes/erlang/bin/erl')
+        for flag, value in (('+S', '1:1'), ('+SDcpu', '1:1'), ('+SDio', '1'), ('+A', '1')):
+            self.assertEqual(run[run.index(flag) + 1], value)
+        self.assertIn('-noshell', run)
+        self.assertFalse(any(arg.endswith('/gleam') for arg in run))
+
+    def test_gleam_stays_within_the_file_size_limit_and_keeps_stdin(self):
+        runtime = RUNTIMES['gleam119-isolate']
+        # The double-mapped JIT memory is a memfd that the file size limit kills with SIGXFSZ.
+        self.assertEqual(runtime['run'][runtime['run'].index('+JMsingle') + 1], 'true')
+        # A crash dump in /box could turn an RE into OLE; -noinput would cut stdin off.
+        self.assertIn('ERL_CRASH_DUMP_SECONDS=0', runtime['env'])
+        self.assertNotIn('-noinput', runtime['run'])
+
+    def test_gleam_judge_files_are_plain_arguments(self):
+        runtime = RUNTIMES['gleam119-isolate']
+        self.assertEqual(runtime['run'][-1], '-extra')
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact = root / 'artifact'
+            artifact.write_bytes(b'FOR1')
+            for files, extra in ((None, []), (dict.fromkeys(('test-input', 'expected-output', 'submission-source'), b''),
+                                              ['/box/test-input', '/box/expected-output', '/box/submission-source', '/box/score'])):
+                box = root / ('judge' if files else 'submission')
+                box.mkdir()
+                command = sandbox.prepare_program(box, runtime, artifact, files)
+                self.assertEqual(command[command.index('-extra') + 1:], extra)
+                self.assertEqual((box / 'main.beam').read_bytes(), b'FOR1')
+
+    def test_gleam_template_pins_every_listed_library(self):
+        import tomllib
+        deps = Path(__file__).resolve().parents[1] / 'runtime/deps/additions/gleam'
+        listed = tomllib.loads((deps / 'gleam.toml').read_text())['dependencies']
+        self.assertEqual(sorted(listed), ['bidict', 'bigdecimal', 'bitsandbobs', 'dijkstra', 'gleam_community_maths',
+                                          'gleam_deque', 'gleam_regexp', 'gleam_stdlib', 'gleam_yielder', 'gleamy_structures',
+                                          'glearray', 'ieee_float', 'iv', 'stdin', 'trie_again'])
+        manifest = tomllib.loads((deps / 'manifest.toml').read_text())
+        packages = {package['name']: package for package in manifest['packages']}
+        self.assertLessEqual(set(listed), set(packages))
+        for name, package in packages.items():
+            self.assertEqual(package['source'], 'hex', name)
+            self.assertRegex(package['outer_checksum'], '^[0-9A-F]{64}$', name)
+        self.assertEqual({name: value['version'] for name, value in manifest['requirements'].items()}, listed)
+
+    def test_fix_links_with_the_judge_gcc_and_builds_inside_the_box(self):
+        runtime = RUNTIMES['fix16-isolate']
+        self.assertEqual(runtime['compile'], ['/usr/bin/sh', '/opt/judge-runtimes/fix/compile.sh'])
+        self.assertEqual(runtime['run'], ['/box/main'])
+        path = next(env for env in runtime['env'] if env.startswith('PATH='))
+        self.assertEqual(path.split('=', 1)[1].split(':')[0], '/opt/judge-runtimes/gcc/bin')
+
+    def test_fix_template_pins_every_listed_library_to_a_commit(self):
+        import tomllib
+        deps = Path(__file__).resolve().parents[1] / 'runtime/deps/additions/fix'
+        project = tomllib.loads((deps / 'fixproj.toml').read_text())
+        # fix build runs a project's preliminary_commands; the template must have none of its own.
+        self.assertNotIn('preliminary_commands', project['build'])
+        self.assertEqual(project['build']['files'], ['main.fix'])
+        listed = {dep['name']: dep['version'] for dep in project['dependencies']}
+        self.assertEqual(sorted(listed), sorted(['character', 'hash', 'hashmap', 'hashset', 'math', 'random', 'time',
+            'binary-heap', 'bool-array', 'cp-library', 'ring-buffer', 'gmp-fix', *('minilib-' + name for name in (
+                'common', 'text', 'binary', 'collection', 'monad', 'comonad', 'random', 'math', 'crypto', 'app', 'json',
+                'xml'))]))
+        lock = {dep['name']: dep for dep in tomllib.loads((deps / 'fixdeps.lock').read_text())['dependencies']}
+        digests = json.loads((deps / 'fixdeps.sha256.json').read_text())
+        self.assertEqual(set(lock), set(listed))
+        self.assertEqual(set(digests), set(lock))
+        for name, version in listed.items():
+            self.assertEqual(version, '=' + lock[name]['version'], name)
+            self.assertRegex(lock[name]['git']['rev'], '^[0-9a-f]{40}$', name)
+            self.assertRegex(digests[name], '^[0-9a-f]{64}$', name)
+        # Using regexp alone takes the whole compile limit; see excluded.json.
+        self.assertEqual(list(json.loads((deps / 'excluded.json').read_text())), ['regexp'])
 
     def test_compiled_typescript_is_collected_and_keeps_javascript_suffix(self):
         runtime = RUNTIMES['typescript-node24-isolate']

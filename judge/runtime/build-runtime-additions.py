@@ -5,9 +5,12 @@ import json
 import os
 from pathlib import Path
 import re
+import resource
 import shutil
 import subprocess
 import sys
+import tomllib
+import urllib.request
 import zipfile
 
 ROOT = Path('/opt/judge-runtimes')
@@ -289,6 +292,323 @@ def goose():
         raise RuntimeError('Goose probe printed the wrong output')
 
 
+def fetch(url):
+    with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'OpenOJ-runtime-build'}),
+                                timeout=60) as response:
+        return response.read()
+
+
+def resolve_quicklisp(libraries):
+    """Each Quicklisp release the listed systems need, from the pinned dist."""
+    base = 'https://beta.quicklisp.org/dist/quicklisp/' + libraries['quicklisp'] + '/'
+    index = {name: [line.split() for line in fetch(base + name).decode().splitlines() if not line.startswith('#')]
+             for name in ('systems.txt', 'releases.txt')}
+    # systems.txt: project, system file, system, dependencies. releases.txt: project, URL, ...
+    systems = {fields[2]: fields for fields in index['systems.txt']}
+    urls = {fields[0]: fields[1] for fields in index['releases.txt']}
+    # ASDF also loads build_systems while loading the libraries (cl-unicode generates its tables).
+    lock, seen, pending = {}, set(), [*libraries['systems'], *libraries['build_systems']]
+    while pending:
+        name = pending.pop()
+        # Systems outside the dist (ASDF, SBCL's contribs) ship with SBCL.
+        if name in seen or name not in systems:
+            continue
+        seen.add(name)
+        pending += systems[name][3:]
+        project = systems[name][0]
+        lock[project] = dict(url=urls[project].replace('http://', 'https://', 1))
+    for release in lock.values():
+        release['sha256'] = hashlib.sha256(fetch(release['url'])).hexdigest()
+    return dict(sorted(lock.items()))
+
+
+def sbcl():
+    # Verify the input here too, so this step can extend an already deployed runtime tree.
+    item = json.loads((INPUT / 'sources.json').read_text())['files']['sbcl.tar.bz2']
+    with (INPUT / 'sbcl.tar.bz2').open('rb') as f:
+        if hashlib.file_digest(f, 'sha256').hexdigest() != item['sha256']:
+            raise RuntimeError('SBCL archive checksum changed')
+    target = ROOT / 'sbcl'
+    unpack('sbcl.tar.bz2', WORK / 'sbcl')
+    run('sh', 'install.sh', '--prefix=' + str(target), cwd=WORK / 'sbcl')
+    shutil.rmtree(target / 'share')
+    shutil.copy2(WORK / 'sbcl/COPYING', target / 'COPYING')
+    # Fetch each Quicklisp release by its locked URL and SHA-256; the Quicklisp client never runs.
+    libraries = json.loads((DEPS / 'sbcl/libraries.json').read_text())
+    lock = resolve_quicklisp(libraries) if RESOLVE else json.loads((DEPS / 'sbcl/quicklisp.lock.json').read_text())
+    (target / 'quicklisp.lock.json').write_text(json.dumps(lock, indent=2) + '\n')
+    # The archives keep the libraries' licences and sources beside the image built from them.
+    (target / 'sources').mkdir()
+    tree = WORK / 'sbcl-libraries'
+    tree.mkdir(exist_ok=True)
+    for project, release in lock.items():
+        archive = target / 'sources' / release['url'].rsplit('/', 1)[1]
+        archive.write_bytes(fetch(release['url']))
+        with archive.open('rb') as f:
+            if hashlib.file_digest(f, 'sha256').hexdigest() != release['sha256']:
+                raise RuntimeError('Quicklisp archive checksum changed: ' + project)
+        run('tar', '-xzf', archive, '-C', tree)
+    forms = ['(require :asdf)',
+             '(asdf:initialize-source-registry \'(:source-registry (:tree "%s/") :ignore-inherited-configuration))' % tree,
+             *['(require :%s)' % name for name in libraries['contribs']],
+             '(asdf:load-systems %s)' % ' '.join(json.dumps(name) for name in libraries['systems'])]
+    # gsll's groveller needs gcc and the GSL and libffi headers here. The image reopens libgmp, GSL and libffi
+    # by name each time it starts, so the build and every run take them from addition-native.
+    env = dict(os.environ, XDG_CACHE_HOME=str(WORK / 'sbcl-cache'), LD_LIBRARY_PATH=str(ROOT / 'addition-native/lib'))
+    # The saved image keeps these sizes; the dynamic space must exceed every memory limit so that running out is MLE.
+    run(target / 'bin/sbcl', '--dynamic-space-size', '1GB', '--control-stack-size', '512MB',
+        '--non-interactive', '--no-sysinit', '--no-userinit', *[arg for form in forms for arg in ('--eval', form)],
+        '--load', DEPS / 'sbcl/save-image.lisp', env=env)
+    shutil.copy2(DEPS / 'sbcl/compile.lisp', target / 'compile.lisp')
+    run('chmod', '-R', 'a+rX', target)
+    # Build and run a program the way submissions are, so an image that cannot compile stops here.
+    probe = WORK / 'sbcl-probe'
+    probe.mkdir(exist_ok=True)
+    judge = [target / 'bin/sbcl-judge', '--script']
+    (probe / 'main.lisp').write_text('(format t "~a~%" (+ 1 2))\n')
+    run(*judge, target / 'compile.lisp', probe / 'main.lisp', probe / 'main', env=env)
+    if subprocess.check_output([*judge, probe / 'main'], text=True, env=env) != '3\n':
+        raise RuntimeError('SBCL probe printed the wrong output')
+    # SBCL still writes a fasl after a compile-time error; compile.lisp must reject it.
+    (probe / 'error.lisp').write_text('(defmacro fails () (error "expansion"))\n(fails)\n')
+    if subprocess.run([*judge, target / 'compile.lisp', probe / 'error.lisp', probe / 'error'], env=env,
+                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+        raise RuntimeError('SBCL compiled a program with a compile-time error')
+
+
+def fsharp():
+    # C#'s pinned SDK archive; verify it here too, so this step can extend an already deployed runtime tree.
+    item = json.loads((INPUT / 'sources.json').read_text())['files']['dotnet.tar.gz']
+    with (INPUT / 'dotnet.tar.gz').open('rb') as f:
+        if hashlib.file_digest(f, 'sha256').hexdigest() != item['sha256']:
+            raise RuntimeError('.NET SDK archive checksum changed')
+    # The deployed dotnet/ has no SDK. Take only the F# compiler and the reference assemblies of the deployed runtime.
+    sdk = WORK / 'dotnet-sdk'
+    unpack('dotnet.tar.gz', sdk, strip=False)
+    compiler = sdk / 'sdk' / item['version'] / 'FSharp'
+    runtime = next((ROOT / 'dotnet/shared/Microsoft.NETCore.App').iterdir()).name
+    tools, libraries = ROOT / 'fsharp-tools', ROOT / 'fsharp-libs'
+    shutil.copytree(compiler, tools)
+    (tools / 'ref').mkdir()
+    for path in (sdk / 'packs/Microsoft.NETCore.App.Ref' / runtime / 'ref/net10.0').glob('*.dll'):
+        shutil.copy2(path, tools / 'ref')
+    # Restore the libraries by the lock with the unpacked SDK; MSBuild never runs for submissions.
+    project = WORK / 'fsharp'
+    (WORK / 'fsharp-home').mkdir(parents=True, exist_ok=True)
+    project.mkdir(exist_ok=True)
+    shutil.copyfile(DEPS / 'fsharp/main.fsproj', project / 'main.fsproj')
+    copy_lock('fsharp/packages.lock.json', project / 'packages.lock.json')
+    (project / 'main.fs').write_text('printfn "%d" 3\n')
+    env = dict(os.environ, HOME=str(WORK / 'fsharp-home'), DOTNET_CLI_TELEMETRY_OPTOUT='1', DOTNET_NOLOGO='1')
+    run(sdk / 'dotnet', 'restore', 'main.fsproj', *([] if RESOLVE else ['--locked-mode']), '--packages', WORK / 'nuget',
+        '--source', 'https://api.nuget.org/v3/index.json', cwd=project, env=env)
+    run(sdk / 'dotnet', 'build', 'main.fsproj', '--no-restore', '--disable-build-servers', '-c', 'Release',
+        '-o', WORK / 'fsharp-out', cwd=project, env=env)
+    lock = json.loads((project / 'packages.lock.json').read_text())['dependencies']['net10.0']
+    shutil.copyfile(project / 'packages.lock.json', tools / 'packages.lock.json')
+    libraries.mkdir()
+    shutil.copy2(WORK / 'fsharp-out/main.runtimeconfig.json', libraries)
+    for path in (WORK / 'fsharp-out').glob('*.dll'):
+        if path.name != 'main.dll':
+            shutil.copy2(path, libraries)
+    # runtimes.py lists one DLL per locked package; a new transitive package must be added there too.
+    if {path.stem for path in libraries.glob('*.dll')} != set(lock):
+        raise RuntimeError('F# library DLLs no longer match the locked packages')
+    # The SDK's FSharp.Core is the locked version, compiled ahead of time, so programs start faster with it.
+    if not (compiler / 'library-packs' / ('FSharp.Core.' + lock['FSharp.Core']['resolved'] + '.nupkg')).exists():
+        raise RuntimeError('The locked FSharp.Core is not the SDK version')
+    shutil.copy2(compiler / 'FSharp.Core.dll', libraries / 'FSharp.Core.dll')
+    for name in ('MathNet.Numerics.dll', 'ac-library-csharp.dll'):
+        if (libraries / name).read_bytes() != (ROOT / 'dotnet-libs' / name).read_bytes():
+            raise RuntimeError(name + ' differs from the copy C# uses')
+    (tools / 'licenses').mkdir()
+    for package in (WORK / 'nuget').iterdir():
+        for path in package.glob('*/*'):
+            if path.suffix == '.nuspec' or path.name.lower().startswith(('license', 'copying', 'notice')):
+                (tools / 'licenses' / package.name).mkdir(exist_ok=True)
+                shutil.copy2(path, tools / 'licenses' / package.name)
+    references = sorted((tools / 'ref').glob('*.dll')) + sorted(libraries.glob('*.dll'))
+    # fsc copies FSharp.Core.dll beside its output unless told not to; the box gets it from fsharp-libs.
+    (tools / 'compile.args').write_text('\n'.join([
+        '--targetprofile:netcore', '--noframework', '--simpleresolution', '--target:exe', '--optimize+', '--debug-',
+        '--nologo', '--nocopyfsharpcore', *['-r:' + str(path) for path in references],
+        '--out:/box/main.dll', '/box/main.fs']) + '\n')
+    run('chmod', '-R', 'a+rX', tools, libraries)
+    # Build and run a program the way submissions are, with the deployed runtime.
+    probe = WORK / 'fsharp-probe'
+    probe.mkdir(exist_ok=True)
+    (probe / 'main.fs').write_text('printfn "%d" (1 + 2)\n')
+    (probe / 'compile.args').write_text((tools / 'compile.args').read_text().replace('/box/', str(probe) + '/'))
+    env = dict(env, DOTNET_gcServer='0', DOTNET_PROCESSOR_COUNT='1')
+    run(ROOT / 'dotnet/dotnet', tools / 'fsc.dll', '@' + str(probe / 'compile.args'), env=env)
+    for path in libraries.iterdir():
+        if path.is_file():
+            shutil.copy2(path, probe)
+    if subprocess.check_output([ROOT / 'dotnet/dotnet', probe / 'main.dll'], text=True, env=env) != '3\n':
+        raise RuntimeError('F# probe printed the wrong output')
+
+
+def gleam():
+    # Verify the inputs here too, so this step can extend an already deployed runtime tree.
+    files = json.loads((INPUT / 'sources.json').read_text())['files']
+    for name in ('otp.tar.gz', 'gleam.tar.gz'):
+        with (INPUT / name).open('rb') as f:
+            if hashlib.file_digest(f, 'sha256').hexdigest() != files[name]['sha256']:
+                raise RuntimeError(name + ' checksum changed')
+    erlang, tools, project = ROOT / 'erlang', ROOT / 'gleam', ROOT / 'gleam-project'
+    # hex.pm's build runs from any root once Install has written it into the launchers.
+    unpack('otp.tar.gz', erlang)
+    run('./Install', '-minimal', erlang, cwd=erlang)
+    unpack('gleam.tar.gz', tools, strip=False)
+    shutil.copy2(DEPS / 'gleam/compile.sh', tools / 'compile.sh')
+    # Fetch the locked Hex packages and compile them once; a submission compiles only its own module.
+    project.mkdir()
+    shutil.copyfile(DEPS / 'gleam/gleam.toml', project / 'gleam.toml')
+    copy_lock('gleam/manifest.toml', project / 'manifest.toml')
+    (project / 'src').mkdir()
+    (project / 'src/main.gleam').write_text('pub fn main() {\n  Nil\n}\n')
+    home = WORK / 'gleam-home'
+    env = dict(os.environ, PATH=str(erlang / 'bin') + ':' + os.environ['PATH'], HOME=str(home))
+    run(tools / 'gleam', 'deps', 'update' if RESOLVE else 'download', cwd=project, env=env)
+    if not RESOLVE and (project / 'manifest.toml').read_bytes() != (DEPS / 'gleam/manifest.toml').read_bytes():
+        raise RuntimeError('Gleam lock changed')
+    # Gleam caches each Hex tarball under its outer checksum; check the bytes against the lock ourselves.
+    for package in tomllib.loads((project / 'manifest.toml').read_text())['packages']:
+        with (home / '.cache/gleam/hex/hexpm/packages' / (package['outer_checksum'] + '.tar')).open('rb') as f:
+            if hashlib.file_digest(f, 'sha256').hexdigest().upper() != package['outer_checksum']:
+                raise RuntimeError('Hex package checksum changed: ' + package['name'])
+    run(tools / 'gleam', 'build', cwd=project, env=env)
+    # Keep the dependencies and the entry module gleam generates for the package (judge@@main), not the placeholder.
+    (project / 'src/main.gleam').unlink()
+    for path in (project / 'build/dev/erlang/judge').glob('*/main.*'):
+        path.unlink()
+    # The run puts one directory on the code path: erl looks through every -pa directory for each module it loads.
+    ebin = project / 'ebin'
+    ebin.mkdir()
+    packages = project / 'build/dev/erlang'
+    if any(packages.glob('*/priv')):
+        raise RuntimeError('A Gleam package has a priv directory, which one shared ebin cannot serve')
+    for path in sorted(packages.glob('*/ebin/*')):
+        if (ebin / path.name).exists():
+            raise RuntimeError('Two Gleam packages ship ' + path.name)
+        shutil.copy2(path, ebin)
+    run('chmod', '-R', 'a+rX', erlang, tools, project)
+    # Build and run a program the way submissions are: under the sandbox's file size limits (32 MiB compiling,
+    # 16 MiB + 1 KiB running) and with a dead proxy for Hex, so a template that would fetch packages, a JIT
+    # mapping the limit kills or a launcher that cuts off stdin stops here.
+    def file_limit(kib):
+        return lambda: resource.setrlimit(resource.RLIMIT_FSIZE, (kib * 1024, kib * 1024))
+    probe = WORK / 'gleam-probe'
+    probe.mkdir(exist_ok=True)
+    (probe / 'compile.sh').write_text((tools / 'compile.sh').read_text().replace('/box/', str(probe) + '/'))
+    offline = dict(os.environ, HOME=str(probe), HTTP_PROXY='http://127.0.0.1:9', HTTPS_PROXY='http://127.0.0.1:9',
+                   ERL_CRASH_DUMP_SECONDS='0')
+    (probe / 'main.gleam').write_text('import gleam/int\nimport gleam/io\nimport gleam/list\nimport gleam/string\n'
+        'import gleam/yielder\nimport stdin\n\npub fn main() {\n  stdin.read_lines()\n  |> yielder.to_list\n'
+        '  |> list.flat_map(fn(line) { string.split(string.trim(line), " ") })\n'
+        '  |> list.filter_map(int.parse)\n  |> int.sum\n  |> int.to_string\n  |> io.println\n}\n')
+    run('sh', probe / 'compile.sh', env=offline, preexec_fn=file_limit(32768))
+    output = subprocess.run([erlang / 'bin/erl', '+S', '1:1', '+SDcpu', '1:1', '+SDio', '1', '+A', '1',
+                             '+sbwt', 'none', '+sbwtdcpu', 'none', '+sbwtdio', 'none', '-mode', 'minimal',
+                             '-boot', 'no_dot_erlang', '+JMsingle', 'true', '+P', '262144', '+MMmcs', '1',
+                             '-noshell', '-pa', probe, '-pa', ebin, '-eval', 'judge@@main:run(main)', '-extra'],
+                            input='1 2\n', text=True,
+                            stdout=subprocess.PIPE, env=offline, preexec_fn=file_limit(16385), check=True).stdout
+    if output != '3\n':
+        raise RuntimeError('Gleam probe printed the wrong output')
+    # compile.sh must reject a module without pub fn main(), which would otherwise only fail when it runs.
+    shutil.rmtree(probe / 'project')
+    (probe / 'main.gleam').write_text('pub fn helper() {\n  Nil\n}\n')
+    if subprocess.run(['sh', probe / 'compile.sh'], env=offline, preexec_fn=file_limit(32768),
+                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+        raise RuntimeError('Gleam compiled a program without main')
+
+
+def tree_sha256(directory):
+    """One SHA-256 over the paths and contents of a checked-out tree, without its .git."""
+    lines = []
+    for path in sorted(directory.rglob('*')):
+        name = path.relative_to(directory)
+        if name.parts[0] == '.git':
+            continue
+        if path.is_symlink():
+            lines.append('%s -> %s\n' % (name, os.readlink(path)))
+        elif path.is_file():
+            with path.open('rb') as f:
+                lines.append('%s %s\n' % (name, hashlib.file_digest(f, 'sha256').hexdigest()))
+    return hashlib.sha256(''.join(lines).encode()).hexdigest()
+
+
+def fix():
+    # Verify the input here too, so this step can extend an already deployed runtime tree.
+    item = json.loads((INPUT / 'sources.json').read_text())['files']['fix']
+    with (INPUT / 'fix').open('rb') as f:
+        if hashlib.file_digest(f, 'sha256').hexdigest() != item['sha256']:
+            raise RuntimeError('Fix binary checksum changed')
+    tools, project = ROOT / 'fix', ROOT / 'fix-project'
+    tools.mkdir()
+    shutil.copyfile(INPUT / 'fix', tools / 'fix')
+    (tools / 'fix').chmod(0o755)
+    shutil.copy2(DEPS / 'fix/compile.sh', tools / 'compile.sh')
+    # Clone the locked commit of each library; a submission's build finds them installed and fetches nothing.
+    project.mkdir()
+    shutil.copyfile(DEPS / 'fix/fixproj.toml', project / 'fixproj.toml')
+    copy_lock('fix/fixdeps.lock', project / 'fixdeps.lock')
+    # Fix compiles its runtime and links with the gcc on PATH, and four libraries make a lib.o; all use the judge's GCC.
+    env = dict(os.environ, PATH=str(ROOT / 'gcc/bin') + ':' + os.environ['PATH'], CC='gcc', HOME=str(WORK / 'fix-home'))
+    run(tools / 'fix', 'deps', 'update' if RESOLVE else 'install', cwd=project, env=env)
+    if not RESOLVE and (project / 'fixdeps.lock').read_bytes() != (DEPS / 'fix/fixdeps.lock').read_bytes():
+        raise RuntimeError('Fix lock changed')
+    # fix checks out each locked commit; check that here, and pin the checked-out files by SHA-256 besides git's SHA-1.
+    lock = tomllib.loads((project / 'fixdeps.lock').read_text())['dependencies']
+    digests = {}
+    for dep in lock:
+        source = project / dep['path']
+        if (source / '.git/HEAD').read_text().strip() != dep['git']['rev']:
+            raise RuntimeError('Fix dependency is not at its locked commit: ' + dep['name'])
+        digests[dep['name']] = tree_sha256(source)
+    (tools / 'fixdeps.sha256.json').write_text(json.dumps(digests, indent=2, sort_keys=True) + '\n')
+    if not RESOLVE and digests != json.loads((DEPS / 'fix/fixdeps.sha256.json').read_text()):
+        raise RuntimeError('Fix dependency contents changed')
+    # Type checking covers every module of every dependency and is cached in the project, so one build of a program
+    # that imports them all leaves a submission only its own module to check. The objects are not kept (AtCoder's way).
+    modules = []
+    for dep in lock:
+        source = project / dep['path']
+        for name in tomllib.loads((source / 'fixproj.toml').read_text())['build']['files']:
+            modules.append(re.search(r'^module ([\w.]+);', (source / name).read_text(), re.M).group(1))
+    (project / 'main.fix').write_text('module Main;\n\n' + ''.join('import %s;\n' % name for name in modules) +
+                                      '\nmain : IO ();\nmain = println("3");\n')
+    run(tools / 'fix', 'build', '-O', 'none', cwd=project, env=env)
+    if subprocess.check_output([project / 'a.out'], text=True) != '3\n':
+        raise RuntimeError('Fix warm-up program printed the wrong output')
+    for path in (project / 'main.fix', project / 'a.out'):
+        path.unlink()
+    for path in (project / '.fixlang/intermediate', project / '.fixlang/cache/units'):
+        shutil.rmtree(path)
+    run('chmod', '-R', 'a+rX', tools, project)
+    # Build and run a program the way submissions are: with runtimes.py's environment and the compile's file size limit.
+    probe = WORK / 'fix-probe'
+    probe.mkdir(exist_ok=True)
+    (probe / 'compile.sh').write_text((tools / 'compile.sh').read_text().replace('/box/', str(probe) + '/'))
+    (probe / 'main.fix').write_text('module Main;\n\nimport CPLib.IO;\n\nmain : IO ();\n'
+                                    'main = println((*read_i + *read_i).to_string);\n')
+    box = dict(PATH=str(ROOT / 'gcc/bin') + ':/usr/bin:/bin', LD_LIBRARY_PATH=str(ROOT / 'addition-native/lib'),
+               HOME=str(probe), LANG='C.UTF-8')
+    run('sh', probe / 'compile.sh', env=box,
+        preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_FSIZE, (32 << 20, 32 << 20)))
+    output = subprocess.run([probe / 'main'], input='1 2\n', text=True, stdout=subprocess.PIPE, check=True,
+                            env=box).stdout
+    if output != '3\n':
+        raise RuntimeError('Fix probe printed the wrong output')
+    # The copy keeps modification times, so a build that resolved the lock again, cloned a library again (both need
+    # the network) or rebuilt a library's lib.o shows here.
+    for name in ['fixdeps.lock', *[dep['path'] + '/' + name for dep in lock for name in ('.git/HEAD', 'lib.o')]]:
+        template, copy = project / name, probe / 'project' / name
+        if template.exists() and copy.stat().st_mtime_ns != template.stat().st_mtime_ns:
+            raise RuntimeError('A Fix build changed ' + name)
+
+
 def finish():
     save_lock(INPUT / 'sources.json')
     save_lock(DEPS / 'catalog.json')
@@ -323,6 +643,9 @@ def finish():
     pending += [ROOT / 'ghc/bin/ghc', ROOT / 'ruby/bin/ruby']
     pending += [ROOT / 'golf' / name for name in ('clay', 'dc', 'tritium', 'wsc', 'nibbles')]
     pending.append(ROOT / 'goose/goose')
+    pending.append(ROOT / 'sbcl/bin/sbcl-judge')
+    pending += list((ROOT / 'erlang').glob('erts-*/bin/beam.smp'))
+    pending.append(ROOT / 'fix/fix')
     seen = set()
     while pending:
         path = pending.pop()
@@ -350,17 +673,20 @@ def finish():
     (ROOT / 'build-manifest/additions' / native_lock).write_text(json.dumps(native_hashes, indent=2) + '\n')
     # Keep inventory of vendored native objects and source cache alongside package-manager locks.
     checksums = {}
-    for subtree in ('ruby-deps', 'truffleruby-deps', 'haskell-deps', 'deno-deps', 'addition-native', 'golf', 'goose'):
+    for subtree in ('ruby-deps', 'truffleruby-deps', 'haskell-deps', 'deno-deps', 'addition-native', 'golf', 'goose', 'sbcl',
+                    'fsharp-tools', 'fsharp-libs', 'erlang', 'gleam', 'gleam-project', 'fix', 'fix-project'):
         for path in sorted((ROOT / subtree).rglob('*')):
             if path.is_file() and not path.is_symlink():
                 with path.open('rb') as f:
                     checksums[str(path.relative_to(ROOT))] = hashlib.file_digest(f, 'sha256').hexdigest()
     (ROOT / 'build-manifest/additions/content-sha256.json').write_text(json.dumps(checksums, sort_keys=True) + '\n')
     for name in ('node', 'bun', 'deno', 'ghc', 'cabal', 'ruby', 'truffleruby', 'js-deps',
-                 'deno-deps', 'ruby-deps', 'truffleruby-deps', 'haskell-deps', 'addition-native', 'golf', 'goose'):
+                 'deno-deps', 'ruby-deps', 'truffleruby-deps', 'haskell-deps', 'addition-native', 'golf', 'goose', 'sbcl',
+                 'fsharp-tools', 'fsharp-libs', 'erlang', 'gleam', 'gleam-project', 'fix', 'fix-project'):
         run('chmod', '-R', 'a+rX', ROOT / name)
 
 
 if __name__ == '__main__':
     {'toolchains': toolchains, 'javascript': javascript, 'ruby-native': ruby_native,
-     'ruby': ruby, 'truffleruby': lambda: ruby(True), 'haskell': haskell, 'golf': golf, 'goose': goose, 'finish': finish}[sys.argv[1]]()
+     'ruby': ruby, 'truffleruby': lambda: ruby(True), 'haskell': haskell, 'golf': golf, 'goose': goose, 'sbcl': sbcl,
+     'fsharp': fsharp, 'gleam': gleam, 'fix': fix, 'finish': finish}[sys.argv[1]]()

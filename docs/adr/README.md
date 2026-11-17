@@ -49,3 +49,4 @@ Architecture Decision Record（ADR）は、採用した設計だけでなく、�
 | [0037](0037-support-error-judge.md) | Accepted（実機検証は未実施） | 出力の数を誤差の条件で比べる誤差ジャッジを加える |
 | [0039](0039-switch-judge-environments-by-request-lanes.md) | Accepted（実機検証は未実施） | 要求キューを固定の2レーンにして、送り出しを止めずに採点環境を切り替える |
 | [0040](0040-favorite-contest-problems-during-contest.md) | Accepted | コンテストの問題を開催中からお気に入りに追加できるようにする |
+| [0041](0041-add-functional-languages.md) | Accepted（未配布、実機smoke未実施） | Common Lisp、F#、Gleam、Fixを加える |

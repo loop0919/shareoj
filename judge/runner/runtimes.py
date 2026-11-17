@@ -31,11 +31,13 @@ RUNTIMES = {
         run=[ROOT + '/java25/bin/java', '-Xms16m', '-Xmx256m', '-Xss1m', '-XX:MaxMetaspaceSize=96m', '-XX:ReservedCodeCacheSize=32m', '-XX:MaxDirectMemorySize=32m', '-XX:+UseSerialGC', '-XX:ActiveProcessorCount=1', '-XX:+ExitOnOutOfMemoryError', '-XX:-UsePerfData', '-cp', '/box/main:' + JAVA_CP, 'Main'], artifact='java'),
 }
 
+# W^X caps .NET's JIT code at the file size limit (32 MiB while compiling, 16 while running); csc used 17-20 MiB for Hello World.
 RUNTIMES['csharp14-isolate'] = dict(source='main.cs',
     compile=[ROOT + '/dotnet/dotnet', ROOT + '/csharp-tools/csc.dll', '@' + ROOT + '/csharp-tools/compile.args'],
     run=[ROOT + '/dotnet/dotnet', '/box/main.dll'], artifact='dotnet',
     files=['main.runtimeconfig.json', 'main.deps.json', 'MathNet.Numerics.dll', 'ac-library-csharp.dll'],
-    env=['DOTNET_CLI_TELEMETRY_OPTOUT=1', 'DOTNET_EnableDiagnostics=0', 'DOTNET_gcServer=0', 'DOTNET_PROCESSOR_COUNT=1'])
+    env=['DOTNET_CLI_TELEMETRY_OPTOUT=1', 'DOTNET_EnableDiagnostics=0', 'DOTNET_gcServer=0', 'DOTNET_PROCESSOR_COUNT=1',
+         'DOTNET_EnableWriteXorExecute=0'])
 RUNTIMES['go127-isolate'] = dict(source='main.go',
     compile=[ROOT + '/go/bin/go', '-C', '/box', 'build', '-buildmode=exe', '-mod=vendor', '-p=1', '-trimpath', '-buildvcs=false', '-o', '/box/main', '/box/main.go'],
     run=['/box/main'], artifact='native',
@@ -49,6 +51,44 @@ RUNTIMES['nim22-isolate'] = dict(source='main.nim',
 RUNTIMES['goose20263-isolate'] = dict(source='main.goose', artifact='native',
     compile=[ROOT + '/goose/goose', 'build', '--standalone', '--cc', GCC + 'gcc', '-O2', '/box/main.goose', '-o', '/box/main'],
     run=['/box/main'], env=['GOOSE_HOME=/box/goose-home'])
+# The image has the libraries loaded; the artifact is a fasl. --script skips init files and the debugger.
+SBCL = ROOT + '/sbcl/bin/sbcl-judge'
+RUNTIMES['commonlisp-sbcl26-isolate'] = dict(source='main.lisp', artifact='native',
+    compile=[SBCL, '--script', ROOT + '/sbcl/compile.lisp', '/box/main.lisp', '/box/main'],
+    run=[SBCL, '--script', '/box/main'], env=['LD_LIBRARY_PATH=' + ROOT + '/addition-native/lib'])
+# F# runs on C#'s runtime and calls fsc without MSBuild. The box gets FSharp.Core and the libraries from fsharp-libs.
+# isolate leaves the main thread's stack unlimited, so deep recursion needs nothing from the program.
+# Without C#'s W^X switch fsc would not fit: it used 21 MiB of JIT code for Hello World, 28 for 100 lines.
+RUNTIMES['fsharp10-isolate'] = dict(source='main.fs', artifact='dotnet',
+    compile=[ROOT + '/dotnet/dotnet', ROOT + '/fsharp-tools/fsc.dll', '@' + ROOT + '/fsharp-tools/compile.args'],
+    run=list(RUNTIMES['csharp14-isolate']['run']), files_root='fsharp-libs',
+    files=['main.runtimeconfig.json', 'FSharp.Core.dll', 'FSharpPlus.dll', 'FSharpx.Collections.dll', 'FSharpx.Extras.dll',
+           'FsToolkit.ErrorHandling.dll', 'MathNet.Numerics.dll', 'MathNet.Numerics.FSharp.dll', 'ac-library-csharp.dll'],
+    env=list(RUNTIMES['csharp14-isolate']['env']))
+# Gleam runs on erl directly (gleam run would check the build again). The artifact is one BEAM file, collected like
+# generated JavaScript. The template's judge@@main sets stdin to binary (stdin.read_lines needs it) and exits 1 on a
+# panic. Judge files come after -extra, so init:get_plain_arguments() has exactly them.
+RUNTIMES['gleam119-isolate'] = dict(source='main.gleam', artifact='generated-source', compile_output='main.beam',
+    program='main.beam', compile=['/usr/bin/sh', ROOT + '/gleam/compile.sh'],
+    run=[ROOT + '/erlang/bin/erl',
+         # One thread of each kind, none busy waiting, and erlc's -mode minimal (no distribution) halve the startup.
+         '+S', '1:1', '+SDcpu', '1:1', '+SDio', '1', '+A', '1', '+sbwt', 'none', '+sbwtdcpu', 'none', '+sbwtdio', 'none',
+         '-mode', 'minimal', '-boot', 'no_dot_erlang',
+         # The JIT's default double mapping is a memfd larger than the file size limit (SIGXFSZ at start).
+         '+JMsingle', 'true',
+         # The default table for 2^20 processes takes 16 MiB; 2^18 live processes would need over 512 MiB anyway.
+         '+P', '262144',
+         # The default cache of 10 freed segments keeps old heaps resident; with one, a growing heap peaks at about half.
+         '+MMmcs', '1',
+         '-noshell', '-pa', '/box', '-pa', ROOT + '/gleam-project/ebin', '-eval', 'judge@@main:run(main)', '-extra'],
+    # A crash dump would be written into /box and could reach the file size limit.
+    env=['LD_LIBRARY_PATH=' + ROOT + '/addition-native/lib', 'ERL_CRASH_DUMP_SECONDS=0'])
+# Fix builds main.fix in a copy of fix-project, whose libraries are fetched and type-checked at build time. fix compiles
+# its runtime and links with the gcc on PATH, and the libraries' make finds their lib.o built. The executable needs
+# libgmp (gmp-fix) at run time, from addition-native as for SBCL.
+RUNTIMES['fix16-isolate'] = dict(source='main.fix', artifact='native',
+    compile=['/usr/bin/sh', ROOT + '/fix/compile.sh'], run=['/box/main'],
+    env=['PATH=' + ROOT + '/gcc/bin:/usr/bin:/bin', 'LD_LIBRARY_PATH=' + ROOT + '/addition-native/lib'])
 
 # Module resolution requires the original suffix; dependencies are operator-owned mounts.
 NODE = ROOT + '/node/bin/node'

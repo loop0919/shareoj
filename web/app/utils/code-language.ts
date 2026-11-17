@@ -7,19 +7,26 @@ import { nim } from './nim-mode'
 import { goose } from './goose-mode'
 import { go } from '@codemirror/legacy-modes/mode/go'
 import { haskell } from '@codemirror/legacy-modes/mode/haskell'
+import { commonLisp } from '@codemirror/legacy-modes/mode/commonlisp'
+import { fSharp } from '@codemirror/legacy-modes/mode/mllike'
+import { gleam } from './gleam-mode'
+import { fix } from './fix-mode'
 import { javascript, typescript } from '@codemirror/legacy-modes/mode/javascript'
 import { ruby } from '@codemirror/legacy-modes/mode/ruby'
 import { Prec } from '@codemirror/state'
 import { keymap } from '@codemirror/view'
 import { insertNewline, insertTab } from '@codemirror/commands'
 
-const modes = { c, java, csharp, python, rust, nim, goose, go, haskell, javascript, typescript, ruby }
+const modes = {
+  c, java, csharp, python, rust, nim, goose, go, haskell, commonlisp: commonLisp, fsharp: fSharp, gleam, fix,
+  javascript, typescript, ruby,
+}
 
 export function codeLanguage(runtime: string): string {
   if (runtime.startsWith('clay')) return 'cpp'
   if (runtime.startsWith('whitespace')) return 'whitespace'
   if (/^(python|pypy|codon)/.test(runtime)) return 'python'
-  return runtime.match(/^(cpp|csharp|javascript|typescript|java|rust|nim|goose|go|haskell|ruby|c)(?=\d|-|$)/)?.[1] ?? ''
+  return runtime.match(/^(cpp|csharp|javascript|typescript|java|rust|nim|goose|go|haskell|commonlisp|fsharp|gleam|fix|ruby|c)(?=\d|-|$)/)?.[1] ?? ''
 }
 
 export function codeLanguageSupport(language: string) {
