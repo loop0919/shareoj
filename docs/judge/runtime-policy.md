@@ -33,7 +33,7 @@ C++17はUbuntu 24.04のg++を`-std=c++17 -O2 -pipe`で実行する。
 インストール時に実際のパッケージ一覧、カーネル、isolate、制御コードを指紋化し、採点時に一致を確認する。
 追加言語の構成は[ADR 0007](../adr/0007-limit-judge-runtime-libraries.md)に従う。
 testlibとJava 25、C#、Nim、Goの追加は[ADR 0010](../adr/0010-extend-judge-languages-and-libraries.md)に従う。
-Common Lisp、F#、Gleam、Fixの追加は[ADR 0040](../adr/0040-add-functional-languages.md)に従う。
+Common Lisp、F#、Gleam、Fixの追加は[ADR 0041](../adr/0041-add-functional-languages.md)に従う。
 Haskell、JS／TS、Rubyのバージョンと依存の除外条件は[追加環境の構成](runtime-additions.md)を参照する。
 実行コマンドは`judge/runner/runtimes.py`、配布元とSHA-256は`judge/runtime/runtime-sources.lock.json`、`judge/runtime/runtime-extension-sources.lock.json`、`judge/runtime/runtime-addition-sources.lock.json`に固定する。
 構築済みであっても、実機のsmoke testに合格して公開リストへ追加するまで提出を受け付けない。

@@ -1,4 +1,4 @@
-# ADR 0040: Common Lisp、F#、Gleam、Fixを加える
+# ADR 0041: Common Lisp、F#、Gleam、Fixを加える
 
 - 状態：Accepted（未配布、実機smoke未実施）
 - 決定日：2026-11-15

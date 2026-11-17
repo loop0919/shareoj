@@ -335,10 +335,10 @@ Run: `python3 -m unittest discover -s judge/tests -v`、`cd api && go test ./...
 ### Task 6: 文書とADR
 
 **Files:**
-- Create: `docs/adr/0040-add-functional-languages.md`
+- Create: `docs/adr/0041-add-functional-languages.md`
 - Modify: `docs/adr/README.md`、`docs/judge/runtime-policy.md`、`docs/judge/runtime-additions.md`
 
-- [ ] **Step 1: ADR 0040を書く**
+- [ ] **Step 1: ADR 0041を書く**
 
 既存のADRの形（状態、決定日、背景、検討した選択肢、決定、影響）で、次を記録する: 4言語を加える理由、GleamをErlangで動かす判断（JavaScriptは整数の精度で不採用）、`gleam run`ではなく`erl`を直接起動する判断、ライブラリをAtCoderの一覧から選び4つの条件で外す判断、版を最新の安定版にする判断。
 

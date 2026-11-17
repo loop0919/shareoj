@@ -124,7 +124,7 @@ runtime digestは`sha256:5910a1dfcf9f4ad2318da12612ba779a92844f35dd4c20251a0352d
 ## 関数型言語4つの追加
 
 Common Lisp、F#、Gleam、Fixの4言語である。
-判断の経緯は[ADR 0040](../adr/0040-add-functional-languages.md)に記録している。
+判断の経緯は[ADR 0041](../adr/0041-add-functional-languages.md)に記録している。
 2026年11月15日の時点で、未配布、実機smoke未実施である。
 
 | 公開ID | 処理系 | 入手元 | `/opt/judge-runtimes`の下に置くもの |

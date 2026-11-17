@@ -138,7 +138,7 @@ Gooseの追加と同じ場所を変える。
 - 配布の設定: `judge/rollout.example.json`。
 - Web: `web/app/utils/runtime-label.ts`、`web/app/utils/code-language.ts`、`web/app/content/docs/languages.md`。
 - CLI: 言語IDや拡張子の対応があれば加える。
-- 文書: `docs/judge/runtime-policy.md`、`docs/judge/runtime-additions.md`、新しいADR 0040。
+- 文書: `docs/judge/runtime-policy.md`、`docs/judge/runtime-additions.md`、新しいADR 0041。
 
 エディターの色分けは設計者の判断で次のとおりとする。
 
