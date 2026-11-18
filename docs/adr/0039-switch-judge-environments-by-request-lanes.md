@@ -1,6 +1,6 @@
 # ADR 0039: 要求キューのレーンで採点環境を切り替える
 
-- 状態：Accepted（実機検証は未実施）
+- 状態：Accepted（2026-11-18の配布で、実機の切り替えを計測した。最大の待ちは692 ms）
 - 決定日：2026-11-14
 - 一部変更：[ADR 0014](0014-roll-out-os-updates-without-stopping-judging.md)の切り替えの手順（送り出しの一時停止）と「使う場面」
 - 範囲：要求キューのレーン、`judge/rollout.py rolling`の順序、`rolling-revert`、`rolling`を使える配布の条件。設計は[提出も採点も止めないジャッジ更新の設計](../superpowers/specs/2026-11-14-zero-wait-judge-rollout-design.md)にある

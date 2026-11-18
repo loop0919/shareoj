@@ -125,7 +125,7 @@ runtime digestは`sha256:5910a1dfcf9f4ad2318da12612ba779a92844f35dd4c20251a0352d
 
 Common Lisp、F#、Gleam、Fixの4言語である。
 判断の経緯は[ADR 0041](../adr/0041-add-functional-languages.md)に記録している。
-2026年11月18日の時点で、未配布、実機smoke未実施である。
+2026年11月18日に`rolling`（`judge/.build/rolling-20261118T030359Z`）で全3台へ配布し、公開した（[実機の配布](#実機の配布)）。
 
 | 公開ID | 処理系 | 入手元 | `/opt/judge-runtimes`の下に置くもの |
 | --- | --- | --- | --- |
@@ -193,7 +193,7 @@ Common Lisp、F#、Gleam、Fixの4言語である。
   `main.deps.json`は置かない。ないと、ホストはアプリのディレクトリのDLLをすべて読み込む。
 - 複製は1ケースあたり20.7 MB（FSharpPlus.dllだけで11 MB）で、ローカルでは約10 msかかる（C#は1.7 MBで約1 ms）。
   計測時間の外だが、ケースごとの経過時間とディスクへの書き込みが増える。
-  実機の配布で測る。
+  実機では、複製だけの時間は測っていない。
 - FSharp.CoreはSDKに入っているReadyToRun版（10.1.401）を使う。
   NuGetの版と同じ番号で、Hello Worldの起動が約8 ms速い。
 - 環境変数はC#と同じで、`DOTNET_EnableWriteXorExecute=0`を含む（[C#の変更](#cの変更)）。
@@ -348,7 +348,7 @@ $2 \times 10^5$行の入出力は、ローカルで次のとおりだった（CP
   1回のコンパイルで`make`を8回呼ぶ。
 - サンドボックスの中で`/usr/bin/make`が要る。
   ワーカーには`judge/deploy/install.sh`の`build-essential`で入る。
-  実機で確かめる。
+  実機の3台で、Fixの全fixtureが通った。
 - `PATH`の先頭に既存のGCC 16（`/opt/judge-runtimes/gcc/bin`）を置く。
   fixは、実行時ライブラリのコンパイルとリンクに`PATH`のgccを使う。
 - gmp-fixは`-lgmp`でリンクする。
@@ -406,9 +406,8 @@ $2 \times 10^5$行の入出力は、ローカルで次のとおりだった（CP
 - 1つのfixtureで24個すべてを使うと間に合わないので、`libraries`を4つに分けた。
   `libraries`はjson、xml、app以外の21個を使い、`libraries-json`、`libraries-xml`、`libraries-app`はそれぞれ1つを使う。
   最も長い`libraries-app`は8.8秒である。
-- 実機との差はまだ分からない。
-  実機が2倍遅ければ、8.8秒は約18秒になる。
-  実機でfixtureが上限を超えたら、同じ扱いで外す。
+- 実機では、3つとも上限の30秒に収まった。
+  コンパイルと2回の実行の合計は、`libraries-json`が13.3〜14.6秒、`libraries-xml`が9.1〜11.5秒、`libraries-app`が13.1〜13.3秒だった。
 
 ### C#の変更
 
@@ -423,8 +422,8 @@ $2 \times 10^5$行の入出力は、ローカルで次のとおりだった（CP
   ローカルでは、F#のコンパイルと実行の時間は変わらず、C#の6つのfixtureがコンテナで合格した。
 - F#の環境変数はC#の写しである。
   テストが、C#とF#の`run_args`が同じであることを確かめる。
-- C#の環境変数が変わるので、次の配布でruntime digestが変わる。
-  4言語と合わせて、C#の実機smokeの合格も確かめる。
+- C#の環境変数が変わるので、runtime digestが変わった。
+  2026年11月18日の配布で、C#も実機の3台でsmokeに合格した。
 
 ### ローカル検証
 
@@ -447,7 +446,7 @@ $2 \times 10^5$行の入出力は、ローカルで次のとおりだった（CP
 
 - Common LispとF#の時間は経過時間、GleamとFixはcgroupのCPU時間である。
 - F#の64 MiBの値は、isolateと同じく、ボックスのファイルをcgroupの外から置いたときのものである。
-- 実機の値はまだない。
+- 実機の値は[実機の配布](#実機の配布)にある。
 - これらは実機のisolate内での判定検証や公開判定を代替しない。
 
 2026年11月18日に、下の手順で作った`runtime-functional.tar.gz`（SHA-256 `98d7ce12c4edc28237793784a00ae1fb8ad6e8fb4c68817afbcda594daf3d1a4`）のツリーで、同じ条件の検証をやり直した。
@@ -566,20 +565,36 @@ sha256sum judge/.build/runtime-functional.tar.gz
 - Fixのライブラリは`fix deps add name@=version`で足す。
   `fixproj.toml`に`preliminary_commands`を書かない。
 
-### 公開までに残っていること
+### 実機の配布
 
-1. `RUNTIME_ARCHIVE=.build/runtime-functional.tar.gz bash judge/build-assets.sh`で、workerの配布物を作る。
-2. `judge/rollout.py rolling`で配布する。
-   `rollout.json`の`runtimes`は公開中の一覧のままにし、`publish_runtimes`に4つの公開IDを加えた一覧を書く。
-   APIとWebは、4言語に対応した版を先にGitHub Actionsで配布しておく。
-   手順と完了の条件は[配布と検証の定型コマンド](deployment-checks.md#rollingを使える配布)に従う。
-   C#を含む全言語の実機smokeに合格することを確かめる。
-3. 実機で、次を測る。
-   - 4言語のHello Worldのコンパイル時間と実行時間。コンパイルが10秒を超えた言語は公開しない。
-   - Gleamの起動のCPU時間。「使える言語」のページの約0.15秒（ローカルの値）を置き換える。
-   - Gleamのコンパイル時間。
-   - F#のケースごとのDLLの複製の時間。
-   - Fixの`libraries-json`、`libraries-xml`、`libraries-app`のコンパイル時間と、サンドボックスの中の`make`。
+2026年11月18日に`rolling`（`judge/.build/rolling-20261118T030359Z`）で全3台へ配布し、4言語を公開した。
+
+- workerの配布物は`RUNTIME_ARCHIVE=.build/runtime-functional.tar.gz bash judge/build-assets.sh`で作った（SHA-256 `f4cf4fde34e385ef9b17abbaad2569345c421b17669dae248d3b12cf4be82f8d`）。
+  次の配布物も、`runtime-functional.tar.gz`を元にする。
+- `rollout.json`の`runtimes`は公開中の28個のままにし、`publish_runtimes`に4つの公開IDを加えた32個を書いた。
+  APIとWebは、4言語に対応した版を先にGitHub Actionsで配布した。
+- 先行台と残りの2台の両方で、C#と4言語を含む32言語の実機smokeに合格した。
+  runtime digestは`sha256:e557c9165795b71a8b3c90404928b7e4bcbc673b01e5223bd3ff17a555a38ea1`である。
+- レーンの切り替え（aからb）は計測できた。
+  最大の待ちは692 ms、切り替え前の基準は629.5 ms、拒否とJEは0件だった。
+- 残りの2台の最初のsmokeは、1台が1件のJEで不合格になった。
+  TruffleRubyのライブラリ用のfixture（`library-containers`）を対話用ジャッジとして動かす項目である。
+  対話用ジャッジの上限はCPU 5秒で、この項目は合格した回でも2ケースに5.5〜8.7秒かかっている。
+  同じdigestのほかの2台は同じ項目に合格していて、失敗した`verify-rest`を退避して再開すると、この台も合格した。
+
+実機smokeの記録から、標準入力を読んで答えるfixture（`stdin`）にかかった時間を取った。
+コンパイル1回と実行2回の合計で、3台の値である。
+
+| 言語 | コンパイルと2回の実行の合計 |
+| --- | --- |
+| Common Lisp | 0.41〜0.44秒 |
+| F# | 4.69〜4.97秒 |
+| Gleam | 1.61〜1.68秒 |
+| Fix | 4.46〜5.13秒 |
+
+- 4言語とも、合計が公開の条件（Hello Worldのコンパイルが10秒以内）に収まった。
+- コンパイルだけの時間、Gleamの起動のCPU時間、F#のDLLの複製の時間は、実機では分けて測っていない。
+  「使える言語」のページの約0.15秒（Gleamの起動）は、ローカルの値のままである。
 
 ## 依存の固定
 
