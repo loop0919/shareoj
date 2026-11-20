@@ -13,7 +13,7 @@ function normalize(raw: string) {
 }
 function update(event: Event) {
   text.value = (event.target as HTMLInputElement).value
-  // Keep autosave and previews valid while allowing intermediate text during typing.
+  // Keep saves and previews valid while allowing intermediate text during typing.
   emit('update:modelValue', String(normalize(text.value)))
 }
 function commit() {

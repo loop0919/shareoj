@@ -228,6 +228,7 @@ test('problem editor saves tags with the draft', async ({ page }) => {
   await input.fill('ぐらふ')
   await page.getByRole('listbox', { name: 'タグの候補' }).getByRole('option', { name: /^グラフ/ }).click()
   await expect(page.getByRole('list', { name: 'タグ' }).getByRole('listitem')).toHaveText(['グラフ'])
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   expect((await saved).postDataJSON().draft.tags).toEqual(['グラフ'])
 })
 

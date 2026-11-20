@@ -1,8 +1,11 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures/account'
 
-// The fixture keeps what the editor saved; reading it back shows exactly what the server would receive (ADR 0025).
+// Saves, then reads back what the fixture keeps, which is exactly what the server would receive (ADR 0025).
 async function stored(page: Page) {
+  const saved = page.waitForResponse(response => response.request().method() === 'PUT' && /^\/api\/my\/problems\/[^/]+$/.test(new URL(response.url()).pathname))
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await saved
   await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
   const id = new URL(page.url()).searchParams.get('problem')!
   return (await page.evaluate(async id => (await fetch(`/api/my/problems/${id}`)).json(), id)).draft
@@ -236,15 +239,12 @@ test('the switch starts off, turns on and off without asking while there is no c
   await page.getByRole('group', { name: '採点方式' }).getByRole('radio', { name: '部分点採点' }).check()
   await expect(aggregate).not.toBeChecked()
   expect((await stored(page)).scoring).toEqual({ mode: 'groups', groups: [{ name: '小課題1', points: 100 }] })
-  // On and off again before the autosave leaves nothing to save, so the status returns to 保存済み without a request.
+  // On and off again leaves nothing to save, so the status returns to 保存済み without a request.
   let puts = 0
   page.on('request', request => { if (request.method() === 'PUT') puts++ })
-  await page.clock.install()
-  await page.clock.pauseAt(new Date(Date.now() + 1000))
   await aggregate.check()
-  await aggregate.uncheck()
   await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'dirty')
-  await page.clock.resume()
+  await aggregate.uncheck()
   await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
   expect(puts).toBe(0)
   // On shows the aggregator below with a fresh, empty code; off again asks nothing while the code is empty.
@@ -436,13 +436,13 @@ test('a problem in the aggregate mode without an aggregator, as the CLI may push
   await expect(page.getByRole('switch', { name: '集計コードで採点する' })).toBeChecked()
   await expect(page.getByLabel('集計コードの言語')).toHaveValue('cpp23-gcc')
   await expect(page.locator('.scoring-block').getByRole('alert')).toContainText('集計コードを1〜65,536バイトで')
-  // Opening the section changes nothing (an automatic save would follow within a second); the first edit creates the
-  // aggregator.
-  await page.waitForTimeout(1000)
-  expect(sent).toBeUndefined()
+  // Opening the section changes nothing; the first edit creates the aggregator.
   await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
   await page.getByRole('textbox', { name: '集計コード', exact: true }).fill('print(100)')
   await page.getByLabel('集計コードの言語').selectOption('python314')
+  await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'dirty')
+  expect(sent).toBeUndefined()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect.poll(() => sent?.scoring).toEqual({ mode: 'aggregate', groups: [{ name: '小課題1', points: 100 }], aggregator: { runtime: 'python314', source: 'print(100)' } })
 })
 

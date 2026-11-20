@@ -15,7 +15,6 @@ const saveMessages = {
   'load-failed': '問題を読み込めませんでした',
   'new': 'サンプルから書き始められます',
 }
-const autosaveDelayMs = 600
 
 export function useProblemDraft() {
   const { showToast, dismissToast } = useToast()
@@ -72,8 +71,8 @@ export function useProblemDraft() {
   let deleted = false
   let resolveLeave: ((leave: boolean) => void) | undefined
   let saved = ''
-  let allowAutosave = true
-  let saveTimer: ReturnType<typeof setTimeout> | undefined
+  // Set by a save the server did not take, until one succeeds. Only an explicit save may try again.
+  let saveFailed = false
   const fingerprint = () => JSON.stringify(persistedDraft(draft))
   const unsaved = () => fingerprint() !== saved || !!settingError.value
 
@@ -108,19 +107,19 @@ export function useProblemDraft() {
     return true
   }
 
+  // Nothing saves on its own: manual is the save button, the shortcut or the leave dialog. Without it, the caller is an
+  // action that needs the saved problem, such as a generation.
   async function saveDraft(manual = false, updateLocation = true): Promise<boolean> {
-    if (disposed || deleted || publishing.value || confirmingDelete.value || !ready.value || (!manual && !allowAutosave)) return false
+    if (disposed || deleted || publishing.value || confirmingDelete.value || !ready.value || (!manual && saveFailed)) return false
     if (manual) dismissToast()
     const testError = testCaseError(draft.testCases) || scoringError(draft) || settingError.value
     if (testError) { saveState.value = 'dirty'; storageError.value = testError; return false }
     if (!manual && fingerprint() === saved) {
-      // An edit undone before its autosave leaves nothing to save, and an earlier refusal no longer applies. A save in
-      // flight sets the status itself when it ends.
+      // Nothing to save, and an earlier refusal no longer applies. A save in flight sets the status itself when it ends.
       if (!inFlight) { saveState.value = cloudVersion.value ? 'saved' : 'new'; storageError.value = '' }
       return true
     }
     if (!manual && manualSaveOnly.value) { storageError.value = '変更を反映するには保存ボタンを押してください。'; return false }
-    clearTimeout(saveTimer)
     if (inFlight) {
       if (!await inFlight) return false
       if (fingerprint() === saved) {
@@ -156,7 +155,7 @@ export function useProblemDraft() {
         cloudVersion.value = result.version
         applyServerState(result)
         saved = snapshot
-        allowAutosave = true
+        saveFailed = false
         storageError.value = ''
         // Reload must reopen this draft before we announce that saving is complete.
         if (updateLocation && route.query.problem !== id) await router.replace({ path: '/problems/new', query: { problem: id } })
@@ -164,7 +163,7 @@ export function useProblemDraft() {
         if (manual && saveState.value === 'saved') showToast('保存しました。')
         return true
       } catch (error) {
-        allowAutosave = false
+        saveFailed = true
         saveState.value = 'failed'
         storageError.value = accountError(error)
         return false
@@ -178,7 +177,6 @@ export function useProblemDraft() {
     if (publishing.value || saving.value || generating.value) return
     publicationError.value = ''
     if (!window.confirm('この問題を非公開に戻しますか？')) return
-    clearTimeout(saveTimer)
     publishing.value = true
     try {
       const result = accountProblemSchema.parse(await $fetch(`/api/my/problems/${cloudId.value}/publication`, { method: 'PUT', body: { version: cloudVersion.value, publish: false } }))
@@ -241,33 +239,27 @@ export function useProblemDraft() {
       saveState.value = 'new'
     }
     saved = fingerprint()
-    // Flush restoration watchers before enabling automatic writes.
+    // Flush restoration watchers before edits count as unsaved.
     nextTick(() => { if (!disposed) ready.value = true })
     window.addEventListener('beforeunload', flushBeforeLeave)
     window.addEventListener('keydown', saveWithShortcut)
   })
 
-  // Restarts the autosave timer, cancelling a pending one first, so at most one is ever pending, even when the draft
-  // changed behind a dialog.
-  // Problems that save only on an explicit action get no timer, since saveDraft would only show its save reminder.
-  function scheduleAutosave() {
-    clearTimeout(saveTimer)
-    if (!manualSaveOnly.value) saveTimer = setTimeout(() => saveDraft(), autosaveDelayMs)
-  }
+  // An edit writes nothing; the status only says whether the draft differs from what was saved. An edit undone leaves
+  // nothing to save, and an earlier refusal no longer applies. A save in flight sets the status itself when it ends.
   function edited() {
     if (!ready.value) return
-    saveState.value = 'dirty'
-    scheduleAutosave()
+    if (unsaved() || saveFailed) saveState.value = 'dirty'
+    else if (!inFlight) { saveState.value = cloudVersion.value ? 'saved' : 'new'; storageError.value = '' }
   }
   watch(draft, edited)
-  // A setting turning invalid or valid is an edit too: the autosave then says why it cannot save, or clears that.
+  // A setting turning invalid or valid is an edit too.
   watch(settingError, edited)
 
   onBeforeRouteLeave(() => {
     if (saving.value || publishing.value) return false
     if (!ready.value || !unsaved()) return true
     if (resolveLeave) return false
-    clearTimeout(saveTimer)
     leaveError.value = ''
     return new Promise<boolean>(resolve => {
       resolveLeave = resolve
@@ -283,20 +275,17 @@ export function useProblemDraft() {
     const resolve = resolveLeave
     resolveLeave = undefined
     resolve?.(choice !== 'stay')
-    if (choice === 'stay' && fingerprint() !== saved) scheduleAutosave()
   }
   onBeforeUnmount(() => {
     disposed = true
     window.removeEventListener('focus', refreshOnFocus)
     resolveLeave?.(false)
     resolveLeave = undefined
-    clearTimeout(saveTimer)
     window.removeEventListener('beforeunload', flushBeforeLeave)
     window.removeEventListener('keydown', saveWithShortcut)
   })
 
   function openDeleteConfirmation() {
-    clearTimeout(saveTimer)
     if (saving.value || publishing.value || generating.value) return
     confirmingDelete.value = true
     deleteError.value = ''
@@ -305,10 +294,8 @@ export function useProblemDraft() {
   function closeDeleteConfirmation() {
     manageDialog.value?.close()
     confirmingDelete.value = false
-    if (!deleted && fingerprint() !== saved) scheduleAutosave()
   }
   async function removeProblem() {
-    clearTimeout(saveTimer)
     try {
       if (cloudId.value && cloudVersion.value > 0) {
         await $fetch(`/api/my/problems/${cloudId.value}`, { method: 'DELETE', query: { version: cloudVersion.value } })

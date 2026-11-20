@@ -1,9 +1,9 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures/account'
 
-// Saves a new problem and reopens it as published, scheduled or as a contest problem, which save only on an explicit action.
-// The returned function counts the PUTs made after the reload.
-async function openManualSaveOnly(page: Page, mode: string) {
+// Saves a new problem and reopens it as a draft, published, scheduled or as a contest problem. Every one of them saves only
+// on an explicit action. The returned function counts the PUTs made after the reload.
+async function openSaved(page: Page, mode: string) {
   await page.goto('/problems/new')
   await page.locator('#problem-title').fill('保存確認')
   await page.getByRole('button', { name: '保存', exact: true }).click()
@@ -28,11 +28,11 @@ async function openManualSaveOnly(page: Page, mode: string) {
   return () => writes
 }
 
-for (const mode of ['published', 'scheduled', 'contest']) {
+for (const mode of ['draft', 'published', 'scheduled', 'contest']) {
   test(`${mode} problems save only on an explicit action`, async ({ page }) => {
-    const writes = await openManualSaveOnly(page, mode)
+    const writes = await openSaved(page, mode)
     await page.locator('#problem-title').fill('明示的に反映')
-    // Wait beyond the autosave debounce to prove no write occurs.
+    // Long enough for a write that an edit had scheduled to show up.
     await page.waitForTimeout(900)
     expect(writes()).toBe(0)
     await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'dirty')
@@ -50,7 +50,7 @@ for (const mode of ['published', 'scheduled', 'contest']) {
   })
 
   test(`${mode} problems stay unsaved after an edit and after the leave and delete dialogs close`, async ({ page }) => {
-    const writes = await openManualSaveOnly(page, mode)
+    const writes = await openSaved(page, mode)
     await page.clock.install()
     await page.clock.pauseAt(new Date(Date.now() + 1000))
     const status = page.locator('[data-save-state]')
@@ -86,8 +86,6 @@ test('save toasts expire, reset on repeated saves and never report a failed save
   const toast = page.locator('.toast')
   await expect(toast).toHaveCount(0)
   await page.locator('#problem-title').fill('トースト確認')
-  await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
-  await expect(toast).toHaveCount(0)
   await page.clock.install()
   const save = page.getByRole('button', { name: '保存', exact: true })
   await save.click()

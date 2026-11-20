@@ -144,8 +144,6 @@ test('unpublishing with an invalid error judge margin on screen stays unsaved', 
   await page.getByRole('textbox', { name: '判定の余裕', exact: true }).fill('x')
   const status = page.locator('.draft-status').getByRole('status')
   await expect(status).toHaveText('未保存の変更があります')
-  // Let the autosave refuse the invalid margin first, so only the unpublish path decides the state below.
-  await page.waitForTimeout(900)
   await page.getByRole('button', { name: '問題管理', exact: true }).click()
   const unpublished = page.waitForResponse(response => response.url().endsWith('/publication') && response.request().method() === 'PUT')
   await page.getByRole('button', { name: '非公開に戻す' }).click()

@@ -105,6 +105,7 @@ test('16 MiB files are applied by reference and the complete set stays within 51
   await expect(page.getByText('32件の入力を追加しました。')).toBeVisible()
   await page.getByRole('button', { name: 'テストケース', exact: true }).click()
   await expect(page.locator('.test-data-editor').first().locator('.pane-heading span')).toContainText('16,777,216 / 16,777,216 bytes')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect.poll(() => savedCases.length).toBe(32)
   expect(savedCases.every(item => item.inputFile?.size === size && item.input === '')).toBe(true)
   expect(completed).toBe(32)

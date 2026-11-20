@@ -14,7 +14,10 @@ for (const [path, selector, editorial] of [
     await page.goto(path)
     if (editorial) await page.getByRole('button', { name: '解説', exact: true }).click()
     await page.locator(selector).fill('[**外部リンク**](https://outside.example/article?x=1&y=2)\n\n[内部リンク](/docs/markdown)\n\n[公式リンク](https://judge.example/blog/article)\n\n[見出し](#section)\n\n## 見出し {#section}')
-    if (path === '/problems/new') await expect(page).toHaveURL(url => url.searchParams.has('problem'))
+    if (path === '/problems/new') {
+      await page.getByRole('button', { name: '保存', exact: true }).click()
+      await expect(page).toHaveURL(url => url.searchParams.has('problem'))
+    }
     const preview = page.locator('#preview-pane')
     const external = preview.getByRole('link', { name: '外部リンク', exact: true })
     const dialog = page.getByRole('dialog', { name: '外部サイトへ移動します' })

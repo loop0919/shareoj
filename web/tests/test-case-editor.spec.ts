@@ -20,6 +20,7 @@ test('difficulty picker shows grades and supports keyboard selection and persist
   await picker.press('Escape')
   await expect(picker).toContainText('Lv.10')
   await expect(page.getByRole('listbox')).toHaveCount(0)
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: /^保存済み$/ })).toBeVisible()
   await page.reload()
   await expect(picker).toContainText('Lv.10')
@@ -66,6 +67,7 @@ test('large test data renders only visible lines and names are unique', async ({
   await expect(input).toContainText('199999')
   expect(await page.locator('.test-data-editor').first().locator('.cm-line').count()).toBeLessThan(100)
   // Saving uploads the 1.2 MB file first, which a busy runner can take more than the default 5 s for.
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved', { timeout: 15_000 })
   await input.fill('1\n2\n3')
   await expect(input.locator('.cm-line')).toHaveText(['1', '2', '3'])
@@ -77,6 +79,7 @@ test('large test data renders only visible lines and names are unique', async ({
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'dirty')
   await page.getByLabel('テストケース名 2', { exact: true }).fill('large')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
 })
 
@@ -191,6 +194,7 @@ test('case limit stays at 100 when TL changes', async ({ page }) => {
   for (let i = 0; i < 100; i++) await add.click()
   await expect(add).toBeDisabled()
   await expect(page.locator('#test-cases-title')).toContainText('100 / 100件')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
   await page.getByRole('button', { name: '問題文', exact: true }).click()
   await page.locator('#time-limit').fill('100')
@@ -201,6 +205,7 @@ test('case limit stays at 100 when TL changes', async ({ page }) => {
   await page.getByRole('button', { name: 'ケース1を削除' }).click()
   await expect(add).toBeEnabled()
   await expect(page.locator('.case-files li')).toHaveCount(99)
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
 })
 
@@ -277,6 +282,7 @@ test('file selection imports automatically and preserves the opposite side acros
   await page.getByRole('button', { name: 'sum.txt', exact: true }).click()
   await expect(page.getByLabel('入力', { exact: true })).toHaveText('3 5')
   await expect(page.getByLabel('出力', { exact: true })).toBeEmpty()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: /^保存済み$/ })).toBeVisible()
   await page.reload()
   await page.getByRole('button', { name: 'テストケース', exact: true }).click()
@@ -323,6 +329,7 @@ test('file selection imports automatically and preserves the opposite side acros
     if (width === 375 || width === 1280) await page.screenshot({ path: testInfo.outputPath(`file-import-${width}.png`), fullPage: true })
   }
   await closeImport()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: /^保存済み$/ })).toBeVisible()
   await page.reload()
   await page.getByRole('button', { name: 'テストケース', exact: true }).click()
@@ -373,6 +380,8 @@ test('saving ends non-empty data with a newline on screen and keeps the cursor o
   const saved = page.waitForRequest(request => request.method() === 'PUT' && /^\/api\/my\/problems\/[^/]+$/.test(new URL(request.url()).pathname) &&
     request.postDataJSON().draft.testCases?.[0]?.input !== '')
   await input.fill('3 5')
+  // The shortcut saves with the cursor still in the editor.
+  await page.keyboard.press('Control+s')
   const { draft } = (await saved).postDataJSON()
   expect(draft.testCases[0]).toMatchObject({ input: '3 5\n', output: '' })
   await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
@@ -395,6 +404,7 @@ test('sample checkbox controls the blue flag, survives rename and reload, and ca
   await expect(flag).toHaveCSS('fill', 'rgb(36, 99, 212)')
   await page.getByLabel('テストケース名 1', { exact: true }).fill('renamed.txt')
   await expect(checkbox).toBeChecked()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: /^保存済み$/ })).toBeVisible()
   await page.reload()
   await page.getByRole('button', { name: 'テストケース', exact: true }).click()
@@ -403,6 +413,7 @@ test('sample checkbox controls the blue flag, survives rename and reload, and ca
   await page.getByLabel('テストケース名 1', { exact: true }).fill('sample_unchecked.txt')
   await checkbox.uncheck()
   await expect(flag).toHaveCount(0)
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: /^保存済み$/ })).toBeVisible()
   await page.reload()
   await page.getByRole('button', { name: 'テストケース', exact: true }).click()
@@ -464,6 +475,7 @@ test('append samples preserves the statement, excludes private cases, and saves 
   const marked = (name: string, body: string) => `<!-- sample-begin: ${name} -->\n${body}<!-- sample-end: ${name} -->\n`
   const expected = original + '\n\n' + marked('case_002.txt', '## サンプル 2\n### 入力\n````text\n3 5\n```\n$literal$\n````\n### 出力\n```text\n8\n```\n') + '\n' + marked('case_003.txt', '## サンプル 3\n### 入力\n```text\n```\n### 出力\n```text\n```\n')
   await expect(page.locator('#problem-source')).toHaveText(expected, { useInnerText: true })
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: /^保存済み$/ })).toBeVisible()
   await page.reload()
   await expect(page.locator('#problem-source')).toHaveText(expected, { useInnerText: true })
@@ -473,6 +485,7 @@ test('append samples preserves the statement, excludes private cases, and saves 
   await expect(page.getByRole('alert').filter({ hasText: '100,000文字を超えます' })).toBeVisible()
   await page.getByRole('button', { name: '問題文', exact: true }).click()
   await expect(page.locator('.source-pane .pane-heading')).toContainText('100,000 / 100,000')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: /^保存済み$/ })).toBeVisible()
   // CodeMirror virtualizes long lines; verify the complete saved document instead of its viewport.
   const id = new URL(page.url()).searchParams.get('problem')
@@ -511,6 +524,7 @@ test('dragging a case handle drops it at the line, keeps the selection, and save
   await expect(rows).toHaveText(['c.txt', 'b.txt', 'a.txt'])
   await expect(page.getByLabel('テストケース名 1', { exact: true })).toHaveValue('c.txt')
   await expect(page.locator('.case-drop')).toHaveCount(0)
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.locator('[data-save-state]')).toHaveAttribute('data-save-state', 'saved')
   await page.reload()
   await page.getByRole('button', { name: 'テストケース', exact: true }).click()

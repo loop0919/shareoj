@@ -352,13 +352,13 @@ test('余裕の誤りは保存しない', async ({ page }) => {
     await expect(page.getByText('以下なら正解になります。', { exact: false })).toHaveCount(0)
     await expect(open).toBeDisabled()
   }
-  // The invalid margin is an unsaved edit that the autosave refuses.
+  // The invalid margin is an unsaved edit.
   await expect(state).toHaveAttribute('data-save-state', 'dirty')
-  await expect(refusal).toBeVisible()
-  // Saving by hand, by the button or the shortcut, sends nothing and shows no success.
+  // Saving, by the button or the shortcut, sends nothing and shows no success.
   await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(refusal).toBeVisible()
   await page.keyboard.press('Control+s')
-  // Wait beyond the autosave debounce to prove no write occurs.
+  // Long enough for a write to show up.
   await page.waitForTimeout(900)
   expect(writes).toEqual([])
   await expect(state).toHaveAttribute('data-save-state', 'dirty')
@@ -377,6 +377,7 @@ test('余裕の誤りは保存しない', async ({ page }) => {
   // Going back to the saved margin after an invalid one leaves nothing to save and clears the refusal.
   const count = writes.length
   await margin.fill('x')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(refusal).toBeVisible()
   await margin.fill('2.5')
   await expect(refusal).toHaveCount(0)
@@ -388,7 +389,6 @@ test('余裕の誤りは保存しない', async ({ page }) => {
   await margin.press('.')
   await expect(margin).toHaveValue('0.')
   await expect(margin).toBeFocused()
-  await page.waitForTimeout(900)
   await expect(inline).toHaveCount(0)
   await expect(refusal).toHaveCount(0)
   await expect(margin).not.toHaveAttribute('aria-invalid', 'true')
@@ -403,6 +403,7 @@ test('余裕の誤りは保存しない', async ({ page }) => {
   await margin.blur()
   await expect(inline).toBeVisible()
   await expect(margin).toHaveAttribute('aria-invalid', 'true')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(refusal).toBeVisible()
   await expect(state).toHaveAttribute('data-save-state', 'dirty')
 })
