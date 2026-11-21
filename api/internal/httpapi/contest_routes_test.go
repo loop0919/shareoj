@@ -45,6 +45,7 @@ func TestContestRoutesWithoutDatabase(t *testing.T) {
 	for _, route := range []string{
 		"GET /contests",
 		"GET /contests/upcoming",
+		"GET /contests/running",
 		"GET /contests/bad",
 		"GET /contests/bad/problems/bad",
 		"GET /contests/bad/problems/bad/submissions",

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -89,10 +90,18 @@ func (p contestHandler) contestSchedule(w http.ResponseWriter, r *http.Request, 
 }
 
 func (p contestHandler) upcomingContests(w http.ResponseWriter, r *http.Request, _ string) {
+	p.scheduledContests(w, r, p.Contests.UpcomingContests)
+}
+
+func (p contestHandler) runningContests(w http.ResponseWriter, r *http.Request, _ string) {
+	p.scheduledContests(w, r, p.Contests.RunningContests)
+}
+
+func (p contestHandler) scheduledContests(w http.ResponseWriter, r *http.Request, list func(context.Context) ([]contests.ScheduledContest, error)) {
 	if !p.available(w) {
 		return
 	}
-	items, err := p.Contests.UpcomingContests(r.Context())
+	items, err := list(r.Context())
 	if err != nil {
 		contestError(w, err)
 		return

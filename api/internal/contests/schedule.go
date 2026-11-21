@@ -27,6 +27,13 @@ func (s *Store) UpcomingContests(ctx context.Context) ([]ScheduledContest, error
  ORDER BY c.starts_at,c.id LIMIT 5`)
 }
 
+// RunningContests returns up to five contests in progress, earliest end first.
+func (s *Store) RunningContests(ctx context.Context) ([]ScheduledContest, error) {
+	return s.scheduledContests(ctx, `SELECT c.id,c.title,c.starts_at,c.ends_at FROM contests c
+ WHERE c.starts_at<=statement_timestamp() AND c.ends_at>statement_timestamp()
+ ORDER BY c.ends_at,c.id LIMIT 5`)
+}
+
 func (s *Store) scheduledContests(ctx context.Context, query string, args ...any) ([]ScheduledContest, error) {
 	rows, err := s.Pool.Query(ctx, query, args...)
 	if err != nil {

@@ -84,13 +84,23 @@ export function canViewAllSubmissions(contest: Pick<Contest, 'canViewSubmissions
 export function contestDate(value: string) {
   return new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Tokyo' }).format(new Date(value))
 }
-// The time left until a contest starts, in its largest whole unit.
+// The time left until a moment, in its largest whole unit; empty within the last minute.
+function timeLeft(until: string, now: number) {
+  const minutes = Math.floor((new Date(until).getTime() - now) / 60_000)
+  if (minutes < 1) return ''
+  if (minutes < 60) return `${minutes}分`
+  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)}時間`
+  return `${Math.floor(minutes / (24 * 60))}日`
+}
+// The time left until a contest starts.
 export function contestCountdown(startsAt: string, now: number) {
-  const minutes = Math.floor((new Date(startsAt).getTime() - now) / 60_000)
-  if (minutes < 1) return 'まもなく'
-  if (minutes < 60) return `あと${minutes}分`
-  if (minutes < 24 * 60) return `あと${Math.floor(minutes / 60)}時間`
-  return `あと${Math.floor(minutes / (24 * 60))}日`
+  const left = timeLeft(startsAt, now)
+  return left ? `あと${left}` : 'まもなく'
+}
+// The time left until a running contest ends.
+export function contestRemaining(endsAt: string, now: number) {
+  const left = timeLeft(endsAt, now)
+  return left ? `残り${left}` : 'まもなく終了'
 }
 // When the standings freeze starts, in Japan. A contest that crosses midnight there shows the date as well, since the
 // time alone could mean either day.

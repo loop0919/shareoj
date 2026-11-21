@@ -1,11 +1,12 @@
 <script setup lang="ts">
 useResponseHeader('Cache-Control').value = 'no-store'
 // The read time travels with the contests, so the server and the browser render the same countdown.
-const [{ data: featured, error: featuredError, refresh: refreshFeatured }, { data: upcoming, refresh: refreshUpcoming }] = await Promise.all([
+const [{ data: featured, error: featuredError, refresh: refreshFeatured }, { data: running, refresh: refreshRunning }, { data: upcoming, refresh: refreshUpcoming }] = await Promise.all([
   useFetch('/api/featured'),
+  useFetch('/api/contests/running', { transform: page => ({ ...page, readAt: Date.now() }) }),
   useFetch('/api/contests/upcoming', { transform: page => ({ ...page, readAt: Date.now() }) }),
 ])
-usePolling(() => Promise.all([refreshFeatured(), refreshUpcoming()]), 60000)
+usePolling(() => Promise.all([refreshFeatured(), refreshRunning(), refreshUpcoming()]), 60000)
 const config = useRuntimeConfig()
 const canonical = new URL('/', config.public.siteUrl).href
 const title = 'ShareOJ — プログラミング問題を解く・作る・共有する'
@@ -119,7 +120,8 @@ useSharePreview({ type: 'website', title: 'Share Online Judge', path: '/', descr
         </svg>
       </figure>
     </section>
-    <UpcomingContests v-if="upcoming?.items.length" :items="upcoming.items" :now="upcoming.readAt" />
+    <HomeContests v-if="running?.items.length" :items="running.items" :now="running.readAt" running :more="!upcoming?.items.length" />
+    <HomeContests v-if="upcoming?.items.length" :items="upcoming.items" :now="upcoming.readAt" more />
     <FeaturedDelivery v-if="featured" :page="featured" home />
     <section v-else class="delivery-fallback" aria-label="ShareOJ定期便">
       <h2>ShareOJ定期便</h2>

@@ -659,6 +659,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 | --- | --- |
 | `GET /my/contest-schedule` | 参加登録した終了前のコンテストの`id`、`title`、`startsAt`、`endsAt`を開始の昇順で最大50件、`{"items":[...]}`で返す |
 | `GET /contests/upcoming` | 認証不要。7日以内に開始するコンテストの`id`、`title`、`startsAt`、`endsAt`を開始の昇順で最大5件、`{"items":[...]}`で返す。開催中のコンテストは含まない |
+| `GET /contests/running` | 認証不要。開催中のコンテストを、同じ形で終了の昇順に最大5件返す |
 | `GET /my/contests/{id}/team` | メンバーに自分のチームの`id`、`name`、`members`、`onsite`と参加コード`code`を返す |
 | `PUT /my/contests/{id}/team/code` | 参加コードを作り直してチームを返す。終了まで |
 | `PUT /my/contests/{id}/team/name` | `{"name":"..."}`でチーム名を変えてチームを返す。終了まで |

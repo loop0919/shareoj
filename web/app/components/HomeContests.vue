@@ -1,26 +1,34 @@
 <script setup lang="ts">
-import { contestCountdown, contestDate, type ScheduledContest } from '~~/shared/types/contest'
+import { contestCountdown, contestDate, contestRemaining, type ScheduledContest } from '~~/shared/types/contest'
 import { shortId } from '~~/shared/utils/short-id'
 
-defineProps<{ items: ScheduledContest[], now: number }>()
+// running lists contests in progress by their end; otherwise the list is of contests about to start.
+// more is the link to every contest, which the last of the stacked sections carries.
+const props = defineProps<{ items: ScheduledContest[], now: number, running?: boolean, more?: boolean }>()
+const titleId = useId()
+const rows = computed(() => props.items.map(contest => props.running
+  ? { contest, at: contest.endsAt, date: `${contestDate(contest.endsAt)} まで`, left: contestRemaining(contest.endsAt, props.now) }
+  : { contest, at: contest.startsAt, date: contestDate(contest.startsAt), left: contestCountdown(contest.startsAt, props.now) }))
 </script>
 
 <template>
-  <section class="upcoming-contests" aria-labelledby="upcoming-contests-title">
-    <h2 id="upcoming-contests-title">もうすぐ開催のコンテスト</h2>
+  <section class="upcoming-contests" :class="{ 'upcoming-contests--stacked': !more }" :aria-labelledby="titleId">
+    <h2 :id="titleId">{{ running ? '開催中のコンテスト' : 'もうすぐ開催のコンテスト' }}</h2>
     <ul>
-      <li v-for="contest in items" :key="contest.id">
-        <time :datetime="contest.startsAt">{{ contestDate(contest.startsAt) }}</time>
+      <li v-for="{ contest, at, date, left } in rows" :key="contest.id">
+        <time :datetime="at">{{ date }}</time>
         <NuxtLink :to="`/contests/${shortId(contest.id)}`">{{ contest.title }}</NuxtLink>
-        <span>{{ contestCountdown(contest.startsAt, now) }}</span>
+        <span>{{ left }}</span>
       </li>
     </ul>
-    <NuxtLink class="upcoming-more" to="/contests">コンテスト一覧<span aria-hidden="true">→</span></NuxtLink>
+    <NuxtLink v-if="more" class="upcoming-more" to="/contests">コンテスト一覧<span aria-hidden="true">→</span></NuxtLink>
   </section>
 </template>
 
 <style scoped>
 .upcoming-contests { margin-block: 24px 48px; padding-top: 28px; border-top: 2px solid var(--color-accent); }
+/* Without the link below it, the section sits closer to the one that follows. */
+.upcoming-contests--stacked { margin-bottom: 40px; }
 .upcoming-contests h2 { margin: 0 0 20px; font-size: clamp(1.5rem, 3vw, 2rem); letter-spacing: -.04em; }
 .upcoming-contests ul { margin: 0; padding: 0; list-style: none; border-block: 1px solid var(--color-line); background: var(--color-surface); }
 .upcoming-contests li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 24px; align-items: baseline; padding: 16px 28px; }

@@ -78,6 +78,11 @@ const upcomingContests = () => {
     { id: '88888888-8888-4888-8888-888888888888', title: '名前がとても長いコンテストでも折り返して読める第3回ShareOJ杯チーム対抗戦', startsAt: after(50), endsAt: after(52) },
   ]
 }
+// The contest in progress on the home page ends in an hour and a half.
+const runningContests = () => {
+  const after = hours => new Date(Date.now() + hours * 3_600_000).toISOString()
+  return [{ id: 'cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd', title: 'ShareOJ 夜ふかしコンテスト', startsAt: after(-0.5), endsAt: after(1.5) }]
+}
 // The contest list, newest start first as the API sends it, then its second page.
 const listedContest = (number, title, status, startsAt, endsAt) => ({
   id: `c0c0c0c0-c0c0-4c0c-8c0c-c0c0c0c0c00${number}`, author: 'alice', problemAuthors: [], testers: [], title, description: '', startsAt, endsAt,
@@ -211,6 +216,7 @@ createServer(async (req, res) => {
   }
   else if (path === '/featured') res.end(JSON.stringify(featured))
   else if (path === '/contests/upcoming') res.end(JSON.stringify({ items: upcomingContests() }))
+  else if (path === '/contests/running') res.end(JSON.stringify({ items: runningContests() }))
   else if (path === '/contests') {
     const first = new URL(req.url, 'http://localhost').searchParams.get('offset') === '0'
     res.end(JSON.stringify({ items: first ? listedContests : olderContests, hasMore: first }))

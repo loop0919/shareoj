@@ -102,6 +102,60 @@ func TestUpcomingContestsPostgres(t *testing.T) {
 	}
 }
 
+func TestRunningContestsPostgres(t *testing.T) {
+	f := newTeamTest(t, "alice")
+	const path = "/contests/running"
+	// A negative start puts the contest in progress; it ends endsIn from now.
+	add := func(id, startsIn, endsIn string) {
+		t.Helper()
+		problem := strings.ReplaceAll(id, "c", "1")
+		f.problem(problem)
+		f.create(id, problem, nil)
+		f.exec(`UPDATE contests SET starts_at=now()+$2::interval,ends_at=now()+$3::interval WHERE id=$1`, id, startsIn, endsIn)
+	}
+	ids := func() []string {
+		t.Helper()
+		var out itemsResponse[contests.ScheduledContest]
+		f.decode(f.request("GET", path, "", nil, 200), &out)
+		list := make([]string, len(out.Items))
+		for i, c := range out.Items {
+			list[i] = c.ID
+		}
+		return list
+	}
+	const (
+		first  = "cccccccc-cccc-4ccc-8ccc-cccccccccc01"
+		second = "cccccccc-cccc-4ccc-8ccc-cccccccccc02"
+		third  = "cccccccc-cccc-4ccc-8ccc-cccccccccc03"
+		fourth = "cccccccc-cccc-4ccc-8ccc-cccccccccc04"
+		fifth  = "cccccccc-cccc-4ccc-8ccc-cccccccccc05"
+		sixth  = "cccccccc-cccc-4ccc-8ccc-cccccccccc06"
+		coming = "cccccccc-cccc-4ccc-8ccc-cccccccccc07"
+	)
+	if got := ids(); len(got) != 0 {
+		t.Fatalf("no contests: %v", got)
+	}
+	// The one that started later ends sooner, so it comes first.
+	add(second, "-3 days", "2 days")
+	add(first, "-1 hour", "1 hour")
+	add(coming, "1 hour", "2 hours")
+	if got := ids(); !slices.Equal(got, []string{first, second}) {
+		t.Fatalf("in progress: %v", got)
+	}
+	f.schedule(first, "ended")
+	if got := ids(); !slices.Equal(got, []string{second}) {
+		t.Fatalf("ended: %v", got)
+	}
+	add(third, "-1 hour", "3 hours")
+	add(fourth, "-1 hour", "4 hours")
+	add(fifth, "-1 hour", "5 hours")
+	add(sixth, "-1 hour", "6 hours")
+	f.exec(`UPDATE contests SET starts_at=now()-interval '1 hour',ends_at=now()+interval '3 days' WHERE id=$1`, first)
+	if got := ids(); !slices.Equal(got, []string{third, fourth, fifth, sixth, second}) {
+		t.Fatalf("limit: %v", got)
+	}
+}
+
 func TestContestListCountsProblemsPostgres(t *testing.T) {
 	f := newTeamTest(t, "alice")
 	const (
