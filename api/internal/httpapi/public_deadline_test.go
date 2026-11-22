@@ -111,6 +111,7 @@ func TestPublicRoutesHaveDeadlinePostgres(t *testing.T) {
 		"/problems",
 		"/tags",
 		"/users/alice",
+		"/users?handles=alice",
 		"/posts",
 		"/contests/" + id + "/editorials",
 		"/problems/" + id + "/samples",

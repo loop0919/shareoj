@@ -125,6 +125,35 @@ func (p profileHandler) publicProfile(w http.ResponseWriter, r *http.Request) {
 	writeAuthJSON(w, 200, publicProfileResponse{Handle: profile.Handle, Avatar: profile.Avatar, CreatedAt: profile.CreatedAt, Accounts: profile.Accounts})
 }
 
+// An icon is at most 180,000 bytes (cleanAvatar), so this many of them stay well under the 6 MB a Lambda may answer.
+const maxIconHandles = 20
+
+// publicIcons answers the icons of a page of names at once, so a list of people costs one request, not one each.
+func (p profileHandler) publicIcons(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	handles := strings.Split(r.URL.Query().Get("handles"), ",")
+	if len(handles) > maxIconHandles {
+		authError(w, 400, "invalid_request")
+		return
+	}
+	for _, handle := range handles {
+		if !userHandle.MatchString(handle) {
+			authError(w, 400, "invalid_request")
+			return
+		}
+	}
+	if p.Profiles == nil {
+		authError(w, 503, "database_unavailable")
+		return
+	}
+	items, err := p.Profiles.Icons(r.Context(), handles)
+	if err != nil {
+		authError(w, 503, "database_unavailable")
+		return
+	}
+	writeAuthJSON(w, 200, publicIconsResponse{Items: items})
+}
+
 var accountPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`^[A-Za-z0-9_]{1,15}$`),
 	regexp.MustCompile(`^[A-Za-z0-9_]{1,16}$`),

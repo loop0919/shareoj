@@ -146,6 +146,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 		mux.HandleFunc(pattern, auth.require(handler, true, 10*time.Second))
 	}
 	public("GET /users/{handle}", profiles.publicProfile, false, publicOperation{Summary: "公開プロフィール", Response: publicProfileResponse{}})
+	public("GET /users", profiles.publicIcons, false, publicOperation{Summary: "複数ユーザーのアイコン", Description: "指定したユーザーIDのアイコンを、ユーザーIDの昇順でまとめて返します。存在しないユーザーIDと退会したユーザーは結果に含めません。avatarはPNGのdata URLで、未設定なら空文字です。", Parameters: iconParameters(), Response: publicIconsResponse{}})
 	public("GET /contests", anonymous(contests.contestList), true, publicOperation{Summary: "コンテスト一覧", Description: "開始日時の降順。各要素のproblemsは空配列で、問題数はproblemCountで返します。問題一覧は詳細APIで取得します。", Response: publicContestPage{}, Parameters: offsetParameters()})
 	public("GET /contests/upcoming", anonymous(contests.upcomingContests), false, publicOperation{Summary: "開始が近いコンテスト", Description: "7日以内に開始するコンテストを、開始日時の昇順で最大5件返します。開催中のコンテストは含みません。", Response: publicScheduledContests{}})
 	public("GET /contests/running", anonymous(contests.runningContests), false, publicOperation{Summary: "開催中のコンテスト", Description: "開催中のコンテストを、終了日時の昇順で最大5件返します。", Response: publicScheduledContests{}})

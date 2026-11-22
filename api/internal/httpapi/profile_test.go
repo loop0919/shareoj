@@ -167,6 +167,30 @@ func TestProfilesPostgres(t *testing.T) {
 		t.Fatalf("public identity: %d %s", w.Code, w.Body.String())
 	}
 
+	// One request reads the icons of a page of names. It carries the handle and the icon only, skips handles nobody
+	// has, and answers each handle once.
+	var icon bytes.Buffer
+	if err = png.Encode(&icon, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	carolAvatar := "data:image/png;base64," + base64.StdEncoding.EncodeToString(icon.Bytes())
+	if w := request("PUT", "/my/profile", "carol", fmt.Sprintf(`{"handle":"carol","avatar":%q,"version":0}`, carolAvatar)); w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	var icons struct {
+		Items []map[string]any `json:"items"`
+	}
+	listed := request("GET", "/users?handles=carol,missing,alice_new,carol", "", "")
+	if err = json.Unmarshal(listed.Body.Bytes(), &icons); err != nil || listed.Code != 200 || listed.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("public icons: %d %v %s", listed.Code, err, listed.Body.String())
+	}
+	if len(icons.Items) != 2 || len(icons.Items[0]) != 2 || icons.Items[0]["handle"] != "alice_new" || icons.Items[0]["avatar"] != "" || len(icons.Items[1]) != 2 || icons.Items[1]["handle"] != "carol" || icons.Items[1]["avatar"] != carolAvatar {
+		t.Fatalf("public icons: %s", listed.Body.String())
+	}
+	if w := request("GET", "/users?handles=missing", "", ""); w.Code != 200 || strings.TrimSpace(w.Body.String()) != `{"items":[]}` {
+		t.Fatalf("no public icons: %d %s", w.Code, w.Body.String())
+	}
+
 	// All mutation paths enforce ownership and version.
 	if w := request("PUT", "/my/profile", "bob", `{"handle":"bob","avatar":"","version":0}`); w.Code != 200 {
 		t.Fatal(w.Body.String())

@@ -73,6 +73,10 @@ type publicProfileResponse struct {
 	Accounts  profiles.Accounts `json:"accounts"`
 }
 
+type publicIconsResponse struct {
+	Items []profiles.Icon `json:"items"`
+}
+
 type errorResponse struct {
 	Error string `json:"error"`
 }
@@ -91,6 +95,12 @@ func catalogueParameters() []*huma.Param {
 		{Name: "cursor", In: "query", Description: "前の応答のnextCursor。省略すると先頭から最大50件。", Schema: &huma.Schema{Type: "string", MaxLength: intPointer(512)}},
 		{Name: "author", In: "query", Description: "作者のユーザーIDで絞り込み。", Schema: &huma.Schema{Type: "string", Pattern: userHandle.String()}},
 		{Name: "tag", In: "query", Description: "タグで絞り込み。表記は完全一致です。GET /tagsのnameを指定してください。", Schema: &huma.Schema{Type: "string", MaxLength: intPointer(tags.MaxLength)}},
+	}
+}
+
+func iconParameters() []*huma.Param {
+	return []*huma.Param{
+		{Name: "handles", In: "query", Required: true, Description: "ユーザーIDをカンマで区切って指定します。1件以上、最大20件。", Schema: &huma.Schema{Type: "string"}, Example: "alice,bob"},
 	}
 }
 

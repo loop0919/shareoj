@@ -232,6 +232,9 @@ func TestAccountPostgres(t *testing.T) {
 	}
 	request("GET", "/users/alice", "", "", nil, 404)
 	request("GET", "/users/"+problem.Author, "", "", nil, 404)
+	if body := request("GET", "/users?handles=alice", "", "", nil, 200); strings.TrimSpace(body) != `{"items":[]}` {
+		t.Fatal("deleted account kept its icon", body)
+	}
 	request("GET", "/my/profile", "alice-sub", "alice-sub", nil, 401)
 	request("GET", "/my/problems", "alice-sub", "alice-sub", nil, 401)
 	request("DELETE", "/my/account", "alice-sub", "alice-sub", map[string]string{"handle": problem.Author}, 401)

@@ -80,6 +80,22 @@ func (s *Store) Save(ctx context.Context, owner, handle, avatar string, version 
 	return p, err
 }
 
+// Icon is what a page shows beside a name.
+type Icon struct {
+	Handle string `json:"handle"`
+	Avatar string `json:"avatar"`
+}
+
+// Icons reads the icons of many handles in one query, in handle order. Handles nobody has are left out, and so are
+// deleted accounts.
+func (s *Store) Icons(ctx context.Context, handles []string) ([]Icon, error) {
+	rows, err := s.pool.Query(ctx, `SELECT handle,avatar FROM user_profiles WHERE handle=ANY($1) AND deleted_at IS NULL ORDER BY handle`, handles)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[Icon])
+}
+
 // GetByHandle exposes only the chosen public identity.
 func (s *Store) GetByHandle(ctx context.Context, handle string) (Profile, error) {
 	p, err := scan(s.pool.QueryRow(ctx, `SELECT handle,avatar,version,created_at,accounts FROM user_profiles WHERE handle=$1 AND deleted_at IS NULL`, handle))
