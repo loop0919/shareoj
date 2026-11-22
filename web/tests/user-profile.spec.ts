@@ -48,15 +48,17 @@ test('user links keep initials when the icons cannot be read, and the next page 
   let failing = true
   const { batches } = await watchIcons(page, handles => failing ? { status: 502, json: {} } : { json: { items: handles.map(handle => ({ handle, avatar })) } })
   await page.goto('/problems/11111111-1111-4111-8111-111111111111?view=submissions')
-  await expect.poll(() => batches.length).toBe(1)
+  await expect.poll(() => batches.length).toBeGreaterThan(0)
   const authors = page.getByRole('link', { name: 'alice', exact: true })
   await expect(authors).toHaveCount(2)
   await expect(authors.first().locator('[data-initial]')).toBeVisible()
   await expect(authors.first().locator('img')).toHaveCount(0)
+  // A row that renders after the failure asks once more, so the count so far depends on when the list arrived.
   failing = false
+  const failed = batches.length
   await page.getByRole('link', { name: '詳細', exact: true }).click()
   await expect(page.getByRole('row', { name: '提出者 alice', exact: true }).locator('img')).toHaveAttribute('src', avatar)
-  expect(batches).toHaveLength(2)
+  expect(batches.slice(failed)).toEqual([['alice']])
 })
 
 test('the icons route answers many handles at once and refuses a malformed list', async ({ request }) => {
