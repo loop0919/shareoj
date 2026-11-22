@@ -23,6 +23,10 @@ assert.equal(elf.subarray(0, 4).toString('hex'), '7f454c46')
 assert.equal(elf.readUInt16LE(18), 0xb7, 'The function runs on arm64')
 process.env.NODE_ENV = 'production'
 let judgeMaintenance = false
+// The server keeps the runtime catalog for 15 seconds; the test moves the clock instead of waiting.
+const realNow = Date.now
+let clockAhead = 0
+Date.now = () => realNow() + clockAhead
 
 const api = createServer(async (req, res) => {
   res.setHeader('content-type', 'application/json')
@@ -171,11 +175,15 @@ try {
   assert.deepEqual(JSON.parse(runtimes.body), { items: [{ id: 'cpp17', label: 'C++17 (GCC)' }], maintenance: false })
   assert.equal(runtimes.headers['cache-control'], 'no-store')
   judgeMaintenance = true
+  // The catalog read a moment ago is still answered; maintenance shows once the 15 seconds have passed.
+  assert.deepEqual(JSON.parse((await invoke('/api/runtimes')).body), { items: [{ id: 'cpp17', label: 'C++17 (GCC)' }], maintenance: false })
+  clockAhead += 15_000
   assert.deepEqual(JSON.parse((await invoke('/api/runtimes')).body), { items: [], maintenance: true })
   const maintenancePage = await invoke('/problems/new')
   assert.equal(maintenancePage.statusCode, 200)
   assert.match(maintenancePage.body, /ジャッジ機能のメンテナンスを行っています。この期間中は提出等ができません。/)
   judgeMaintenance = false
+  clockAhead += 15_000
   for (const code of ['valid', 'invalid']) {
     const start = await invoke('/auth/google')
     assert.equal(start.statusCode, 302)

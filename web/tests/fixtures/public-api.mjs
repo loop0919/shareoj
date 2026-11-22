@@ -132,6 +132,7 @@ const upstreamRefusals = [
   { id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f004', status: 429, error: 'private-upstream-diagnostic', retryAfter: '30' },
   { id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f005', status: 500, error: 'team_full' },
 ]
+let runtimeReads = 0
 createServer(async (req, res) => {
   res.setHeader('Content-Type', 'application/json')
   const path = new URL(req.url, 'http://localhost').pathname
@@ -210,7 +211,8 @@ createServer(async (req, res) => {
   }
   else if (['/users/alice', '/users/bob', '/users/carol', '/users/yuki'].includes(path)) res.end(JSON.stringify({ handle: path.split('/').at(-1), accounts: path === '/users/yuki' ? { yukicoder: '123' } : {}, avatar: '', createdAt: '2026-09-10T00:00:00Z' }))
   else if (path === '/health') res.end('{}')
-  else if (path === '/runtimes') res.end(JSON.stringify({ items: [{ id: 'cpp23-gcc', label: 'C++23 (GCC)' }, { id: 'cpp17', label: 'C++17 (GCC)' }, { id: 'python314', label: 'Python 3.14' }, { id: 'whitespace13', label: 'Whitespace (whitespacers 1.3)' }, { id: 'text', label: 'Text (cat 9.4)' }] }))
+  else if (path === '/fixture/runtime-reads') res.end(JSON.stringify({ reads: runtimeReads }))
+  else if (path === '/runtimes') { runtimeReads++; res.end(JSON.stringify({ items: [{ id: 'cpp23-gcc', label: 'C++23 (GCC)' }, { id: 'cpp17', label: 'C++17 (GCC)' }, { id: 'python314', label: 'Python 3.14' }, { id: 'whitespace13', label: 'Whitespace (whitespacers 1.3)' }, { id: 'text', label: 'Text (cat 9.4)' }] })) }
   else if (path === '/featured/standings') {
     const at = new URL(req.url, 'http://localhost').searchParams.get('at')
     if (at === partialFeaturedStandings.round.scheduledAt) return res.end(JSON.stringify(partialFeaturedStandings))
