@@ -30,6 +30,7 @@ curl https://api.share-oj.net/problems
 | `/featured` | 定期便の出題 |
 | `/posts` | 公開記事の一覧 |
 | `/users/{handle}` | 公開プロフィール |
+| `/users?handles=a,b` | 複数ユーザーのアイコン（最大20件） |
 | `/runtimes` | 提出に使える言語 |
 
 チーム戦の順位表には、チームの行と個人参加の行が並びます。

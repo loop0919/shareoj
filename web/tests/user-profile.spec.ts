@@ -1,14 +1,23 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { shortId } from '../shared/utils/short-id'
 
-test('user links show shared profile icons and keep initials when unavailable', async ({ page }) => {
-  const avatar = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6V6kAAAAASUVORK5CYII='
-  const requests: string[] = []
-  await page.route('**/api/users/*', route => {
-    const handle = route.request().url().split('/').pop()!
-    requests.push(handle)
-    return route.fulfill(handle === 'carol' ? { status: 503, json: {} } : { json: { handle, avatar: handle === 'alice' ? avatar : '' } })
+// Records the requests for icons, and fails the single-profile route that the links used to call once per name.
+async function watchIcons(page: Page, answer: (handles: string[]) => { status?: number, json: unknown }) {
+  const batches: string[][] = []
+  const single: string[] = []
+  await page.route(/\/api\/users\/[^/?]+$/, route => { single.push(route.request().url()); return route.abort() })
+  await page.route(/\/api\/users\?handles=/, route => {
+    const handles = new URL(route.request().url()).searchParams.get('handles')!.split(',')
+    batches.push(handles)
+    return route.fulfill(answer(handles))
   })
+  return { batches, single }
+}
+
+test('user links read the icons of a page in one request and keep initials for names without one', async ({ page }) => {
+  const avatar = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6V6kAAAAASUVORK5CYII='
+  // carol has no profile, so the answer leaves her out.
+  const { batches, single } = await watchIcons(page, handles => ({ json: { items: handles.filter(handle => handle !== 'carol').map(handle => ({ handle, avatar: handle === 'alice' ? avatar : '' })) } }))
   await page.goto('/problems/11111111-1111-4111-8111-111111111111?view=submissions')
   const authors = page.getByRole('link', { name: 'alice', exact: true })
   await expect(authors).toHaveCount(2)
@@ -22,12 +31,42 @@ test('user links show shared profile icons and keep initials when unavailable', 
     await expect(link).toHaveAccessibleName(handle)
     await expect.poll(() => link.locator('[data-initial]').evaluate(element => getComputedStyle(element, '::before').content)).toBe(`"${handle[0]!.toUpperCase()}"`)
   }
-  await expect.poll(() => requests.slice().sort()).toEqual(['alice', 'bob', 'carol'])
+  expect(batches.map(handles => handles.slice().sort())).toEqual([['alice', 'bob', 'carol']])
+  // The next page shows a name it already knows without asking again.
   await page.getByRole('link', { name: '詳細', exact: true }).click()
   await expect(page.getByRole('row', { name: '提出者 alice', exact: true }).locator('img')).toHaveAttribute('src', avatar)
+  expect(batches).toHaveLength(1)
+  expect(single).toEqual([])
   for (const width of [320, 768]) {
     await page.setViewportSize({ width, height: 800 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  }
+})
+
+test('user links keep initials when the icons cannot be read, and the next page asks again', async ({ page }) => {
+  const avatar = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6V6kAAAAASUVORK5CYII='
+  let failing = true
+  const { batches } = await watchIcons(page, handles => failing ? { status: 502, json: {} } : { json: { items: handles.map(handle => ({ handle, avatar })) } })
+  await page.goto('/problems/11111111-1111-4111-8111-111111111111?view=submissions')
+  await expect.poll(() => batches.length).toBe(1)
+  const authors = page.getByRole('link', { name: 'alice', exact: true })
+  await expect(authors).toHaveCount(2)
+  await expect(authors.first().locator('[data-initial]')).toBeVisible()
+  await expect(authors.first().locator('img')).toHaveCount(0)
+  failing = false
+  await page.getByRole('link', { name: '詳細', exact: true }).click()
+  await expect(page.getByRole('row', { name: '提出者 alice', exact: true }).locator('img')).toHaveAttribute('src', avatar)
+  expect(batches).toHaveLength(2)
+})
+
+test('the icons route answers many handles at once and refuses a malformed list', async ({ request }) => {
+  const response = await request.get('/api/users?handles=bob,alice,missing')
+  expect(response.status()).toBe(200)
+  expect(response.headers()['cache-control']).toBe('no-store')
+  expect(await response.json()).toEqual({ items: [{ handle: 'alice', avatar: '' }, { handle: 'bob', avatar: '' }] })
+  const tooMany = Array.from({ length: 21 }, (_, index) => `user_${index}`).join(',')
+  for (const query of ['', '?handles=', '?handles=BAD', '?handles=alice,,bob', '?handles=alice&handles=bob', `?handles=${tooMany}`]) {
+    expect((await request.get(`/api/users${query}`)).status(), query).toBe(400)
   }
 })
 

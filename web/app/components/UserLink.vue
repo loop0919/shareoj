@@ -2,16 +2,8 @@
 import { deletedHandle } from '~~/shared/types/profile'
 const props = defineProps<{ handle?: string }>()
 const { profile } = useAccount()
-const { data: publicProfile } = useAsyncData(
-  () => `user-link:${props.handle ?? ''}`,
-  async () => props.handle && !deletedHandle.test(props.handle)
-    ? $fetch(`/api/users/${encodeURIComponent(props.handle)}`, { retry: 0 })
-    : { handle: '', avatar: '' },
-  { server: false, dedupe: 'defer' },
-)
-const avatar = computed(() => profile.value?.handle === props.handle
-  ? profile.value?.avatar
-  : publicProfile.value?.handle === props.handle ? publicProfile.value?.avatar : '')
+const icon = useUserIcon(() => props.handle)
+const avatar = computed(() => profile.value?.handle === props.handle ? profile.value?.avatar : icon.value)
 </script>
 <template>
   <span v-if="handle && deletedHandle.test(handle)" class="deleted-user">退会したユーザー</span>
