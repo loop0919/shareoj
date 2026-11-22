@@ -120,8 +120,8 @@ run "api_contract" {
       aws_apigatewayv2_integration.api.integration_uri == aws_lambda_function.api.invoke_arn &&
       aws_apigatewayv2_integration.api.payload_format_version == "2.0" &&
       aws_apigatewayv2_integration.api.timeout_milliseconds == 20000 &&
-      aws_apigatewayv2_stage.default.default_route_settings[0].throttling_burst_limit == 100 &&
-      aws_apigatewayv2_stage.default.default_route_settings[0].throttling_rate_limit == 50 &&
+      aws_apigatewayv2_stage.default.default_route_settings[0].throttling_burst_limit == 200 &&
+      aws_apigatewayv2_stage.default.default_route_settings[0].throttling_rate_limit == 100 &&
       aws_lambda_permission.api_gateway.source_arn == "${aws_apigatewayv2_api.api.execution_arn}/*"
     )
     error_message = "Preserve API Gateway routing, throttling, and scoped Lambda invocation."
@@ -172,7 +172,7 @@ run "database_contract" {
       aws_lambda_function.migration.vpc_config[0].ipv6_allowed_for_dual_stack &&
       aws_vpc_security_group_egress_rule.https.cidr_ipv6 == "::/0" &&
       alltrue([for route in aws_route_table.private.route : route.ipv6_cidr_block == "::/0" && route.egress_only_gateway_id == aws_egress_only_internet_gateway.application.id]) &&
-      aws_lambda_function.api.reserved_concurrent_executions == 20 &&
+      aws_lambda_function.api.reserved_concurrent_executions == 30 &&
       aws_lambda_function.migration.reserved_concurrent_executions == 1 &&
       aws_lambda_function.migration.environment[0].variables == tomap(local.database_environment)
     )

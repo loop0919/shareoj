@@ -40,7 +40,7 @@ variable "log_retention_days" {
 
 variable "throttling_burst_limit" {
   type    = number
-  default = 100
+  default = 200
   validation {
     condition     = var.throttling_burst_limit >= 1 && floor(var.throttling_burst_limit) == var.throttling_burst_limit
     error_message = "Burst limit must be a positive integer."
@@ -49,7 +49,7 @@ variable "throttling_burst_limit" {
 
 variable "throttling_rate_limit" {
   type    = number
-  default = 50
+  default = 100
   validation {
     condition     = var.throttling_rate_limit >= 1
     error_message = "Rate limit must be at least 1 request per second."

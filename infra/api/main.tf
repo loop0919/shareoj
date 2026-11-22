@@ -77,7 +77,7 @@ resource "aws_lambda_function" "api" {
   s3_object_version              = aws_s3_object.api_package.version_id
   source_code_hash               = filebase64sha256(local.lambda_package_path)
   depends_on                     = [aws_iam_role_policy.logs, aws_iam_role_policy.database, aws_iam_role_policy.test_data, aws_iam_role_policy.judge_dispatch, aws_iam_role_policy.cognito_users, aws_iam_role_policy.vpc, aws_route_table_association.private]
-  reserved_concurrent_executions = 20
+  reserved_concurrent_executions = 30
 
   vpc_config {
     ipv6_allowed_for_dual_stack = true
