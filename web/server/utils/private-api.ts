@@ -1,5 +1,6 @@
 import type { H3Event } from 'h3'
 import { sessionCookie, refreshCookie, refreshSession } from './private-session'
+import { retryRefused } from './busy-retry'
 
 // Besides retryAfterCodes on a 429, only these upstream codes reach the screen, so upstream diagnostics stay private.
 // A code the screen has its own message for goes here, or in retryAfterCodes if it comes with Retry-After.
@@ -74,13 +75,17 @@ export async function privateAPI<T>(event: H3Event, path: string, options: { met
   const canRefresh = options.token === undefined && (path === '/auth/me' || path.startsWith('/my/'))
   let refreshed = false
   if (!token && canRefresh && getCookie(event, refreshCookie)) { token = await refreshSession(event); refreshed = true }
-  const request = () => $fetch<T>(path, {
+  // A read may be sent again when the gateway refuses it under load. A write is not: a 503 may also be a request that
+  // ran past the gateway's time limit.
+  const repeatable = (options.method ?? 'GET') === 'GET'
+  const send = () => $fetch<T>(path, {
       baseURL: useRuntimeConfig(event).apiBaseUrl,
       method: options.method ?? 'GET',
       body: options.body as Record<string, unknown> | undefined,
       headers: token ? { ...options.headers, Authorization: `Bearer ${token}` } : options.headers ?? {},
       timeout: options.timeout ?? 12000, retry: 0,
     }) as Promise<T>
+  const request = () => repeatable ? retryRefused(send) : send()
   try {
     return await request()
   } catch (initialError) {

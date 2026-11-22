@@ -133,7 +133,28 @@ const upstreamRefusals = [
   { id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f005', status: 500, error: 'team_full' },
 ]
 let runtimeReads = 0
+// Requests that play the gateway in front of the API refusing under load (tests/upstream-errors.spec.ts). The name in
+// the URL picks the behaviour, and the count of requests under each name is read back from /fixture/hits.
+const busyHits = new Map()
+const busyName = /busy_(?:once|always|coded)_[a-z0-9]{8}|b0b0b0b0-000[12]-4000-8000-[a-f0-9]{12}/
+function refuseBusy(req, res) {
+  const name = busyName.exec(req.url)?.[0]
+  if (!name || req.url.startsWith('/fixture/')) return false
+  const count = (busyHits.get(name) ?? 0) + 1
+  busyHits.set(name, count)
+  const once = name.startsWith('busy_once_') || name.startsWith('b0b0b0b0-0001')
+  if (once && count > 1) {
+    if (!name.startsWith('busy_once_')) { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ id: name })); return true }
+    return false
+  }
+  res.setHeader('Content-Type', 'application/json')
+  if (name.startsWith('busy_coded_')) res.writeHead(503).end(JSON.stringify({ error: 'database_unavailable' }))
+  else if (once) res.writeHead(503).end(JSON.stringify({ message: 'Service Unavailable' }))
+  else res.writeHead(429).end(JSON.stringify({ message: 'Too Many Requests' }))
+  return true
+}
 createServer(async (req, res) => {
+  if (refuseBusy(req, res)) return
   res.setHeader('Content-Type', 'application/json')
   const path = new URL(req.url, 'http://localhost').pathname
   if (path === '/auth/login' || path === '/auth/refresh') {
@@ -211,6 +232,7 @@ createServer(async (req, res) => {
   }
   else if (['/users/alice', '/users/bob', '/users/carol', '/users/yuki'].includes(path)) res.end(JSON.stringify({ handle: path.split('/').at(-1), accounts: path === '/users/yuki' ? { yukicoder: '123' } : {}, avatar: '', createdAt: '2026-09-10T00:00:00Z' }))
   else if (path === '/health') res.end('{}')
+  else if (path === '/fixture/hits') res.end(JSON.stringify({ hits: busyHits.get(new URL(req.url, 'http://localhost').searchParams.get('key')) ?? 0 }))
   else if (path === '/fixture/runtime-reads') res.end(JSON.stringify({ reads: runtimeReads }))
   else if (path === '/runtimes') { runtimeReads++; res.end(JSON.stringify({ items: [{ id: 'cpp23-gcc', label: 'C++23 (GCC)' }, { id: 'cpp17', label: 'C++17 (GCC)' }, { id: 'python314', label: 'Python 3.14' }, { id: 'whitespace13', label: 'Whitespace (whitespacers 1.3)' }, { id: 'text', label: 'Text (cat 9.4)' }] })) }
   else if (path === '/featured/standings') {
