@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { coveredMark } from '~/composables/useStreamingMode'
 const { stale } = useStreamingMode()
 const dialog = ref<HTMLDialogElement>()
 // A modal dialog makes everything else inert and unreachable, whichever layout is showing. Removing it lifts the cover.
@@ -11,9 +12,8 @@ function keepOpen() {
   dialog.value.querySelector('button')?.focus()
 }
 // While stale the app root is hidden, not the dialog (a sibling in body), so a dialog that closes for any reason exposes nothing.
-const covered = 'data-streaming-covered'
-if (import.meta.client) watchEffect(() => { document.documentElement.toggleAttribute(covered, stale.value) })
-onBeforeUnmount(() => document.documentElement.removeAttribute(covered))
+// The mark follows stale alone: the app and error views each mount their own cover, and an unmount must not lift it.
+if (import.meta.client) watchEffect(() => { document.documentElement.toggleAttribute(coveredMark, stale.value) })
 function reload() { location.reload() }
 </script>
 

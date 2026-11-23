@@ -3,7 +3,7 @@ const { askOff } = useStreamingMode()
 </script>
 
 <template>
-  <button type="button" class="streaming-badge" @click="askOff">配信モード</button>
+  <button type="button" class="streaming-badge" aria-haspopup="dialog" @click="askOff">配信モード</button>
 </template>
 
 <style scoped>

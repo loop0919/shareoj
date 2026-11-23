@@ -130,6 +130,7 @@ test('a signed-out visitor turns streaming mode off from the badge', async ({ pa
   await page.route('**/api/auth/me', route => route.fulfill({ json: { user: null } }))
   await page.goto('/')
   await expect(page.getByRole('link', { name: 'ログイン' })).toBeVisible()
+  await expect(badge(page)).toHaveAttribute('aria-haspopup', 'dialog')
   await badge(page).click()
   await page.getByRole('dialog', { name: '配信モードを切りますか？' }).getByRole('button', { name: '切る', exact: true }).click()
   await expect(badge(page)).toHaveCount(0)
@@ -628,6 +629,7 @@ test('another tab is covered and reloads when streaming mode turns on', async ({
   await expect(reloadButton(staff)).toHaveCount(0)
   expect(new URL(staff.url()).pathname).toBe('/my')
   await expect(badge(staff)).toBeVisible()
+  expect(await staff.evaluate(() => document.documentElement.hasAttribute('data-streaming-covered'))).toBe(false)
 })
 
 test('a tab that refuses the reload stays covered, and uncovers when the mode returns', async ({ context }) => {
@@ -637,7 +639,11 @@ test('a tab that refuses the reload stays covered, and uncovers when the mode re
   await staff.goto('/my')
   const heading = staff.getByRole('heading', { name: 'alice' })
   await expect(heading).toBeVisible()
-  await staff.evaluate(() => addEventListener('beforeunload', event => event.preventDefault()))
+  // The leave prompt may open inside reload(), before the cover renders; the content must already be hidden then.
+  await staff.evaluate(() => addEventListener('beforeunload', event => {
+    (window as unknown as { coveredAtLeave: boolean }).coveredAtLeave = document.documentElement.hasAttribute('data-streaming-covered')
+    event.preventDefault()
+  }))
   // Chromium only asks after the user has interacted with the page.
   await heading.click()
   await mark(staff)
@@ -648,6 +654,7 @@ test('a tab that refuses the reload stays covered, and uncovers when the mode re
   await expect(badge(settings)).toBeVisible()
   await expect(reloadButton(staff)).toBeVisible()
   await expect(reloadButton(staff)).toBeFocused()
+  expect(await staff.evaluate(() => (window as unknown as { coveredAtLeave?: boolean }).coveredAtLeave)).toBe(true)
   // The content underneath is out of reach: what sits at the heading's own place is the cover, and Tab never leaves it.
   expect(await staff.evaluate(() => {
     const element = document.querySelector('h1')!
@@ -693,6 +700,26 @@ test('a tab that refuses the reload stays covered, and uncovers when the mode re
   expect(await marked(staff)).toBe(true)
 })
 
+test('a covered tab stays hidden when its app and error views swap', async ({ context }) => {
+  const staff = await context.newPage()
+  staff.on('dialog', dialog => dialog.dismiss())
+  await signIn(staff)
+  await staff.goto('/my')
+  const heading = staff.getByRole('heading', { name: 'alice' })
+  await expect(heading).toBeVisible()
+  await staff.evaluate(() => addEventListener('beforeunload', event => event.preventDefault()))
+  await heading.click()
+  await streamingOn(context)
+  await staff.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await expect(reloadButton(staff)).toBeVisible()
+  // An unknown page shows the error view, which mounts its own layout and cover in place of the app's.
+  await staff.evaluate(() => (document.querySelector('#__nuxt') as any).__vue_app__.config.globalProperties.$router.push('/no-such-page'))
+  // Located by CSS: the heading is hidden, so it is not in the accessibility tree.
+  await expect(staff.locator('h1', { hasText: 'ページが見つかりません' })).toBeAttached()
+  await expect(reloadButton(staff)).toBeVisible()
+  expect(await staff.evaluate(() => getComputedStyle(document.getElementById('__nuxt')!).visibility)).toBe('hidden')
+})
+
 test('a tab notices the change when it becomes visible', async ({ context }) => {
   await context.addInitScript(() => { (window as unknown as { BroadcastChannel?: unknown }).BroadcastChannel = undefined })
   const staff = await context.newPage()
@@ -706,4 +733,90 @@ test('a tab notices the change when it becomes visible', async ({ context }) => 
   await staff.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
   await expect(closedHeading(staff)).toBeVisible()
   expect(await marked(staff)).toBe(false)
+})
+
+test('a tab restored from the back/forward cache notices the change', async ({ context }) => {
+  await context.addInitScript(() => { (window as unknown as { BroadcastChannel?: unknown }).BroadcastChannel = undefined })
+  const staff = await context.newPage()
+  await signIn(staff)
+  await staff.goto('/my')
+  await expect(staff.getByRole('heading', { name: 'alice' })).toBeVisible()
+  await mark(staff)
+  await streamingOn(context)
+  expect(await marked(staff)).toBe(true)
+  await staff.evaluate(() => dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })))
+  await expect(closedHeading(staff)).toBeVisible()
+  expect(await marked(staff)).toBe(false)
+})
+
+test('a tab notices the change when it moves to another page', async ({ context }) => {
+  await context.addInitScript(() => { (window as unknown as { BroadcastChannel?: unknown }).BroadcastChannel = undefined })
+  const tab = await context.newPage()
+  await signIn(tab)
+  await tab.goto('/')
+  await expect(home(tab)).toBeVisible()
+  await mark(tab)
+  await streamingOn(context)
+  expect(await marked(tab)).toBe(true)
+  // The move itself is in-site; only the reload it sets off loads a document.
+  const reloaded = tab.waitForEvent('load')
+  await tab.getByRole('banner').getByRole('link', { name: '問題', exact: true }).click()
+  await reloaded
+  expect(await marked(tab)).toBe(false)
+  expect(new URL(tab.url()).pathname).toBe('/problems')
+  await expect(badge(tab)).toBeVisible()
+})
+
+test('a page rendered before the switch and hydrated after it reloads into streaming mode', async ({ page, context, baseURL }) => {
+  await signIn(page)
+  const documents = watchDocuments(page)
+  // The server renders the first document without the cookie, which is set before the browser reads that document.
+  await page.route(`${baseURL}/`, async route => {
+    const response = await route.fetch()
+    await streamingOn(context)
+    await route.fulfill({ response })
+  }, { times: 1 })
+  await page.goto('/')
+  await expect.poll(() => documents).toEqual(['/', '/'])
+  await expect(badge(page)).toBeVisible()
+  await expect(reloadButton(page)).toHaveCount(0)
+})
+
+test('moving between pages with streaming mode off writes no streaming cookie and keeps no listener behind', async ({ page, context }) => {
+  await signIn(page)
+  await page.addInitScript(() => {
+    const seen = { writes: [] as string[], listeners: new Set<unknown>() }
+    ;(window as unknown as { streamingSeen: typeof seen }).streamingSeen = seen
+    const cookie = Object.getOwnPropertyDescriptor(Document.prototype, 'cookie')!
+    Object.defineProperty(Document.prototype, 'cookie', {
+      configurable: true,
+      get() { return cookie.get!.call(this) },
+      set(value: string) {
+        if (String(value).startsWith('openoj-streaming=')) seen.writes.push(String(value))
+        cookie.set!.call(this, value)
+      },
+    })
+    // The change listeners alive on cookieStore: a cookie ref made at every move adds one that is never removed.
+    const store = (window as unknown as { cookieStore?: EventTarget }).cookieStore
+    if (!store) return
+    const add = store.addEventListener.bind(store)
+    const remove = store.removeEventListener.bind(store)
+    store.addEventListener = (type: string, listener: EventListenerOrEventListenerObject | null, options?: AddEventListenerOptions | boolean) => { if (type === 'change') seen.listeners.add(listener); add(type, listener, options) }
+    store.removeEventListener = (type: string, listener: EventListenerOrEventListenerObject | null, options?: EventListenerOptions | boolean) => { if (type === 'change') seen.listeners.delete(listener); remove(type, listener, options) }
+  })
+  const seen = () => page.evaluate(() => { const { writes, listeners } = (window as unknown as { streamingSeen: { writes: string[], listeners: Set<unknown> } }).streamingSeen; return { writes, listeners: listeners.size } })
+  await page.goto('/')
+  await expect(home(page)).toBeVisible()
+  await page.waitForLoadState('networkidle')
+  const before = await seen()
+  const header = page.getByRole('banner')
+  for (const [name, path] of [['問題', '/problems'], ['コンテスト', '/contests'], ['ホーム', '/'], ['問題', '/problems'], ['ホーム', '/']] as const) {
+    await header.getByRole('link', { name, exact: true }).click()
+    await expect(page).toHaveURL(path === '/' ? /\/$/ : new RegExp(`${path}$`))
+  }
+  await expect(home(page)).toBeVisible()
+  await page.waitForLoadState('networkidle')
+  expect(before.writes).toEqual([])
+  expect(await seen()).toEqual({ writes: [], listeners: before.listeners })
+  expect((await context.cookies()).some(cookie => cookie.name === 'openoj-streaming')).toBe(false)
 })
