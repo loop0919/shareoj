@@ -154,6 +154,12 @@ function refuseBusy(req, res) {
   else res.writeHead(429).end(JSON.stringify({ message: 'Too Many Requests' }))
   return true
 }
+// The shared contest as the public reads it; the private read answers the same for a viewer who holds no role.
+const sharedContest = path => ({
+  id: path.split('/').pop(), title: '共有コンテスト', author: 'alice', description: '共有するコンテストです。',
+  startsAt: '2026-09-10T00:00:00Z', endsAt: '2026-09-10T02:00:00Z', penaltyMinutes: 5,
+  status: path.endsWith('99999999-9999-4999-8999-999999999999') ? 'scheduled' : 'running', canEdit: false, official: true, participating: false, canViewSubmissions: false, problems: [{ id: problem.id, title: problem.title, points: 100 }],
+})
 createServer(async (req, res) => {
   if (refuseBusy(req, res)) return
   res.setHeader('Content-Type', 'application/json')
@@ -216,6 +222,10 @@ createServer(async (req, res) => {
     // A sample check of a plain problem run by its manager, and a generate job whose cases carry the generated outputs.
     if (path === '/my/submissions/c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3') return res.end(JSON.stringify({ ...submission, id: 'c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3', easyTest: true, result: { ...submission.result, checkerLog: 'manager-diagnostics' } }))
     if (path === '/my/submissions/c4c4c4c4-c4c4-4c4c-8c4c-c4c4c4c4c4c4') return res.end(JSON.stringify({ ...submission, id: 'c4c4c4c4-c4c4-4c4c-8c4c-c4c4c4c4c4c4', result: { ...submission.result, cases: [{ name: 'gen_1', verdict: 'AC', output: 'secret-output', outputFile: { url: 'https://download.example/secret', size: 9, sha256: 'b'.repeat(64) } }] } }))
+    // The private read of the two shared contests answers as a participant would see them: no staff flags, not registered.
+    if (/^\/my\/contests\/(88888888-8888-4888-8888-888888888888|99999999-9999-4999-8999-999999999999)$/.test(path)) return res.end(JSON.stringify(sharedContest(path)))
+    // A problem of that contest reads the same through the session route.
+    if (path === `/my/contests/88888888-8888-4888-8888-888888888888/problems/${problem.id}`) return res.end(JSON.stringify({ ...problem, favoriteCount: 3 }))
     // The private standings name the table the web server asked for; this contest still has runs to judge (ADR 0023).
     if (path === '/my/contests/88888888-8888-4888-8888-888888888888/standings') {
       const live = new URL(req.url, 'http://localhost').searchParams.get('live') === '1'
@@ -307,11 +317,7 @@ createServer(async (req, res) => {
     res.end(JSON.stringify({ items: matches ? [publicPost] : [], nextCursor: '' }))
   }
   else if (path === '/posts/77777777-7777-4777-8777-777777777777') res.end(JSON.stringify({ id: '77777777-7777-4777-8777-777777777777', title: '日本語 & #記事 + 共有', author: 'alice', markdown: '共有する記事です。', publishedVersion: 1, updatedAt: '2026-09-10T00:00:00Z', isOperator: false, publishedAt: '2026-09-10T00:00:00Z', problems: [{ id: problem.id, title: problem.title }], tags: publicPost.tags }))
-  else if (/^\/contests\/(88888888-8888-4888-8888-888888888888|99999999-9999-4999-8999-999999999999)$/.test(path)) res.end(JSON.stringify({
-    id: path.split('/').pop(), title: '共有コンテスト', author: 'alice', description: '共有するコンテストです。',
-    startsAt: '2026-09-10T00:00:00Z', endsAt: '2026-09-10T02:00:00Z', penaltyMinutes: 5,
-    status: path.endsWith('99999999-9999-4999-8999-999999999999') ? 'scheduled' : 'running', canEdit: false, official: true, participating: false, canViewSubmissions: false, problems: [{ id: problem.id, title: problem.title, points: 100 }],
-  }))
+  else if (/^\/contests\/(88888888-8888-4888-8888-888888888888|99999999-9999-4999-8999-999999999999)$/.test(path)) res.end(JSON.stringify(sharedContest(path)))
   else if (/^\/contests\/(88888888-8888-4888-8888-888888888888|99999999-9999-4999-8999-999999999999)\/standings$/.test(path)) res.end('[]')
   else if (/^\/contests\/(bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc|bdbdbdbd-bdbd-4dbd-8dbd-bdbdbdbdbdbd)(\/|$)/.test(path)) res.end(JSON.stringify({ route: 'public', path, query: new URL(req.url, 'http://localhost').search }))
   else if (path.startsWith('/contests/66666666-6666-4666-8666-666666666666/')) res.end(JSON.stringify({ route: 'public', path, query: new URL(req.url, 'http://localhost').search }))

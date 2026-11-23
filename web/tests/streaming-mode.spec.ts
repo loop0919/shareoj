@@ -281,3 +281,198 @@ test('the settings page links back to the home in streaming mode and to the my p
   await expect(page.getByRole('link', { name: 'ホームへ戻る' })).toHaveAttribute('href', '/')
   await expect(page.getByRole('link', { name: 'マイページへ戻る' })).toHaveCount(0)
 })
+
+const problemId = '11111111-1111-4111-8111-111111111111'
+const scheduledContest = `/contests/${shortId('99999999-9999-4999-8999-999999999999')}`
+const own = { name: 'openoj_access', value: 'valid-access', url: 'http://127.0.0.1:13000' }
+// The first request of the browser carries the session cookie, so the server renders as a signed-in viewer sees it.
+async function signedInForReal(context: BrowserContext) { await context.addCookies([own]) }
+// Every 403 from /api/ and every error the page itself logs while the pages are open.
+function watchRefusals(page: Page) {
+  const seen = { refused: [] as string[], logged: [] as string[] }
+  page.on('response', response => { if (response.status() === 403 && new URL(response.url()).pathname.startsWith('/api/')) seen.refused.push(response.url()) })
+  page.on('console', message => { if (message.type() === 'error') seen.logged.push(`${message.text()} ${message.location().url}`) })
+  page.on('pageerror', error => seen.logged.push(error.message))
+  return seen
+}
+
+const publicPages = ['/', '/problems', '/contests', '/featured', `/problems/${shortId(problemId)}`, `/problems/${shortId(problemId)}?view=submissions`, contest, `${contest}?view=problems`, `${contest}?view=standings`, `${contest}?view=clarifications`, `${contest}/A`, scheduledContest]
+
+test('public pages show no error in streaming mode', async ({ page, context }) => {
+  await streamingOn(context)
+  await signedInForReal(context)
+  const seen = watchRefusals(page)
+  // These reads stay open in streaming mode; the fixture API has no answer shaped for them.
+  await page.route('**/api/my/favorites/*', route => route.fulfill({ json: { favorited: false, favoriteCount: 3 } }))
+  await page.route('**/api/my/difficulty-votes/*', route => route.fulfill({ json: { difficulty: null, difficultyAverage: null, difficultyVoteCount: 0, difficultyDistribution: Array.from({ length: 10 }, () => 0) } }))
+  for (const path of publicPages) {
+    await page.goto(path)
+    await expect(badge(page)).toBeVisible()
+    await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(500)
+    await expect(page.getByRole('alert'), path).toHaveCount(0)
+  }
+  expect(seen.refused).toEqual([])
+  expect(seen.logged).toEqual([])
+})
+
+test('the same check sees a refused read and a logged error', async ({ page, context }) => {
+  await streamingOn(context)
+  await signedInForReal(context)
+  const seen = watchRefusals(page)
+  await page.goto('/')
+  await expect(badge(page)).toBeVisible()
+  await page.evaluate(() => fetch('/api/my/notifications'))
+  await expect.poll(() => seen.refused.length).toBe(1)
+  await expect.poll(() => seen.logged.length).toBeGreaterThan(0)
+})
+
+test('the join panel gives way to a note in streaming mode', async ({ page, context }) => {
+  await streamingOn(context)
+  await signedInForReal(context)
+  await page.goto(scheduledContest)
+  const note = '配信モード中は参加登録できません。'
+  await expect(page.getByText(note, { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '参加する' })).toHaveCount(0)
+})
+
+test('the join panel is unchanged for a signed-out visitor in streaming mode, and for a signed-in one without it', async ({ page, context }) => {
+  await streamingOn(context)
+  await page.goto(scheduledContest)
+  await expect(page.getByRole('link', { name: 'ログインして参加する' })).toBeVisible()
+  await expect(page.getByText('配信モード中は参加登録できません。')).toHaveCount(0)
+  await context.clearCookies()
+  await signedInForReal(context)
+  await page.goto(scheduledContest)
+  await expect(page.getByRole('button', { name: '参加する' })).toBeVisible()
+  await expect(page.getByText('配信モード中は参加登録できません。')).toHaveCount(0)
+})
+
+test('the contest menu drops 質問 in streaming mode', async ({ page, context }) => {
+  await streamingOn(context)
+  await signedInForReal(context)
+  const response = await page.goto(contest)
+  const menu = page.getByRole('navigation', { name: 'コンテストメニュー' })
+  await expect(menu.getByRole('link', { name: '解説', exact: true })).toBeVisible()
+  await expect(menu.getByRole('link', { name: '質問', exact: true })).toHaveCount(0)
+  expect(await response!.text()).not.toContain('view=clarifications')
+  const asked: string[] = []
+  page.on('request', request => { if (request.url().includes('/clarifications')) asked.push(request.url()) })
+  await page.goto(`${contest}?view=clarifications`)
+  await expect(page.getByText('配信モード中は表示できません。', { exact: true })).toBeVisible()
+  await page.waitForTimeout(500)
+  expect(asked).toEqual([])
+})
+
+test('the contest menu keeps 質問 without streaming mode', async ({ page, context }) => {
+  await signedInForReal(context)
+  await page.route('**/api/my/contests/*/clarifications*', route => route.fulfill({ json: { items: [], hasMore: false, total: 0 } }))
+  await page.goto(contest)
+  await expect(page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '質問', exact: true })).toBeVisible()
+  await page.goto(`${contest}?view=clarifications`)
+  await expect(page.getByText('配信モード中は表示できません。', { exact: true })).toHaveCount(0)
+})
+
+test('the own list of a staff contest says it is closed', async ({ page, context }) => {
+  await streamingOn(context)
+  await signIn(page)
+  await page.route('**/api/contests/*/submissions?*mine=1*', route => route.fulfill({ status: 403, json: { data: { code: 'streaming_mode' } } }))
+  await page.goto(`${contest}?view=my-submissions`)
+  await expect(page.getByText('配信モード中は表示できません。', { exact: true })).toBeVisible()
+  await expect(page.getByText('提出一覧を取得できませんでした。')).toHaveCount(0)
+})
+
+test('another failure of the own list keeps its own message', async ({ page, context }) => {
+  await streamingOn(context)
+  await signIn(page)
+  await page.route('**/api/contests/*/submissions?*mine=1*', route => route.fulfill({ status: 502, json: {} }))
+  await page.goto(`${contest}?view=my-submissions`)
+  await expect(page.getByText('提出一覧を取得できませんでした。')).toBeVisible()
+  await expect(page.getByText('配信モード中は表示できません。', { exact: true })).toHaveCount(0)
+})
+
+// The staff answer carries the flags; the public answer, which the server gives staff in streaming mode, has none of them.
+const contestAnswer = (extra: Record<string, unknown>) => ({
+  id: contestId, title: '共有コンテスト', author: 'alice', description: '', startsAt: '2026-09-10T00:00:00Z', endsAt: '2099-09-10T02:00:00Z',
+  freezeAt: '2026-09-10T01:00:00Z', freezeMinutes: 60, penaltyMinutes: 5, status: 'running', canEdit: false, official: true, participating: false, canViewSubmissions: false,
+  problems: [{ id: problemId, title: 'A + B', points: 100 }], ...extra,
+})
+const standingRows = [{ rank: 1, handle: 'bob', points: 100, timeMs: 60000, problems: { [problemId]: { points: 100, score: 100, wrong: 0, pending: 0, acceptedAt: '2026-09-10T00:01:00Z', submissionId: '22222222-2222-4222-8222-222222222222' } } }]
+async function answerContest(page: Page, extra: Record<string, unknown>) {
+  await page.route(`**/api/contests/${contestId}`, route => route.fulfill({ json: contestAnswer(extra) }))
+  await page.route('**/api/contests/*/standings*', route => route.fulfill({ json: standingRows }))
+}
+const staffAnswer = { staff: true, canViewSubmissions: true, canViewLiveStandings: true, official: false }
+
+test('the public answer of a contest gives no staff controls', async ({ page, context }) => {
+  await streamingOn(context)
+  await signIn(page)
+  await answerContest(page, {})
+  await page.goto(`${contest}?view=standings`)
+  await expect(page.locator('.standings-table tbody tr')).toHaveCount(1)
+  await expect(page.locator('.standings-table a[href*="/submissions/"]')).toHaveCount(0)
+  await expect(page.getByText('凍結なしで表示')).toHaveCount(0)
+  await page.goto(`${contest}/A`)
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+  await expect(page.getByRole('button', { name: '提出する', exact: true })).toHaveCount(0)
+})
+
+test('the same pages show the staff controls when the answer carries the staff flags', async ({ page }) => {
+  await signIn(page)
+  await answerContest(page, staffAnswer)
+  await page.goto(`${contest}?view=standings`)
+  await expect(page.locator('.standings-table a[href*="/submissions/"]')).toHaveCount(1)
+  await expect(page.getByText('凍結なしで表示')).toBeVisible()
+  await page.goto(`${contest}/A`)
+  await expect(page.getByRole('button', { name: '提出する', exact: true })).toBeVisible()
+})
+
+test('a problem page still submits and runs code in streaming mode', async ({ page, context }) => {
+  await streamingOn(context)
+  await signedInForReal(context)
+  const detail = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1'
+  const submitted: number[] = []
+  // The requests go to the real web server, which must let them through; only the fixture's empty answer is replaced.
+  await page.route('**/api/my/submissions', async route => {
+    const upstream = await route.fetch({ headers: { ...route.request().headers(), origin: 'https://judge.example' } })
+    submitted.push(upstream.status())
+    await route.fulfill({ status: 202, json: { id: detail, status: 'QUEUED' } })
+  })
+  await page.goto(`/problems/${shortId(problemId)}`)
+  await page.getByLabel('ソースコード', { exact: true }).fill('int main(){}')
+  await page.getByRole('button', { name: '提出する', exact: true }).click()
+  await expect(page).toHaveURL(`/my/submissions/${shortId(detail)}`)
+  expect(submitted).toEqual([202])
+  await expect(closedHeading(page)).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: '提出結果', exact: true })).toBeVisible()
+
+  const ran: number[] = []
+  await page.route('**/api/my/code-runs/latest', route => route.fulfill({ status: 404, json: { data: { code: 'code_run_not_found' } } }))
+  await page.route('**/api/my/code-runs', async route => {
+    const upstream = await route.fetch({ headers: { ...route.request().headers(), origin: 'https://judge.example' } })
+    ran.push(upstream.status())
+    await route.fulfill({ status: 202, json: { id: '33333333-3333-4333-8333-333333333333', status: 'QUEUED', result: null, createdAt: '2026-10-25T00:00:00Z' } })
+  })
+  await page.goto('/run')
+  await page.getByRole('combobox', { name: '言語' }).selectOption('cpp23-gcc')
+  await page.getByLabel('ソースコード', { exact: true }).fill('int main(){}')
+  const run = page.getByRole('button', { name: /実行$/ })
+  await expect(run).toBeEnabled()
+  await run.click()
+  await expect.poll(() => ran).toHaveLength(1)
+  expect(ran[0]).not.toBe(403)
+})
+
+test('the reveal buttons of the 定期便 are not drawn in streaming mode, and are drawn without it', async ({ page, context }) => {
+  await signedInForReal(context)
+  await page.goto('/featured')
+  // alice writes one announced slot and tests the other, so both show the button.
+  await expect(page.getByRole('button', { name: '問題名を表示' })).toHaveCount(2)
+  await streamingOn(context)
+  const asked: string[] = []
+  page.on('request', request => { if (request.url().includes('/api/my/featured/next')) asked.push(request.url()) })
+  await page.goto('/featured')
+  await expect(page.locator('.delivery-problem')).toHaveCount(2)
+  await expect(page.getByRole('button', { name: '問題名を表示' })).toHaveCount(0)
+  expect(asked).toEqual([])
+})

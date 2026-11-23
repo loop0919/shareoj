@@ -7,6 +7,7 @@ import { isOwnStanding, pinnedStanding, standingSubmissionPath } from '~/utils/s
 import type { PageSize } from '~/composables/usePageSize'
 import { canViewAllSubmissions, contestAuthors, contestDate, contestFreezeTime, contestProblemPath, contestProblemTitle, contestStatus, contestView, contestViews, frozenSubmissionsNote, labelIndex, ownSubmissionsLabel, problemLabel, type Standing, type StandingCell } from '~~/shared/types/contest'
 import { fullId, shortId } from '~~/shared/utils/short-id'
+import { streamingCode } from '~~/shared/utils/streaming-mode'
 import type { Submission } from '~~/shared/types/submission'
 import type { UserEditorial } from '~~/shared/types/post'
 definePageMeta({ key: route => route.path })
@@ -17,6 +18,7 @@ const router = useRouter()
 // The layout header shows the contest menu that switches these views.
 const activeView = computed(() => contestView(route.query.view))
 const { user, profile } = useAccount()
+const { streaming } = useStreamingMode()
 const { showToast } = useToast()
 const id = fullId(route.params.id)
 const base = `/api/contests/${encodeURIComponent(id)}`
@@ -96,6 +98,8 @@ const problemFilter = computed({
 const problemIndex = (item: Submission) => contest.value?.problems.findIndex(p => p.id === item.problemId) ?? -1
 const submissions = ref<{ items: Submission[], hasMore: boolean, total: number } | null>(null)
 const submissionsError = ref('')
+// Streaming mode refuses the viewer's own list of a staff contest; that is told apart from a failed read.
+const submissionsClosed = ref(false)
 const submissionsSize = usePageSize('submissions')
 const submissionsOffset = computed(() => pageOffset(requestedPage.value, submissionsSize.value))
 const submissionsLast = computed(() => lastPage(submissions.value?.total ?? 0, submissionsSize.value))
@@ -112,11 +116,16 @@ function loadSubmissions() {
     result => {
       submissions.value = result
       submissionsError.value = ''
+      submissionsClosed.value = false
       // Rows dropped since the page was opened, so it is past the end: the last page shows instead.
       const last = lastPage(result.total, submissionsSize.value)
       if (requestedPage.value > last) void goToPage(last)
     },
-    () => { submissionsError.value = '提出一覧を取得できませんでした。' })
+    error => {
+      const failure = error as { data?: { code?: string, data?: { code?: string } } }
+      submissionsClosed.value = failure.data?.data?.code === streamingCode || failure.data?.code === streamingCode
+      submissionsError.value = submissionsClosed.value ? '' : '提出一覧を取得できませんでした。'
+    })
 }
 // The viewer's own submission opens on its own detail page, and a teammate's on the shared one. Either way the
 // breadcrumb leads back to this list.
@@ -259,7 +268,8 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <p><NuxtLink to="/docs/contest-rules">ルール</NuxtLink></p>
     </section>
     <ContestSetterTools v-if="activeView === 'overview' && contest.setter && (contest.teamMode || contest.onsiteDivision)" :contest="contest" @changed="refreshStandings()" />
-    <ContestClarifications v-if="activeView === 'clarifications'" :key="user?.id ?? 'anonymous'" :contest="contest" />
+    <section v-if="activeView === 'clarifications' && streaming" class="contest-section clarifications" aria-labelledby="clarifications-title"><h1 id="clarifications-title">質問</h1><p class="notice">配信モード中は表示できません。</p></section>
+    <ContestClarifications v-else-if="activeView === 'clarifications'" :key="user?.id ?? 'anonymous'" :contest="contest" />
     <section v-if="activeView === 'problems'" id="problems" class="contest-section" aria-labelledby="problems-title">
       <h1 id="problems-title">問題</h1>
       <p v-if="contest.status === 'scheduled'" class="notice">問題文は開始時刻に公開されます。</p>
@@ -325,8 +335,9 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <template v-else><p class="muted">{{ submissionList === 'all' ? `提出コードを閲覧できます。練習提出も掲載します。${frozenNote}` : `${chosenProblem ? 'この問題' : 'このコンテストの全問題'}への、${submissionList === 'team' ? 'チーム' : '自分'}の提出です。練習提出も掲載します。` }}</p>
       <div v-if="problemChoices.length || (contest.onsiteDivision && submissionList === 'all')" class="submissions-filters"><div v-if="problemChoices.length" class="submissions-problem"><label for="submissions-problem">問題</label><select id="submissions-problem" v-model.number="problemFilter"><option :value="-1">すべて</option><option v-for="choice in problemChoices" :key="choice.id" :value="choice.index">{{ choice.title }}</option></select></div><InlineSwitch v-if="contest.onsiteDivision && submissionList === 'all'" v-model="onsiteOnly">オンサイトのみ表示</InlineSwitch><RejudgeButton v-if="canRejudge && selected.length" :busy="rejudging" :disabled="rejudging" :aria-label="`選択した${selected.length}件の提出をリジャッジ`" @click="rejudgeSelected" /></div>
       <p v-if="rejudgeMessage" class="rejudge-message" role="status">{{ rejudgeMessage }}</p>
+      <p v-if="submissionsClosed" class="notice">配信モード中は表示できません。</p>
       <p v-if="submissionsError" class="notice notice-error" role="alert">{{ submissionsError }}</p>
-      <LoadingSpinner v-if="!submissions && !submissionsError" label="提出一覧を読み込み中" />
+      <LoadingSpinner v-if="!submissions && !submissionsError && !submissionsClosed" label="提出一覧を読み込み中" />
       <template v-if="submissions"><ListToolbar v-if="showSubmissionPages" :total="submissions.total" :page="submissionsPage" :size="submissionsSize" unit="件" :link="pageLink" @update:size="resizeSubmissions" /><p v-if="!submissions.items.length" class="contest-empty muted">提出はまだありません。</p><div v-else class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0"><table class="content-table content-table--cards"><thead><tr><th v-if="canRejudge" scope="col" class="select-cell"><input type="checkbox" :checked="allSelected" :disabled="!selectable.length" aria-label="このページの提出をすべて選択" @change="selected = ($event.target as HTMLInputElement).checked ? [...selectable] : []"></th><th scope="col">提出日時 (JST)</th><th scope="col">問題</th><th scope="col">ユーザー</th><th scope="col">言語</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th v-if="showSubmissionScore" scope="col">得点</th><th scope="col">結果</th><th scope="col">詳細</th></tr></thead><tbody><tr v-for="s in submissions.items" :key="s.id"><td v-if="canRejudge" class="select-cell"><input v-model="selected" type="checkbox" :value="s.id" :disabled="!selectable.includes(s.id)" :aria-label="`${contestDate(s.createdAt)}の提出を選択`"></td><td class="corner-cell"><time :datetime="s.createdAt">{{ contestDate(s.createdAt) }}</time><span v-if="new Date(s.createdAt) >= new Date(contest.endsAt)" class="practice-badge">練習</span></td><td class="submission-problem title-cell"><NuxtLink v-if="problemIndex(s) >= 0" :to="contestProblemPath(contest.id, problemIndex(s))"><ContestProblemTitle :index="problemIndex(s)" :title="s.problemTitle" /></NuxtLink><template v-else>{{ s.problemTitle }}</template></td><td class="inline-cell"><UserLink :handle="s.author" /></td><td class="inline-cell">{{ runtimeLabel(s.runtime) }}</td><td class="submission-usage stat-cell wide-cell" data-label="コード長">{{ s.sourceBytes == null ? '—' : `${s.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage stat-cell wide-cell" data-label="実行時間・メモリ">{{ submissionUsage(s.result) }}</td><td v-if="showSubmissionScore" class="submission-score stat-cell" data-label="得点" :data-full="(s.result?.scoring && s.result.scoring.score === s.result.scoring.maxScore) || undefined">{{ s.result?.scoring ? formatScore(s.result.scoring.score) : '—' }}</td><td class="lead-cell"><SubmissionStatus :item="s" /></td><td class="end-cell"><NuxtLink :to="submissionLink(s)">詳細</NuxtLink></td></tr></tbody></table></div><PageNav v-if="showSubmissionPages" class="submissions-pages" :page="submissionsPage" :last="submissionsLast" :link="pageLink" /></template>
       </template>
     </section>

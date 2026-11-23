@@ -1,14 +1,15 @@
 // Rejudging is offered to the problem's author and testers and to operators. The API answers
-// 404 to everyone else, so a failed check simply hides the controls.
+// 404 to everyone else, so a failed check simply hides the controls. Streaming mode refuses the route, so it asks nothing.
 export function useRejudge(problemId: MaybeRefOrGetter<string>) {
   const { user } = useAccount()
+  const { streaming } = useStreamingMode()
   const allowed = ref(false)
   const pending = ref(0)
   const busy = ref(false)
   const message = ref('')
   async function refresh() {
     const id = toValue(problemId)
-    if (!user.value || !id) { allowed.value = false; pending.value = 0; return }
+    if (streaming.value || !user.value || !id) { allowed.value = false; pending.value = 0; return }
     try {
       pending.value = (await $fetch<{ pending: number }>(`/api/my/problems/${id}/rejudge`)).pending
       allowed.value = true
