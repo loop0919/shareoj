@@ -118,6 +118,7 @@ const partialFeaturedStandings = {
     { rank: 3, handle: 'bob', timeMs: null, easy: { accepted: false, score: 0, timeMs: null, wrong: 1 }, hard: { accepted: false, score: null, timeMs: null, wrong: 0 } },
   ],
 }
+const pngHeader = Buffer.from('89504e470d0a1a0a', 'hex')
 const submission = {
   id: '22222222-2222-4222-8222-222222222222', problemId: problem.id, problemTitle: problem.title,
   problemVersion: 1, author: 'alice', runtime: 'cpp17', source: 'int main(){}', status: 'DONE',
@@ -168,6 +169,7 @@ createServer(async (req, res) => {
   else if (path === '/auth/me' || path.startsWith('/my/')) {
     if (req.headers.authorization !== 'Bearer valid-access') return res.writeHead(401).end('{}')
     if (path === '/auth/me') return res.end(JSON.stringify({ id: 'session-user' }))
+    if (path.startsWith('/my/images/')) return res.setHeader('Content-Type', 'image/png').end(Buffer.concat([pngHeader, Buffer.from('private')]))
     if (path === '/my/profile') return res.end(JSON.stringify({ profile: { handle: 'alice', avatar: '', version: 1, createdAt: '2026-09-10T00:00:00Z' } }))
     if (req.method === 'PUT' && /^\/my\/(problems|contests|posts)\/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa$/.test(path)) {
       res.setHeader('Retry-After', '7200')
@@ -226,6 +228,7 @@ createServer(async (req, res) => {
     }
     res.end(JSON.stringify({ items: [], nextCursor: '' }))
   }
+  else if (path.startsWith('/images/')) res.setHeader('Content-Type', 'image/png').end(Buffer.concat([pngHeader, Buffer.from('public')]))
   else if (path === '/users') {
     const handles = new URL(req.url, 'http://localhost').searchParams.get('handles')?.split(',') ?? []
     res.end(JSON.stringify({ items: ['alice', 'bob', 'carol', 'yuki'].filter(handle => handles.includes(handle)).map(handle => ({ handle, avatar: '' })) }))

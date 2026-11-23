@@ -18,7 +18,7 @@ export default defineEventHandler(async event => {
   }
   if (action === 'me' && event.method === 'GET') {
     if (!hasSession(event)) return { user: null }
-    try { return { user: await privateAPI<{ id: string }>(event, '/auth/me') } }
+    try { return { user: await privateAPI<{ id: string }>(event, '/auth/me', { streaming: true }) } }
     catch (error) {
       if ((error as { statusCode?: number }).statusCode !== 401) throw error
       clearPrivateSession(event)
@@ -35,11 +35,11 @@ export default defineEventHandler(async event => {
   const body = await limitedJSON(event, 16 << 10)
   if (['signup', 'confirm-signup', 'resend-confirmation'].includes(action ?? '')) {
     const schema = action === 'resend-confirmation' ? z.object({ sent: z.literal(true) }) : z.object({ confirmed: z.boolean() })
-    const result = schema.safeParse(await privateAPI(event, `/auth/${action}`, { method: 'POST', body, headers: clientIPHeaders(event) }))
+    const result = schema.safeParse(await privateAPI(event, `/auth/${action}`, { method: 'POST', body, headers: clientIPHeaders(event), streaming: true }))
     if (!result.success) throw createError({ statusCode: 502 })
     return result.data
   }
-  const result = resultSchema.safeParse(await privateAPI(event, `/auth/${action}`, { method: 'POST', body }))
+  const result = resultSchema.safeParse(await privateAPI(event, `/auth/${action}`, { method: 'POST', body, streaming: true }))
   if (!result.success) throw createError({ statusCode: 502 })
   const data = result.data
   if (data.challenge_name && data.session) {

@@ -2,6 +2,7 @@ import { privateAPI } from './private-api'
 import { hasSession } from './private-session'
 import { privateHeaders } from './private-request'
 import { publicContent } from './public-content'
+import { streamingMode } from './streaming-mode'
 
 export default defineEventHandler(async event => {
   privateHeaders(event)
@@ -12,8 +13,10 @@ export default defineEventHandler(async event => {
   if (query.mine === '1' && !hasSession(event)) throw createError({ statusCode: 401 })
   const search = new URLSearchParams({ offset: typeof query.offset === 'string' ? query.offset : '0', mine: typeof query.mine === 'string' ? query.mine : '0' })
   const path = `/problems/${id}/submissions${submission ? `/${submission}` : ''}?${search}`
-  if (hasSession(event)) {
-    try { return await privateAPI(event, `/my${path}`) }
+  // Streaming mode keeps only the reader's own list private; the whole list and a detail are public.
+  const streaming = streamingMode(event)
+  if (hasSession(event) && (!streaming || (query.mine === '1' && !submission))) {
+    try { return await privateAPI(event, `/my${path}`, streaming ? { streaming: true } : {}) }
     catch (error) { if (![401, 403].includes((error as { statusCode?: number }).statusCode ?? 0) || query.mine === '1') throw error }
   }
   return publicContent(event, path)

@@ -14,7 +14,7 @@ export default defineEventHandler(async event => {
     if (!parsed.success) throw createError({ statusCode: 400 })
     body = parsed.data
   }
-  const result = resultSchema.safeParse(await privateAPI(event, `/my/favorites/${id}`, { method: event.method, body }))
+  const result = resultSchema.safeParse(await privateAPI(event, `/my/favorites/${id}`, { method: event.method, body, streaming: true }))
   if (!result.success) throw createError({ statusCode: 502 })
   return result.data
 })

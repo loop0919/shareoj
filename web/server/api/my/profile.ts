@@ -9,7 +9,7 @@ export default defineEventHandler(async event => {
   if (event.method !== 'GET' && event.method !== 'PUT') throw createError({ statusCode: 405 })
   if (event.method === 'PUT') requireSameOrigin(event)
   const body = event.method === 'PUT' ? await limitedJSON(event, 200 << 10) : undefined
-  const parsed = profileResultSchema.safeParse(await privateAPI(event, '/my/profile', { method: event.method, body }))
+  const parsed = profileResultSchema.safeParse(await privateAPI(event, '/my/profile', { method: event.method, body, ...(event.method === 'GET' ? { streaming: true as const } : {}) }))
   if (!parsed.success) throw createError({ statusCode: 502 })
   return parsed.data
 })
