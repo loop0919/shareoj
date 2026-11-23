@@ -8,6 +8,7 @@ import { hasSource } from '~/utils/has-source'
 const props = defineProps<{ problemId: string, hasSamples: boolean, contestId?: string, team?: boolean, beforeSubmit?: () => Promise<boolean>, disabled?: boolean }>()
 const { user } = useAccount()
 const sampleHelpId = useId()
+const sampleSubmitHelpId = useId()
 const source = ref('')
 // The largest source the API accepts, in UTF-8 bytes.
 const sourceLimit = 131072
@@ -29,19 +30,29 @@ watch(available, items => {
   if (runtime.value && !items.some(item => item.id === runtime.value)) runtime.value = items[0]?.id ?? ''
 }, { immediate: true })
 const sending = ref(false)
+// 'sample-submit' runs the sample validation and submits only when every sample passes.
+// A problem without samples has nothing to validate, so it submits at once.
+type Action = 'submit' | 'sample' | 'sample-submit'
+const action = ref<Action>('submit')
+// The request in flight is a sample validation, not a submission.
 const runningEasyTest = ref(false)
+const blocked = computed(() => props.disabled || sending.value || !hasSource(runtime.value, source.value) || !runtime.value || !available.value.length)
 const message = ref('')
 const easyResult = ref<Submission | null>(null)
 let disposed = false
 onBeforeUnmount(() => { disposed = true })
 watch([source, runtime, () => props.problemId], () => { easyResult.value = null })
-async function submit(easyTest = false) {
-  if ((easyTest && !props.hasSamples) || props.disabled || sending.value || !available.value.some(item => item.id === runtime.value)) return
+function post(easyTest: boolean) {
+  return $fetch<Submission>('/api/my/submissions', { method: 'POST', body: { contestId: props.contestId, problemId: props.problemId, runtime: runtime.value, source: source.value, easyTest: easyTest || undefined } })
+}
+async function submit(requested: Action = 'submit') {
+  if ((requested === 'sample' && !props.hasSamples) || props.disabled || sending.value || !available.value.some(item => item.id === runtime.value)) return
   if (!hasSource(runtime.value, source.value) || new TextEncoder().encode(source.value).length > sourceLimit) {
     message.value = `ソースコードを1〜${sourceLimit.toLocaleString('en-US')}バイトで入力してください。`
     return
   }
-  runningEasyTest.value = easyTest
+  action.value = requested
+  runningEasyTest.value = requested === 'sample' || (requested === 'sample-submit' && props.hasSamples)
   sending.value = true
   message.value = ''
   easyResult.value = null
@@ -50,8 +61,8 @@ async function submit(easyTest = false) {
       message.value = '下書きを保存できませんでした。保存内容を確認してください。'
       return
     }
-    let result = await $fetch<Submission>('/api/my/submissions', { method: 'POST', body: { contestId: props.contestId, problemId: props.problemId, runtime: runtime.value, source: source.value, easyTest: easyTest || undefined } })
-    if (easyTest) {
+    if (runningEasyTest.value) {
+      let result = await post(true)
       easyResult.value = result
       const deadline = Date.now() + 60 * 60 * 1000
       while (!disposed && result.status !== 'DONE') {
@@ -62,12 +73,19 @@ async function submit(easyTest = false) {
         if (disposed) return
         easyResult.value = result
       }
-      return
+      if (disposed || requested === 'sample') return
+      if (result.result?.verdict !== 'AC') {
+        message.value = 'サンプル検証に通らなかったため、提出していません。'
+        return
+      }
+      runningEasyTest.value = false
     }
+    const result = await post(false)
     await navigateTo(props.contestId ? `/contests/${shortId(props.contestId)}/my-submissions/${shortId(result.id)}${props.team ? '?from=team' : ''}` : `/my/submissions/${shortId(result.id)}`)
   } catch (error) {
     const failure = error as { statusCode?: number, data?: { data?: { code?: string, retryAfter?: number } } }
     const code = failure.data?.data?.code
+    const easyTest = runningEasyTest.value
     if (code === 'judge_maintenance') { message.value = judgeMaintenanceMessage; await refreshCatalog() }
     else if (failure.statusCode === 401) message.value = '提出するにはログインしてください。入力したコードはこの画面に残っています。'
     else if (code === 'submission_rate_limited') message.value = failure.data?.data?.retryAfter
@@ -103,14 +121,21 @@ async function submit(easyTest = false) {
       <SourceCodeEditor v-model="source" :runtime="runtime" :limit="sourceLimit" :disabled="sending" />
       <p v-if="message" class="notice notice-error" role="alert">{{ message }}</p>
       <div class="submission-actions">
+        <button class="editor-button primary" type="submit" :disabled="blocked" :aria-busy="sending && action === 'submit'">{{ sending && action === 'submit' ? '提出中…' : '提出する' }}</button>
         <div class="sample-action" :class="{ 'no-samples': !hasSamples }">
-          <button class="editor-button" type="button" :aria-describedby="sampleHelpId" :disabled="!hasSamples || disabled || sending || !hasSource(runtime, source) || !runtime || !available.length" @click="submit(true)">{{ sending && runningEasyTest ? 'サンプル検証中…' : 'サンプル検証' }}</button>
+          <button class="editor-button sample-submit" type="button" :aria-describedby="sampleSubmitHelpId" :disabled="blocked" :aria-busy="sending && action === 'sample-submit'" @click="submit('sample-submit')">{{ sending && action === 'sample-submit' ? (runningEasyTest ? 'サンプル検証中…' : '提出中…') : '検証 & 提出' }}</button>
+          <span class="sample-help">
+            <button class="sample-help-button" type="button" aria-label="検証 & 提出の説明" :aria-describedby="sampleSubmitHelpId">?</button>
+            <span :id="sampleSubmitHelpId" class="sample-tooltip" role="tooltip">{{ hasSamples ? 'サンプル検証に通ったときだけ、続けて提出します。' : 'この問題はサンプルがないため、検証せずに提出します。' }}</span>
+          </span>
+        </div>
+        <div class="sample-action" :class="{ 'no-samples': !hasSamples }">
+          <button class="editor-button" type="button" :aria-describedby="sampleHelpId" :disabled="!hasSamples || blocked" @click="submit('sample')">{{ sending && action === 'sample' ? 'サンプル検証中…' : 'サンプル検証' }}</button>
           <span class="sample-help">
             <button class="sample-help-button" type="button" aria-label="サンプル検証の説明" :aria-describedby="sampleHelpId">?</button>
             <span :id="sampleHelpId" class="sample-tooltip" role="tooltip">{{ hasSamples ? 'サンプルケースを検証する機能です。' : 'この問題は利用可能なサンプルがありません' }}</span>
           </span>
         </div>
-        <button class="editor-button primary" type="submit" :disabled="disabled || sending || !hasSource(runtime, source) || !runtime || !available.length" :aria-busy="sending">{{ sending && !runningEasyTest ? '提出中…' : '提出する' }}</button>
       </div>
     </form>
     <section v-if="easyResult" class="easy-result" aria-labelledby="easy-result-title">
@@ -146,5 +171,12 @@ select:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 3
 select:disabled, .submission-actions button:disabled { opacity: .5; cursor: not-allowed; }
 .submission-actions .editor-button { min-height: 44px; padding: 10px 28px; font-weight: 600; }
 .submission-actions button:disabled { transform: none; text-decoration: none; }
-.submission-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 20px; margin-top: 16px; }
+.submission-actions { position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 20px; margin-top: 16px; }
+.submission-actions .sample-submit { border-color: var(--color-accent); background: var(--color-accent-soft); color: var(--color-accent); }
+.submission-actions .sample-submit:hover:not(:disabled) { background: color-mix(in oklab, var(--color-accent-soft), var(--color-accent) 12%); }
+/* A phone has no room beside the "?": the explanation spans the row below the buttons instead. */
+@media (max-width: 39.999rem) {
+  .sample-help { position: static; }
+  .sample-tooltip { left: 0; right: 0; transform: none; width: auto; max-width: none; }
+}
 </style>

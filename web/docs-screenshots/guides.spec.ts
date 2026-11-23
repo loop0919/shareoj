@@ -156,8 +156,9 @@ test('submission form', async ({ page }) => {
   await annotate(page, [
     form.locator('#submission-language'),
     { target: page.getByLabel('ソースコード', { exact: true }).locator('xpath=ancestor::*[contains(@class, "source-editor") or contains(@class, "code-editor")][1]'), pad: 2 },
-    form.getByRole('button', { name: 'サンプル検証', exact: true }),
     form.getByRole('button', { name: '提出する', exact: true }),
+    form.getByRole('button', { name: '検証 & 提出', exact: true }),
+    form.getByRole('button', { name: 'サンプル検証', exact: true }),
   ])
   await shoot(page, 'submit-form', [form])
 })

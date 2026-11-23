@@ -305,6 +305,66 @@ test('Sample validation polls inline and retains the source for a full submissio
 })
 
 
+for (const verdict of ['AC', 'WA']) {
+  test(`検証 & 提出 ${verdict === 'AC' ? 'submits after the samples pass' : 'keeps a failing solution unsubmitted'}`, async ({ page }) => {
+    await page.route('**/api/my/profile', route => route.fulfill({ json: { profile: { handle: 'alice', avatar: '', version: 1, createdAt: '2026-09-01T00:00:00Z' } } }))
+    await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'alice' } } }))
+    const item = { id: submissionId, problemId, problemVersion: 2, problemTitle: 'A + B', runtime: 'cpp17', status: 'QUEUED', result: null, createdAt: '2026-09-01T00:00:00Z' }
+    const requests: Record<string, unknown>[] = []
+    await page.route('**/api/my/submissions', async route => {
+      requests.push(route.request().postDataJSON())
+      await route.fulfill({ status: 202, json: { ...item, easyTest: requests.length === 1 } })
+    })
+    await page.route(`**/api/my/submissions/${submissionId}`, route => route.fulfill({ json: { ...item, status: 'DONE', result: { verdict, passed: verdict === 'AC' ? 1 : 0, total: 1, cases: [{ name: 'sample_1', verdict }] } } }))
+    await page.goto(`/problems/${problemId}`)
+    const source = page.getByLabel('ソースコード', { exact: true })
+    await source.fill('int main(){}')
+    const help = page.getByRole('button', { name: '検証 & 提出の説明', exact: true })
+    const tooltip = page.getByRole('tooltip').filter({ hasText: 'サンプル検証に通ったときだけ、続けて提出します。' })
+    await expect(tooltip).toBeHidden()
+    await help.hover()
+    await expect(tooltip).toBeVisible()
+    await expect(page.getByRole('tooltip')).toHaveCount(1)
+    await source.hover()
+    await page.getByRole('button', { name: '検証 & 提出', exact: true }).click()
+    if (verdict === 'AC') {
+      await expect(page).toHaveURL(`/my/submissions/${shortId(submissionId)}`)
+      expect(requests).toEqual([
+        { problemId, runtime: 'cpp23-gcc', source: 'int main(){}', easyTest: true },
+        { problemId, runtime: 'cpp23-gcc', source: 'int main(){}' },
+      ])
+      return
+    }
+    await expect(page.getByRole('region', { name: '提出', exact: true }).getByRole('alert')).toHaveText('サンプル検証に通らなかったため、提出していません。')
+    await expect(page.getByText('sample_1: WA', { exact: true })).toBeVisible()
+    await expect(page).toHaveURL(`/problems/${shortId(problemId)}`)
+    await expect(source).toHaveText('int main(){}')
+    await expect(page.getByRole('button', { name: '検証 & 提出', exact: true })).toBeEnabled()
+    expect(requests).toEqual([{ problemId, runtime: 'cpp23-gcc', source: 'int main(){}', easyTest: true }])
+  })
+}
+
+test('検証 & 提出 submits at once when the problem has no samples', async ({ page }) => {
+  await page.route('**/api/my/profile', route => route.fulfill({ json: { profile: { handle: 'alice', avatar: '', version: 1, createdAt: '2026-09-01T00:00:00Z' } } }))
+  await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'alice' } } }))
+  await page.route(`**/api/problems/${problemId}`, async route => {
+    const response = await route.fetch()
+    await route.fulfill({ json: { ...await response.json(), hasSamples: false } })
+  })
+  const requests: Record<string, unknown>[] = []
+  await page.route('**/api/my/submissions', async route => {
+    requests.push(route.request().postDataJSON())
+    await route.fulfill({ status: 202, json: { id: submissionId, problemId, problemVersion: 2, problemTitle: 'A + B', runtime: 'cpp17', status: 'QUEUED', result: null, createdAt: '2026-09-01T00:00:00Z' } })
+  })
+  await page.goto('/problems')
+  await page.locator(`a[href="/problems/${shortId(problemId)}"]`).first().click()
+  await page.getByLabel('ソースコード', { exact: true }).fill('int main(){}')
+  await page.getByRole('button', { name: '検証 & 提出', exact: true }).click()
+  await expect(page).toHaveURL(`/my/submissions/${shortId(submissionId)}`)
+  expect(requests).toEqual([{ problemId, runtime: 'cpp23-gcc', source: 'int main(){}' }])
+})
+
+
 test('Sample validation detail displays empty and truncated output safely', async ({ page }) => {
   await page.route('**/api/auth/me', route => route.fulfill({ json: { user: { id: 'alice' } } }))
   await page.route('**/api/my/profile', route => route.fulfill({ json: { profile: { handle: 'alice', avatar: '', version: 1, createdAt: '2026-09-01T00:00:00Z' } } }))
@@ -445,6 +505,11 @@ for (const scope of ['problem', 'contest']) {
     if (scope === 'contest') await expect(page.locator('.contest-participation')).toHaveCount(0)
     const sample = page.getByRole('button', { name: 'サンプル検証', exact: true })
     await expect(sample).toBeDisabled()
+    const sampleSubmit = page.getByRole('button', { name: '検証 & 提出', exact: true })
+    await expect(sampleSubmit).toBeEnabled()
+    await sampleSubmit.hover()
+    await expect(page.getByRole('tooltip')).toHaveText('この問題はサンプルがないため、検証せずに提出します。')
+    await page.getByLabel('ソースコード', { exact: true }).hover()
     await expect(page.getByRole('button', { name: '提出する', exact: true })).toBeEnabled()
     await sample.hover()
     await expect(page.getByRole('tooltip')).toHaveText('この問題は利用可能なサンプルがありません')
