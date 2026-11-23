@@ -4,5 +4,5 @@ import { closedInStreaming, streamingCode } from '~~/shared/utils/streaming-mode
 // on the server and the client alike, so a direct load and an in-site move end on the same screen.
 export default defineNuxtRouteMiddleware(to => {
   const { streaming } = useStreamingMode()
-  if (streaming.value && closedInStreaming(to.path)) throw createError({ statusCode: 403, statusMessage: 'Streaming mode', data: { code: streamingCode }, fatal: true })
+  if (streaming.value && closedInStreaming(String(to.name ?? ''))) throw createError({ statusCode: 403, statusMessage: 'Streaming mode', data: { code: streamingCode }, fatal: true })
 })

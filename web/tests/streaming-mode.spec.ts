@@ -195,6 +195,31 @@ for (const path of closedPages) {
   })
 }
 
+// The router matches case-insensitively and ignores a trailing slash, so the page still resolves; it must stay closed.
+for (const path of ['/MY', '/My/Contests', '/PROBLEMS/NEW', '/my/', `/Contests/${shortId(contestId)}/Team`]) {
+  test(`streaming mode closes the respelled ${path}`, async ({ page, context }) => {
+    await signIn(page)
+    await streamingOn(context)
+    const privateReads = watchPrivateReads(page)
+    const response = await page.goto(path)
+    expect(await response!.text()).toContain('このページは、配信に映らないように閉じています。')
+    await expect(closedHeading(page)).toBeVisible()
+    expect(privateReads).toEqual([])
+  })
+}
+
+test('a percent-encoded /%6dy never shows the my page in streaming mode', async ({ page, context }) => {
+  await signIn(page)
+  await streamingOn(context)
+  const privateReads = watchPrivateReads(page)
+  const response = await page.goto('/%6dy')
+  const html = await response!.text()
+  console.log('PERCENT-ENCODED', response!.status(), html.includes('配信に映らないように閉じています') ? 'closed screen' : html.includes('ページが見つかりません') ? '404 page' : 'other')
+  await expect(page.getByRole('heading', { name: 'alice', level: 1 })).toHaveCount(0)
+  await expect(closedHeading(page).or(page.getByRole('heading', { name: 'ページが見つかりません' }))).toBeVisible()
+  expect(privateReads).toEqual([])
+})
+
 test('the same check sees private reads on /my without streaming mode', async ({ page }) => {
   await signIn(page)
   const privateReads = watchPrivateReads(page)
@@ -204,8 +229,8 @@ test('the same check sees private reads on /my without streaming mode', async ({
 })
 
 test('closedInStreaming keeps the own submission and the settings open', () => {
-  for (const path of ['/my/settings', '/my/settings/', '/my/submissions/abc', '/my/submissions/abc/', '/', '/problems', '/contests/abc', '/contests/abc/A', '/myself', '/problems/newer']) expect(closedInStreaming(path), path).toBe(false)
-  for (const path of ['/my', '/my/', '/my/new-page', '/my/submissions', '/my/submissions/', '/contests/abc/team', '/contests/abc/team/', '/problems/new', '/problems/new/', '/onboarding/']) expect(closedInStreaming(path), path).toBe(true)
+  for (const name of ['my-settings', 'my-submissions-id', 'index', 'problems', 'contests-id', 'contests-id-label', '']) expect(closedInStreaming(name), name).toBe(false)
+  for (const name of ['my', 'my-contests', 'my-contests-id', 'my-new-page', 'problems-new', 'problems-post', 'featured-apply', 'blog-new', 'onboarding', 'contests-id-team']) expect(closedInStreaming(name), name).toBe(true)
 })
 
 test('a link and the back button also land on the closed screen', async ({ page, context }) => {

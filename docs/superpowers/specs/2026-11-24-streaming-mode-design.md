@@ -192,6 +192,9 @@ APIは、コンテストのスタッフに、開始前の問題、全員分の�
 - `/problems/new`、`/problems/post`、`/featured/apply`、`/blog/new`、`/onboarding`
 - `/contests/{id}/team`（チームの参加コードが出る）
 
+閉じるかどうかは、URLの文字列ではなく、当たったルートの名前で決める。
+大文字に書き換えたURLなど、綴りを変えても同じページに当たるものは、同じように閉じる。
+
 閉じた画面はヘッダー付きで出す。
 `/problems/new`、`/blog/new`、`/my/contests/new`、`/my/contests/{id}`はヘッダーなしのエディタ用の表示（`route.meta.editorLayout`）なので、閉じた画面を出すあいだはレイアウトがこの指定を無視する。
 
