@@ -49,12 +49,18 @@ test('login works in streaming mode', async ({ request }) => {
 })
 
 test('the own list of a problem stays private, the whole list and a detail turn public', async ({ request }) => {
+  const detail = `/api/problems/${featuredId}/submissions/33333333-3333-4333-8333-333333333333?mine=1`
   const own = await request.get(`/api/problems/${featuredId}/submissions?mine=1`, { headers: { cookie: on } })
   expect(own.status()).toBe(200)
   expect(JSON.stringify(await own.json())).toContain('carol')
-  for (const path of [`/api/problems/${featuredId}/submissions?mine=0`, `/api/problems/${featuredId}/submissions/33333333-3333-4333-8333-333333333333`]) {
+  // Without the cookie the detail is the private one, so the public answers below are not the fixture's default.
+  expect(await (await request.get(detail, { headers: { cookie: off } })).text()).toContain('carol')
+  for (const path of [`/api/problems/${featuredId}/submissions?mine=0`, detail]) {
     const response = await request.get(path, { headers: { cookie: on } })
-    expect(await response.text(), path).not.toContain('carol')
+    expect(response.status(), path).toBe(200)
+    const text = await response.text()
+    expect(text, path).toContain('"route":"public"')
+    expect(text, path).not.toContain('carol')
   }
 })
 

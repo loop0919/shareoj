@@ -186,6 +186,7 @@ createServer(async (req, res) => {
     }))
     // The fixture session is alice, the author of the featured problem whose editorial is still hidden.
     if (path === `/my/problems/${featuredProblem.id}/publication`) return res.end(JSON.stringify({ ...featuredProblem, editorial: '定期便の解説本文' }))
+    if (path === `/my/problems/${featuredProblem.id}/submissions/33333333-3333-4333-8333-333333333333`) return res.end(JSON.stringify({ ...submission, id: '33333333-3333-4333-8333-333333333333', problemId: featuredProblem.id, author: 'carol' }))
     if (path === `/my/problems/${featuredProblem.id}/submissions`) return res.end(JSON.stringify({ items: [{ ...submission, id: '33333333-3333-4333-8333-333333333333', problemId: featuredProblem.id, problemTitle: featuredProblem.title, author: 'carol' }], hasMore: false }))
     // alice writes the announced Easy problem and tests the Hard one.
     if (path === '/my/featured/next') return res.end(JSON.stringify({ items: [
@@ -228,6 +229,7 @@ createServer(async (req, res) => {
     }
     res.end(JSON.stringify({ items: [], nextCursor: '' }))
   }
+  else if (path.startsWith(`/problems/${featuredProblem.id}/submissions`)) res.end(JSON.stringify({ route: 'public', path }))
   else if (path.startsWith('/images/')) res.setHeader('Content-Type', 'image/png').end(Buffer.concat([pngHeader, Buffer.from('public')]))
   else if (path === '/users') {
     const handles = new URL(req.url, 'http://localhost').searchParams.get('handles')?.split(',') ?? []
