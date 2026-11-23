@@ -8,11 +8,15 @@ onMounted(() => {
   media.addEventListener('change', update)
   onBeforeUnmount(() => media.removeEventListener('change', update))
 })
+// A closed route's page never renders in streaming mode, whatever the error state: the outlet shows the closed screen in
+// its place, so neither the page's setup nor its reads ever run.
+const closedPage = useClosedPage()
 </script>
 
 <template>
   <NuxtLayout>
-    <NuxtPage />
+    <StreamingClosed v-if="closedPage" />
+    <NuxtPage v-else />
   </NuxtLayout>
   <AppToast />
 </template>

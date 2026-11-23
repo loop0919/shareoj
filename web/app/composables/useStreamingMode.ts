@@ -1,4 +1,4 @@
-import { streamingCookie } from '~~/shared/utils/streaming-mode'
+import { closedInStreaming, streamingCookie } from '~~/shared/utils/streaming-mode'
 
 const channelName = 'openoj-streaming'
 
@@ -21,6 +21,8 @@ export function useStreamingMode() {
   // The value stays a plain 1 both ways: the default codec would write "1" with quotes and read 1 back as a number.
   const saved = useCookie<string | null>(streamingCookie, { default: () => null, decode: decodeURIComponent, encode: value => encodeURIComponent(String(value)), maxAge: 60 * 60 * 24 * 365, sameSite: 'lax', path: '/' })
   const streaming = computed(() => saved.value === '1')
+  // The mode this document was rendered in: the server's value, carried in the payload, so a reload never counts as a change.
+  const loaded = useState('streaming-loaded', () => streaming.value)
   // The one confirmation dialog, in the layout, reads this.
   const offOpen = useState('streaming-off-open', () => false)
   // True while the cookie differs from the value this tab was loaded with: the tab may still hold staff-only content.
@@ -40,16 +42,25 @@ export function useStreamingMode() {
     announce()
     location.reload()
   }
-  return { streaming, turnOn, askOff, turnOff, offOpen, stale }
+  return { streaming, loaded, turnOn, askOff, turnOff, offOpen, stale }
+}
+
+// Whether the page outlet must show the closed screen instead of the page. It follows the route the router stands on, not
+// the error state: after a direct load the router already stands on the closed route, and the error that shows the closed
+// screen is cleared by any later move, even one that is cancelled or goes nowhere. The matched record names the route,
+// because Nuxt clears the name of the route a direct load starts on. It follows the mode the document was rendered in,
+// so a tab that another tab switched keeps its page under the cover instead of losing unsaved edits.
+export function useClosedPage() {
+  const { loaded } = useStreamingMode()
+  const router = useRouter()
+  return computed(() => loaded.value && closedInStreaming(String(router.currentRoute.value.matched.at(-1)?.name ?? '')))
 }
 
 // Registered once per tab, by the layout. Other tabs announce a change; a tab that missed it looks again when it is
 // shown, focused or navigated. A tab that turns stale is covered first, then reloaded; if the reload is refused
 // (unsaved editor), it stays covered until the cookie returns to the loaded value.
 export function useStreamingSync() {
-  const { streaming, stale, offOpen } = useStreamingMode()
-  // The server's value, carried in the payload, so a reload never counts as a change.
-  const loaded = useState('streaming-loaded', () => streaming.value)
+  const { stale, offOpen, loaded } = useStreamingMode()
   const route = useRoute()
   function check() {
     const next = cookieOn() !== loaded.value

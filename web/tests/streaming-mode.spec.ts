@@ -248,6 +248,118 @@ test('a link and the back button also land on the closed screen', async ({ page,
   await expect(closedHeading(page)).toBeVisible()
 })
 
+// Paths of the main-frame documents the page requests, so a full load can be told from an in-site move.
+function watchDocuments(page: Page) {
+  const documents: string[] = []
+  page.on('request', request => { if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documents.push(new URL(request.url()).pathname) })
+  return documents
+}
+// Loads a closed page directly and, once it has hydrated, arms its page component: every run of its setup is reported
+// to the test, also from a document that has since been replaced.
+async function loadClosed(page: Page, path: string) {
+  const setups: string[] = []
+  await page.exposeFunction('reportClosedSetup', (name: string) => { setups.push(name) })
+  await page.goto(path)
+  await expect(closedHeading(page)).toBeVisible()
+  await page.waitForFunction(() => (document.querySelector('#__nuxt') as any)?.__vue_app__?.config.globalProperties.$nuxt.isHydrating === false)
+  const armed = await page.evaluate(async target => {
+    const names: string[] = []
+    for (const record of (document.querySelector('#__nuxt') as any).__vue_app__.config.globalProperties.$router.resolve(target).matched) {
+      const entry = record.components.default
+      const component = typeof entry === 'function' ? (await entry()).default : entry
+      const setup = component.setup
+      if (typeof setup !== 'function') throw new Error(`${String(record.name)} has no setup`)
+      component.setup = function (this: unknown, ...args: unknown[]) {
+        (window as unknown as { reportClosedSetup: (name: string) => void }).reportClosedSetup(String(record.name))
+        return setup.apply(this, args)
+      }
+      names.push(String(record.name))
+    }
+    return names
+  }, path)
+  expect(armed).toHaveLength(1)
+  return setups
+}
+const home = (page: Page) => page.locator('#hero-title')
+
+for (const path of closedPages) {
+  test(`the home link on the closed ${path} is a full load that never runs the page`, async ({ page, context }) => {
+    await signIn(page)
+    await streamingOn(context)
+    const privateReads = watchPrivateReads(page)
+    const documents = watchDocuments(page)
+    const setups = await loadClosed(page, path)
+    await page.getByRole('link', { name: 'ホームへ戻る' }).click()
+    await expect(home(page)).toBeVisible()
+    await expect(badge(page)).toBeVisible()
+    await page.waitForLoadState('networkidle')
+    expect(setups).toEqual([])
+    expect(privateReads).toEqual([])
+    expect(documents).toHaveLength(2)
+    expect(documents[1]).toBe('/')
+  })
+
+  test(`a double click on a header link on the closed ${path} never runs the page`, async ({ page, context }) => {
+    await signIn(page)
+    await streamingOn(context)
+    const privateReads = watchPrivateReads(page)
+    const setups = await loadClosed(page, path)
+    // Each move waits a moment, as it does while the next page still loads, so the second click cancels the first.
+    await page.evaluate(() => (document.querySelector('#__nuxt') as any).__vue_app__.config.globalProperties.$router.beforeEach(() => new Promise(resolve => setTimeout(resolve, 300))))
+    await page.getByRole('banner').getByRole('link', { name: 'ホーム', exact: true }).dblclick()
+    await expect(home(page)).toBeVisible()
+    await page.waitForLoadState('networkidle')
+    expect(setups).toEqual([])
+    expect(privateReads).toEqual([])
+  })
+
+  test(`a move to the closed ${path} itself keeps the closed screen`, async ({ page, context }) => {
+    await signIn(page)
+    await streamingOn(context)
+    const privateReads = watchPrivateReads(page)
+    const setups = await loadClosed(page, path)
+    // The router already stands on the closed route, so the move is a duplicate; the error is cleared after it all the same.
+    await page.evaluate(target => (document.querySelector('#__nuxt') as any).__vue_app__.config.globalProperties.$router.push(target), path)
+    await page.waitForTimeout(500)
+    await expect(closedHeading(page)).toBeVisible()
+    await expect(page.getByRole('banner').getByRole('link', { name: 'ホーム', exact: true })).toBeVisible()
+    await expect(badge(page)).toBeVisible()
+    expect(setups).toEqual([])
+    expect(privateReads).toEqual([])
+  })
+}
+
+test('the home link on the closed editor never shows the draft its tab has cached', async ({ page, context }) => {
+  await signedInForReal(context)
+  const draft = '55555555-5555-4555-8555-555555555555'
+  await page.goto(`/problems/new?problem=${draft}`)
+  await expect(page.locator('#problem-title')).toHaveValue('非公開の練習問題')
+  const cached = () => page.evaluate(() => Object.keys(sessionStorage).filter(key => key.startsWith('openoj.problem-cache.')))
+  // The editor has kept the server's copy in this tab's sessionStorage.
+  expect(await cached()).toHaveLength(1)
+  const shown: string[] = []
+  await page.exposeFunction('reportDraftTitle', (where: string) => { shown.push(where) })
+  // Every document from here on looks for the draft's title in every frame and after every change.
+  await page.addInitScript(() => {
+    const look = () => {
+      const fields = [...document.querySelectorAll('input, textarea')] as HTMLInputElement[]
+      if (fields.some(field => field.value.includes('非公開の練習問題')) || document.body?.innerText.includes('非公開の練習問題')) (window as unknown as { reportDraftTitle: (where: string) => void }).reportDraftTitle(location.pathname)
+    }
+    const frame = () => { look(); requestAnimationFrame(frame) }
+    requestAnimationFrame(frame)
+    new MutationObserver(look).observe(document, { subtree: true, childList: true, characterData: true, attributes: true })
+  })
+  await streamingOn(context)
+  await page.reload()
+  await expect(closedHeading(page)).toBeVisible()
+  await page.getByRole('link', { name: 'ホームへ戻る' }).click()
+  await expect(home(page)).toBeVisible()
+  await page.waitForTimeout(1000)
+  expect(shown).toEqual([])
+  // The cache stays as it is; no page that stays open reads it.
+  expect(await cached()).toHaveLength(1)
+})
+
 test('配信モードを切る on the closed screen returns the page', async ({ page, context }) => {
   await signIn(page)
   await streamingOn(context)

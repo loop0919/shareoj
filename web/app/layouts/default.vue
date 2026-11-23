@@ -3,10 +3,11 @@ import { docPath, footerDocs } from '~~/shared/docs'
 import { fullId } from '~~/shared/utils/short-id'
 const route = useRoute()
 const pageError = useError()
-// An error screen always gets the header, even on a route that hides it for its editor.
-const editorLayout = computed(() => !!route.meta.editorLayout && !pageError.value)
-// Contest pages swap the site menu for the contest's own menu. Error pages keep the site menu.
-const contestId = computed(() => !pageError.value && String(route.name ?? '').startsWith('contests-id') ? fullId(route.params.id) : '')
+const closedPage = useClosedPage()
+// An error screen or the closed screen always gets the header, even on a route that hides it for its editor.
+const editorLayout = computed(() => !!route.meta.editorLayout && !pageError.value && !closedPage.value)
+// Contest pages swap the site menu for the contest's own menu. Error pages and the closed screen keep the site menu.
+const contestId = computed(() => !pageError.value && !closedPage.value && String(route.name ?? '').startsWith('contests-id') ? fullId(route.params.id) : '')
 const { data: judgeCatalog, error: judgeCatalogError, refresh: refreshJudge } = await useJudgeCatalog()
 function refreshVisibleJudge() { if (document.visibilityState === 'visible') void refreshJudge({ dedupe: 'defer' }) }
 // A refresh during hydration reuses Nuxt's server payload.
