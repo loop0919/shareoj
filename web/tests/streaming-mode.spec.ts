@@ -537,7 +537,8 @@ test('a tab that refuses the reload stays covered, and uncovers when the mode re
   await expect(reloadButton(staff)).toBeVisible()
   await expect(reloadButton(staff)).toBeFocused()
   // The content underneath is out of reach: what sits at the heading's own place is the cover, and Tab never leaves it.
-  expect(await heading.evaluate(element => {
+  expect(await staff.evaluate(() => {
+    const element = document.querySelector('h1')!
     const box = element.getBoundingClientRect()
     return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.closest('dialog.streaming-cover') !== null
   })).toBe(true)
@@ -547,7 +548,8 @@ test('a tab that refuses the reload stays covered, and uncovers when the mode re
   // first one without activation), a click on the backdrop, and Shift+Tab.
   const stillCovered = async (step: string) => {
     expect(await staff.evaluate(() => (document.querySelector('dialog.streaming-cover') as HTMLDialogElement | null)?.matches(':modal') === true), step).toBe(true)
-    expect(await heading.evaluate(element => {
+    expect(await staff.evaluate(() => {
+    const element = document.querySelector('h1')!
       const box = element.getBoundingClientRect()
       return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.closest('dialog.streaming-cover') !== null
     }), step).toBe(true)
@@ -559,12 +561,23 @@ test('a tab that refuses the reload stays covered, and uncovers when the mode re
   await stillCovered('after backdrop click')
   await staff.keyboard.press('Shift+Tab')
   await stillCovered('after Shift+Tab')
+  // Even if the dialog is closed by some means nothing cancels, the content under it is already hidden, with no gap to act in.
+  const whileClosed = await staff.evaluate(() => {
+    document.querySelector<HTMLDialogElement>('dialog.streaming-cover')!.close()
+    const title = document.querySelector('h1')!
+    return { root: getComputedStyle(document.getElementById('__nuxt')!).visibility, heading: getComputedStyle(title).visibility }
+  })
+  expect(whileClosed).toEqual({ root: 'hidden', heading: 'hidden' })
+  // The close event fires a task later; the dialog is shown again then.
+  await expect.poll(() => staff.evaluate(() => document.querySelector('dialog.streaming-cover')?.matches(':modal') === true)).toBe(true)
+  await stillCovered('after a programmatic close')
   expect(await marked(staff)).toBe(true)
   await badge(settings).click()
   await settings.getByRole('dialog', { name: '配信モードを切りますか？' }).getByRole('button', { name: '切る', exact: true }).click()
   await expect(badge(settings)).toHaveCount(0)
   await expect(reloadButton(staff)).toHaveCount(0)
   await expect(heading).toBeVisible()
+  expect(await staff.evaluate(() => getComputedStyle(document.getElementById('__nuxt')!).visibility)).toBe('visible')
   expect(await marked(staff)).toBe(true)
 })
 

@@ -10,6 +10,10 @@ function keepOpen() {
   dialog.value.showModal()
   dialog.value.querySelector('button')?.focus()
 }
+// While stale the app root is hidden, not the dialog (a sibling in body), so a dialog that closes for any reason exposes nothing.
+const covered = 'data-streaming-covered'
+if (import.meta.client) watchEffect(() => { document.documentElement.toggleAttribute(covered, stale.value) })
+onBeforeUnmount(() => document.documentElement.removeAttribute(covered))
 function reload() { location.reload() }
 </script>
 
