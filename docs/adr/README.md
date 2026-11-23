@@ -50,3 +50,4 @@ Architecture Decision Record（ADR）は、採用した設計だけでなく、�
 | [0039](0039-switch-judge-environments-by-request-lanes.md) | Accepted（2026-11-18に実機で切り替えを計測） | 要求キューを固定の2レーンにして、送り出しを止めずに採点環境を切り替える |
 | [0040](0040-favorite-contest-problems-during-contest.md) | Accepted | コンテストの問題を開催中からお気に入りに追加できるようにする |
 | [0041](0041-add-functional-languages.md) | Accepted（2026-11-18に公開） | Common Lisp、F#、Gleam、Fixを加える |
+| [0043](0043-withhold-case-results-while-ongoing.md) | Accepted | コンテストと定期便の開催中は、テストケースごとの結果を件数だけにする |

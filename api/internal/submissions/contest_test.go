@@ -106,7 +106,7 @@ func TestPublicSubmissionScores(t *testing.T) {
 	if len(original.Result.Scoring.Groups) != 2 {
 		t.Fatal("modified original groups")
 	}
-	if team := teamSubmission(original, true); team.Result.Scoring == nil || team.Result.Cases[0].Score == nil {
+	if team := teamSubmission(original, true, false); team.Result.Scoring == nil || team.Result.Cases[0].Score == nil {
 		t.Fatal("teammates lost the scores")
 	}
 }

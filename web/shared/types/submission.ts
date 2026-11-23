@@ -23,7 +23,9 @@ export type Submission = {
   source?: string
   status: 'QUEUED' | 'RUNNING' | 'DONE'
   progress?: { phase: 'PREPARING' | 'JUDGING', completed: number, total: number, verdict?: 'WA' | 'TLE' | 'MLE' | 'OLE' | 'RE' } | null
-  result: { cpuTimeMs?: number, memoryBytes?: number, interactive?: boolean, verdict: string, passed: number, total: number, compileLog?: string, checkerLog?: string, scoring?: SubmissionScore, cases?: { checkerLog?: TextPreview, sampleDetails?: SampleDetails, name: string, verdict: string, score?: number, output?: string, outputFile?: TestFile, cpuTimeMs?: number, wallTimeMs?: number, memoryBytes?: number }[] } | null
+  // caseVerdicts counts the cases by verdict. The API sends it in place of cases, and empties the groups' cases, while a
+  // contest or a 定期便 round is running, because the case names hint at the tests.
+  result: { cpuTimeMs?: number, memoryBytes?: number, interactive?: boolean, verdict: string, passed: number, total: number, compileLog?: string, checkerLog?: string, scoring?: SubmissionScore, caseVerdicts?: Record<string, number>, cases?: { checkerLog?: TextPreview, sampleDetails?: SampleDetails, name: string, verdict: string, score?: number, output?: string, outputFile?: TestFile, cpuTimeMs?: number, wallTimeMs?: number, memoryBytes?: number }[] } | null
   createdAt: string
   rejudgedAt?: string
 }

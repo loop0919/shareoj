@@ -26,6 +26,14 @@ async function copySource() {
 const score = computed(() => item.value.result?.scoring)
 // Group cases point into result.cases; a compile error has no cases, so they are numbered instead.
 const caseNames = (positions: number[]) => positions.map(position => item.value.result?.cases?.[position]?.name || `ケース${position + 1}`).join('、')
+// The counts that stand in for the withheld cases: AC first, the failures in a fixed order, the cases not run last.
+const verdictOrder = ['AC', 'WA', 'TLE', 'MLE', 'OLE', 'RE', 'JE']
+const verdictCounts = computed(() => {
+  const counts = item.value.result?.caseVerdicts
+  if (!counts) return null
+  const rank = (verdict: string) => verdict === 'SKIPPED' ? Infinity : (verdictOrder.indexOf(verdict) + 1 || verdictOrder.length + 1)
+  return Object.entries(counts).sort(([a], [b]) => rank(a) - rank(b)).map(([verdict, count]) => ({ verdict, count }))
+})
 // Only the aggregate mode gives cases their own scores.
 const caseScores = computed(() => !!item.value.result?.cases?.some(testCase => testCase.score !== undefined))
 const verdicts: Record<string, string> = { AC: '正解', WA: '不正解', CE: 'コンパイルエラー', RE: '実行時エラー', TLE: '実行時間超過', MLE: 'メモリ超過', OLE: '出力超過', JE: '採点できませんでした' }
@@ -75,12 +83,12 @@ const verdicts: Record<string, string> = { AC: '正解', WA: '不正解', CE: '�
       <h2 id="group-results-title">グループごとの得点</h2>
       <div class="submission-info">
         <table aria-label="グループごとの得点">
-          <thead><tr><th scope="col">グループ</th><th scope="col">得点 / 配点</th><th scope="col">ケース</th></tr></thead>
+          <thead><tr><th scope="col">グループ</th><th scope="col">得点 / 配点</th><th v-if="!verdictCounts" scope="col">ケース</th></tr></thead>
           <tbody>
             <tr v-for="(group, index) in score.groups" :key="index">
               <td>{{ group.name }}</td>
               <td><span class="submission-score" :data-full="(group.maxScore > 0 && group.score === group.maxScore) || undefined">{{ formatScore(group.score) }}</span> / {{ formatScore(group.maxScore) }}</td>
-              <td class="group-cases">{{ group.cases.length ? caseNames(group.cases) : '—' }}</td>
+              <td v-if="!verdictCounts" class="group-cases">{{ group.cases.length ? caseNames(group.cases) : '—' }}</td>
             </tr>
           </tbody>
         </table>
@@ -88,7 +96,13 @@ const verdicts: Record<string, string> = { AC: '正解', WA: '不正解', CE: '�
     </section>
     <section class="case-results" aria-labelledby="case-results-title">
       <h2 id="case-results-title">ジャッジ結果</h2>
-      <div v-if="item.result?.cases?.length" class="submission-info">
+      <template v-if="verdictCounts">
+        <ul class="verdict-counts" aria-label="結果ごとのケース数">
+          <li v-for="entry in verdictCounts" :key="entry.verdict"><span class="verdict-badge" :data-verdict="entry.verdict === 'SKIPPED' ? undefined : entry.verdict" :title="verdicts[entry.verdict]">{{ entry.verdict === 'SKIPPED' ? '未実行' : entry.verdict }}</span> × {{ entry.count }}</li>
+        </ul>
+        <p class="muted">テストケースごとの結果は、コンテストや定期便が終わると表示します。</p>
+      </template>
+      <div v-else-if="item.result?.cases?.length" class="submission-info">
         <table aria-label="テストケースごとの結果">
           <thead><tr><th scope="col">テストケース名</th><th scope="col">結果</th><th v-if="caseScores" scope="col">点</th><th scope="col">CPU時間</th><th scope="col">経過時間</th><th scope="col">最大メモリ</th></tr></thead>
           <tbody>
@@ -136,6 +150,7 @@ const verdicts: Record<string, string> = { AC: '正解', WA: '不正解', CE: '�
 .submission-info tr:nth-child(odd) { background: var(--color-surface); }
 .submission-info tbody tr:last-child > * { border-bottom: 0; }
 .compile-log, .case-results { margin-top: 28px; }
+.verdict-counts { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 0; padding: 0; list-style: none; }
 .case-results th { width: auto; text-align: center; }
 .case-results td + td { border-left: 1px solid var(--color-line); }
 .case-results thead { background: var(--color-surface); }

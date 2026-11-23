@@ -91,10 +91,13 @@ type Result struct {
 	Interactive bool         `json:"interactive,omitempty" hidden:"true"`
 	CheckerLog  string       `json:"checkerLog,omitempty" hidden:"true"`
 	Cases       []CaseResult `json:"cases,omitempty"`
-	Verdict     string       `json:"verdict"`
-	Passed      int          `json:"passed"`
-	Total       int          `json:"total"`
-	CompileLog  string       `json:"compileLog,omitempty" hidden:"true"`
+	// CaseVerdicts counts the cases by verdict. It stands in for Cases while a contest or a 定期便 round keeps the
+	// case results from the viewer (casesHidden), and is never stored.
+	CaseVerdicts map[string]int `json:"caseVerdicts,omitempty" doc:"結果ごとのケース数。ケース別結果を返さない間だけ、casesの代わりに返します。"`
+	Verdict      string         `json:"verdict"`
+	Passed       int            `json:"passed"`
+	Total        int            `json:"total"`
+	CompileLog   string         `json:"compileLog,omitempty" hidden:"true"`
 	// Scoring is present only for a partial-scoring problem. Results without it are all-or-nothing (ADR 0025).
 	Scoring *SubmissionScore `json:"scoring,omitempty"`
 	// RunTwice is the worker's mark on every non-JE result of a run-twice job (ADR 0036). FinishAttempt checks it
@@ -122,6 +125,35 @@ type GroupScore struct {
 	Score    int64  `json:"score"`
 	MaxScore int64  `json:"maxScore"`
 	Cases    []int  `json:"cases"`
+}
+
+// casesHidden is a column telling whether the viewer must not read the result case by case. Case names hint at the
+// tests, so a running contest and a 定期便 round in progress (problem_tags_hidden) give only the count of each verdict.
+// Those who manage the problem and the contest's staff read the cases throughout. A sample check runs only the samples,
+// which the statement shows. viewer is the viewer's ID as an SQL expression.
+func casesHidden(viewer string) string {
+	return `(NOT COALESCE((submissions.job->>'easyTest')::boolean,false) AND NOT can_manage_problem(submissions.problem_id,` + viewer + `) AND (
+ problem_tags_hidden(submissions.problem_id) OR EXISTS(SELECT 1 FROM contests running
+  WHERE running.id=submissions.contest_id AND statement_timestamp()<running.ends_at AND NOT contest_staff(running.id,` + viewer + `))))`
+}
+
+// hideCases replaces the case results with the count of each verdict and empties the groups' case lists, which point
+// into them. The usage summary and the scores stay.
+func (s *Submission) hideCases() {
+	r := s.Result
+	if r == nil {
+		return
+	}
+	r.CaseVerdicts = map[string]int{}
+	for _, c := range r.Cases {
+		r.CaseVerdicts[c.Verdict]++
+	}
+	r.Cases = nil
+	if r.Scoring != nil {
+		for i := range r.Scoring.Groups {
+			r.Scoring.Groups[i].Cases = []int{}
+		}
+	}
 }
 
 // Summaries use the maximum measured value across cases, not the sum.
@@ -321,7 +353,12 @@ func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) 
 func (s *Store) Get(ctx context.Context, owner, id string) (Submission, error) {
 	// Checker diagnostics can contain private tests and checker source.
 	privateColumns := strings.Replace(columns, "result,", `CASE WHEN (COALESCE((job->>'easyTest')::boolean,false) AND ((job->'interactor' IS NOT NULL AND job->'interactor' <> 'null'::jsonb) OR (job->'runTwice' IS NOT NULL AND job->'runTwice' <> 'null'::jsonb))) OR EXISTS(SELECT 1 FROM problem_drafts p WHERE p.id=submissions.problem_id AND can_manage_problem(p.id,$2)) THEN result ELSE result-'checkerLog' END,`, 1)
-	return scan(s.Pool.QueryRow(ctx, `SELECT `+privateColumns+` FROM submissions WHERE id=$1 AND owner_id=$2`, id, owner))
+	var hidden bool
+	item, err := scan(s.Pool.QueryRow(ctx, `SELECT `+privateColumns+`,`+casesHidden("$2")+` FROM submissions WHERE id=$1 AND owner_id=$2`, id, owner), &hidden)
+	if hidden {
+		item.hideCases()
+	}
+	return item, err
 }
 
 func (s *Store) List(ctx context.Context, owner string) ([]Submission, error) {

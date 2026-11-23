@@ -14,6 +14,28 @@ const submission = (id: string, author: string, result: Submission['result']): S
 })
 const scored = (score: number, verdict = 'WA') => ({ verdict, passed: 1, total: 3, cpuTimeMs: 4, memoryBytes: 2_000_000, scoring: { score, maxScore: 10000 } })
 
+test('a submission whose cases are withheld shows the count of each verdict in place of the case table', async ({ page }, testInfo) => {
+  const sid = '45454545-4545-4545-8545-454545454545'
+  // What the API returns while a contest or a 定期便 round is running: counts for the cases, and groups without their cases.
+  const result = {
+    verdict: 'WA', passed: 2, total: 5, cpuTimeMs: 12, memoryBytes: 2_000_000,
+    caseVerdicts: { SKIPPED: 1, TLE: 1, AC: 2, WA: 1 },
+    scoring: { score: 3000, maxScore: 10000, groups: [{ name: '小課題1', score: 3000, maxScore: 3000, cases: [] }, { name: '小課題2', score: 0, maxScore: 7000, cases: [] }] },
+  }
+  await page.route(`**/api/my/submissions/${sid}`, route => route.fulfill({ json: submission(sid, 'ui_test', result) }))
+  await page.goto(`/my/submissions/${shortId(sid)}`)
+  await expect(page.getByRole('table', { name: '提出情報' }).getByRole('row', { name: /^正解したケース/ })).toHaveText('正解したケース2 / 5')
+  await expect(page.getByRole('list', { name: '結果ごとのケース数' }).getByRole('listitem')).toHaveText(['AC × 2', 'WA × 1', 'TLE × 1', '未実行 × 1'])
+  await expect(page.getByText('テストケースごとの結果は、コンテストや定期便が終わると表示します。')).toBeVisible()
+  await expect(page.getByRole('table', { name: 'テストケースごとの結果' })).toHaveCount(0)
+  const groups = page.getByRole('table', { name: 'グループごとの得点' })
+  await expect(groups.locator('thead th')).toHaveText(['グループ', '得点 / 配点'])
+  await expect(groups.locator('tbody tr')).toHaveText(['小課題130 / 30', '小課題20 / 70'])
+  await page.screenshot({ path: testInfo.outputPath('withheld-desktop.png'), fullPage: true })
+  await page.setViewportSize({ width: 375, height: 900 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
+
 test('a submission shows its score, the score of each group with its cases, and the cases\' own scores', async ({ page }, testInfo) => {
   const sid = '44444444-4444-4444-8444-444444444444'
   const result = {

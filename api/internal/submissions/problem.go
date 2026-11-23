@@ -73,9 +73,9 @@ func (s *Store) ProblemGet(ctx context.Context, problemID, id, viewer string) (S
 	if err := s.problemSubmissionsAccess(ctx, problemID, "", viewer, ScopeAll); err != nil {
 		return Submission{}, err
 	}
-	var shared bool
-	item, err := scan(s.Pool.QueryRow(ctx, `SELECT `+columns+`,`+teammate+` FROM submissions WHERE `+problemSubmissionVisible+` AND id=$5`, problemID, "", viewer, string(ScopeAll), id, false), &shared)
-	return teamSubmission(item, shared), err
+	var shared, hidden bool
+	item, err := scan(s.Pool.QueryRow(ctx, `SELECT `+columns+`,`+teammate+`,`+casesHidden("$3")+` FROM submissions WHERE `+problemSubmissionVisible+` AND id=$5`, problemID, "", viewer, string(ScopeAll), id, false), &shared, &hidden)
+	return teamSubmission(item, shared, hidden), err
 }
 
 // Resolve a shared ID through the same visibility rules as the submission lists.

@@ -29,8 +29,8 @@ func publicSubmission(s Submission) Submission {
 }
 
 // teamSubmission is publicSubmission for a detail view. Teammates also read the compile errors; checker diagnostics stay
-// hidden from them as from the submitter (ADR 0024).
-func teamSubmission(s Submission, teammate bool) Submission {
+// hidden from them as from the submitter (ADR 0024). hidden is the casesHidden column.
+func teamSubmission(s Submission, teammate, hidden bool) Submission {
 	compileLog := ""
 	if s.Result != nil {
 		compileLog = s.Result.CompileLog
@@ -38,6 +38,9 @@ func teamSubmission(s Submission, teammate bool) Submission {
 	s = publicSubmission(s)
 	if teammate && s.Result != nil {
 		s.Result.CompileLog = compileLog
+	}
+	if hidden {
+		s.hideCases()
 	}
 	return s
 }
@@ -88,9 +91,9 @@ var contestOwn = `NOT COALESCE((job->>'easyTest')::boolean,false)
  AND (owner_id=$3 OR ($4='team' AND contest_id=$1::uuid AND owner_id IN (SELECT unnest(contest_teammates($1::uuid,$3)))))`
 
 func (s *Store) ContestGet(ctx context.Context, contestID, id, viewer string) (Submission, error) {
-	var shared bool
-	item, err := scan(s.Pool.QueryRow(ctx, `SELECT `+columns+`,`+teammate+` FROM submissions WHERE `+contestPublic+` AND id=$2`, contestID, id, viewer, false), &shared)
-	return teamSubmission(item, shared), err
+	var shared, hidden bool
+	item, err := scan(s.Pool.QueryRow(ctx, `SELECT `+columns+`,`+teammate+`,`+casesHidden("$3")+` FROM submissions WHERE `+contestPublic+` AND id=$2`, contestID, id, viewer, false), &shared, &hidden)
+	return teamSubmission(item, shared, hidden), err
 }
 
 type ContestSubmissionList struct {
