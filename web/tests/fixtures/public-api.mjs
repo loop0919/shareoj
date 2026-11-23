@@ -206,6 +206,13 @@ createServer(async (req, res) => {
       for await (const chunk of req) body += chunk
       return res.end(JSON.stringify({ route: 'private', path, query: new URL(req.url, 'http://localhost').search, method: req.method, type: req.headers['content-type'] ?? '', body }))
     }
+    // A contest whose staff check works, and one whose check fails.
+    if (path === '/my/contests/bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc') return res.end(JSON.stringify({ id: 'bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc', staff: true, canViewSubmissions: true }))
+    if (path === '/my/contests/bdbdbdbd-bdbd-4dbd-8dbd-bdbdbdbdbdbd') return res.writeHead(500).end('{}')
+    if (path.startsWith('/my/contests/bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc/')) return res.end(JSON.stringify({ route: 'private', path, query: new URL(req.url, 'http://localhost').search }))
+    // Own submissions: the first carries checker diagnostics, as the API does for an author or tester; the second is a sample check.
+    if (path === '/my/submissions/c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1') return res.end(JSON.stringify({ ...submission, id: 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', result: { ...submission.result, checkerLog: 'secret-checker-log' } }))
+    if (path === '/my/submissions/c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c2c2') return res.end(JSON.stringify({ ...submission, id: 'c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c2c2', easyTest: true, result: { ...submission.result, checkerLog: 'sample-diagnostics' } }))
     // The private standings name the table the web server asked for; this contest still has runs to judge (ADR 0023).
     if (path === '/my/contests/88888888-8888-4888-8888-888888888888/standings') {
       const live = new URL(req.url, 'http://localhost').searchParams.get('live') === '1'
@@ -303,6 +310,7 @@ createServer(async (req, res) => {
     status: path.endsWith('99999999-9999-4999-8999-999999999999') ? 'scheduled' : 'running', canEdit: false, official: true, participating: false, canViewSubmissions: false, problems: [{ id: problem.id, title: problem.title, points: 100 }],
   }))
   else if (/^\/contests\/(88888888-8888-4888-8888-888888888888|99999999-9999-4999-8999-999999999999)\/standings$/.test(path)) res.end('[]')
+  else if (/^\/contests\/(bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc|bdbdbdbd-bdbd-4dbd-8dbd-bdbdbdbdbdbd)(\/|$)/.test(path)) res.end(JSON.stringify({ route: 'public', path, query: new URL(req.url, 'http://localhost').search }))
   else if (path.startsWith('/contests/66666666-6666-4666-8666-666666666666/')) res.end(JSON.stringify({ route: 'public', path, query: new URL(req.url, 'http://localhost').search }))
   else if (path === `/contests/88888888-8888-4888-8888-888888888888/problems/${problem.id}` || path === `/contests/99999999-9999-4999-8999-999999999999/problems/${problem.id}`) res.end(JSON.stringify({ ...problem, favoriteCount: 3 }))
   else res.writeHead(404).end('{}')

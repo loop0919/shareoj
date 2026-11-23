@@ -79,3 +79,55 @@ test('a signed-out visitor still reads images in streaming mode', async ({ reque
   expect(response.headers()['content-type']).toBe('image/png')
   expect((await response.body()).toString('latin1')).toContain('public')
 })
+
+const staffContest = 'bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc'
+const brokenContest = 'bdbdbdbd-bdbd-4dbd-8dbd-bdbdbdbdbdbd'
+
+test('staff of a contest get the public answers in streaming mode', async ({ request }) => {
+  for (const path of ['', '/submissions', `/submissions/${submissionId}`, `/problems/${problemId}`, `/problems/${problemId}/submissions`, '/standings?live=1']) {
+    const streaming = await (await request.get(`/api/contests/${staffContest}${path}`, { headers: { cookie: on } })).json()
+    expect(streaming.route, path).toBe('public')
+    const usual = await (await request.get(`/api/contests/${staffContest}${path}`, { headers: { cookie: off } })).json()
+    expect(usual.route ?? 'private', path).toBe('private')
+  }
+  for (const mine of ['1', 'team']) {
+    const own = await request.get(`/api/contests/${staffContest}/submissions?mine=${mine}`, { headers: { cookie: on } })
+    expect(own.status()).toBe(403)
+    expect((await own.json()).data).toEqual({ code: 'streaming_mode' })
+  }
+})
+
+test('a participant keeps the private answers in streaming mode, but never the live standings', async ({ request }) => {
+  const contest = '66666666-6666-4666-8666-666666666666'
+  for (const path of ['/submissions', '/submissions?mine=1', '/submissions?mine=team', `/problems/${problemId}`]) {
+    expect((await (await request.get(`/api/contests/${contest}${path}`, { headers: { cookie: on } })).json()).route, path).toBe('private')
+  }
+  // Without the cookie the same call goes to the private route, so the public answer below comes from streaming mode.
+  expect((await (await request.get(`/api/contests/${contest}/standings?live=1`, { headers: { cookie: off } })).json()).route).toBe('private')
+  expect((await (await request.get(`/api/contests/${contest}/standings?live=1`, { headers: { cookie: on } })).json()).route).toBe('public')
+})
+
+test('a failed staff check uses neither route', async ({ request }) => {
+  const response = await request.get(`/api/contests/${brokenContest}/submissions`, { headers: { cookie: on } })
+  expect(response.status()).toBe(502)
+  // The public route would have answered, so the 502 comes from the failed check alone.
+  expect((await (await request.get(`/api/contests/${brokenContest}/submissions`, { headers: { cookie: 'openoj-streaming=1' } })).json()).route).toBe('public')
+})
+
+test('an expired session reads the public route', async ({ request }) => {
+  const response = await request.get(`/api/contests/${staffContest}/submissions`, { headers: { cookie: 'openoj_access=expired; openoj-streaming=1' } })
+  expect(response.status()).toBe(200)
+  expect((await response.json()).route).toBe('public')
+})
+
+test('the own submission detail drops the checker diagnostics in streaming mode', async ({ request }) => {
+  const hidden = 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1'
+  const sample = 'c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c2c2'
+  const usual = await (await request.get(`/api/my/submissions/${hidden}`, { headers: { cookie: off } })).json()
+  expect(usual.result.checkerLog).toBe('secret-checker-log')
+  const streaming = await (await request.get(`/api/my/submissions/${hidden}`, { headers: { cookie: on } })).json()
+  expect(streaming.result.verdict).toBe('AC')
+  expect(streaming.result).not.toHaveProperty('checkerLog')
+  const easy = await (await request.get(`/api/my/submissions/${sample}`, { headers: { cookie: on } })).json()
+  expect(easy.result.checkerLog).toBe('sample-diagnostics')
+})
