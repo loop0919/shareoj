@@ -494,3 +494,75 @@ test('the venue passphrase form of a participant is not drawn in streaming mode,
   await expect(page.getByText('配信モード中は参加登録できません。')).toHaveCount(0)
   expect(posted).toEqual([])
 })
+
+// Marks the document so a test can tell a reload (fresh document, marker gone) from a tab that was only covered.
+async function mark(page: Page) { await page.evaluate(() => { (window as unknown as { __loaded: boolean }).__loaded = true }) }
+const marked = (page: Page) => page.evaluate(() => (window as unknown as { __loaded?: boolean }).__loaded === true)
+const reloadButton = (page: Page) => page.getByRole('button', { name: '読み込み直す', exact: true })
+
+test('another tab is covered and reloads when streaming mode turns on', async ({ context }) => {
+  const staff = await context.newPage()
+  await signIn(staff)
+  await staff.goto('/my')
+  await expect(staff.getByRole('heading', { name: 'alice' })).toBeVisible()
+  await mark(staff)
+  const settings = await context.newPage()
+  await signIn(settings)
+  await settings.goto('/my/settings?tab=streaming')
+  await streamingSwitch(settings).check()
+  await expect(closedHeading(staff)).toBeVisible()
+  // A fresh server render of the closed screen, not the old page merely covered.
+  expect(await marked(staff)).toBe(false)
+  await expect(reloadButton(staff)).toHaveCount(0)
+  expect(new URL(staff.url()).pathname).toBe('/my')
+  await expect(badge(staff)).toBeVisible()
+})
+
+test('a tab that refuses the reload stays covered, and uncovers when the mode returns', async ({ context }) => {
+  const staff = await context.newPage()
+  staff.on('dialog', dialog => dialog.dismiss())
+  await signIn(staff)
+  await staff.goto('/my')
+  const heading = staff.getByRole('heading', { name: 'alice' })
+  await expect(heading).toBeVisible()
+  await staff.evaluate(() => addEventListener('beforeunload', event => event.preventDefault()))
+  // Chromium only asks after the user has interacted with the page.
+  await heading.click()
+  await mark(staff)
+  const settings = await context.newPage()
+  await signIn(settings)
+  await settings.goto('/my/settings?tab=streaming')
+  await streamingSwitch(settings).check()
+  await expect(badge(settings)).toBeVisible()
+  await expect(reloadButton(staff)).toBeVisible()
+  await expect(reloadButton(staff)).toBeFocused()
+  // The content underneath is out of reach: what sits at the heading's own place is the cover, and Tab never leaves it.
+  expect(await heading.evaluate(element => {
+    const box = element.getBoundingClientRect()
+    return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.closest('dialog.streaming-cover') !== null
+  })).toBe(true)
+  for (let press = 0; press < 12; press++) await staff.keyboard.press('Tab')
+  expect(await staff.evaluate(() => document.activeElement?.closest('dialog.streaming-cover') !== null)).toBe(true)
+  expect(await marked(staff)).toBe(true)
+  await badge(settings).click()
+  await settings.getByRole('dialog', { name: '配信モードを切りますか？' }).getByRole('button', { name: '切る', exact: true }).click()
+  await expect(badge(settings)).toHaveCount(0)
+  await expect(reloadButton(staff)).toHaveCount(0)
+  await expect(heading).toBeVisible()
+  expect(await marked(staff)).toBe(true)
+})
+
+test('a tab notices the change when it becomes visible', async ({ context }) => {
+  await context.addInitScript(() => { (window as unknown as { BroadcastChannel?: unknown }).BroadcastChannel = undefined })
+  const staff = await context.newPage()
+  await signIn(staff)
+  await staff.goto('/my')
+  await expect(staff.getByRole('heading', { name: 'alice' })).toBeVisible()
+  await mark(staff)
+  await streamingOn(context)
+  // Nothing has told the tab yet.
+  expect(await marked(staff)).toBe(true)
+  await staff.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await expect(closedHeading(staff)).toBeVisible()
+  expect(await marked(staff)).toBe(false)
+})

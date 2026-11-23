@@ -29,6 +29,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onOutsideClick))
 watch(() => route.fullPath, closeCreateMenu)
 const { user, refreshAccount, refreshProfile } = useAccount()
 const { streaming } = useStreamingMode()
+useStreamingSync()
 onMounted(() => { void refreshAccount().then(account => { if (account) return refreshProfile() }).catch(() => {}) })
 useEventAlarms()
 useNotificationPolling()
@@ -71,6 +72,7 @@ useNotificationPolling()
       </div>
     </header>
     <StreamingOffDialog />
+    <StreamingCover />
     <PolicyNotice v-if="!editorLayout" />
     <main id="main" tabindex="-1"><slot /></main>
     <footer v-if="!editorLayout" class="site-footer">
