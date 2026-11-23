@@ -476,3 +476,21 @@ test('the reveal buttons of the 定期便 are not drawn in streaming mode, and a
   await expect(page.getByRole('button', { name: '問題名を表示' })).toHaveCount(0)
   expect(asked).toEqual([])
 })
+
+test('the venue passphrase form of a participant is not drawn in streaming mode, and is drawn without it', async ({ page, context }) => {
+  await signIn(page)
+  await answerContest(page, { participating: true, onsiteDivision: true, onsite: false })
+  const posted: string[] = []
+  page.on('request', request => { if (request.method() === 'POST' && /\/api\/my\/contests\/[^/]+\/participation/.test(request.url())) posted.push(request.url()) })
+  const form = page.getByRole('button', { name: 'オンサイト参加にする' })
+  await page.goto(contest)
+  await expect(form).toBeVisible()
+  await streamingOn(context)
+  await page.goto(contest)
+  // The participant's state stays; only the upgrade form goes. The viewer is known on the client only, so the server HTML is the same either way.
+  await expect(page.getByText('参加済み').first()).toBeVisible()
+  await expect(form).toHaveCount(0)
+  await expect(page.getByLabel('会場の合言葉（オンサイト参加者のみ）')).toHaveCount(0)
+  await expect(page.getByText('配信モード中は参加登録できません。')).toHaveCount(0)
+  expect(posted).toEqual([])
+})

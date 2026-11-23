@@ -61,7 +61,7 @@ function joinAlone(event: MouseEvent) {
         <!-- Once it starts, an individual's submissions are their own and cannot move to a team. -->
         <template v-else-if="contest.status === 'scheduled'"><NuxtLink class="editor-button" :to="teamPage">チーム参加に切り替える</NuxtLink><p class="muted">チームを作るかチームに入ると、個人参加の登録はチームのメンバーとしての登録に置き換わります。開始後は切り替えられません。</p></template>
       </template>
-      <ContestOnsiteUpgrade v-if="detailed && division && !contest.onsite && contest.status !== 'ended'" :contest="contest" @joined="value => emit('joined', value)" />
+      <ContestOnsiteUpgrade v-if="!streaming && detailed && division && !contest.onsite && contest.status !== 'ended'" :contest="contest" @joined="value => emit('joined', value)" />
     </template>
     <p v-else-if="contest.status === 'ended'" class="muted">参加受付は終了しました。</p>
     <p v-else-if="user && streaming" class="muted">配信モード中は参加登録できません。</p>
