@@ -163,6 +163,19 @@ test('submission form', async ({ page }) => {
   await shoot(page, 'submit-form', [form])
 })
 
+test('streaming mode', async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 700 })
+  await page.goto('/my/settings?tab=streaming')
+  const item = page.getByRole('button', { name: '配信モード', exact: true })
+  const section = page.getByRole('region', { name: '配信モード' })
+  await expect(section).toBeVisible()
+  await annotate(page, [
+    { target: item, pad: 2, badge: 'top-right' },
+    { target: section.getByText('このブラウザを配信モードにする'), pad: 6, badge: 'top-left' },
+  ])
+  await shoot(page, 'streaming-mode', [page.getByRole('navigation', { name: '設定の項目' }), section])
+})
+
 test('problem tabs', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto(`/problems/${shortId(problemId)}`)
