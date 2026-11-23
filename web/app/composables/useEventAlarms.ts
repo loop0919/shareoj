@@ -49,6 +49,7 @@ export function refreshEventAlarms() { reread?.() }
 export function useEventAlarms() {
   const { user } = useAccount()
   const { wants, show } = useBrowserNotifications()
+  const { streaming } = useStreamingMode()
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
   // Keys this page rang for the user; the stored ones add those of reloads and other tabs.
   const rung = new Set<string>()
@@ -134,7 +135,7 @@ export function useEventAlarms() {
     const current = ++request
     const contests = wants('contests')
     const releases = wants('featured') || wants('editorials')
-    if (!user.value || !(contests || releases)) { stop(); return }
+    if (!user.value || streaming.value || !(contests || releases)) { stop(); return }
     start()
     const [mine, page] = await Promise.allSettled([
       contests ? $fetch('/api/my/contest-schedule') : null,

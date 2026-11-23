@@ -27,11 +27,14 @@ export function useBrowserNotifications() {
     permission.value = await Notification.requestPermission()
     if (permission.value === 'granted') settings.value = { ...settings.value, enabled: true }
   }
+  // Streaming mode shows no notifications.
+  const { streaming } = useStreamingMode()
   function wants(kind: BrowserNotificationKind) {
-    return supported.value && permission.value === 'granted' && settings.value.enabled && settings.value.kinds[kind]
+    return !streaming.value && supported.value && permission.value === 'granted' && settings.value.enabled && settings.value.kinds[kind]
   }
   // Never throws, so a failure leaves the bell and the remaining alarms alone.
   function show(notice: BrowserNotice) {
+    if (streaming.value) return
     let shown: Notification
     try {
       // Many systems cannot show an SVG notification icon.

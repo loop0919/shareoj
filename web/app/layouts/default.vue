@@ -26,6 +26,7 @@ onMounted(() => document.addEventListener('click', onOutsideClick))
 onBeforeUnmount(() => document.removeEventListener('click', onOutsideClick))
 watch(() => route.fullPath, closeCreateMenu)
 const { user, refreshAccount, refreshProfile } = useAccount()
+const { streaming } = useStreamingMode()
 onMounted(() => { void refreshAccount().then(account => { if (account) return refreshProfile() }).catch(() => {}) })
 useEventAlarms()
 useNotificationPolling()
@@ -50,7 +51,7 @@ useNotificationPolling()
           <NuxtLink to="/blog">記事</NuxtLink>
           <NuxtLink to="/run">コード実行</NuxtLink>
         </div>
-        <details ref="createMenu" class="create-menu" @keydown.esc.prevent="closeCreateMenu(); createMenu?.querySelector('summary')?.focus()">
+        <details v-if="!streaming" ref="createMenu" class="create-menu" @keydown.esc.prevent="closeCreateMenu(); createMenu?.querySelector('summary')?.focus()">
           <summary>作成</summary>
           <div class="create-menu-links" @click="closeCreateMenu">
             <NuxtLink to="/problems/new?fresh=1"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 6-6 6 6 6m10-12 6 6-6 6M14 4l-4 16" /></svg>新規問題</NuxtLink>
@@ -60,12 +61,14 @@ useNotificationPolling()
         </details>
       </nav>
       <div class="header-tools">
+        <StreamingBadge v-if="streaming" />
         <ThemeSelect />
-        <NotificationBell v-if="user" />
+        <NotificationBell v-if="user && !streaming" />
         <AccountMenu v-if="user" />
         <NuxtLink v-else to="/login">ログイン</NuxtLink>
       </div>
     </header>
+    <StreamingOffDialog />
     <PolicyNotice v-if="!route.meta.editorLayout" />
     <main id="main" tabindex="-1"><slot /></main>
     <footer v-if="!route.meta.editorLayout" class="site-footer">
