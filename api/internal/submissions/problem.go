@@ -43,8 +43,9 @@ func (s *Store) problemSubmissionsAccess(ctx context.Context, problemID, contest
 	if contestID == "" {
 		err = s.Pool.QueryRow(ctx, `SELECT published_draft IS NOT NULL OR can_manage_problem(id,$2) FROM problem_drafts WHERE id=$1`, problemID, viewer).Scan(&allowed)
 	} else {
-		// Staff already cover each problem's own testers before the start.
-		err = s.Pool.QueryRow(ctx, `SELECT c.ends_at<=statement_timestamp() OR contest_staff(c.id,$3) OR ($4<>'' AND statement_timestamp()>=c.starts_at)
+		// Before the start, staff list only the problems they can open, as in contestStaffSees.
+		err = s.Pool.QueryRow(ctx, `SELECT c.ends_at<=statement_timestamp() OR ($4<>'' AND statement_timestamp()>=c.starts_at)
+   OR (contest_staff(c.id,$3) AND (c.starts_at<=statement_timestamp() OR contest_problem_access(c.id,cp.problem_id,$3)))
    FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=$1 AND c.id=$2`, problemID, contestID, viewer, string(scope)).Scan(&allowed)
 	}
 	if err != nil {

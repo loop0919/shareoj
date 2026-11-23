@@ -315,11 +315,13 @@ func TestContestsPostgres(t *testing.T) {
 		request("GET", "/my/contests/"+cid+"/submissions/"+draftRuns[owner].ID, owner, nil, 200)
 	}
 	request("GET", "/my/contests/"+cid+"/submissions", "tester", nil, 200)
-	request("GET", "/my/contests/"+cid+"/submissions/"+preSetter.ID, "tester", nil, 200)
+	// The tester cannot open b before the start, so its submissions wait for the start too.
+	request("GET", "/my/contests/"+cid+"/submissions/"+preSetter.ID, "tester", nil, 404)
 	request("GET", "/my/contests/"+cid+"/submissions", "bob", nil, 404)
 	start := time.Now().Add(-time.Hour).UTC().Truncate(time.Millisecond)
 	end := time.Now().Add(time.Hour).UTC().Truncate(time.Millisecond)
 	exec(`UPDATE contests SET starts_at=$2,ends_at=$3 WHERE id=$1`, cid, start, end)
+	request("GET", "/my/contests/"+cid+"/submissions/"+preSetter.ID, "tester", nil, 200)
 	// Preserve the actual pre-start relation after moving the test clock.
 	exec(`UPDATE submissions SET created_at=$2 WHERE id=$1`, pre.ID, start.Add(-time.Minute))
 	in.Version = 2
