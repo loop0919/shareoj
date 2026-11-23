@@ -233,7 +233,7 @@ test('generator and checker', async ({ page }) => {
   await annotate(page, [
     { target: page.getByRole('navigation', { name: '問題作成メニュー' }).getByRole('button', { name: '生成・検証・判定', exact: true }), pad: 2, badge: 'top-right' },
     ...['入力生成', '出力生成', '入力検証'].map(name => kinds.getByRole('button', { name, exact: true })),
-    { target: ['言語', '開始ケース番号', '生成件数'].map(name => page.locator('.generator label').filter({ hasText: name })), badge: 'top-right' },
+    { target: ['言語', '開始ケース番号', '生成件数', 'テストケース名の接頭辞'].map(name => page.locator('.generator label').filter({ hasText: name })), badge: 'top-right' },
     page.getByRole('button', { name: '生成する', exact: true }),
     page.getByRole('button', { name: 'テストケースを確認' }),
   ])

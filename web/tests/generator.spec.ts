@@ -73,6 +73,44 @@ test('generators append numbered inputs, replace outputs, persist code and retai
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
 
+test('input generation names the added cases with the given prefix', async ({ page }) => {
+  let requests = 0
+  await page.route('**/api/my/submissions', (route) => {
+    requests++
+    const count = route.request().postDataJSON().generation.count
+    return route.fulfill({ json: { status: 'DONE', result: { verdict: 'AC', cases: Array.from({ length: count }, () => ({ output: '1\n' })) } } })
+  })
+  await page.goto('/problems/new')
+  await page.getByRole('button', { name: 'テストケース', exact: true }).click()
+  await page.getByRole('button', { name: '生成・検証・判定', exact: true }).click()
+  await page.getByLabel('入力生成のコード', { exact: true }).fill('int main(){}')
+  const prefix = page.getByLabel('テストケース名の接頭辞')
+  await expect(prefix).toHaveValue('generated_')
+  await prefix.fill('random_')
+  await page.getByLabel('開始ケース番号').fill('7')
+  await page.getByLabel('生成件数').fill('2')
+  await page.getByRole('button', { name: '生成する', exact: true }).click()
+  await expect(page.getByText('2件の入力を追加しました。')).toBeVisible()
+  // A name already taken gets a numbered suffix, as before.
+  await page.getByLabel('生成件数').fill('1')
+  await page.getByRole('button', { name: '生成する', exact: true }).click()
+  await expect(page.getByText('1件の入力を追加しました。')).toBeVisible()
+  // A name over the 64-character limit is refused before the generation uses up the rate limit.
+  await prefix.fill('x'.repeat(60))
+  await page.getByRole('button', { name: '生成する', exact: true }).click()
+  await expect(page.locator('.generator [role=alert]')).toContainText('64文字')
+  expect(requests).toBe(2)
+  // The prefix stays while the author looks at another kind and comes back.
+  await page.getByRole('button', { name: '出力生成', exact: true }).click()
+  await page.getByRole('button', { name: '入力生成', exact: true }).click()
+  await expect(prefix).toHaveValue('x'.repeat(60))
+  await page.getByRole('button', { name: 'テストケース', exact: true }).click()
+  for (const name of ['random_7.txt', 'random_8.txt', 'random_7_1.txt']) {
+    await expect(page.getByRole('button', { name, exact: true })).toBeVisible()
+  }
+  await expect(page.locator('.case-files li')).toHaveCount(3)
+})
+
 test('16 MiB files are applied by reference and the complete set stays within 512 MiB', async ({ page }) => {
   const { createHash } = await import('node:crypto')
   const content = `${'x'.repeat(1023)}\n`.repeat(16384)

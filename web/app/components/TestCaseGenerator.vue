@@ -14,6 +14,7 @@ const emit = defineEmits<{ 'show-cases': [] }>()
 const mode = ref<'input' | 'output' | 'validation'>('input')
 const start = ref(1)
 const count = ref(1)
+const prefix = ref('generated_')
 const message = ref('')
 const failure = ref('')
 const validationResults = ref<{ name: string, verdict: string }[]>([])
@@ -28,6 +29,18 @@ watch([mode, start, count, () => JSON.stringify(program.value), () => JSON.strin
 let disposed = false
 onBeforeUnmount(() => { disposed = true })
 watch(mode, () => { start.value = 1; count.value = 1; failure.value = ''; message.value = '' })
+// The names input generation gives its cases: the prefix, the case number and `.txt`, with a numbered suffix where the
+// name is taken. Names are compared trimmed, as the server does, so the prefix loses its leading blanks.
+function generatedNames(first: number, amount: number) {
+  const names = new Set(cases.value.map(item => item.name?.trim()))
+  return Array.from({ length: amount }, (_, index) => {
+    const base = `${prefix.value.trimStart()}${first + index}`
+    let name = `${base}.txt`, suffix = 1
+    while (names.has(name)) name = `${base}_${suffix++}.txt`
+    names.add(name)
+    return name
+  })
+}
 function selectMode(next: typeof mode.value) {
   judging.value = false
   mode.value = next
@@ -50,6 +63,12 @@ async function generate() {
   }
   if (mode.value === 'input' && cases.value.length + amount > 100) {
     failure.value = '追加後のテストケースは100件以内にしてください。'
+    return
+  }
+  // Checked before the request, so that a name the save would refuse does not use up the rate limit.
+  const names = mode.value === 'input' ? generatedNames(first, amount) : []
+  if (names.some(name => [...name].length > 64 || /[\u0000-\u001f\u007f-\u009f]/.test(name))) {
+    failure.value = 'テストケース名は64文字以内で、制御文字を含めずに指定してください。接頭辞を見直してください。'
     return
   }
   if (!hasSource(program.value.runtime, program.value.source) || new TextEncoder().encode(program.value.source).length > 65536 || program.value.source.includes('\0')) {
@@ -94,13 +113,8 @@ async function generate() {
     if (fingerprint() !== snapshot) throw new Error('実行中にテストケースが変更されたため、結果は反映していません。再実行してください。')
     const updated = cases.value.map(item => ({ ...item }))
     if (mode.value === 'input') {
-      const names = new Set(updated.map(item => item.name?.trim()))
       for (const [index, generated] of outputs.entries()) {
-        const base = `generated_${first + index}`
-        let name = `${base}.txt`, suffix = 1
-        while (names.has(name)) name = `${base}_${suffix++}.txt`
-        names.add(name)
-        updated.push({ name, input: generated.output ?? '', inputFile: generated.outputFile ? testFileSchema.parse(generated.outputFile) : undefined, output: '' })
+        updated.push({ name: names[index], input: generated.output ?? '', inputFile: generated.outputFile ? testFileSchema.parse(generated.outputFile) : undefined, output: '' })
       }
     } else {
       outputs.forEach((generated, index) => {
@@ -156,6 +170,7 @@ async function generate() {
           <label>言語<select v-model="program.runtime" :disabled="disabled || busy"><option v-if="!available.some(item => item.id === program.runtime)" :value="program.runtime">{{ program.runtime }}（現在利用できません）</option><option v-for="item in available" :key="item.id" :value="item.id">{{ item.label }}</option></select></label>
           <label v-if="mode === 'input'">開始ケース番号<input v-model="start" type="number" step="1" :disabled="disabled || busy"></label>
           <label v-if="mode === 'input'">生成件数<input v-model="count" type="number" min="1" max="100" step="1" :disabled="disabled || busy"></label>
+          <label v-if="mode === 'input'">テストケース名の接頭辞<input v-model="prefix" type="text" maxlength="64" autocomplete="off" spellcheck="false" :disabled="disabled || busy"></label>
         </div>
         <details class="code-spec" :open="specOpen" @toggle="specOpen = ($event.target as HTMLDetailsElement).open">
           <summary><svg class="editor-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>{{ modeLabel }}の仕様</summary>
@@ -163,6 +178,7 @@ async function generate() {
             <template v-if="mode === 'input'">
               <div><dt>標準入力</dt><dd>ケース番号（整数1個）</dd></div>
               <div><dt>標準出力</dt><dd>新しいテストケースの入力として追加します</dd></div>
+              <div><dt>名前</dt><dd>接頭辞、ケース番号、「.txt」をつなげます（例：{{ prefix.trimStart() }}{{ start }}.txt）</dd></div>
             </template>
             <template v-else>
               <div><dt>標準入力</dt><dd>各テストケースの入力（全{{ cases.length }}件）</dd></div>
