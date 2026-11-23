@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from 'node:fs'
+import { join, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { APIRequestContext } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
@@ -18,6 +21,19 @@ test('a streaming request is refused on every route not marked', async ({ reques
   }
   const update = await request.put('/api/my/profile', { headers: { cookie: on, origin }, data: { handle: 'alice' } })
   expect(update.status()).toBe(403)
+  // The origin check answers 403 too, without the code.
+  expect((await update.json()).data).toEqual({ code: 'streaming_mode' })
+})
+
+test('a closed call falls back to the public view', async ({ request }) => {
+  // The fixture session is the author of the featured problem, whose editorial is still hidden from everyone else.
+  const usual = await (await request.get(`/api/problems/${featuredId}`, { headers: { cookie: off } })).json()
+  expect(usual.editorial).toBe('定期便の解説本文')
+  const response = await request.get(`/api/problems/${featuredId}`, { headers: { cookie: on } })
+  expect(response.status()).toBe(200)
+  const streaming = await response.json()
+  expect(streaming.title).toBe('定期便の新作')
+  expect(JSON.stringify(streaming)).not.toContain('定期便の解説本文')
 })
 
 // The Set-Cookie headers of a response for the streaming cookie, each split into its attributes.
@@ -66,6 +82,13 @@ test('a session with only the refresh cookie still answers in streaming mode', a
   const response = await request.get('/api/auth/me', { headers: { cookie: 'openoj_refresh=valid-refresh; openoj-streaming=1' } })
   expect(response.status()).toBe(200)
   expect(await response.json()).toEqual({ user: { id: 'session-user' } })
+})
+
+test('a submission with only the refresh cookie still goes through in streaming mode', async ({ request }) => {
+  const response = await request.post('/api/my/submissions', { headers: { cookie: 'openoj_refresh=valid-refresh; openoj-streaming=1', origin }, data: { problemId, runtime: 'cpp23-gcc', source: 'int main(){}' } })
+  expect(response.status()).toBe(202)
+  // The web server refreshed the session to send it.
+  expect(response.headersArray().some(({ name, value }) => name.toLowerCase() === 'set-cookie' && value.startsWith('openoj_access=valid-access;'))).toBe(true)
 })
 
 test('login works in streaming mode', async ({ request }) => {
@@ -127,7 +150,7 @@ test('staff of a contest get the public answers in streaming mode', async ({ req
 
 test('a participant keeps the private answers in streaming mode, but never the live standings', async ({ request }) => {
   const contest = '66666666-6666-4666-8666-666666666666'
-  for (const path of ['/submissions', '/submissions?mine=1', '/submissions?mine=team', `/problems/${problemId}`]) {
+  for (const path of ['', '/submissions', '/submissions?mine=1', '/submissions?mine=team', `/problems/${problemId}`]) {
     expect((await (await request.get(`/api/contests/${contest}${path}`, { headers: { cookie: on } })).json()).route, path).toBe('private')
   }
   // Without the cookie the same call goes to the private route, so the public answer below comes from streaming mode.
@@ -184,4 +207,33 @@ test('the standings and the editorials answer publicly without a staff check', a
   }
   // A request for the own submissions still needs the check, which fails closed.
   expect((await request.get(`/api/contests/${brokenContest}/standings?mine=1`, { headers: { cookie: on } })).status()).toBe(502)
+})
+
+// Every call under web/server that goes through in streaming mode, counted per file. Before an entry is added or raised,
+// check what the API returns on that path to staff, authors and testers: only what anyone may see can go through.
+const streamingCalls: Record<string, number> = {
+  'api/auth/[action].ts': 3,
+  'api/contests/[...path].get.ts': 1,
+  'api/my/code-runs/index.post.ts': 1,
+  'api/my/code-runs/latest.get.ts': 1,
+  'api/my/difficulty-votes/[id].ts': 1,
+  'api/my/favorites/[id].ts': 1,
+  'api/my/profile.ts': 1,
+  'api/my/solved-problems.get.ts': 1,
+  'api/my/submissions/[id].get.ts': 1,
+  'api/my/submissions/index.ts': 1,
+  'utils/problem-submissions.ts': 1,
+  'utils/streaming-mode.ts': 1,
+}
+
+test('only the listed calls go through in streaming mode', () => {
+  const root = fileURLToPath(new URL('../server/', import.meta.url))
+  const found: Record<string, number> = {}
+  for (const file of readdirSync(root, { recursive: true, encoding: 'utf8' })) {
+    if (!/\.[cm]?[jt]s$/.test(file)) continue
+    // Any streaming property counts, whatever its value; the option's own type is written streaming?:.
+    const count = readFileSync(join(root, file), 'utf8').match(/\bstreaming\s*:/g)?.length ?? 0
+    if (count) found[file.split(sep).join('/')] = count
+  }
+  expect(found).toEqual(streamingCalls)
 })

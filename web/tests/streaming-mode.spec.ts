@@ -213,9 +213,7 @@ test('a percent-encoded /%6dy never shows the my page in streaming mode', async 
   await signIn(page)
   await streamingOn(context)
   const privateReads = watchPrivateReads(page)
-  const response = await page.goto('/%6dy')
-  const html = await response!.text()
-  console.log('PERCENT-ENCODED', response!.status(), html.includes('配信に映らないように閉じています') ? 'closed screen' : html.includes('ページが見つかりません') ? '404 page' : 'other')
+  await page.goto('/%6dy')
   await expect(page.getByRole('heading', { name: 'alice', level: 1 })).toHaveCount(0)
   await expect(closedHeading(page).or(page.getByRole('heading', { name: 'ページが見つかりません' }))).toBeVisible()
   expect(privateReads).toEqual([])
@@ -668,7 +666,7 @@ test('a tab that refuses the reload stays covered, and uncovers when the mode re
   const stillCovered = async (step: string) => {
     expect(await staff.evaluate(() => (document.querySelector('dialog.streaming-cover') as HTMLDialogElement | null)?.matches(':modal') === true), step).toBe(true)
     expect(await staff.evaluate(() => {
-    const element = document.querySelector('h1')!
+      const element = document.querySelector('h1')!
       const box = element.getBoundingClientRect()
       return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.closest('dialog.streaming-cover') !== null
     }), step).toBe(true)
