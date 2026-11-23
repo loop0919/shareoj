@@ -1,3 +1,4 @@
+import type { APIRequestContext } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
 const problemId = '11111111-1111-4111-8111-111111111111'
@@ -17,6 +18,33 @@ test('a streaming request is refused on every route not marked', async ({ reques
   }
   const update = await request.put('/api/my/profile', { headers: { cookie: on, origin }, data: { handle: 'alice' } })
   expect(update.status()).toBe(403)
+})
+
+// The Set-Cookie headers of a response for the streaming cookie, each split into its attributes.
+async function streamingSetCookies(response: Awaited<ReturnType<APIRequestContext['get']>>) {
+  return response.headersArray().filter(({ name, value }) => name.toLowerCase() === 'set-cookie' && value.startsWith('openoj-streaming=')).map(({ value }) => value.split(';').map(part => part.trim()))
+}
+
+test('a page in streaming mode renews the cookie for a year', async ({ request }) => {
+  // A public page, a closed page and a signed-in page: every document the server renders.
+  for (const [path, cookie] of [['/', 'openoj-streaming=1'], ['/my', `${off}; openoj-streaming=1`], ['/problems', `${off}; openoj-streaming=1`]] as const) {
+    const renewed = await streamingSetCookies(await request.get(path, { headers: { cookie } }))
+    expect(renewed, path).toHaveLength(1)
+    const [value, ...attributes] = renewed[0]!
+    expect(value, path).toBe('openoj-streaming=1')
+    expect(attributes, path).toEqual(expect.arrayContaining(['Max-Age=31536000', 'Path=/', 'SameSite=Lax', 'Secure']))
+    expect(attributes.map(attribute => attribute.toLowerCase()), path).not.toContain('httponly')
+  }
+})
+
+test('the server never sets the streaming cookie on its own', async ({ request }) => {
+  for (const cookie of ['', off, 'openoj-streaming=0', `${off}; openoj-streaming=true`]) {
+    expect(await streamingSetCookies(await request.get('/', { headers: { cookie } })), cookie).toEqual([])
+  }
+  // API responses leave it alone even in streaming mode.
+  for (const path of ['/api/auth/me', '/api/my/profile', `/api/problems/${problemId}`]) {
+    expect(await streamingSetCookies(await request.get(path, { headers: { cookie: on } })), path).toEqual([])
+  }
 })
 
 test('a streaming request keeps the marked routes', async ({ request }) => {
