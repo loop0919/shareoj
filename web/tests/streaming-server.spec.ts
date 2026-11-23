@@ -130,4 +130,30 @@ test('the own submission detail drops the checker diagnostics in streaming mode'
   expect(streaming.result).not.toHaveProperty('checkerLog')
   const easy = await (await request.get(`/api/my/submissions/${sample}`, { headers: { cookie: on } })).json()
   expect(easy.result.checkerLog).toBe('sample-diagnostics')
+  // A sample check of a plain problem carries what only its manager may read, so it goes too.
+  const manager = 'c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3'
+  expect((await (await request.get(`/api/my/submissions/${manager}`, { headers: { cookie: off } })).json()).result.checkerLog).toBe('manager-diagnostics')
+  const plain = await (await request.get(`/api/my/submissions/${manager}`, { headers: { cookie: on } })).json()
+  expect(plain.easyTest).toBe(true)
+  expect(plain.result).not.toHaveProperty('checkerLog')
+})
+
+test('the own submission detail drops the generated outputs in streaming mode', async ({ request }) => {
+  const generated = 'c4c4c4c4-c4c4-4c4c-8c4c-c4c4c4c4c4c4'
+  const usual = await (await request.get(`/api/my/submissions/${generated}`, { headers: { cookie: off } })).json()
+  expect(usual.result.cases[0].output).toBe('secret-output')
+  expect(usual.result.cases[0].outputFile.url).toBe('https://download.example/secret')
+  const streaming = await (await request.get(`/api/my/submissions/${generated}`, { headers: { cookie: on } })).json()
+  expect(streaming.result.cases).toEqual([{ name: 'gen_1', verdict: 'AC' }])
+})
+
+test('the standings and the editorials answer publicly without a staff check', async ({ request }) => {
+  // This contest's check fails, so a check here would turn the answer into a 502.
+  for (const path of ['/standings', '/standings?live=1', '/editorials']) {
+    const response = await request.get(`/api/contests/${brokenContest}${path}`, { headers: { cookie: on } })
+    expect(response.status(), path).toBe(200)
+    expect((await response.json()).route, path).toBe('public')
+  }
+  // A request for the own submissions still needs the check, which fails closed.
+  expect((await request.get(`/api/contests/${brokenContest}/standings?mine=1`, { headers: { cookie: on } })).status()).toBe(502)
 })

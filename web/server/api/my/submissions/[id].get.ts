@@ -10,11 +10,12 @@ export default defineEventHandler(async event => {
   const id = getRouterParam(event, 'id') ?? ''
   if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(id)) throw createError({ statusCode: 404 })
   const submission = await privateAPI<Submission>(event, `/my/submissions/${id}`, { streaming: true })
-  // The API adds the checker diagnostics to an author's or tester's own submission; they can reveal tests and checker
-  // source. A sample check's diagnostics are public, so they stay.
-  if (streamingMode(event) && !submission.easyTest && submission.result) {
-    const { checkerLog: _checkerLog, ...result } = submission.result
-    return { ...submission, result }
-  }
-  return submission
+  if (!streamingMode(event) || !submission.result) return submission
+  // The API adds the checker diagnostics to a problem manager's own submission; they can reveal tests and checker
+  // source. Only the sample check of an interactive or two-step problem carries diagnostics the API shows to everyone,
+  // so only those stay. A generate job's cases carry the author's test outputs, which also go.
+  const { checkerLog: _checkerLog, ...withoutLog } = submission.result
+  const result = submission.easyTest && submission.result.interactive ? submission.result : withoutLog
+  const cases = result.cases?.map(({ output: _output, outputFile: _outputFile, ...kept }) => kept)
+  return { ...submission, result: cases ? { ...result, cases } : result }
 })

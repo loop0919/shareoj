@@ -212,7 +212,10 @@ createServer(async (req, res) => {
     if (path.startsWith('/my/contests/bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc/')) return res.end(JSON.stringify({ route: 'private', path, query: new URL(req.url, 'http://localhost').search }))
     // Own submissions: the first carries checker diagnostics, as the API does for an author or tester; the second is a sample check.
     if (path === '/my/submissions/c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1') return res.end(JSON.stringify({ ...submission, id: 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', result: { ...submission.result, checkerLog: 'secret-checker-log' } }))
-    if (path === '/my/submissions/c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c2c2') return res.end(JSON.stringify({ ...submission, id: 'c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c2c2', easyTest: true, result: { ...submission.result, checkerLog: 'sample-diagnostics' } }))
+    if (path === '/my/submissions/c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c2c2') return res.end(JSON.stringify({ ...submission, id: 'c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c2c2', easyTest: true, result: { ...submission.result, interactive: true, checkerLog: 'sample-diagnostics' } }))
+    // A sample check of a plain problem run by its manager, and a generate job whose cases carry the generated outputs.
+    if (path === '/my/submissions/c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3') return res.end(JSON.stringify({ ...submission, id: 'c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3', easyTest: true, result: { ...submission.result, checkerLog: 'manager-diagnostics' } }))
+    if (path === '/my/submissions/c4c4c4c4-c4c4-4c4c-8c4c-c4c4c4c4c4c4') return res.end(JSON.stringify({ ...submission, id: 'c4c4c4c4-c4c4-4c4c-8c4c-c4c4c4c4c4c4', result: { ...submission.result, cases: [{ name: 'gen_1', verdict: 'AC', output: 'secret-output', outputFile: { url: 'https://download.example/secret', size: 9, sha256: 'b'.repeat(64) } }] } }))
     // The private standings name the table the web server asked for; this contest still has runs to judge (ADR 0023).
     if (path === '/my/contests/88888888-8888-4888-8888-888888888888/standings') {
       const live = new URL(req.url, 'http://localhost').searchParams.get('live') === '1'
