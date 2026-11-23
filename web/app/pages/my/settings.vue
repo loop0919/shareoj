@@ -15,7 +15,7 @@ const tab = computed<Tab>({
 </script>
 <template>
   <section class="settings-page">
-    <NuxtLink to="/my">マイページへ戻る</NuxtLink>
+    <NuxtLink :to="streaming ? '/' : '/my'">{{ streaming ? 'ホームへ戻る' : 'マイページへ戻る' }}</NuxtLink>
     <h1>設定</h1>
     <nav class="content-menu" aria-label="設定の項目">
       <button v-for="[key, label] in tabs" :key="key" :aria-pressed="tab === key" @click="tab = key">{{ label }}</button>

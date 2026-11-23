@@ -2,6 +2,7 @@ import type { BrowserContext, Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 import { fakeNotifications } from './fixtures/notifications'
 import { shortId } from '../shared/utils/short-id'
+import { closedInStreaming } from '../shared/utils/streaming-mode'
 
 const profile = { handle: 'alice', avatar: '', version: 1, createdAt: '2026-09-01T00:00:00Z' }
 const contest = `/contests/${shortId('88888888-8888-4888-8888-888888888888')}`
@@ -164,4 +165,94 @@ test('the settings page lists every item without streaming mode', async ({ page 
   await page.goto('/my/settings?tab=identity')
   await expect(page.getByRole('navigation', { name: '設定の項目' }).getByRole('button')).toHaveText(['プロフィール', '外部サービス', '認証設定', 'プッシュ通知', '配信モード', 'アカウント削除'])
   await expect(page.getByRole('textbox').first()).toBeVisible()
+})
+
+const contestId = '88888888-8888-4888-8888-888888888888'
+const closedPages = ['/my', '/my/contests', '/my/contests/new', `/my/contests/${shortId(contestId)}`, '/my/contest-invitations/token', '/my/tester-invitations/token', '/problems/new', '/problems/post', '/featured/apply', '/blog/new', '/onboarding', `/contests/${shortId(contestId)}/team`]
+const closedHeading = (page: Page) => page.getByRole('heading', { name: '配信モード中は表示できません', exact: true })
+// Requests to the private API other than the profile read; the closed screen must make none.
+function watchPrivateReads(page: Page) {
+  const reads: string[] = []
+  page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/my/') && !request.url().endsWith('/api/my/profile')) reads.push(request.url()) })
+  return reads
+}
+
+for (const path of closedPages) {
+  test(`streaming mode closes ${path}`, async ({ page, context }) => {
+    await signIn(page)
+    await streamingOn(context)
+    const privateReads = watchPrivateReads(page)
+    const response = await page.goto(path)
+    // The server-rendered HTML already holds the closed screen, so nothing of the page shows first.
+    expect(await response!.text()).toContain('このページは、配信に映らないように閉じています。')
+    await expect(closedHeading(page)).toBeVisible()
+    await expect(page.getByText('このページは、配信に映らないように閉じています。')).toBeVisible()
+    await expect(badge(page)).toBeVisible()
+    await expect(page.getByRole('button', { name: '配信モードを切る', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'ホームへ戻る' })).toHaveAttribute('href', '/')
+    await expect(page).toHaveURL(new RegExp(`${path.replace(/[/]/g, '\\/')}$`))
+    expect(privateReads).toEqual([])
+  })
+}
+
+test('the same check sees private reads on /my without streaming mode', async ({ page }) => {
+  await signIn(page)
+  const privateReads = watchPrivateReads(page)
+  await page.goto('/my')
+  await expect(closedHeading(page)).toHaveCount(0)
+  await expect.poll(() => privateReads.length).toBeGreaterThan(0)
+})
+
+test('closedInStreaming keeps the own submission and the settings open', () => {
+  for (const path of ['/my/settings', '/my/settings/', '/my/submissions/abc', '/my/submissions/abc/', '/', '/problems', '/contests/abc', '/contests/abc/A', '/myself', '/problems/newer']) expect(closedInStreaming(path), path).toBe(false)
+  for (const path of ['/my', '/my/', '/my/new-page', '/my/submissions', '/my/submissions/', '/contests/abc/team', '/contests/abc/team/', '/problems/new', '/problems/new/', '/onboarding/']) expect(closedInStreaming(path), path).toBe(true)
+})
+
+test('a link and the back button also land on the closed screen', async ({ page, context }) => {
+  await signIn(page)
+  await streamingOn(context)
+  await page.goto('/')
+  await expect(badge(page)).toBeVisible()
+  await page.evaluate(() => (document.querySelector('#__nuxt') as any).__vue_app__.config.globalProperties.$router.push('/problems/new').catch(() => {}))
+  await expect(closedHeading(page)).toBeVisible()
+  await expect(page).toHaveURL(/\/problems\/new$/)
+  await page.getByRole('link', { name: 'ホームへ戻る' }).click()
+  await expect(page).toHaveURL(/\/$/)
+  await expect(closedHeading(page)).toHaveCount(0)
+  await page.goBack()
+  await expect(closedHeading(page)).toBeVisible()
+})
+
+test('配信モードを切る on the closed screen returns the page', async ({ page, context }) => {
+  await signIn(page)
+  await streamingOn(context)
+  await page.goto('/my')
+  await expect(closedHeading(page)).toBeVisible()
+  await page.getByRole('button', { name: '配信モードを切る', exact: true }).click()
+  await page.getByRole('dialog', { name: '配信モードを切りますか？' }).getByRole('button', { name: '切る', exact: true }).click()
+  await expect(closedHeading(page)).toHaveCount(0)
+  await expect(page).toHaveURL(/\/my$/)
+  await expect(page.getByRole('heading', { name: 'alice', level: 1 })).toBeVisible()
+  expect((await context.cookies()).some(cookie => cookie.name === 'openoj-streaming')).toBe(false)
+})
+
+test('pages outside the list stay open in streaming mode', async ({ page, context }) => {
+  await signIn(page)
+  await streamingOn(context)
+  for (const path of ['/my/settings', '/', '/problems']) {
+    await page.goto(path)
+    await expect(badge(page)).toBeVisible()
+    await expect(closedHeading(page)).toHaveCount(0)
+  }
+})
+
+test('the settings page links back to the home in streaming mode and to the my page otherwise', async ({ page, context }) => {
+  await signIn(page)
+  await page.goto('/my/settings')
+  await expect(page.getByRole('link', { name: 'マイページへ戻る' })).toHaveAttribute('href', '/my')
+  await expect(page.getByRole('link', { name: 'ホームへ戻る' })).toHaveCount(0)
+  await streamingOn(context)
+  await page.goto('/my/settings')
+  await expect(page.getByRole('link', { name: 'ホームへ戻る' })).toHaveAttribute('href', '/')
+  await expect(page.getByRole('link', { name: 'マイページへ戻る' })).toHaveCount(0)
 })

@@ -1,7 +1,10 @@
 import { loginDestination } from '~~/shared/utils/login-destination'
+import { closedInStreaming } from '~~/shared/utils/streaming-mode'
 
 export default defineNuxtRouteMiddleware(async to => {
   if (import.meta.server) return
+  // A closed screen stays; a redirect to the login or the onboarding would replace it.
+  if (useStreamingMode().streaming.value && closedInStreaming(to.path)) return
   // Shared submission links resolve public visibility before requiring a login.
   if (/^\/my\/submissions\/[^/]+\/?$/.test(to.path)) return
   if (!(to.path === '/my' || to.path.startsWith('/my/') || to.path === '/problems/new' || to.path === '/blog/new' || to.path === '/onboarding')) return

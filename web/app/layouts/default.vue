@@ -3,6 +3,8 @@ import { docPath, footerDocs } from '~~/shared/docs'
 import { fullId } from '~~/shared/utils/short-id'
 const route = useRoute()
 const pageError = useError()
+// An error screen always gets the header, even on a route that hides it for its editor.
+const editorLayout = computed(() => !!route.meta.editorLayout && !pageError.value)
 // Contest pages swap the site menu for the contest's own menu. Error pages keep the site menu.
 const contestId = computed(() => !pageError.value && String(route.name ?? '').startsWith('contests-id') ? fullId(route.params.id) : '')
 const { data: judgeCatalog, error: judgeCatalogError, refresh: refreshJudge } = await useJudgeCatalog()
@@ -33,12 +35,12 @@ useNotificationPolling()
 </script>
 
 <template>
-  <div class="site-shell" :class="{ 'site-shell--editor': route.meta.editorLayout, 'site-shell--contest': contestId }">
+  <div class="site-shell" :class="{ 'site-shell--editor': editorLayout, 'site-shell--contest': contestId }">
     <a class="skip-link" href="#main">本文へ移動</a>
     <div v-if="judgeCatalog?.maintenance || judgeCatalogError" class="judge-banner" role="status">
       {{ judgeCatalog?.maintenance ? judgeMaintenanceMessage : 'ジャッジ機能の状態を確認できません。現在、提出等を利用できません。' }}
     </div>
-    <header v-if="!route.meta.editorLayout" class="site-header" :class="{ 'site-header--contest': contestId }">
+    <header v-if="!editorLayout" class="site-header" :class="{ 'site-header--contest': contestId }">
       <NuxtLink class="wordmark" to="/" aria-label="ShareOJ ホーム">Share<span>OJ</span><span class="wordmark-beta">(β)</span></NuxtLink>
       <ContestHeaderTitle v-if="contestId" :id="contestId" class="contest-title" />
       <ContestMenu v-if="contestId" :id="contestId" />
@@ -69,9 +71,9 @@ useNotificationPolling()
       </div>
     </header>
     <StreamingOffDialog />
-    <PolicyNotice v-if="!route.meta.editorLayout" />
+    <PolicyNotice v-if="!editorLayout" />
     <main id="main" tabindex="-1"><slot /></main>
-    <footer v-if="!route.meta.editorLayout" class="site-footer">
+    <footer v-if="!editorLayout" class="site-footer">
       <div class="site-footer-brand">
         <span class="wordmark">ShareOJ<span class="wordmark-beta">(β)</span></span>
         <span class="site-footer-tagline">Share Online Judge</span>
