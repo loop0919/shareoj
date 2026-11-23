@@ -543,6 +543,22 @@ test('a tab that refuses the reload stays covered, and uncovers when the mode re
   })).toBe(true)
   for (let press = 0; press < 12; press++) await staff.keyboard.press('Tab')
   expect(await staff.evaluate(() => document.activeElement?.closest('dialog.streaming-cover') !== null)).toBe(true)
+  // Nothing the user does may dismiss the cover: repeated Escape (Chromium stops honouring a cancelled Escape after the
+  // first one without activation), a click on the backdrop, and Shift+Tab.
+  const stillCovered = async (step: string) => {
+    expect(await staff.evaluate(() => (document.querySelector('dialog.streaming-cover') as HTMLDialogElement | null)?.matches(':modal') === true), step).toBe(true)
+    expect(await heading.evaluate(element => {
+      const box = element.getBoundingClientRect()
+      return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.closest('dialog.streaming-cover') !== null
+    }), step).toBe(true)
+    expect(await staff.evaluate(() => document.activeElement?.closest('dialog.streaming-cover') !== null), step).toBe(true)
+  }
+  for (let press = 0; press < 4; press++) await staff.keyboard.press('Escape')
+  await stillCovered('after Escape x4')
+  await staff.mouse.click(2, 2)
+  await stillCovered('after backdrop click')
+  await staff.keyboard.press('Shift+Tab')
+  await stillCovered('after Shift+Tab')
   expect(await marked(staff)).toBe(true)
   await badge(settings).click()
   await settings.getByRole('dialog', { name: '配信モードを切りますか？' }).getByRole('button', { name: '切る', exact: true }).click()

@@ -3,12 +3,19 @@ const { stale } = useStreamingMode()
 const dialog = ref<HTMLDialogElement>()
 // A modal dialog makes everything else inert and unreachable, whichever layout is showing. Removing it lifts the cover.
 watch(dialog, element => { if (element && !element.open) element.showModal() }, { flush: 'post' })
+// Whatever closes the dialog (a second Escape cannot be cancelled in Chromium), it comes back at once while stale.
+// Escape is stopped before it can close the dialog at all, so the content never shows; Tab and backdrop clicks cannot move focus out of the only control.
+function keepOpen() {
+  if (!stale.value || !dialog.value || dialog.value.open) return
+  dialog.value.showModal()
+  dialog.value.querySelector('button')?.focus()
+}
 function reload() { location.reload() }
 </script>
 
 <template>
   <Teleport to="body">
-    <dialog v-if="stale" ref="dialog" class="streaming-cover" aria-labelledby="streaming-cover-title" @cancel.prevent>
+    <dialog v-if="stale" ref="dialog" class="streaming-cover" aria-labelledby="streaming-cover-title" @cancel.prevent @close="keepOpen" @keydown.esc.prevent @keydown.tab.prevent @mousedown.prevent>
       <p id="streaming-cover-title">配信モードの設定が変わりました。</p>
       <button type="button" class="editor-button" autofocus @click="reload">読み込み直す</button>
     </dialog>
