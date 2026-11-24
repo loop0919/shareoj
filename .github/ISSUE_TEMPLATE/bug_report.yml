@@ -1,0 +1,27 @@
+name: バグ報告
+description: 動かない、表示が崩れる、結果がおかしいなど
+labels:
+  - bug
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 起きたこと
+      description: 本来どうなるはずだったかも分かれば書いてください。画像や動画も貼れます。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現手順
+      description: 起きたページのURLや、押したボタンの順番など。
+      placeholder: |
+        1.
+        2.
+        3.
+  - type: input
+    id: environment
+    attributes:
+      label: 環境
+      description: ブラウザとOS。CLIの場合は`shareoj --version`の出力。
+      placeholder: Chrome 142 / Windows 11
