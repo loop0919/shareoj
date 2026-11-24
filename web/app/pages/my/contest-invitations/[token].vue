@@ -34,7 +34,7 @@ async function accept() {
   } catch (error) {
     const code = (error as { data?: { data?: { code?: string } } }).data?.data?.code
     message.value = code === 'contest_participant_locked'
-      ? 'このコンテストに参加登録しているため、共同作成者になれません。'
+      ? 'このコンテストに参加登録しているため、共同作成者になれません。開始前なら、参加登録を取り消すとなれます。'
       : (error as { statusCode?: number }).statusCode === 404 ? missing : accountError(error)
   } finally { busy.value = false }
 }

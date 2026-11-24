@@ -57,6 +57,7 @@ func TestContestRoutesWithoutDatabase(t *testing.T) {
 		"GET /my/contests/bad",
 		"PUT /my/contests/bad",
 		"POST /my/contests/bad/participation",
+		"DELETE /my/contests/bad/participation",
 		"GET /my/contests/bad/clarifications",
 		"POST /my/contests/bad/clarifications",
 		"PUT /my/contests/bad/clarifications/bad",

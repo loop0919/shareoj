@@ -22,6 +22,7 @@ const forwardedCodes = new Set([
   'invalid_submission',
   'contest_participation_required',
   'contest_participation_unavailable',
+  'contest_participation_locked',
   'contest_conflict',
   'invalid_clarification',
   'clarification_unavailable',

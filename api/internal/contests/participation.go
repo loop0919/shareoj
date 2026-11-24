@@ -11,6 +11,10 @@ import (
 
 var ErrParticipationUnavailable = errors.New("contest participation unavailable")
 
+// ErrParticipationLocked refuses to cancel a registration once the contest has started: a row that left the standings
+// then would change the ranks of the others.
+var ErrParticipationLocked = errors.New("the registration can no longer be cancelled")
+
 // ErrParticipantProblem refuses a save that adds a problem a registered participant authors or tests, so the editor
 // can name that cause instead of every reason a save may fail (ADR 0022).
 var ErrParticipantProblem = errors.New("a participant authors or tests the problem")
@@ -290,4 +294,60 @@ func enterTeam(ctx context.Context, tx pgx.Tx, id, owner, team string) error {
 	}
 	_, err := tx.Exec(ctx, `UPDATE contest_teams SET onsite_at=clock_timestamp(),onsite_via=$2 WHERE id=$1 AND onsite_at IS NULL`, team, *via)
 	return err
+}
+
+// Leave cancels the actor's registration before the start; someone who is not registered has nothing to cancel. A
+// participant who registered by mistake can then join the staff, which a registration forbids until the results are
+// final (ADR 0022). A team member leaves the team as RemoveTeamMember has them leave. Failed guesses at a team code or
+// the venue passphrase stay counted, so leaving and registering again earns no new ones.
+func (s *Store) Leave(ctx context.Context, id, owner string) error {
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	// The locks Join takes, in its order, so the two take turns and a team is entered or left, never both.
+	var locked string
+	if err = tx.QueryRow(ctx, `SELECT id FROM contests WHERE id=$1 FOR SHARE`, id).Scan(&locked); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text||' '||$2::text,709091024))`, owner, id); err != nil {
+		return err
+	}
+	var started, inTeam bool
+	err = tx.QueryRow(ctx, `SELECT c.starts_at<=clock_timestamp(),p.team_id IS NOT NULL FROM contests c
+ JOIN contest_participants p ON p.contest_id=c.id AND p.owner_id=$2 WHERE c.id=$1`, id, owner).Scan(&started, &inTeam)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if started {
+		return ErrParticipationLocked
+	}
+	if !inTeam {
+		if _, err = tx.Exec(ctx, `DELETE FROM contest_participants WHERE contest_id=$1 AND owner_id=$2`, id, owner); err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
+	}
+	t, err := lockTeam(ctx, tx, id, owner)
+	// Another member removed the actor while this waited for the team.
+	if errors.Is(err, ErrTeamNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if t.started {
+		return ErrParticipationLocked
+	}
+	if err = renewCode(ctx, tx, id, t.id); err != nil {
+		return err
+	}
+	if err = dropMember(ctx, tx, id, t.id, owner); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }

@@ -21,7 +21,9 @@ const calendarUrl = computed(() => googleCalendarUrl({
   url: new URL(`/contests/${shortId(props.contest.id)}`, config.public.siteUrl).href,
 }))
 const login = (next: string) => ({ path: '/login', query: { next } })
-const { saving, error, send } = useContestJoin(() => props.contest.id)
+const { saving, error, send, cancel } = useContestJoin(() => props.contest.id)
+const { showToast } = useToast()
+const root = ref<HTMLElement>()
 const passphrase = ref('')
 const carried = useCarriedPassphrase(props.contest.id)
 // A wrong passphrase registers nothing, so the input stays for another try.
@@ -44,10 +46,22 @@ function joinAlone(event: MouseEvent) {
   if (props.contest.status === 'running' && !window.confirm('個人参加すると、このコンテストではチームを作ることもチームに入ることもできなくなります。個人参加しますか？')) return
   void join()
 }
+// Until the start someone registered alone takes the registration back, for example to join the staff, which a
+// participant cannot do (ADR 0022). The parent takes the contest as it does after joining.
+async function leave() {
+  if (saving.value || !window.confirm('参加登録を取り消しますか？開始前なら、もう一度参加登録できます。')) return
+  const result = await cancel()
+  if (!result) return
+  emit('joined', result)
+  showToast('参加登録を取り消しました')
+  // The pressed button goes with the registration.
+  await nextTick()
+  root.value?.focus()
+}
 </script>
 
 <template>
-  <div v-if="detailed || !settled" class="contest-participation">
+  <div v-if="detailed || !settled" ref="root" class="contest-participation" tabindex="-1">
     <!-- A public response (for example, before the profile exists) says nothing about the viewer, so it claims no role. -->
     <p v-if="user && contest.excluded" class="muted">このコンテストのスタッフを務めたため、参加できません。</p>
     <p v-else-if="user && contest.staff" class="muted">スタッフ（作成者・作問者・テスター）は公式参加の対象外です。</p>
@@ -60,6 +74,8 @@ function joinAlone(event: MouseEvent) {
         <template v-else-if="contest.status === 'scheduled'"><NuxtLink class="editor-button" :to="teamPage">チーム参加に切り替える</NuxtLink><p class="muted">チームを作るかチームに入ると、個人参加の登録はチームのメンバーとしての登録に置き換わります。開始後は切り替えられません。</p></template>
       </template>
       <ContestOnsiteUpgrade v-if="detailed && division && !contest.onsite && contest.status !== 'ended'" :contest="contest" @joined="value => emit('joined', value)" />
+      <!-- A team member leaves on the team page, which also renews the team's code. -->
+      <template v-if="detailed && contest.status === 'scheduled' && !contest.team"><button type="button" class="editor-button" :disabled="saving" :aria-busy="saving" @click="leave">{{ saving ? '取り消し中…' : '参加登録を取り消す' }}</button><p class="muted">取り消すと順位表から外れます。取り消しは開始前だけできます。</p></template>
     </template>
     <p v-else-if="contest.status === 'ended'" class="muted">参加受付は終了しました。</p>
     <template v-else-if="!user">

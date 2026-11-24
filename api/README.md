@@ -545,6 +545,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 
 - `POST /my/contests/{id}/participation`：認証・プロフィール登録が必要。開始前または開催中に参加登録し、更新後のコンテスト詳細を返します。同じユーザーの再登録は重複しません。
   本文が空なら、チーム戦でも個人のオープン参加です。チーム戦とオンサイト区分の本文は下の「チーム戦とオンサイト」にあります。
+- `DELETE /my/contests/{id}/participation`：開始前に自分の参加登録を取り消し、更新後のコンテスト詳細を返します。登録していなければ何も変えません。チームのメンバーは`DELETE /my/contests/{id}/team/members/{handle}`で抜けるときと同じく、参加コードが作り直され、最後の1人ならチームもなくなります。開始後は409 `contest_participation_locked`です。取り消した人は、スタッフになれます（[ADR 0022](../docs/adr/0022-share-contests-among-setters.md)）。
 - 詳細の `participating` は閲覧ユーザーの登録状態です。`official` は公式順位の対象になれるかどうかで、スタッフとスタッフだった人は対象外です。`staff` は閲覧ユーザーがスタッフかどうかです。
 - 登録者は未提出でも0点で順位表に表示されます。開催中の提出には登録が必要です（スタッフを除く）。終了後の練習提出には登録不要です。
 - 終了後の新規登録・対象外ユーザーの登録は409 `contest_participation_unavailable`、未登録での提出は409 `contest_participation_required` です。

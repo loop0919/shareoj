@@ -147,6 +147,57 @@ test('a registered participant adds the contest to Google Calendar until it star
   await expect(link).toHaveCount(0)
 })
 
+test('a participant cancels the registration on the overview before the start, after a confirmation', async ({ page }) => {
+  const state = await routeContest(page, { ...base, participating: true })
+  const replies: (Contest | { status: number, code: string })[] = [{ status: 409, code: 'contest_participation_locked' }, base]
+  const methods: string[] = []
+  await page.route(`**/api/my/contests/${id}/participation`, (route: Route) => {
+    methods.push(route.request().method())
+    const reply = replies.shift()!
+    if ('code' in reply) return route.fulfill({ status: reply.status, json: { statusCode: reply.status, data: { code: reply.code } } })
+    state.contest = reply
+    return route.fulfill({ json: reply })
+  })
+  const dialogs: string[] = []
+  let accept = false
+  page.on('dialog', dialog => { dialogs.push(dialog.message()); void (accept ? dialog.accept() : dialog.dismiss()) })
+  await open(page)
+  const cancel = page.getByRole('button', { name: '参加登録を取り消す', exact: true })
+  // Declining the confirmation sends nothing.
+  await cancel.click()
+  await expect.poll(() => dialogs).toEqual(['参加登録を取り消しますか？開始前なら、もう一度参加登録できます。'])
+  expect(methods).toEqual([])
+  // A refusal keeps the registration and says why.
+  accept = true
+  await cancel.click()
+  await expect(page.getByRole('alert')).toHaveText('コンテストが始まったため、参加登録は取り消せません。ページを再読み込みしてください。')
+  await expect(page.getByRole('status').filter({ hasText: '参加済み' })).toBeVisible()
+  await cancel.click()
+  await expect(page.locator('.toast').getByRole('status')).toHaveText('参加登録を取り消しました')
+  await expect(page.getByRole('button', { name: '参加する', exact: true })).toBeVisible()
+  await expect(page.getByText('参加済み', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(page.locator('.contest-participation')).toBeFocused()
+  expect(methods).toEqual(['DELETE', 'DELETE'])
+  await noHorizontalScroll(page)
+})
+
+test('the registration cannot be cancelled once the contest starts, and team members leave on the team page instead', async ({ page }) => {
+  const state = await routeContest(page, { ...base, participating: true, status: 'running' })
+  await open(page)
+  const cancel = page.getByRole('button', { name: '参加登録を取り消す', exact: true })
+  await expect(page.getByRole('status').filter({ hasText: '参加済み' })).toBeVisible()
+  await expect(cancel).toHaveCount(0)
+  // Someone who joined a team contest alone cancels as in an individual contest.
+  state.contest = { ...base, participating: true, teamMode: true }
+  await reread(page, 'overview')
+  await expect(cancel).toBeVisible()
+  state.contest = { ...base, participating: true, teamMode: true, team: { id: alpha, name: 'Team Alpha', members: ['ui_test'], onsite: false } }
+  await reread(page, 'overview')
+  await expect(page.getByRole('link', { name: 'チームのページ', exact: true })).toBeVisible()
+  await expect(cancel).toHaveCount(0)
+})
+
 test('venue passphrase fields guide typing and name the rule for other characters and lengths', async ({ page }) => {
   const contest = { ...base, onsiteDivision: true }
   const state = await routeContest(page, contest)
@@ -1039,6 +1090,11 @@ test('the web server forwards the participation body and the team and setter rou
   expect((await request.post(`/api/my/contests/${contest}/participation`, { headers: session, data: { onsitePassphrase: 'x'.repeat(5000) } })).status()).toBe(413)
   expect((await request.post(`/api/my/contests/${contest}/participation`, { headers: { ...session, Origin: 'https://attacker.example' }, data: {} })).status()).toBe(403)
   expect((await request.post(`/api/my/contests/${contest}/participation`, { headers: { Origin: 'https://judge.example' }, data: {} })).status()).toBe(401)
+  // Cancelling answers with the contest, as joining does.
+  expect(await echo(await request.delete(`/api/my/contests/${contest}/participation`, { headers: session }))).toMatchObject({ path: `/my/contests/${contest}/participation`, method: 'DELETE', body: '' })
+  expect((await request.delete(`/api/my/contests/${contest}/participation`, { headers: { ...session, Origin: 'https://attacker.example' } })).status()).toBe(403)
+  expect((await request.delete(`/api/my/contests/${contest}/participation`, { headers: { Origin: 'https://judge.example' } })).status()).toBe(401)
+  expect((await request.delete(`/api/my/contests/not-a-contest/participation`, { headers: session })).status()).toBe(404)
   // Member routes.
   expect(await echo(await request.get(`/api/my/contests/${contest}/team`, { headers: session }))).toMatchObject({ path: `/my/contests/${contest}/team`, method: 'GET' })
   expect(await echo(await request.put(`/api/my/contests/${contest}/team/code`, { headers: session }))).toMatchObject({ path: `/my/contests/${contest}/team/code`, method: 'PUT' })

@@ -271,7 +271,7 @@ test('saving a published contest names a refused participant problem apart from 
     : route.fulfill({ json: contest }))
   await page.goto(`/my/contests/${shortId(id)}`)
   await page.getByRole('button', { name: '変更を保存' }).click()
-  await expect(page.getByRole('alert')).toHaveText('参加登録した人が作者・テスターである問題は出題できません。該当する問題を外してください。')
+  await expect(page.getByRole('alert')).toHaveText('参加登録した人が作者・テスターである問題は出題できません。該当する問題を外すか、本人に参加登録を取り消してもらってください。')
   await expect(page.getByRole('button', { name: '問題・配点', exact: true })).toHaveAttribute('aria-current', 'page')
   refusal = 'contest_conflict'
   await page.getByRole('button', { name: '変更を保存' }).click()
@@ -301,7 +301,7 @@ test('the invitation page previews the contest, accepts, and explains refusals',
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   }
   for (const [code, text] of [
-    ['contest_participant_locked', 'このコンテストに参加登録しているため、共同作成者になれません。'],
+    ['contest_participant_locked', 'このコンテストに参加登録しているため、共同作成者になれません。開始前なら、参加登録を取り消すとなれます。'],
     ['contest_invitation_closed', 'コンテストの結果が確定したため、作成者に加われません。'],
   ] as const) {
     refusal = code
@@ -328,7 +328,7 @@ test('the tester invitation page explains why a registered participant cannot jo
   })
   await page.goto(`/my/tester-invitations/${token}`)
   await page.getByRole('button', { name: '許可する', exact: true }).click()
-  await expect(page.getByRole('alert')).toHaveText('この問題が入っているコンテストに参加登録しているため、結果が確定するまで招待を受けられません。')
+  await expect(page.getByRole('alert')).toHaveText('この問題が入っているコンテストに参加登録しているため、結果が確定するまで招待を受けられません。開始前なら、参加登録を取り消すと受けられます。')
   await expect(page).toHaveURL(`/my/tester-invitations/${token}`)
   expect(accepted).toBe(1)
 })

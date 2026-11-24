@@ -291,3 +291,43 @@ test('team contests take individuals beside teams, who switch to a team on the t
   await expect(erin.getByRole('heading', { level: 1, name: '自分の提出', exact: true })).toBeVisible()
   for (const page of [carol, bob, dave, erin, frank, guest]) await page.context().close()
 })
+
+test('someone who registered by mistake cancels before the start, leaves the standings and may then become a tester', async ({ browser }) => {
+  const carol = await user(browser, 'carol')
+  const frank = await user(browser, 'frank')
+  const problem = await seed(carol, '取り消しの問題')
+  const now = Date.now()
+  const id = await contest(carol, {
+    title: '取り消しのコンテスト', startsAt: new Date(now + 3600000).toISOString(), endsAt: new Date(now + 7200000).toISOString(), problems: [{ id: problem, points: 100 }],
+  })
+  const invitation = await carol.request.post(`/api/my/problems/${problem}/tester-invitation`, { headers: { origin } })
+  expect(invitation.status()).toBe(200)
+  const token = (await invitation.json()).token as string
+  const standings = async () => await (await frank.request.get(`/api/contests/${id}/standings`)).text()
+
+  await frank.goto(`/contests/${shortId(id)}`)
+  await frank.getByRole('button', { name: '参加する', exact: true }).click()
+  await expect(frank.getByText('参加済み', { exact: true })).toBeVisible()
+  expect(await standings()).toContain('"frank"')
+  // A participant is refused as a tester until the results are final.
+  expect((await frank.request.post(`/api/my/tester-invitations/${token}`, { headers: { origin } })).status()).toBe(409)
+  frank.once('dialog', dialog => void dialog.accept())
+  await frank.getByRole('button', { name: '参加登録を取り消す', exact: true }).click()
+  await expect(frank.getByRole('button', { name: '参加する', exact: true })).toBeVisible()
+  await expect(frank.getByText('参加済み', { exact: true })).toHaveCount(0)
+  expect(await standings()).not.toContain('"frank"')
+  expect((await frank.request.post(`/api/my/tester-invitations/${token}`, { headers: { origin } })).status()).toBe(200)
+  await frank.reload()
+  await expect(frank.getByText('スタッフ（作成者・作問者・テスター）は公式参加の対象外です。', { exact: true })).toBeVisible()
+  // Once it starts, the registration of the others stays.
+  const erin = await user(browser, 'erin')
+  expect((await join(erin, id)).status()).toBe(200)
+  await moveContest(carol.request, id, { startsIn: 0 })
+  const locked = await erin.request.delete(`/api/my/contests/${id}/participation`, { headers: { origin } })
+  expect(locked.status()).toBe(409)
+  expect((await locked.json()).data).toEqual({ code: 'contest_participation_locked' })
+  await erin.goto(`/contests/${shortId(id)}`)
+  await expect(erin.getByText('参加済み', { exact: true })).toBeVisible()
+  await expect(erin.getByRole('button', { name: '参加登録を取り消す', exact: true })).toHaveCount(0)
+  for (const page of [carol, frank, erin]) await page.context().close()
+})

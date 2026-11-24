@@ -1,7 +1,7 @@
 import type { Contest, JoinBody } from '~~/shared/types/contest'
 import { contestTeamError } from '~/utils/contest-team'
 
-// The participation request shared by the contest page and the team page (ADR 0024). A refusal registers nothing, so
+// The participation requests shared by the contest page and the team page (ADR 0024). A refusal registers nothing, so
 // callers keep their inputs for another try and show error.
 export function useContestJoin(id: () => string) {
   const saving = ref(false)
@@ -21,7 +21,21 @@ export function useContestJoin(id: () => string) {
       return undefined
     } finally { saving.value = false }
   }
-  return { saving, error, send }
+  // Cancels the registration before the start and returns the contest without it. A team member leaves on the team page.
+  async function cancel() {
+    saving.value = true
+    error.value = ''
+    try {
+      const contest = await $fetch<Contest>(`/api/my/contests/${id()}/participation`, { method: 'DELETE' })
+      // The registration is gone, so the contest's start and end no longer notify.
+      refreshEventAlarms()
+      return contest
+    } catch (failure) {
+      error.value = contestTeamError(failure, '参加登録を取り消せませんでした。ログイン状態を確認し、再読み込みしてお試しください。')
+      return undefined
+    } finally { saving.value = false }
+  }
+  return { saving, error, send, cancel }
 }
 
 // A venue passphrase typed on the overview before choosing 「チーム参加」 goes along to the team page, in memory only, so

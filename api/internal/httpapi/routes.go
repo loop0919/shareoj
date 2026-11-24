@@ -192,6 +192,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	private("DELETE /my/contests/{id}/draft", contests.deleteContestDraft, false)
 	private("PUT /my/contests/{id}/publication", contests.publishContestDraft, true)
 	private("POST /my/contests/{id}/participation", contests.joinContest, true)
+	private("DELETE /my/contests/{id}/participation", contests.leaveContest, false)
 	mux.HandleFunc("GET /my/contests/{id}/clarifications", auth.require(contests.clarifications, false, 10*time.Second))
 	private("POST /my/contests/{id}/clarifications", contests.clarifications, false)
 	private("PUT /my/contests/{id}/clarifications/{clarification}", contests.updateClarification, false)

@@ -501,7 +501,7 @@ async function save() {
     const status = (error as { statusCode?: number }).statusCode
     const code = (error as { data?: { data?: { code?: string } } }).data?.data?.code
     if (code === 'contest_participant_problem') {
-      section.value = 'problems'; message.value = '参加登録した人が作者・テスターである問題は出題できません。該当する問題を外してください。'; return
+      section.value = 'problems'; message.value = '参加登録した人が作者・テスターである問題は出題できません。該当する問題を外すか、本人に参加登録を取り消してもらってください。'; return
     }
     if (code === 'contest_team_mode_locked') { section.value = 'participation'; message.value = '参加登録があるため、個人戦とチーム戦は切り替えられません。'; return }
     if (code === 'contest_team_size_locked') { section.value = 'participation'; message.value = '人数の上限は、今いちばん人数の多いチームより少なくできません。'; return }

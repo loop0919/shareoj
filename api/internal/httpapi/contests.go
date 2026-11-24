@@ -176,6 +176,24 @@ func (p contestHandler) joinContest(w http.ResponseWriter, r *http.Request, owne
 	writeAuthJSON(w, 200, result)
 }
 
+// leaveContest cancels the actor's registration and answers with the contest as they see it then, as joinContest does.
+func (p contestHandler) leaveContest(w http.ResponseWriter, r *http.Request, owner string) {
+	id, ok := p.contestID(w, r, "contest_not_found")
+	if !ok {
+		return
+	}
+	var result contests.Contest
+	err := p.Contests.Leave(r.Context(), id, owner)
+	if err == nil {
+		result, err = p.get(r, id, owner)
+	}
+	if err != nil {
+		contestError(w, err)
+		return
+	}
+	writeAuthJSON(w, 200, result)
+}
+
 func (p contestHandler) revealContest(w http.ResponseWriter, r *http.Request, owner string) {
 	id, ok := p.contestID(w, r, "contest_not_found")
 	if !ok {
@@ -718,6 +736,8 @@ func contestError(w http.ResponseWriter, err error) {
 		authError(w, 409, "clarification_conflict")
 	case errors.Is(err, contests.ErrParticipationUnavailable):
 		authError(w, 409, "contest_participation_unavailable")
+	case errors.Is(err, contests.ErrParticipationLocked):
+		authError(w, 409, "contest_participation_locked")
 	case errors.Is(err, contests.ErrSetterNotFound):
 		authError(w, 404, "setter_not_found")
 	case errors.Is(err, contests.ErrInvitationClosed):
