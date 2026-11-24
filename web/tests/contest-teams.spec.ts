@@ -163,6 +163,10 @@ test('a participant cancels the registration on the overview before the start, a
   page.on('dialog', dialog => { dialogs.push(dialog.message()); void (accept ? dialog.accept() : dialog.dismiss()) })
   await open(page)
   const cancel = page.getByRole('button', { name: '参加登録を取り消す', exact: true })
+  // It reads as an underlined link, smaller than the buttons that register: cancelling is the rarer step.
+  await expect(cancel).toHaveCSS('text-decoration-line', 'underline')
+  await expect(cancel).toHaveCSS('border-top-width', '0px')
+  await expect(page.locator('.contest-participation')).not.toContainText('順位表から外れます')
   // Declining the confirmation sends nothing.
   await cancel.click()
   await expect.poll(() => dialogs).toEqual(['参加登録を取り消しますか？開始前なら、もう一度参加登録できます。'])

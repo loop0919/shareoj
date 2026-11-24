@@ -75,7 +75,7 @@ async function leave() {
       </template>
       <ContestOnsiteUpgrade v-if="detailed && division && !contest.onsite && contest.status !== 'ended'" :contest="contest" @joined="value => emit('joined', value)" />
       <!-- A team member leaves on the team page, which also renews the team's code. -->
-      <template v-if="detailed && contest.status === 'scheduled' && !contest.team"><button type="button" class="editor-button" :disabled="saving" :aria-busy="saving" @click="leave">{{ saving ? '取り消し中…' : '参加登録を取り消す' }}</button><p class="muted">取り消すと順位表から外れます。取り消しは開始前だけできます。</p></template>
+      <p v-if="detailed && contest.status === 'scheduled' && !contest.team"><button type="button" class="participation-cancel" :disabled="saving" :aria-busy="saving" @click="leave">{{ saving ? '取り消し中…' : '参加登録を取り消す' }}</button></p>
     </template>
     <p v-else-if="contest.status === 'ended'" class="muted">参加受付は終了しました。</p>
     <template v-else-if="!user">
