@@ -1,6 +1,7 @@
 import type { H3Event } from 'h3'
 import { sessionCookie, refreshCookie, refreshSession } from './private-session'
 import { retryRefused } from './busy-retry'
+import { refuseStreaming, streamingMode } from './streaming-mode'
 
 // Besides retryAfterCodes on a 429, only these upstream codes reach the screen, so upstream diagnostics stay private.
 // A code the screen has its own message for goes here, or in retryAfterCodes if it comes with Retry-After.
@@ -71,7 +72,10 @@ const retryAfterCodes = new Set([
   'contest_attempts_limited',
 ])
 
-export async function privateAPI<T>(event: H3Event, path: string, options: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE', body?: unknown, token?: string, timeout?: number, headers?: Record<string, string> } = {}): Promise<T> {
+export async function privateAPI<T>(event: H3Event, path: string, options: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE', body?: unknown, token?: string, timeout?: number, headers?: Record<string, string>, streaming?: true } = {}): Promise<T> {
+  // Streaming mode refuses every call its route has not marked, so a new private route starts closed. A call with its
+  // own token is a login in progress, not the browser's session.
+  if (options.token === undefined && !options.streaming && streamingMode(event)) refuseStreaming()
   let token = options.token ?? getCookie(event, sessionCookie)
   const canRefresh = options.token === undefined && (path === '/auth/me' || path.startsWith('/my/'))
   let refreshed = false

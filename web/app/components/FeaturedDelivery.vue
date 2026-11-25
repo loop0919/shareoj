@@ -13,9 +13,11 @@ const volume = computed(() => props.page.current?.number || props.page.nextNumbe
 // The writer and testers may reveal an announced problem. Each visit starts hidden, and names are fetched only
 // on request, so a screenshot taken for an announcement shows ??? (ADR 0011).
 const { profile } = useAccount()
+// The name read is closed in streaming mode, so the button is not drawn.
+const { streaming } = useStreamingMode()
 const shown = reactive<Record<Slot, boolean>>({ easy: false, hard: false })
 const named = ref<Partial<Record<Slot, { problemId: string, title: string }>>>({})
-const staffed = (slot: { kind: string, writer: string, testers: string[] }) => !props.page.current && slot.kind !== 'missing' && !!profile.value
+const staffed = (slot: { kind: string, writer: string, testers: string[] }) => !props.page.current && slot.kind !== 'missing' && !streaming.value && !!profile.value
   && (slot.writer === profile.value.handle || slot.testers.includes(profile.value.handle))
 async function loadNames() {
   const result = featuredPreviewProblemsSchema.parse(await $fetch('/api/my/featured/next'))

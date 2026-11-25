@@ -1,6 +1,7 @@
 import { hasSession } from '../../utils/private-session'
 import { privateAPI } from '../../utils/private-api'
 import { privateHeaders } from '../../utils/private-request'
+import { streamingMode } from '../../utils/streaming-mode'
 
 // The API stores only PNG and JPEG. Tell them apart by the data, not by Blob.type:
 // Bun's Response.blob() sometimes drops the Content-Type the API sent.
@@ -15,7 +16,10 @@ export default defineEventHandler(async (event) => {
   if (!/^[a-f0-9-]{36}$/.test(id)) throw createError({ statusCode: 404 })
   let image: Blob
   try {
-    image = await privateAPI<Blob>(event, `${hasSession(event) ? '/my' : ''}/images/${id}`)
+    // Streaming mode never reads a draft image, so it goes straight to the public route without a session.
+    image = streamingMode(event)
+      ? await privateAPI<Blob>(event, `/images/${id}`, { token: '' })
+      : await privateAPI<Blob>(event, `${hasSession(event) ? '/my' : ''}/images/${id}`)
   } catch (error) {
     // An expired session must not prevent reading a publicly visible image.
     const failure = error as { statusCode?: number, data?: { code?: string } }

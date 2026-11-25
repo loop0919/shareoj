@@ -6,6 +6,9 @@ import { shortId } from '~~/shared/utils/short-id'
 const props = defineProps<{ id: string }>()
 const route = useRoute()
 const { data: contest } = useContest(() => props.id)
+// The questions and answers are staff-only reads, which streaming mode closes.
+const { streaming } = useStreamingMode()
+const lastViews = computed(() => streaming.value ? (['editorials', 'run'] as const) : (['editorials', 'clarifications', 'run'] as const))
 // The team page belongs to the overview, where participation starts.
 const section = computed<ContestView>(() => {
   const name = String(route.name)
@@ -64,7 +67,7 @@ watch(() => route.fullPath, close)
     </details>
     <!-- A link to the whole list still lands in this place, so it stays marked there too. -->
     <NuxtLink v-else :to="link('my-submissions')" :aria-current="current('my-submissions') ?? (inSubmissions ? 'true' : undefined)">{{ own }}</NuxtLink>
-    <NuxtLink v-for="view in (['editorials', 'clarifications', 'run'] as const)" :key="view" :to="link(view)" :aria-current="current(view)">{{ contestViews[view] }}</NuxtLink>
+    <NuxtLink v-for="view in lastViews" :key="view" :to="link(view)" :aria-current="current(view)">{{ contestViews[view] }}</NuxtLink>
   </nav>
 </template>
 

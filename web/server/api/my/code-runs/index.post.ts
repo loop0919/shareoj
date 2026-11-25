@@ -9,7 +9,7 @@ export default defineEventHandler(async event => {
   requireSameOrigin(event)
   // Source up to 128 KiB plus standard input up to 1 MiB, which JSON escaping can inflate.
   const body = await limitedJSON(event, 3 << 20)
-  const result = await privateAPI<CodeRun>(event, '/my/code-runs', { method: 'POST', body })
+  const result = await privateAPI<CodeRun>(event, '/my/code-runs', { method: 'POST', body, streaming: true })
   setResponseStatus(event, 202)
   return result
 })

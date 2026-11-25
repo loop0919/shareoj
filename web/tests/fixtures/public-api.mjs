@@ -118,6 +118,7 @@ const partialFeaturedStandings = {
     { rank: 3, handle: 'bob', timeMs: null, easy: { accepted: false, score: 0, timeMs: null, wrong: 1 }, hard: { accepted: false, score: null, timeMs: null, wrong: 0 } },
   ],
 }
+const pngHeader = Buffer.from('89504e470d0a1a0a', 'hex')
 const submission = {
   id: '22222222-2222-4222-8222-222222222222', problemId: problem.id, problemTitle: problem.title,
   problemVersion: 1, author: 'alice', runtime: 'cpp17', source: 'int main(){}', status: 'DONE',
@@ -153,6 +154,12 @@ function refuseBusy(req, res) {
   else res.writeHead(429).end(JSON.stringify({ message: 'Too Many Requests' }))
   return true
 }
+// The shared contest as the public reads it; the private read answers the same for a viewer who holds no role.
+const sharedContest = path => ({
+  id: path.split('/').pop(), title: '共有コンテスト', author: 'alice', description: '共有するコンテストです。',
+  startsAt: '2026-09-10T00:00:00Z', endsAt: '2026-09-10T02:00:00Z', penaltyMinutes: 5,
+  status: path.endsWith('99999999-9999-4999-8999-999999999999') ? 'scheduled' : 'running', canEdit: false, official: true, participating: false, canViewSubmissions: false, problems: [{ id: problem.id, title: problem.title, points: 100 }],
+})
 createServer(async (req, res) => {
   if (refuseBusy(req, res)) return
   res.setHeader('Content-Type', 'application/json')
@@ -168,6 +175,7 @@ createServer(async (req, res) => {
   else if (path === '/auth/me' || path.startsWith('/my/')) {
     if (req.headers.authorization !== 'Bearer valid-access') return res.writeHead(401).end('{}')
     if (path === '/auth/me') return res.end(JSON.stringify({ id: 'session-user' }))
+    if (path.startsWith('/my/images/')) return res.setHeader('Content-Type', 'image/png').end(Buffer.concat([pngHeader, Buffer.from('private')]))
     if (path === '/my/profile') return res.end(JSON.stringify({ profile: { handle: 'alice', avatar: '', version: 1, createdAt: '2026-09-10T00:00:00Z' } }))
     if (req.method === 'PUT' && /^\/my\/(problems|contests|posts)\/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa$/.test(path)) {
       res.setHeader('Retry-After', '7200')
@@ -184,6 +192,7 @@ createServer(async (req, res) => {
     }))
     // The fixture session is alice, the author of the featured problem whose editorial is still hidden.
     if (path === `/my/problems/${featuredProblem.id}/publication`) return res.end(JSON.stringify({ ...featuredProblem, editorial: '定期便の解説本文' }))
+    if (path === `/my/problems/${featuredProblem.id}/submissions/33333333-3333-4333-8333-333333333333`) return res.end(JSON.stringify({ ...submission, id: '33333333-3333-4333-8333-333333333333', problemId: featuredProblem.id, author: 'carol' }))
     if (path === `/my/problems/${featuredProblem.id}/submissions`) return res.end(JSON.stringify({ items: [{ ...submission, id: '33333333-3333-4333-8333-333333333333', problemId: featuredProblem.id, problemTitle: featuredProblem.title, author: 'carol' }], hasMore: false }))
     // alice writes the announced Easy problem and tests the Hard one.
     if (path === '/my/featured/next') return res.end(JSON.stringify({ items: [
@@ -198,11 +207,25 @@ createServer(async (req, res) => {
     }
     if (path.startsWith('/my/problems/')) return res.writeHead(404).end('{}')
     // This contest echoes what the web server forwarded, so tests can check the query it built (ADR 0024).
-    if (path.startsWith('/my/contests/66666666-6666-4666-8666-666666666666/')) {
+    if (/^\/my\/contests\/66666666-6666-4666-8666-666666666666(\/|$)/.test(path)) {
       let body = ''
       for await (const chunk of req) body += chunk
       return res.end(JSON.stringify({ route: 'private', path, query: new URL(req.url, 'http://localhost').search, method: req.method, type: req.headers['content-type'] ?? '', body }))
     }
+    // A contest whose staff check works, and one whose check fails.
+    if (path === '/my/contests/bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc') return res.end(JSON.stringify({ id: 'bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc', staff: true, canViewSubmissions: true }))
+    if (path === '/my/contests/bdbdbdbd-bdbd-4dbd-8dbd-bdbdbdbdbdbd') return res.writeHead(500).end('{}')
+    if (path.startsWith('/my/contests/bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc/')) return res.end(JSON.stringify({ route: 'private', path, query: new URL(req.url, 'http://localhost').search }))
+    // Own submissions: the first carries checker diagnostics, as the API does for an author or tester; the second is a sample check.
+    if (path === '/my/submissions/c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1') return res.end(JSON.stringify({ ...submission, id: 'c1c1c1c1-c1c1-4c1c-8c1c-c1c1c1c1c1c1', result: { ...submission.result, checkerLog: 'secret-checker-log' } }))
+    if (path === '/my/submissions/c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c2c2') return res.end(JSON.stringify({ ...submission, id: 'c2c2c2c2-c2c2-4c2c-8c2c-c2c2c2c2c2c2', easyTest: true, result: { ...submission.result, interactive: true, checkerLog: 'sample-diagnostics' } }))
+    // A sample check of a plain problem run by its manager, and a generate job whose cases carry the generated outputs.
+    if (path === '/my/submissions/c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3') return res.end(JSON.stringify({ ...submission, id: 'c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3', easyTest: true, result: { ...submission.result, checkerLog: 'manager-diagnostics' } }))
+    if (path === '/my/submissions/c4c4c4c4-c4c4-4c4c-8c4c-c4c4c4c4c4c4') return res.end(JSON.stringify({ ...submission, id: 'c4c4c4c4-c4c4-4c4c-8c4c-c4c4c4c4c4c4', result: { ...submission.result, cases: [{ name: 'gen_1', verdict: 'AC', output: 'secret-output', outputFile: { url: 'https://download.example/secret', size: 9, sha256: 'b'.repeat(64) } }] } }))
+    // The private read of the two shared contests answers as a participant would see them: no staff flags, not registered.
+    if (/^\/my\/contests\/(88888888-8888-4888-8888-888888888888|99999999-9999-4999-8999-999999999999)$/.test(path)) return res.end(JSON.stringify(sharedContest(path)))
+    // A problem of that contest reads the same through the session route.
+    if (path === `/my/contests/88888888-8888-4888-8888-888888888888/problems/${problem.id}`) return res.end(JSON.stringify({ ...problem, favoriteCount: 3 }))
     // The private standings name the table the web server asked for; this contest still has runs to judge (ADR 0023).
     if (path === '/my/contests/88888888-8888-4888-8888-888888888888/standings') {
       const live = new URL(req.url, 'http://localhost').searchParams.get('live') === '1'
@@ -226,6 +249,8 @@ createServer(async (req, res) => {
     }
     res.end(JSON.stringify({ items: [], nextCursor: '' }))
   }
+  else if (path.startsWith(`/problems/${featuredProblem.id}/submissions`)) res.end(JSON.stringify({ route: 'public', path }))
+  else if (path.startsWith('/images/')) res.setHeader('Content-Type', 'image/png').end(Buffer.concat([pngHeader, Buffer.from('public')]))
   else if (path === '/users') {
     const handles = new URL(req.url, 'http://localhost').searchParams.get('handles')?.split(',') ?? []
     res.end(JSON.stringify({ items: ['alice', 'bob', 'carol', 'yuki'].filter(handle => handles.includes(handle)).map(handle => ({ handle, avatar: '' })) }))
@@ -292,12 +317,9 @@ createServer(async (req, res) => {
     res.end(JSON.stringify({ items: matches ? [publicPost] : [], nextCursor: '' }))
   }
   else if (path === '/posts/77777777-7777-4777-8777-777777777777') res.end(JSON.stringify({ id: '77777777-7777-4777-8777-777777777777', title: '日本語 & #記事 + 共有', author: 'alice', markdown: '共有する記事です。', publishedVersion: 1, updatedAt: '2026-09-10T00:00:00Z', isOperator: false, publishedAt: '2026-09-10T00:00:00Z', problems: [{ id: problem.id, title: problem.title }], tags: publicPost.tags }))
-  else if (/^\/contests\/(88888888-8888-4888-8888-888888888888|99999999-9999-4999-8999-999999999999)$/.test(path)) res.end(JSON.stringify({
-    id: path.split('/').pop(), title: '共有コンテスト', author: 'alice', description: '共有するコンテストです。',
-    startsAt: '2026-09-10T00:00:00Z', endsAt: '2026-09-10T02:00:00Z', penaltyMinutes: 5,
-    status: path.endsWith('99999999-9999-4999-8999-999999999999') ? 'scheduled' : 'running', canEdit: false, official: true, participating: false, canViewSubmissions: false, problems: [{ id: problem.id, title: problem.title, points: 100 }],
-  }))
+  else if (/^\/contests\/(88888888-8888-4888-8888-888888888888|99999999-9999-4999-8999-999999999999)$/.test(path)) res.end(JSON.stringify(sharedContest(path)))
   else if (/^\/contests\/(88888888-8888-4888-8888-888888888888|99999999-9999-4999-8999-999999999999)\/standings$/.test(path)) res.end('[]')
+  else if (/^\/contests\/(bcbcbcbc-bcbc-4cbc-8cbc-bcbcbcbcbcbc|bdbdbdbd-bdbd-4dbd-8dbd-bdbdbdbdbdbd)(\/|$)/.test(path)) res.end(JSON.stringify({ route: 'public', path, query: new URL(req.url, 'http://localhost').search }))
   else if (path.startsWith('/contests/66666666-6666-4666-8666-666666666666/')) res.end(JSON.stringify({ route: 'public', path, query: new URL(req.url, 'http://localhost').search }))
   else if (path === `/contests/88888888-8888-4888-8888-888888888888/problems/${problem.id}` || path === `/contests/99999999-9999-4999-8999-999999999999/problems/${problem.id}`) res.end(JSON.stringify({ ...problem, favoriteCount: 3 }))
   else res.writeHead(404).end('{}')

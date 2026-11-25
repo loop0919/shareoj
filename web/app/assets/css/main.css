@@ -21,6 +21,8 @@
 input, textarea, select { color: var(--color-ink); background-color: var(--color-paper); }
 * { box-sizing: border-box; }
 html, body { margin: 0; overflow-x: clip; }
+/* Set while another tab has changed streaming mode (useStreamingSync, StreamingCover); the cover dialog is outside the app root. */
+html[data-streaming-covered] #__nuxt { visibility: hidden; }
 body { color: var(--color-ink); background: var(--color-paper); font-family: var(--font-body); line-height: 1.85; }
 a { color: var(--color-accent); text-underline-offset: 5px; }
 a:hover { text-decoration-thickness: 2px; }

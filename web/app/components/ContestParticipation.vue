@@ -8,6 +8,8 @@ import { venuePassphraseBlank, venuePassphraseRule } from '~/utils/venue-passphr
 const props = defineProps<{ contest: Contest, detailed?: boolean }>()
 const emit = defineEmits<{ joined: [contest: Contest] }>()
 const { user } = useAccount()
+// Joining is closed in streaming mode, so a signed-in viewer who has not settled gets a note in place of the form.
+const { streaming } = useStreamingMode()
 const route = useRoute()
 const teamMode = computed(() => props.contest.teamMode === true)
 const division = computed(() => props.contest.onsiteDivision === true)
@@ -73,11 +75,12 @@ async function leave() {
         <!-- Once it starts, an individual's submissions are their own and cannot move to a team. -->
         <template v-else-if="contest.status === 'scheduled'"><NuxtLink class="editor-button" :to="teamPage">チーム参加に切り替える</NuxtLink><p class="muted">チームを作るかチームに入ると、個人参加の登録はチームのメンバーとしての登録に置き換わります。開始後は切り替えられません。</p></template>
       </template>
-      <ContestOnsiteUpgrade v-if="detailed && division && !contest.onsite && contest.status !== 'ended'" :contest="contest" @joined="value => emit('joined', value)" />
-      <!-- A team member leaves on the team page, which also renews the team's code. -->
-      <p v-if="detailed && contest.status === 'scheduled' && !contest.team"><button type="button" class="participation-cancel" :disabled="saving" :aria-busy="saving" @click="leave">{{ saving ? '取り消し中…' : '参加登録を取り消す' }}</button></p>
+      <ContestOnsiteUpgrade v-if="!streaming && detailed && division && !contest.onsite && contest.status !== 'ended'" :contest="contest" @joined="value => emit('joined', value)" />
+      <!-- A team member leaves on the team page, which also renews the team's code. Cancelling is closed in streaming mode, as joining is. -->
+      <p v-if="!streaming && detailed && contest.status === 'scheduled' && !contest.team"><button type="button" class="participation-cancel" :disabled="saving" :aria-busy="saving" @click="leave">{{ saving ? '取り消し中…' : '参加登録を取り消す' }}</button></p>
     </template>
     <p v-else-if="contest.status === 'ended'" class="muted">参加受付は終了しました。</p>
+    <p v-else-if="user && streaming" class="muted">配信モード中は参加登録できません。</p>
     <template v-else-if="!user">
       <div v-if="teamMode" class="participation-buttons"><NuxtLink class="editor-button" :to="login(route.fullPath)">個人参加</NuxtLink><NuxtLink class="editor-button" :to="login(teamPage)">チーム参加</NuxtLink></div>
       <NuxtLink v-else class="editor-button" :to="login(route.fullPath)">ログインして参加する</NuxtLink>

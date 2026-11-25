@@ -3,8 +3,11 @@ import { docPath, footerDocs } from '~~/shared/docs'
 import { fullId } from '~~/shared/utils/short-id'
 const route = useRoute()
 const pageError = useError()
-// Contest pages swap the site menu for the contest's own menu. Error pages keep the site menu.
-const contestId = computed(() => !pageError.value && String(route.name ?? '').startsWith('contests-id') ? fullId(route.params.id) : '')
+const closedPage = useClosedPage()
+// An error screen or the closed screen always gets the header, even on a route that hides it for its editor.
+const editorLayout = computed(() => !!route.meta.editorLayout && !pageError.value && !closedPage.value)
+// Contest pages swap the site menu for the contest's own menu. Error pages and the closed screen keep the site menu.
+const contestId = computed(() => !pageError.value && !closedPage.value && String(route.name ?? '').startsWith('contests-id') ? fullId(route.params.id) : '')
 const { data: judgeCatalog, error: judgeCatalogError, refresh: refreshJudge } = await useJudgeCatalog()
 function refreshVisibleJudge() { if (document.visibilityState === 'visible') void refreshJudge({ dedupe: 'defer' }) }
 // A refresh during hydration reuses Nuxt's server payload.
@@ -26,18 +29,20 @@ onMounted(() => document.addEventListener('click', onOutsideClick))
 onBeforeUnmount(() => document.removeEventListener('click', onOutsideClick))
 watch(() => route.fullPath, closeCreateMenu)
 const { user, refreshAccount, refreshProfile } = useAccount()
+const { streaming } = useStreamingMode()
+useStreamingSync()
 onMounted(() => { void refreshAccount().then(account => { if (account) return refreshProfile() }).catch(() => {}) })
 useEventAlarms()
 useNotificationPolling()
 </script>
 
 <template>
-  <div class="site-shell" :class="{ 'site-shell--editor': route.meta.editorLayout, 'site-shell--contest': contestId }">
+  <div class="site-shell" :class="{ 'site-shell--editor': editorLayout, 'site-shell--contest': contestId }">
     <a class="skip-link" href="#main">本文へ移動</a>
     <div v-if="judgeCatalog?.maintenance || judgeCatalogError" class="judge-banner" role="status">
       {{ judgeCatalog?.maintenance ? judgeMaintenanceMessage : 'ジャッジ機能の状態を確認できません。現在、提出等を利用できません。' }}
     </div>
-    <header v-if="!route.meta.editorLayout" class="site-header" :class="{ 'site-header--contest': contestId }">
+    <header v-if="!editorLayout" class="site-header" :class="{ 'site-header--contest': contestId }">
       <NuxtLink class="wordmark" to="/" aria-label="ShareOJ ホーム">Share<span>OJ</span><span class="wordmark-beta">(β)</span></NuxtLink>
       <ContestHeaderTitle v-if="contestId" :id="contestId" class="contest-title" />
       <ContestMenu v-if="contestId" :id="contestId" />
@@ -50,7 +55,7 @@ useNotificationPolling()
           <NuxtLink to="/blog">記事</NuxtLink>
           <NuxtLink to="/run">コード実行</NuxtLink>
         </div>
-        <details ref="createMenu" class="create-menu" @keydown.esc.prevent="closeCreateMenu(); createMenu?.querySelector('summary')?.focus()">
+        <details v-if="!streaming" ref="createMenu" class="create-menu" @keydown.esc.prevent="closeCreateMenu(); createMenu?.querySelector('summary')?.focus()">
           <summary>作成</summary>
           <div class="create-menu-links" @click="closeCreateMenu">
             <NuxtLink to="/problems/new?fresh=1"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 6-6 6 6 6m10-12 6 6-6 6M14 4l-4 16" /></svg>新規問題</NuxtLink>
@@ -60,15 +65,18 @@ useNotificationPolling()
         </details>
       </nav>
       <div class="header-tools">
+        <StreamingBadge v-if="streaming" />
         <ThemeSelect />
-        <NotificationBell v-if="user" />
+        <NotificationBell v-if="user && !streaming" />
         <AccountMenu v-if="user" />
         <NuxtLink v-else to="/login">ログイン</NuxtLink>
       </div>
     </header>
-    <PolicyNotice v-if="!route.meta.editorLayout" />
+    <StreamingOffDialog />
+    <StreamingCover />
+    <PolicyNotice v-if="!editorLayout" />
     <main id="main" tabindex="-1"><slot /></main>
-    <footer v-if="!route.meta.editorLayout" class="site-footer">
+    <footer v-if="!editorLayout" class="site-footer">
       <div class="site-footer-brand">
         <span class="wordmark">ShareOJ<span class="wordmark-beta">(β)</span></span>
         <span class="site-footer-tagline">Share Online Judge</span>

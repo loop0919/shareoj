@@ -9,7 +9,7 @@ export default defineEventHandler(async event => {
   if (event.method !== 'POST') throw createError({ statusCode: 405 })
   requireSameOrigin(event)
   const body = await limitedJSON(event, 400 << 10)
-  const result = await privateAPI<Submission>(event, '/my/submissions', { method: 'POST', body })
+  const result = await privateAPI<Submission>(event, '/my/submissions', { method: 'POST', body, streaming: true })
   setResponseStatus(event, 202)
   return result
 })
