@@ -230,6 +230,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	private("POST /my/folders", folders.create, false)
 	private("PUT /my/folders/{id}", folders.update, false)
 	private("DELETE /my/folders/{id}", folders.remove, false)
+	private("PUT /my/folder-items", folders.place, false)
 	private("POST /my/submissions", submissions.submission, true)
 	private("GET /my/submissions", submissions.submission, false)
 	private("POST /my/code-runs", submissions.codeRuns, false)

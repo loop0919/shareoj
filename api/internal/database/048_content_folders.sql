@@ -9,6 +9,8 @@ CREATE TABLE content_folders (
 );
 -- Folders under one parent have different names, and so do the top-level ones.
 CREATE UNIQUE INDEX content_folders_sibling_name ON content_folders (owner_id, COALESCE(parent_id, '00000000-0000-0000-0000-000000000000'::uuid), name);
+-- Deleting a folder finds the folders below it without reading the whole table.
+CREATE INDEX content_folders_parent ON content_folders (parent_id);
 -- A problem or post sits in at most one folder of each person: the author and a tester sort the same problem apart.
 -- A placement goes with its folder and with its problem or post; one without a row is unsorted.
 CREATE TABLE problem_folder_items (
@@ -17,7 +19,9 @@ CREATE TABLE problem_folder_items (
     folder_id uuid NOT NULL REFERENCES content_folders(id) ON DELETE CASCADE,
     PRIMARY KEY (owner_id, problem_id)
 );
+-- Deleting a folder, problem or post finds its placements by these.
 CREATE INDEX problem_folder_items_folder ON problem_folder_items (folder_id);
+CREATE INDEX problem_folder_items_problem ON problem_folder_items (problem_id);
 CREATE TABLE post_folder_items (
     owner_id text NOT NULL,
     post_id uuid NOT NULL REFERENCES blog_posts(id) ON DELETE CASCADE,
@@ -25,5 +29,6 @@ CREATE TABLE post_folder_items (
     PRIMARY KEY (owner_id, post_id)
 );
 CREATE INDEX post_folder_items_folder ON post_folder_items (folder_id);
+CREATE INDEX post_folder_items_post ON post_folder_items (post_id);
 -- The folder view is a beta each user turns on for their own my page.
 ALTER TABLE user_profiles ADD COLUMN folder_view boolean NOT NULL DEFAULT false;
