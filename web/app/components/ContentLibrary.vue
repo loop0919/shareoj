@@ -90,9 +90,15 @@ async function move(refs: FolderRef[]) {
   const index = visible.value.indexOf(first)
   const folderId = await picker.value?.open(places.size === 1 ? [...places][0] : undefined)
   if (folderId === undefined) return
+  // Moved rows leave the open folder at once and so the selection too; a refusal brings them back still chosen.
+  const before = chosen.value
   const moving = place(refs, folderId)
   await keepFocus(trigger, index)
-  if (!await moving) return
+  if (!await moving) {
+    const shown = new Set(visible.value.map(entry => entry.key))
+    chosen.value = new Set([...before].filter(key => shown.has(key)))
+    return
+  }
   const moved = new Set(keys)
   chosen.value = new Set([...chosen.value].filter(key => !moved.has(key)))
   await keepFocus(trigger, index)
@@ -103,6 +109,15 @@ async function keepFocus(trigger: Element | null, index: number) {
   await nextTick()
   if (!trigger || trigger.isConnected || (document.activeElement && document.activeElement !== document.body)) return
   if (!table.value?.focusMove(index)) root.value?.querySelector<HTMLElement>('.folder-tree-item[aria-current="true"]')?.focus()
+}
+
+// The name dialog shows a refused name itself and stays open, so the refusal is not repeated above the table.
+async function saveName(id: string | null, name: string, parentId: string | null) {
+  let refusal = ''
+  const refused = (text: string) => { refusal = text }
+  if (id === null) await createFolder(name, parentId, refused)
+  else await updateFolder(id, name, parentId, refused)
+  return refusal
 }
 
 // The tree waits for every list, since counts made from part of them would be too small. Once shown, the list stays;
@@ -126,7 +141,7 @@ onMounted(() => { void reload() })
     <button v-if="loadError" type="button" class="editor-button" @click="reload()">再試行</button>
     <LoadingSpinner v-if="loading && !loaded" label="問題と記事を読み込み中" />
     <div v-else-if="loaded" class="library-body">
-      <FolderTree v-model:selected="selected" :folders="folders" :counts="treeCounts" @create="createFolder" @update="updateFolder" @remove="deleteFolder" />
+      <FolderTree v-model:selected="selected" :folders="folders" :counts="treeCounts" :save-name="saveName" @update="updateFolder" @remove="deleteFolder" />
       <div class="library-content">
         <nav class="library-location" aria-label="今いる場所">
           <span v-if="!selected" aria-current="location">すべて</span>

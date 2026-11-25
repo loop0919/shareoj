@@ -68,20 +68,24 @@ export function useLibrary() {
     }
   }
 
+  // Why a folder change was refused goes to message, shown above the table, unless the caller shows it itself, as the
+  // name dialog does: then refused hears it and message stays clear.
+  const showRefusal = (text: string) => { message.value = text }
+
   // The folder is added once the API has made it, so it can be opened or filled right away.
-  async function createFolder(name: string, parentId: string | null): Promise<Folder | undefined> {
+  async function createFolder(name: string, parentId: string | null, refused = showRefusal): Promise<Folder | undefined> {
     message.value = ''
     try {
       const folder = folderSchema.parse(await $fetch('/api/my/folders', { method: 'POST', body: { name, parentId } }))
       folders.value = [...folders.value, folder]
       return folder
     } catch (error) {
-      message.value = folderError(error)
+      refused(folderError(error))
       return undefined
     }
   }
 
-  async function updateFolder(id: string, name: string, parentId: string | null): Promise<boolean> {
+  async function updateFolder(id: string, name: string, parentId: string | null, refused = showRefusal): Promise<boolean> {
     message.value = ''
     const before = folders.value.find(folder => folder.id === id)
     if (!before) return false
@@ -92,7 +96,7 @@ export function useLibrary() {
       return true
     } catch (error) {
       folders.value = folders.value.map(item => item.id === id ? before : item)
-      message.value = folderError(error)
+      refused(folderError(error))
       return false
     }
   }

@@ -98,3 +98,17 @@ test('a new folder appears once the API has made it', async () => {
   expect(library.folders.value).toHaveLength(1)
   expect(library.message.value).toBe('同じ場所に同じ名前のフォルダがあります。別の名前にしてください。何も変わっていません。')
 })
+
+test('a refusal the caller shows itself does not reach message', async () => {
+  const library = useLibrary()
+  const heard: string[] = []
+  const taken = '同じ場所に同じ名前のフォルダがあります。別の名前にしてください。何も変わっていません。'
+  answer(refused('folder_name_taken'))
+  expect(await library.createFolder('定期便用', null, text => heard.push(text))).toBeUndefined()
+  library.folders.value = [{ id: FOLDER, parentId: null, name: '定期便' }]
+  answer(refused('folder_name_taken'))
+  expect(await library.updateFolder(FOLDER, 'メモ', null, text => heard.push(text))).toBe(false)
+  expect(library.folders.value).toEqual([{ id: FOLDER, parentId: null, name: '定期便' }])
+  expect(heard).toEqual([taken, taken])
+  expect(library.message.value).toBe('')
+})

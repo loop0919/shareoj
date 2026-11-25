@@ -2,12 +2,14 @@
 import type { Folder } from '~~/shared/types/folders'
 import { vDialogDismiss } from '~/utils/dialog-dismiss'
 import { canNest, descendantIds, folderPath, sortedChildren } from '~/utils/folder-tree'
-// counts comes from folderCounts and is not narrowed by the filters, so a folder's number is what it holds.
-const props = defineProps<{ folders: Folder[], counts: { all: number, unsorted: number, byFolder: Map<string, number> } }>()
+// counts comes from folderCounts and is not narrowed by the filters, so a folder's number is what it holds. saveName
+// makes a folder (id null) or renames one and resolves to '' once saved or else to why it was refused, which the name
+// dialog shows while it stays open.
+const props = defineProps<{ folders: Folder[], counts: { all: number, unsorted: number, byFolder: Map<string, number> }, saveName: (id: string | null, name: string, parentId: string | null) => Promise<string> }>()
 // '' is everything and 'unsorted' what no folder holds; any other value is a folder's id.
 const selected = defineModel<string>('selected', { required: true })
-// What the list asks to change; ContentLibrary saves it. A null parentId is the top.
-const emit = defineEmits<{ create: [name: string, parentId: string | null], update: [id: string, name: string, parentId: string | null], remove: [id: string] }>()
+// Moves and deletions the list asks for; ContentLibrary saves them. A null parentId is the top.
+const emit = defineEmits<{ update: [id: string, name: string, parentId: string | null], remove: [id: string] }>()
 const root = ref<HTMLElement>()
 
 // The folders opened by hand. The open folder and those above it open too, so the selection stays in sight.
@@ -73,22 +75,24 @@ const parentId = computed(() => selected.value && selected.value !== 'unsorted' 
 const canCreate = computed(() => canNest(props.folders, null, parentId.value))
 const depthReason = 'フォルダの入れ子は3段までです。このフォルダの中には作れません。'
 const reasonId = useId()
-const nameDialog = ref<{ open: (name?: string) => Promise<string | undefined> }>()
+const nameDialog = ref<{ open: (name: string, save: (name: string) => Promise<string>) => Promise<string | undefined> }>()
 const naming = ref({ title: '', action: '', description: undefined as string | undefined })
 async function create() {
   const parent = parentId.value
   const above = parent && props.folders.find(folder => folder.id === parent)
   naming.value = { title: 'フォルダを作る', action: '作る', description: above ? `「${above.name}」の中に作ります。` : '最上位に作ります。' }
-  const name = await nameDialog.value?.open()
-  if (name) emit('create', name, parent)
+  await nameDialog.value?.open('', name => props.saveName(null, name, parent))
 }
 async function rename(folder: Folder) {
   closeMenu(true)
   naming.value = { title: 'フォルダの名前を変更', action: '変更する', description: undefined }
-  const name = await nameDialog.value?.open(folder.name)
-  const current = props.folders.find(item => item.id === folder.id)
-  if (!name || !current || name === current.name) return
-  emit('update', current.id, name, current.parentId)
+  const saved = await nameDialog.value?.open(folder.name, name => {
+    const current = props.folders.find(item => item.id === folder.id)
+    // The same name, or a folder gone meanwhile, has nothing to save.
+    return !current || name === current.name ? Promise.resolve('') : props.saveName(current.id, name, current.parentId)
+  })
+  // Folders sort by name, so the row may have moved and taken the focus off its button.
+  if (saved !== undefined) await keepFocus(folder.id)
 }
 
 // A folder can go only where it and the folders below it fit, and never into itself or below itself.
@@ -171,7 +175,7 @@ function removeClosed() {
         </li>
       </ul>
     </nav>
-    <p v-if="!folders.length" class="folder-tree-hint">フォルダを作ると、問題と記事を出す先ごとに分けられます。</p>
+    <p v-if="!folders.length" class="folder-tree-hint">「フォルダを作る」でフォルダを作り、行の「フォルダへ移動」で問題や記事を入れられます。</p>
     <button type="button" class="editor-button folder-tree-create" :disabled="!canCreate" :title="canCreate ? undefined : depthReason" :aria-describedby="canCreate ? undefined : reasonId" @click="create()">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>フォルダを作る
     </button>
