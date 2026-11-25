@@ -141,6 +141,11 @@ func TestTesterInvitationsPostgres(t *testing.T) {
 	}
 	if tested := request("GET", "/my/problems?role=tester", "bob", nil, 200); !strings.Contains(tested, a) || strings.Contains(tested, b) {
 		t.Fatal("incorrect tested list: " + tested)
+	} else if !strings.Contains(tested, `"author":"alice"`) {
+		t.Fatal("tested list lacks the author: " + tested)
+	}
+	if own := request("GET", "/my/problems", "alice", nil, 200); strings.Contains(own, `"author"`) {
+		t.Fatal("owned list has an author: " + own)
 	}
 	if tested := request("GET", "/my/problems?role=tester", "alice", nil, 200); strings.Contains(tested, a) {
 		t.Fatal("author in tested list")
