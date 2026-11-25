@@ -3,7 +3,7 @@ import { folderCounts, folderPath, sortedChildren } from '~/utils/folder-tree'
 import { libraryKinds, problemStatusGroup, problemStatusOptions, type LibraryEntry, type LibraryKind } from '~/utils/library-entries'
 const route = useRoute()
 const router = useRouter()
-const { entries, folders, placed, message, load } = useLibrary()
+const { entries, folders, placed, loading, loadError, message, load } = useLibrary()
 
 // The URL holds the open folder, kind and status, so a reload or the back button shows the same list. A value this
 // page does not know counts as absent. The old tabs' URLs still land here, narrowed to their kind.
@@ -57,14 +57,12 @@ const emptyTitle = computed(() => {
   return selected.value === 'unsorted' ? '未整理の問題と記事はありません。' : 'このフォルダは空です。'
 })
 
-// The tree waits for every list, since counts made from part of them would be too small.
+// The tree waits for every list, since counts made from part of them would be too small. Once shown, the list stays;
+// a refused write only sets message.
 const loaded = ref(false)
-const failed = ref(false)
 async function reload() {
-  failed.value = false
   await load()
-  failed.value = !!message.value
-  if (!failed.value) loaded.value = true
+  if (!loadError.value) loaded.value = true
 }
 onMounted(() => { void reload() })
 </script>
@@ -76,9 +74,9 @@ onMounted(() => { void reload() })
       <NuxtLink class="editor-button primary" to="/problems/new?fresh=1">新規問題</NuxtLink>
       <NuxtLink class="editor-button" to="/blog/new">新規記事</NuxtLink>
     </header>
-    <p v-if="message" role="alert" class="editor-error">{{ message }}</p>
-    <button v-if="failed" type="button" class="editor-button" @click="reload()">再試行</button>
-    <LoadingSpinner v-if="!loaded && !failed" label="問題と記事を読み込み中" />
+    <p v-if="loadError" role="alert" class="editor-error">{{ loadError }}</p>
+    <button v-if="loadError" type="button" class="editor-button" @click="reload()">再試行</button>
+    <LoadingSpinner v-if="loading && !loaded" label="問題と記事を読み込み中" />
     <div v-else-if="loaded" class="library-body">
       <FolderTree v-model:selected="selected" :folders="folders" :counts="treeCounts" />
       <div class="library-content">
@@ -93,6 +91,7 @@ onMounted(() => { void reload() })
             </template>
           </template>
         </nav>
+        <p v-if="message" role="alert" class="editor-error">{{ message }}</p>
         <div v-if="inFolder.length" class="library-filters">
           <StatusFilter v-model="kindFilter" :options="libraryKinds" :counts="kindCounts" label="種類で絞り込む" />
           <StatusFilter v-model="statusFilter" :options="problemStatusOptions" :counts="statusCounts" />

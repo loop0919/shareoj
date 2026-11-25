@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import { accountListSchema } from '~~/shared/types/account-problems'
 import { folderSchema, folderTreeSchema, maxFolderItems, type Folder, type FolderRef } from '~~/shared/types/folders'
 import { postListSchema } from '~~/shared/types/post'
@@ -30,19 +31,22 @@ async function everyPage<T>(read: (query: { cursor?: string }) => Promise<{ item
 }
 
 // The folder view's rows, folders and placements. placed maps a refKey to its folder; what it leaves out is unsorted.
-// Each write changes the screen first and puts it back when the API refuses.
+// loadError is about reading the lists and message about the last write, so a refused write never makes a loaded list
+// look unloaded. Updating, deleting and placing change the screen first and put it back when the API refuses; a new
+// folder appears once the API has made it, with its id.
 export function useLibrary() {
   const entries = ref<LibraryEntry[]>([])
   const folders = ref<Folder[]>([])
   const placed = ref(new Map<string, string>())
   const loading = ref(false)
+  const loadError = ref('')
   const message = ref('')
   let generation = 0
 
   async function load() {
     const current = ++generation
     loading.value = true
-    message.value = ''
+    loadError.value = ''
     try {
       const [own, testing, posts, tree] = await Promise.all([
         everyPage(async query => accountListSchema.parse(await $fetch('/api/my/problems', { query }))),
@@ -57,23 +61,20 @@ export function useLibrary() {
       folders.value = tree.folders
       placed.value = new Map(tree.items.map(item => [refKey(item), item.folderId]))
     } catch {
-      if (current === generation) message.value = '問題と記事を読み込めませんでした。もう一度お試しください。'
+      if (current === generation) loadError.value = '問題と記事を読み込めませんでした。もう一度お試しください。'
     } finally {
       if (current === generation) loading.value = false
     }
   }
 
+  // The folder is added once the API has made it, so it can be opened or filled right away.
   async function createFolder(name: string, parentId: string | null): Promise<Folder | undefined> {
     message.value = ''
-    // A stand-in until the API answers with the folder it made.
-    const pending: Folder = { id: crypto.randomUUID(), parentId, name: name.trim() }
-    folders.value = [...folders.value, pending]
     try {
       const folder = folderSchema.parse(await $fetch('/api/my/folders', { method: 'POST', body: { name, parentId } }))
-      folders.value = folders.value.map(item => item.id === pending.id ? folder : item)
+      folders.value = [...folders.value, folder]
       return folder
     } catch (error) {
-      folders.value = folders.value.filter(item => item.id !== pending.id)
       message.value = folderError(error)
       return undefined
     }
@@ -117,8 +118,8 @@ export function useLibrary() {
     }
   }
 
-  // A null folderId makes the items unsorted. The API takes maxFolderItems at a time; batches that were saved before
-  // one fails stay where they went.
+  // A null folderId makes the items unsorted. The API takes maxFolderItems at a time. When a batch after the first
+  // fails, the batches before it are saved, so they stay moved on the screen too and the message says how many moved.
   async function place(refs: FolderRef[], folderId: string | null): Promise<boolean> {
     message.value = ''
     const keys = refs.map(refKey)
@@ -134,19 +135,21 @@ export function useLibrary() {
       try {
         await $fetch('/api/my/folder-items', { method: 'PUT', body: { folderId, items } })
       } catch (error) {
+        const saved = new Set(keys.slice(0, start))
         const back = new Map(placed.value)
         for (const key of keys.slice(start)) {
+          if (saved.has(key)) continue
           const previous = before.get(key)
           if (previous === undefined) back.delete(key)
           else back.set(key, previous)
         }
         placed.value = back
-        message.value = folderError(error)
+        message.value = start === 0 ? folderError(error) : `${refs.length}件中${start}件を移動しました。残りは移動できませんでした。もう一度お試しください。`
         return false
       }
     }
     return true
   }
 
-  return { entries, folders, placed, loading, message, load, createFolder, updateFolder, deleteFolder, place }
+  return { entries, folders, placed, loading, loadError, message, load, createFolder, updateFolder, deleteFolder, place }
 }

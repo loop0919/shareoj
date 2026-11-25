@@ -40,7 +40,7 @@ async function switchFolderView(enabled: boolean) {
     switchOn.value = result.enabled
   } catch {
     switchOn.value = !enabled
-    switchMessage.value = 'フォルダ表示の切り替えを保存できませんでした。もう一度お試しください。'
+    switchMessage.value = '保存できませんでした。もう一度お試しください。何も変わっていません。'
   } finally { switching.value = false }
 }
 </script>

@@ -207,7 +207,7 @@ test('turning the folder view off brings the old tabs back, and the folders stay
   // A switch that could not be saved goes back, and the page says so.
   await page.route('**/api/my/folder-view', route => route.fulfill({ status: 503 }))
   await viewSwitch(page).click()
-  await expect(page.getByRole('alert')).toContainText('フォルダ表示の切り替えを保存できませんでした。')
+  await expect(page.getByRole('alert')).toHaveText('保存できませんでした。もう一度お試しください。何も変わっていません。')
   await expect(viewSwitch(page)).toBeChecked()
   await expect(tabs(page)).toHaveText(['問題と記事', 'コンテスト', '通知'])
   await page.unroute('**/api/my/folder-view')
