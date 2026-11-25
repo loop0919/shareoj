@@ -47,6 +47,8 @@ const inFolder = computed(() => {
   })
 })
 const subfolders = computed(() => selected.value && selected.value !== 'unsorted' ? sortedChildren(folders.value, selected.value) : [])
+// A problem or post made while a folder is open goes into it once saved; すべて and 未整理 make it unsorted.
+const newIn = computed(() => selected.value && selected.value !== 'unsorted' ? selected.value : undefined)
 const path = computed(() => selected.value && selected.value !== 'unsorted' ? folderPath(folders.value, selected.value) : [])
 const treeCounts = computed(() => folderCounts(folders.value, placed.value, entries.value.map(entry => entry.key)))
 
@@ -72,7 +74,7 @@ watch(visible, list => {
 })
 
 // Problems and posts go where the picker says. It starts on their folder when they share one.
-const root = ref<HTMLElement>()
+const tree = ref<{ focusCurrent: () => void }>()
 const table = ref<{ focusMove: (index: number) => boolean }>()
 const picker = ref<{ open: (current?: string | null) => Promise<string | null | undefined> }>()
 const pickerTitle = ref('')
@@ -117,7 +119,7 @@ async function moveTo(refs: FolderRef[], folderId: string | null, trigger: Eleme
 async function keepFocus(trigger: Element | null, index: number) {
   await nextTick()
   if (!trigger || trigger.isConnected || (document.activeElement && document.activeElement !== document.body)) return
-  if (!table.value?.focusMove(index)) root.value?.querySelector<HTMLElement>('.folder-tree-item[aria-current="true"]')?.focus()
+  if (!table.value?.focusMove(index)) tree.value?.focusCurrent()
 }
 
 // The name dialog shows a refused name itself and stays open, so the refusal is not repeated above the table.
@@ -140,17 +142,17 @@ onMounted(() => { void reload() })
 </script>
 
 <template>
-  <section ref="root" class="draft-library library">
+  <section class="draft-library library">
     <header class="draft-library-heading library-heading">
       <h2>問題と記事</h2>
-      <NuxtLink class="editor-button primary" to="/problems/new?fresh=1">新規問題</NuxtLink>
-      <NuxtLink class="editor-button" to="/blog/new">新規記事</NuxtLink>
+      <NuxtLink class="editor-button primary" :to="{ path: '/problems/new', query: { fresh: '1', folder: newIn } }">新規問題</NuxtLink>
+      <NuxtLink class="editor-button" :to="{ path: '/blog/new', query: { folder: newIn } }">新規記事</NuxtLink>
     </header>
     <p v-if="loadError" role="alert" class="editor-error">{{ loadError }}</p>
     <button v-if="loadError" type="button" class="editor-button" @click="reload()">再試行</button>
     <LoadingSpinner v-if="loading && !loaded" label="問題と記事を読み込み中" />
     <div v-else-if="loaded" class="library-body">
-      <FolderTree v-model:selected="selected" :folders="folders" :counts="treeCounts" :placed="placed" :save-name="saveName" @update="updateFolder" @remove="deleteFolder" @place="drop" />
+      <FolderTree ref="tree" v-model:selected="selected" :folders="folders" :counts="treeCounts" :placed="placed" :save-name="saveName" @update="updateFolder" @remove="deleteFolder" @place="drop" />
       <div class="library-content">
         <nav class="library-location" aria-label="今いる場所">
           <span v-if="!selected" aria-current="location">すべて</span>

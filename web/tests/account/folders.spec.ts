@@ -28,6 +28,8 @@ const kindCell = (row: Locator) => row.getByRole('cell').nth(1)
 const tree = (page: Page) => page.getByRole('navigation', { name: 'フォルダ', exact: true })
 // A folder's button reads its name and then its count.
 const folder = (page: Page, name: string) => tree(page).getByRole('button', { name: new RegExp(`^${name} \\d+$`) })
+// Below 40rem the folder list folds away under this button.
+const choosing = (page: Page) => page.getByRole('button', { name: 'フォルダを選ぶ', exact: true })
 const dialog = (page: Page, name: string) => page.getByRole('dialog', { name, exact: true })
 const filter = (group: Locator, label: string) => group.getByRole('button', { name: new RegExp(`^${label}(?: \\d+)?$`) })
 const kinds = (page: Page) => page.getByRole('group', { name: '種類で絞り込む' })
@@ -665,7 +667,7 @@ test('a folder dragged onto another goes inside it, but not where it would be to
   await page.mouse.down()
   await page.mouse.move(button.x + 8, button.y + button.height + 16)
   // The mark is on the list around the navigation. メモ, where the folder is, is not offered, as it would change nothing.
-  await expect(tree(page).locator('..')).toContainClass('drop-over')
+  await expect(page.locator('.folder-tree', { has: tree(page) })).toContainClass('drop-over')
   await expect(treeRow(page, 'アーカイブ')).toContainClass('drop-target')
   await expect(treeRow(page, 'メモ')).not.toContainClass('drop-target')
   await page.mouse.up()
@@ -725,6 +727,8 @@ test('a narrow screen drags neither rows nor folders', async ({ page }) => {
   await expect(treeRow(page, 'メモ')).toHaveAttribute('draggable', 'true')
   await page.setViewportSize({ width: 600, height: 900 })
   await expect(row(page, 'フォルダの記事A')).not.toHaveAttribute('draggable')
+  // The folder list folds away on a narrow screen; opened, its folders do not drag either.
+  await choosing(page).click()
   await expect(treeRow(page, 'メモ')).not.toHaveAttribute('draggable')
   await page.setViewportSize({ width: 1280, height: 720 })
   await expect(row(page, 'フォルダの記事A')).toHaveAttribute('draggable', 'true')
@@ -750,4 +754,174 @@ test('a touch screen moves rows through the dialog, not by dragging', async ({ b
     await page.reload()
     await expect(folder(page, 'メモ')).toHaveAccessibleName('メモ 1')
   } finally { await context.close() }
+})
+
+// The tests below look at a phone's width and at problems and posts made inside a folder. Each makes the folders it
+// uses; フォルダの問題A, wherever the tests above left it, is the saved problem they move.
+const newProblem = (page: Page) => page.getByRole('main').getByRole('link', { name: '新規問題', exact: true })
+const newPost = (page: Page) => page.getByRole('main').getByRole('link', { name: '新規記事', exact: true })
+const saveStatus = (page: Page) => page.locator('.draft-status').getByRole('status')
+const fitsWidth = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)
+
+async function placeProblem(page: Page, folderId: string, title: string) {
+  const response = await page.request.put('/api/my/folder-items', { headers: { origin }, data: { folderId, items: [{ kind: 'problem', id: await problemId(page, title) }] } })
+  expect(response.status()).toBe(204)
+}
+
+// The bodies of the placements the page sends.
+function watchPlacements(page: Page) {
+  const sent: unknown[] = []
+  page.on('request', request => { if (new URL(request.url()).pathname === '/api/my/folder-items') sent.push(request.postDataJSON()) })
+  return sent
+}
+
+// Where the API has the item now, or null when it is unsorted.
+async function placement(page: Page, kind: 'problem' | 'post', id: string) {
+  const tree = await (await page.request.get('/api/my/folders')).json() as { items: { kind: string, id: string, folderId: string }[] }
+  return tree.items.find(item => item.kind === kind && item.id === id)?.folderId ?? null
+}
+
+test('a phone opens the folders from a button above the table and moves rows through the dialog', async ({ page }, testInfo) => {
+  await signIn(page)
+  const opened = await createFolder(page, 'スマホで開く', null)
+  await createFolder(page, 'スマホで入れる', null)
+  await placeProblem(page, opened, 'フォルダの問題A')
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.reload()
+  // The list is folded away under a button that names the open folder.
+  await expect(choosing(page)).toHaveText('すべて')
+  await expect(choosing(page)).toHaveAttribute('aria-expanded', 'false')
+  await expect(tree(page)).toBeHidden()
+  await expect(rows(page)).toHaveCount(3)
+  await choosing(page).click()
+  await expect(choosing(page)).toHaveAttribute('aria-expanded', 'true')
+  await expect(tree(page)).toBeVisible()
+  expect((await tree(page).boundingBox())!.y).toBeGreaterThan((await choosing(page).boundingBox())!.y)
+  expect(await fitsWidth(page)).toBe(true)
+  await folder(page, 'スマホで開く').click()
+  await expect(page).toHaveURL(new RegExp(`folder=${opened}`))
+  await expect(tree(page)).toBeHidden()
+  await expect(choosing(page)).toHaveAttribute('aria-expanded', 'false')
+  await expect(choosing(page)).toHaveText('スマホで開く')
+  await expect(choosing(page)).toBeFocused()
+  await expect(rows(page)).toHaveCount(1)
+  // Each row is a card, led by its kind, and nothing is dragged.
+  const card = row(page, 'フォルダの問題A')
+  await expect(library(page).getByRole('columnheader', { name: '種類', exact: true, includeHidden: true })).toBeHidden()
+  await expect(kindCell(card)).toHaveText('自分の問題')
+  expect((await kindCell(card).boundingBox())!.y).toBeLessThan((await card.getByRole('rowheader').boundingBox())!.y)
+  await expect(library(page).locator('tbody tr[draggable]')).toHaveCount(0)
+  expect(await fitsWidth(page)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('folder-view-phone.png'), fullPage: true })
+  await moveButton(page, 'フォルダの問題A').click()
+  const picker = dialog(page, '「フォルダの問題A」をフォルダへ移動')
+  await picker.getByRole('radio', { name: 'スマホで入れる', exact: true }).check()
+  await picker.getByRole('button', { name: '移動する', exact: true }).click()
+  await expect(picker).toHaveCount(0)
+  await expect(rows(page)).toHaveCount(0)
+  await expect(page.getByText('このフォルダは空です。', { exact: true })).toBeVisible()
+  // The row took its button along and the folder's own button is folded away, so the list's button has the focus.
+  await expect(choosing(page)).toBeFocused()
+  // The folders' actions stay within reach while the list is open.
+  await choosing(page).click()
+  await expect(folder(page, 'スマホで入れる')).toHaveAccessibleName('スマホで入れる 1')
+  await tree(page).getByRole('button', { name: 'スマホで入れるの操作', exact: true }).click()
+  await expect(tree(page).getByRole('button', { name: '削除', exact: true })).toBeInViewport()
+  expect(await fitsWidth(page)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('folder-list-phone.png'), fullPage: true })
+  await page.keyboard.press('Escape')
+  await folder(page, 'スマホで入れる').click()
+  await expect(tree(page)).toBeHidden()
+  await expect(rows(page)).toHaveCount(1)
+  await expect(rows(page)).toContainText('フォルダの問題A')
+  await page.reload()
+  await expect(choosing(page)).toHaveText('スマホで入れる')
+  await expect(rows(page)).toContainText('フォルダの問題A')
+  // A folder below the open one is a card too, led by フォルダ.
+  await choosing(page).click()
+  await folder(page, 'アーカイブ').click()
+  const below = row(page, '段2')
+  expect((await below.getByRole('cell', { name: 'フォルダ', exact: true }).boundingBox())!.y).toBeLessThan((await below.getByRole('button', { name: '段2', exact: true }).boundingBox())!.y)
+  expect(await fitsWidth(page)).toBe(true)
+})
+
+test('a problem made inside a folder goes into it', async ({ page }) => {
+  await signIn(page)
+  const made = await createFolder(page, '作った問題', null)
+  // すべて and 未整理 make what is new unsorted.
+  await expect(newProblem(page)).toHaveAttribute('href', '/problems/new?fresh=1')
+  await page.goto('/my?tab=library&folder=unsorted')
+  await expect(newProblem(page)).toHaveAttribute('href', '/problems/new?fresh=1')
+  await expect(newPost(page)).toHaveAttribute('href', '/blog/new')
+  await page.goto(`/my?tab=library&folder=${made}`)
+  await expect(newProblem(page)).toHaveAttribute('href', `/problems/new?fresh=1&folder=${made}`)
+  await expect(newPost(page)).toHaveAttribute('href', `/blog/new?folder=${made}`)
+  const placements = watchPlacements(page)
+  await newProblem(page).click()
+  await expect(page).toHaveURL(`/problems/new?fresh=1&folder=${made}`)
+  await page.getByLabel('問題のタイトル', { exact: true }).fill('フォルダの中で作った問題')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(saveStatus(page)).toHaveText('保存済み')
+  await expect(page).toHaveURL(/\/problems\/new\?problem=[0-9a-f-]{36}$/)
+  const id = new URL(page.url()).searchParams.get('problem')!
+  expect(placements).toEqual([{ folderId: made, items: [{ kind: 'problem', id }] }])
+  // Only the save that made it places it.
+  await page.getByLabel('問題のタイトル', { exact: true }).fill('フォルダの中で作った問題（改）')
+  await expect(saveStatus(page)).toHaveText('未保存の変更があります')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(saveStatus(page)).toHaveText('保存済み')
+  expect(placements).toHaveLength(1)
+  await page.goto('/my')
+  await folder(page, '作った問題').click()
+  await expect(rows(page)).toHaveCount(1)
+  await expect(rows(page)).toContainText('フォルダの中で作った問題（改）')
+})
+
+test('a post made inside a folder goes into it', async ({ page }) => {
+  await signIn(page)
+  const made = await createFolder(page, '書いた記事', null)
+  await page.goto(`/my?tab=library&folder=${made}`)
+  const placements = watchPlacements(page)
+  await newPost(page).click()
+  await expect(page).toHaveURL(`/blog/new?folder=${made}`)
+  await page.getByLabel('タイトル', { exact: true }).fill('フォルダの中で書いた記事')
+  await page.getByLabel('本文（Markdown）').fill('フォルダの中で書く')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(saveStatus(page)).toHaveText('保存済み')
+  await expect(page).toHaveURL(/\/blog\/new\?post=[0-9a-f-]{36}$/)
+  const id = new URL(page.url()).searchParams.get('post')!
+  expect(placements).toEqual([{ folderId: made, items: [{ kind: 'post', id }] }])
+  await page.getByLabel('タイトル', { exact: true }).fill('フォルダの中で書いた記事（改）')
+  await expect(saveStatus(page)).toHaveText('未保存の変更があります')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(saveStatus(page)).toHaveText('保存済み')
+  expect(placements).toHaveLength(1)
+  await page.goto('/my')
+  await folder(page, '書いた記事').click()
+  await expect(rows(page)).toHaveCount(1)
+  await expect(rows(page)).toContainText('フォルダの中で書いた記事（改）')
+})
+
+test('a saved problem opened with another folder in its address stays where it is', async ({ page }) => {
+  await signIn(page)
+  const home = await createFolder(page, '元の場所', null)
+  const other = await createFolder(page, '別の場所', null)
+  await placeProblem(page, home, 'フォルダの問題A')
+  const id = await problemId(page, 'フォルダの問題A')
+  const placements = watchPlacements(page)
+  await page.goto(`/problems/new?problem=${id}&folder=${other}`)
+  await expect(saveStatus(page)).toHaveText('保存済み')
+  await expect(page.getByLabel('問題のタイトル', { exact: true })).toHaveValue('フォルダの問題A')
+  // The save button writes a new version even with nothing changed.
+  await Promise.all([
+    page.waitForResponse(response => response.url().endsWith(`/api/my/problems/${id}`) && response.request().method() === 'PUT' && response.ok()),
+    page.getByRole('button', { name: '保存', exact: true }).click(),
+  ])
+  await expect(saveStatus(page)).toHaveText('保存済み')
+  expect(placements).toEqual([])
+  expect(await placement(page, 'problem', id)).toBe(home)
+  await page.goto(`/my?tab=library&folder=${home}`)
+  await expect(rows(page)).toHaveCount(1)
+  await expect(rows(page)).toContainText('フォルダの問題A')
+  await expect(folder(page, '別の場所')).toHaveAccessibleName('別の場所 0')
 })

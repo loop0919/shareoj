@@ -13,6 +13,28 @@ const selected = defineModel<string>('selected', { required: true })
 const emit = defineEmits<{ update: [id: string, name: string, parentId: string | null], remove: [id: string], place: [refs: FolderRef[], folderId: string | null] }>()
 const root = ref<HTMLElement>()
 
+// Below 40rem the list folds away under a button that names the open folder, and opens below it. Choosing a folder
+// folds it again; the chosen folder's button goes with the list, so the focus moves to the one that opens it.
+const listId = useId()
+const listOpen = ref(false)
+const listButton = ref<HTMLButtonElement>()
+const currentName = computed(() => selected.value === 'unsorted' ? '未整理' : props.folders.find(folder => folder.id === selected.value)?.name ?? 'すべて')
+async function choose(id: string) {
+  selected.value = id
+  if (!listOpen.value) return
+  listOpen.value = false
+  await nextTick()
+  const active = document.activeElement
+  if (!active || active === document.body || !active.getClientRects().length) listButton.value?.focus()
+}
+// The open folder's button, or the list's own button while the list is folded away.
+function focusCurrent() {
+  const current = root.value?.querySelector<HTMLElement>('.folder-tree-item[aria-current="true"]')
+  if (current?.getClientRects().length) current.focus()
+  else listButton.value?.focus()
+}
+defineExpose({ focusCurrent })
+
 // The folders opened by hand. The open folder and those above it open too, so the selection stays in sight.
 const expanded = ref(new Set<string>())
 const expand = (ids: string[]) => {
@@ -68,7 +90,7 @@ async function keepFocus(id: string) {
   await nextTick()
   const button = menuButtons.get(id)
   if (button?.isConnected) button.focus()
-  else root.value?.querySelector<HTMLElement>('.folder-tree-item[aria-current="true"]')?.focus()
+  else focusCurrent()
 }
 
 // New folders go into the open folder; すべて and 未整理 make them at the top.
@@ -208,43 +230,49 @@ function removeClosed() {
 </script>
 
 <template>
-  <div ref="root" class="folder-tree" :class="{ 'drop-over': hovered === 'top' }" @dragenter="dragOver('top', $event)" @dragover="dragOver('top', $event)" @dragleave="dragLeave" @drop="drop('top', $event)">
-    <nav aria-label="フォルダ">
-      <ul class="folder-tree-list">
-        <li class="folder-tree-row" @dragenter="dragOver('all', $event)" @dragover="dragOver('all', $event)">
-          <span class="folder-tree-toggle" />
-          <button type="button" class="folder-tree-item" :aria-current="selected === '' ? 'true' : undefined" @click="selected = ''"><span class="folder-tree-name">すべて</span><span class="folder-tree-count">{{ counts.all }}</span></button>
-          <span class="folder-tree-menu-button" />
-        </li>
-        <li v-for="row in rows" :key="row.folder.id" class="folder-tree-row" :class="spotClass(row.folder.id)" :style="{ '--folder-depth': row.depth }" :draggable="canDrag ? 'true' : undefined" @dragstart="grab(row.folder, $event)" @dragend="end()" @dragenter="dragOver(row.folder.id, $event)" @dragover="dragOver(row.folder.id, $event)" @drop="drop(row.folder.id, $event)">
-          <button v-if="row.parent" type="button" class="folder-tree-toggle" :aria-expanded="row.open" :aria-label="`${row.folder.name}の中のフォルダ`" @click="toggle(row.folder.id)">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
-          </button>
-          <span v-else class="folder-tree-toggle" />
-          <button type="button" class="folder-tree-item" :aria-current="selected === row.folder.id ? 'true' : undefined" @click="selected = row.folder.id"><span class="folder-tree-name">{{ row.folder.name }}</span><span class="folder-tree-count">{{ counts.byFolder.get(row.folder.id) ?? 0 }}</span></button>
-          <span class="folder-tree-actions" @focusout="leaveMenu" @keydown.esc="closeMenu(true)">
-            <button :ref="el => { if (el) menuButtons.set(row.folder.id, el as HTMLElement); else menuButtons.delete(row.folder.id) }" type="button" class="folder-tree-menu-button" :aria-label="`${row.folder.name}の操作`" :aria-expanded="menu === row.folder.id" :aria-controls="menu === row.folder.id ? menuId : undefined" @click="menu = menu === row.folder.id ? '' : row.folder.id">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
-            </button>
-            <span v-if="menu === row.folder.id" :id="menuId" class="folder-tree-menu" role="group" :aria-label="`${row.folder.name}の操作`">
-              <button type="button" @click="rename(row.folder)">名前を変更</button>
-              <button type="button" @click="move(row.folder)">移動</button>
-              <button type="button" class="folder-tree-delete" @click="confirmRemove(row.folder)">削除</button>
-            </span>
-          </span>
-        </li>
-        <li class="folder-tree-row" :class="spotClass('unsorted')" @dragenter="dragOver('unsorted', $event)" @dragover="dragOver('unsorted', $event)" @drop="drop('unsorted', $event)">
-          <span class="folder-tree-toggle" />
-          <button type="button" class="folder-tree-item" :aria-current="selected === 'unsorted' ? 'true' : undefined" @click="selected = 'unsorted'"><span class="folder-tree-name">未整理</span><span class="folder-tree-count">{{ counts.unsorted }}</span></button>
-          <span class="folder-tree-menu-button" />
-        </li>
-      </ul>
-    </nav>
-    <p v-if="!folders.length" class="folder-tree-hint">「フォルダを作る」でフォルダを作り、行をドラッグするか「フォルダへ移動」で問題や記事を入れられます。</p>
-    <button type="button" class="editor-button folder-tree-create" :disabled="!canCreate" :title="canCreate ? undefined : depthReason" :aria-describedby="canCreate ? undefined : reasonId" @click="create()">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>フォルダを作る
+  <div ref="root" class="folder-tree" :class="{ 'drop-over': hovered === 'top', 'is-open': listOpen }" @dragenter="dragOver('top', $event)" @dragover="dragOver('top', $event)" @dragleave="dragLeave" @drop="drop('top', $event)">
+    <button ref="listButton" type="button" class="folder-tree-current" aria-label="フォルダを選ぶ" :aria-describedby="`${listId}-current`" :aria-expanded="listOpen" :aria-controls="listId" @click="listOpen = !listOpen">
+      <span :id="`${listId}-current`" class="folder-tree-name">{{ currentName }}</span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
     </button>
-    <p v-if="!canCreate" :id="reasonId" class="folder-tree-hint">{{ depthReason }}</p>
+    <div :id="listId" class="folder-tree-panel">
+      <nav aria-label="フォルダ">
+        <ul class="folder-tree-list">
+          <li class="folder-tree-row" @dragenter="dragOver('all', $event)" @dragover="dragOver('all', $event)">
+            <span class="folder-tree-toggle" />
+            <button type="button" class="folder-tree-item" :aria-current="selected === '' ? 'true' : undefined" @click="choose('')"><span class="folder-tree-name">すべて</span><span class="folder-tree-count">{{ counts.all }}</span></button>
+            <span class="folder-tree-menu-button" />
+          </li>
+          <li v-for="row in rows" :key="row.folder.id" class="folder-tree-row" :class="spotClass(row.folder.id)" :style="{ '--folder-depth': row.depth }" :draggable="canDrag ? 'true' : undefined" @dragstart="grab(row.folder, $event)" @dragend="end()" @dragenter="dragOver(row.folder.id, $event)" @dragover="dragOver(row.folder.id, $event)" @drop="drop(row.folder.id, $event)">
+            <button v-if="row.parent" type="button" class="folder-tree-toggle" :aria-expanded="row.open" :aria-label="`${row.folder.name}の中のフォルダ`" @click="toggle(row.folder.id)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+            </button>
+            <span v-else class="folder-tree-toggle" />
+            <button type="button" class="folder-tree-item" :aria-current="selected === row.folder.id ? 'true' : undefined" @click="choose(row.folder.id)"><span class="folder-tree-name">{{ row.folder.name }}</span><span class="folder-tree-count">{{ counts.byFolder.get(row.folder.id) ?? 0 }}</span></button>
+            <span class="folder-tree-actions" @focusout="leaveMenu" @keydown.esc="closeMenu(true)">
+              <button :ref="el => { if (el) menuButtons.set(row.folder.id, el as HTMLElement); else menuButtons.delete(row.folder.id) }" type="button" class="folder-tree-menu-button" :aria-label="`${row.folder.name}の操作`" :aria-expanded="menu === row.folder.id" :aria-controls="menu === row.folder.id ? menuId : undefined" @click="menu = menu === row.folder.id ? '' : row.folder.id">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
+              </button>
+              <span v-if="menu === row.folder.id" :id="menuId" class="folder-tree-menu" role="group" :aria-label="`${row.folder.name}の操作`">
+                <button type="button" @click="rename(row.folder)">名前を変更</button>
+                <button type="button" @click="move(row.folder)">移動</button>
+                <button type="button" class="folder-tree-delete" @click="confirmRemove(row.folder)">削除</button>
+              </span>
+            </span>
+          </li>
+          <li class="folder-tree-row" :class="spotClass('unsorted')" @dragenter="dragOver('unsorted', $event)" @dragover="dragOver('unsorted', $event)" @drop="drop('unsorted', $event)">
+            <span class="folder-tree-toggle" />
+            <button type="button" class="folder-tree-item" :aria-current="selected === 'unsorted' ? 'true' : undefined" @click="choose('unsorted')"><span class="folder-tree-name">未整理</span><span class="folder-tree-count">{{ counts.unsorted }}</span></button>
+            <span class="folder-tree-menu-button" />
+          </li>
+        </ul>
+      </nav>
+      <p v-if="!folders.length" class="folder-tree-hint">「フォルダを作る」でフォルダを作り、行をドラッグするか「フォルダへ移動」で問題や記事を入れられます。</p>
+      <button type="button" class="editor-button folder-tree-create" :disabled="!canCreate" :title="canCreate ? undefined : depthReason" :aria-describedby="canCreate ? undefined : reasonId" @click="create()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>フォルダを作る
+      </button>
+      <p v-if="!canCreate" :id="reasonId" class="folder-tree-hint">{{ depthReason }}</p>
+    </div>
     <FolderNameDialog ref="nameDialog" :title="naming.title" :action="naming.action" :description="naming.description" />
     <FolderPicker ref="picker" :folders="folders" :title="moving ? `「${moving.name}」を移動` : ''" :disabled-ids="blocked" none-label="最上位" />
     <Teleport v-if="removing" to="body">

@@ -2,6 +2,7 @@ import { accountProblemSchema, type AccountProblem, type Readiness } from '~~/sh
 import { accountError } from '~/utils/account-problems'
 import { problemDraftSchema, inlineTestDataLimit, inlineTestSetLimit } from '~~/shared/types/problem-draft'
 import { draftErrors, initialProblemDraft, normalizeTestData, persistedDraft, scoringError, testCaseError } from '~/utils/problem-draft'
+import { placeNewItem } from '~/utils/folder-tree'
 import { uploadTestFile } from '~/utils/test-files'
 import { readProblemCache, writeProblemCache, removeProblemCache } from '~/utils/problem-cache'
 
@@ -129,6 +130,9 @@ export function useProblemDraft() {
       return saveDraft(manual, updateLocation)
     }
     const version = cloudVersion.value
+    // The save that makes the problem puts it in the folder the my page opened the editor in. The folder is read now,
+    // since that save takes it out of the URL.
+    const folder = version ? undefined : route.query.folder
     cloudId.value ||= crypto.randomUUID()
     const id = cloudId.value
     saving.value = true
@@ -157,6 +161,7 @@ export function useProblemDraft() {
         saved = snapshot
         saveFailed = false
         storageError.value = ''
+        await placeNewItem(folder, { kind: 'problem', id })
         // Reload must reopen this draft before we announce that saving is complete.
         if (updateLocation && route.query.problem !== id) await router.replace({ path: '/problems/new', query: { problem: id } })
         saveState.value = unsaved() ? 'dirty' : 'saved'

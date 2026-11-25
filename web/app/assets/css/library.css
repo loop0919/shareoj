@@ -1,7 +1,8 @@
 /* Hallmark · macrostructure: my page folder view · tone: existing ShareOJ · anchor hue: existing accent
- * From 40rem the folder list stands in a 15rem column left of the table; narrower screens stack it above. */
+ * From 40rem the folder list stands in a 15rem column left of the table; narrower screens fold it under a button above
+ * the table that names the open folder, and the table reads as cards. */
 .library-heading h2 { margin: 0 auto 0 0; }
-.library-body { display: grid; gap: 24px; align-items: start; }
+.library-body { display: grid; gap: 16px; align-items: start; }
 @media (min-width: 40rem) {
   .library-body { grid-template-columns: 15rem minmax(0, 1fr); gap: 32px; }
   /* The list reaches down beside the table and keeps a strip below its button, so a folder has room to be dropped at
@@ -9,6 +10,20 @@
   .folder-tree { align-self: stretch; padding-bottom: 32px; }
 }
 .library-content { min-width: 0; }
+
+/* The button that opens the folded list. The list opens below it, in the page's flow, and rows grow to a finger's size. */
+.folder-tree-current { display: none; }
+@media (max-width: 39.999rem) {
+  .folder-tree-current { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-paper); color: var(--color-ink); font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+  .folder-tree-current svg { flex: none; color: var(--color-muted); transition: transform 120ms cubic-bezier(.2, 0, 0, 1); }
+  .folder-tree-current[aria-expanded="true"] svg { transform: rotate(180deg); }
+  .folder-tree-current:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
+  .folder-tree:not(.is-open) .folder-tree-panel { display: none; }
+  .folder-tree-panel { margin-top: 8px; padding: 8px; border: 1px solid var(--color-line); border-radius: 6px; }
+  .folder-tree-item { min-height: 44px; }
+  .folder-tree-toggle, .folder-tree-menu-button { width: 36px; height: 44px; }
+  .folder-tree-create { min-height: 44px; }
+}
 
 /* Folder list: everything, the folders indented by depth, then unsorted. Every row keeps a toggle's width, so names line up. */
 .folder-tree-list { margin: 0; padding: 0; list-style: none; }
@@ -41,7 +56,7 @@ span.folder-tree-menu-button { cursor: default; }
   .folder-tree-item:hover:not([aria-current="true"]) { background: var(--color-surface); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .folder-tree-toggle svg { transition: none; }
+  .folder-tree-toggle svg, .folder-tree-current svg { transition: none; }
 }
 /* While something is dragged, the folders and 未整理 that would take it get a dashed outline, and the one under the
  * pointer fills. A folder held over the list's blank space outlines the whole list. */
@@ -71,6 +86,11 @@ span.folder-tree-menu-button { cursor: default; }
 .library-selection .editor-button { min-height: 40px; padding-inline: 16px; font-size: .875rem; }
 .library-actions { display: flex; align-items: center; gap: 8px; }
 .library-move { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; }
+/* A card's top line starts with the kind, then the difficulty. Cells a row leaves empty take no room in a card. */
+@media (max-width: 39.999rem) {
+  .content-table--cards td.library-kind { margin-right: 12px; font-weight: 600; }
+  .content-table--cards.library-table td:empty { display: none; }
+}
 /* A row can be taken onto the folder list. More than one shows this badge by the pointer instead of the row; it is on
  * the page only for the moment the browser takes its picture. */
 .library-table tbody tr[draggable="true"] { cursor: grab; }

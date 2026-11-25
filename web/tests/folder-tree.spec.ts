@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { accountListSchema } from '../shared/types/account-problems'
 import { postSummarySchema } from '../shared/types/post'
-import { canNest, descendantIds, folderCounts, folderPath, sortedChildren } from '../app/utils/folder-tree'
+import { canNest, descendantIds, folderCounts, folderPath, placeNewItem, sortedChildren } from '../app/utils/folder-tree'
 import { libraryEntries } from '../app/utils/library-entries'
 
 const A = 'aaaaaaaa-0000-4000-8000-000000000001'
@@ -68,4 +68,24 @@ test('problems and posts make one list, newest first, with their kind and status
   ])
   expect(entries[0]!.problem).toBe(testing[0])
   expect(entries[3]!.post).toBe(posts[0])
+})
+
+test('a new item goes into the folder its editor was opened in, and a failure is dropped', async () => {
+  const sent: { url: string, options: unknown }[] = []
+  let refuse = false
+  Object.assign(globalThis, {
+    $fetch: async (url: string, options: unknown) => {
+      sent.push({ url, options })
+      if (refuse) throw new Error('refused')
+    },
+  })
+  const item = { kind: 'post' as const, id: 'cccccccc-0000-4000-8000-000000000001' }
+  // Anything but a UUID, such as 未整理 or a repeated query, names no folder.
+  for (const folder of [undefined, '', 'unsorted', [A], `${A}x`]) await placeNewItem(folder, item)
+  expect(sent).toEqual([])
+  await placeNewItem(A, item)
+  expect(sent).toEqual([{ url: '/api/my/folder-items', options: { method: 'PUT', body: { folderId: A, items: [item] } } }])
+  refuse = true
+  await expect(placeNewItem(B, item)).resolves.toBeUndefined()
+  expect(sent).toHaveLength(2)
 })

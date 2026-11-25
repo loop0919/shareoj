@@ -56,13 +56,13 @@ defineExpose({ focusMove })
       <tbody>
         <tr v-for="folder in subfolders" :key="folder.id" class="library-folder">
           <td class="select-cell" />
-          <td class="lead-cell">フォルダ</td>
+          <td class="lead-cell library-kind">フォルダ</td>
           <th scope="row"><button type="button" class="library-folder-open" @click="emit('open', folder.id)">{{ folder.name }}</button></th>
           <td /><td /><td /><td />
         </tr>
         <tr v-for="entry in entries" :key="entry.key" :draggable="canDrag ? 'true' : undefined" @dragstart="grab(entry, $event)" @dragend="end()">
           <td class="select-cell"><input type="checkbox" :checked="selected.has(entry.key)" :aria-label="`${entryTitle(entry)}を選択`" @change="choose(entry.key, ($event.target as HTMLInputElement).checked)"></td>
-          <td class="lead-cell">{{ kindLabels[entry.kind] }}</td>
+          <td class="lead-cell library-kind">{{ kindLabels[entry.kind] }}</td>
           <template v-if="entry.problem">
             <th scope="row">{{ entryTitle(entry) }}<span v-if="entry.kind === 'testing' && entry.problem.author" class="library-note">作者: {{ entry.problem.author }}</span><span v-if="entry.problem.viaContest" class="library-note">コンテスト「{{ entry.problem.viaContest.title.trim() || '無題のコンテスト' }}」の作成者として</span></th>
             <td class="line-cell" data-label="状態"><SavedProblemState :entry="entry.problem" /></td>
