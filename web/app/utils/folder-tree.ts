@@ -1,4 +1,4 @@
-import { folderSchema, maxFolderDepth, type Folder, type FolderRef } from '~~/shared/types/folders'
+import { maxFolderDepth, type Folder, type FolderRef } from '~~/shared/types/folders'
 
 // The key a problem or post goes by in placements and selections; a problem's id never names a post.
 export const refKey = (ref: FolderRef) => `${ref.kind}:${ref.id}`
@@ -60,13 +60,4 @@ export function folderCounts(folders: Folder[], placed: Map<string, string>, key
     for (const folder of paths.get(folderId)!) byFolder.set(folder.id, byFolder.get(folder.id)! + 1)
   }
   return { all: keys.length, unsorted, byFolder }
-}
-
-// A problem or post made from inside a folder on the my page goes into it once its first save succeeds. The editors
-// pass their ?folder= as it is and read no folders: anything but a UUID names none, the API ignores a folder that is
-// not the caller's, and a failure is dropped, since the save went through and the item shows in 未整理.
-export async function placeNewItem(folder: unknown, item: FolderRef): Promise<void> {
-  const folderId = folderSchema.shape.id.safeParse(folder)
-  if (!folderId.success) return
-  await $fetch('/api/my/folder-items', { method: 'PUT', body: { folderId: folderId.data, items: [item] } }).catch(() => {})
 }

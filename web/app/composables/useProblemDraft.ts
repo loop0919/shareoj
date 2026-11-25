@@ -2,7 +2,7 @@ import { accountProblemSchema, type AccountProblem, type Readiness } from '~~/sh
 import { accountError } from '~/utils/account-problems'
 import { problemDraftSchema, inlineTestDataLimit, inlineTestSetLimit } from '~~/shared/types/problem-draft'
 import { draftErrors, initialProblemDraft, normalizeTestData, persistedDraft, scoringError, testCaseError } from '~/utils/problem-draft'
-import { placeNewItem } from '~/utils/folder-tree'
+import { placeNewItem } from '~/utils/folder-items'
 import { uploadTestFile } from '~/utils/test-files'
 import { readProblemCache, writeProblemCache, removeProblemCache } from '~/utils/problem-cache'
 

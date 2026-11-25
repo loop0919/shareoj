@@ -14,18 +14,23 @@ const emit = defineEmits<{ update: [id: string, name: string, parentId: string |
 const root = ref<HTMLElement>()
 
 // Below 40rem the list folds away under a button that names the open folder, and opens below it. Choosing a folder
-// folds it again; the chosen folder's button goes with the list, so the focus moves to the one that opens it.
+// folds it again, even the one already open; the chosen folder's button goes with the list, so the focus moves to the
+// one that opens it. A folder opened from the table or the path above it folds the list too.
 const listId = useId()
 const listOpen = ref(false)
 const listButton = ref<HTMLButtonElement>()
 const currentName = computed(() => selected.value === 'unsorted' ? '未整理' : props.folders.find(folder => folder.id === selected.value)?.name ?? 'すべて')
-async function choose(id: string) {
-  selected.value = id
+async function fold() {
   if (!listOpen.value) return
   listOpen.value = false
   await nextTick()
   const active = document.activeElement
   if (!active || active === document.body || !active.getClientRects().length) listButton.value?.focus()
+}
+watch(selected, fold)
+function choose(id: string) {
+  selected.value = id
+  void fold()
 }
 // The open folder's button, or the list's own button while the list is folded away.
 function focusCurrent() {
@@ -231,8 +236,8 @@ function removeClosed() {
 
 <template>
   <div ref="root" class="folder-tree" :class="{ 'drop-over': hovered === 'top', 'is-open': listOpen }" @dragenter="dragOver('top', $event)" @dragover="dragOver('top', $event)" @dragleave="dragLeave" @drop="drop('top', $event)">
-    <button ref="listButton" type="button" class="folder-tree-current" aria-label="フォルダを選ぶ" :aria-describedby="`${listId}-current`" :aria-expanded="listOpen" :aria-controls="listId" @click="listOpen = !listOpen">
-      <span :id="`${listId}-current`" class="folder-tree-name">{{ currentName }}</span>
+    <button ref="listButton" type="button" class="folder-tree-current" :aria-expanded="listOpen" :aria-controls="listId" @click="listOpen = !listOpen">
+      <span class="folder-tree-name"><span class="folder-tree-current-label">フォルダ:</span> {{ currentName }}</span>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
     </button>
     <div :id="listId" class="folder-tree-panel">

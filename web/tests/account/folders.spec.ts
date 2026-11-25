@@ -28,8 +28,8 @@ const kindCell = (row: Locator) => row.getByRole('cell').nth(1)
 const tree = (page: Page) => page.getByRole('navigation', { name: 'フォルダ', exact: true })
 // A folder's button reads its name and then its count.
 const folder = (page: Page, name: string) => tree(page).getByRole('button', { name: new RegExp(`^${name} \\d+$`) })
-// Below 40rem the folder list folds away under this button.
-const choosing = (page: Page) => page.getByRole('button', { name: 'フォルダを選ぶ', exact: true })
+// Below 40rem the folder list folds away under this button, which reads 「フォルダ: 」 and the open folder's name.
+const choosing = (page: Page) => page.getByRole('button', { name: /^フォルダ: / })
 const dialog = (page: Page, name: string) => page.getByRole('dialog', { name, exact: true })
 const filter = (group: Locator, label: string) => group.getByRole('button', { name: new RegExp(`^${label}(?: \\d+)?$`) })
 const kinds = (page: Page) => page.getByRole('group', { name: '種類で絞り込む' })
@@ -788,8 +788,9 @@ test('a phone opens the folders from a button above the table and moves rows thr
   await placeProblem(page, opened, 'フォルダの問題A')
   await page.setViewportSize({ width: 375, height: 812 })
   await page.reload()
-  // The list is folded away under a button that names the open folder.
-  await expect(choosing(page)).toHaveText('すべて')
+  // The list is folded away under a button that names the open folder, by the same words it shows.
+  await expect(choosing(page)).toHaveText('フォルダ: すべて')
+  await expect(choosing(page)).toHaveAccessibleName('フォルダ: すべて')
   await expect(choosing(page)).toHaveAttribute('aria-expanded', 'false')
   await expect(tree(page)).toBeHidden()
   await expect(rows(page)).toHaveCount(3)
@@ -802,7 +803,7 @@ test('a phone opens the folders from a button above the table and moves rows thr
   await expect(page).toHaveURL(new RegExp(`folder=${opened}`))
   await expect(tree(page)).toBeHidden()
   await expect(choosing(page)).toHaveAttribute('aria-expanded', 'false')
-  await expect(choosing(page)).toHaveText('スマホで開く')
+  await expect(choosing(page)).toHaveAccessibleName('フォルダ: スマホで開く')
   await expect(choosing(page)).toBeFocused()
   await expect(rows(page)).toHaveCount(1)
   // Each row is a card, led by its kind, and nothing is dragged.
@@ -835,7 +836,7 @@ test('a phone opens the folders from a button above the table and moves rows thr
   await expect(rows(page)).toHaveCount(1)
   await expect(rows(page)).toContainText('フォルダの問題A')
   await page.reload()
-  await expect(choosing(page)).toHaveText('スマホで入れる')
+  await expect(choosing(page)).toHaveAccessibleName('フォルダ: スマホで入れる')
   await expect(rows(page)).toContainText('フォルダの問題A')
   // A folder below the open one is a card too, led by フォルダ.
   await choosing(page).click()
@@ -843,6 +844,14 @@ test('a phone opens the folders from a button above the table and moves rows thr
   const below = row(page, '段2')
   expect((await below.getByRole('cell', { name: 'フォルダ', exact: true }).boundingBox())!.y).toBeLessThan((await below.getByRole('button', { name: '段2', exact: true }).boundingBox())!.y)
   expect(await fitsWidth(page)).toBe(true)
+  // Opening a folder from the table folds the list as well.
+  await choosing(page).click()
+  await expect(tree(page)).toBeVisible()
+  await below.getByRole('button', { name: '段2', exact: true }).click()
+  await expect(choosing(page)).toHaveAccessibleName('フォルダ: 段2')
+  await expect(choosing(page)).toHaveAttribute('aria-expanded', 'false')
+  await expect(tree(page)).toBeHidden()
+  await expect(choosing(page)).toBeFocused()
 })
 
 test('a problem made inside a folder goes into it', async ({ page }) => {

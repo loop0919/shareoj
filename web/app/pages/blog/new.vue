@@ -2,7 +2,7 @@
 import { postSchema, type PostProblem } from '~~/shared/types/post'
 import { maxTags } from '~~/shared/types/tag'
 import { accountError } from '~/utils/account-problems'
-import { placeNewItem } from '~/utils/folder-tree'
+import { placeNewItem } from '~/utils/folder-items'
 import { shortId } from '~~/shared/utils/short-id'
 useSeoMeta({ title: '記事を書く | ShareOJ', robots: 'noindex, nofollow' })
 const route = useRoute()
@@ -71,8 +71,9 @@ async function save(): Promise<boolean> {
     // since that save takes it out of the URL.
     const folder = version.value ? undefined : route.query.folder
     const post = postSchema.parse(await $fetch(`/api/my/posts/${id.value}`, { method: 'PUT', body: { version: version.value, title: title.value, markdown: markdown.value, problemIds: problems.value.map(problem => problem.id), tags: tags.value } }))
-    version.value = post.version; publishedVersion.value = post.publishedVersion; problems.value = post.problems; tags.value = post.tags; saved = snapshot(); status.value = '保存済み'
+    version.value = post.version; publishedVersion.value = post.publishedVersion; problems.value = post.problems; tags.value = post.tags; saved = snapshot()
     await placeNewItem(folder, { kind: 'post', id: post.id })
+    status.value = '保存済み'
     if (route.query.post !== id.value) await router.replace({ path: '/blog/new', query: { post: id.value } })
     return true
   } catch (e) { error.value = failure(e); return false }
