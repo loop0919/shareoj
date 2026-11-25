@@ -133,6 +133,9 @@ func TestAccountPostgres(t *testing.T) {
 	exec(`INSERT INTO blog_posts(id,owner_id,title,markdown,published_title,published_markdown,published_version,published_at) VALUES ('55555555-5555-4555-8555-555555555555','alice-sub','Edited','edited','Public post','public',1,now())`)
 	exec(`INSERT INTO contest_drafts(id,owner_id,draft) VALUES ('66666666-6666-4666-8666-666666666666','alice-sub','{}')`)
 	exec(`INSERT INTO contests(id,owner_id,title,description,starts_at,ends_at) VALUES ($1,'alice-sub','Upcoming','',now()+interval '1 hour',now()+interval '2 hours')`, contestID)
+	// Folders are private, and so is where they put a problem that stays.
+	exec(`INSERT INTO content_folders(id,owner_id,name) VALUES ('88888888-8888-4888-8888-888888888888','alice-sub','Folder')`)
+	exec(`INSERT INTO problem_folder_items(owner_id,problem_id,folder_id) VALUES ('alice-sub',$1,'88888888-8888-4888-8888-888888888888')`, public)
 
 	cognito := &accountCognito{password: "old-password-1"}
 	f := newSigningFixture(t)
@@ -210,6 +213,8 @@ func TestAccountPostgres(t *testing.T) {
 		`SELECT count(*) FROM problem_favorites WHERE owner_id='alice-sub'`:                                  0,
 		`SELECT count(*) FROM code_runs WHERE owner_id='alice-sub'`:                                          0,
 		`SELECT count(*) FROM content_images WHERE id='` + privateImage + `'`:                                0,
+		`SELECT count(*) FROM content_folders WHERE owner_id='alice-sub'`:                                    0,
+		`SELECT count(*) FROM problem_folder_items WHERE owner_id='alice-sub'`:                               0,
 		`SELECT count(*) FROM problem_drafts WHERE id='` + public + `' AND draft::text LIKE '%unpublished%'`: 0,
 		`SELECT count(*) FROM blog_posts WHERE owner_id='alice-sub' AND title='Public post'`:                 1,
 		`SELECT count(*) FROM content_images WHERE id='` + keptImage + `'`:                                   1,

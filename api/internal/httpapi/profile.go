@@ -102,6 +102,36 @@ func (p profileHandler) profile(w http.ResponseWriter, r *http.Request, owner st
 	}
 }
 
+// folderView saves the folder view beta apart from the profile. Saving the profile checks its version, so a switch
+// that bumped it would make a settings page left open fail to save.
+func (p profileHandler) folderView(w http.ResponseWriter, r *http.Request, owner string) {
+	if p.Profiles == nil {
+		authError(w, 503, "database_unavailable")
+		return
+	}
+	var input struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if !readAuthJSON(w, r, &input) {
+		return
+	}
+	if input.Enabled == nil {
+		authError(w, 400, "invalid_request")
+		return
+	}
+	err := p.Profiles.SetFolderView(r.Context(), owner, *input.Enabled)
+	switch {
+	case errors.Is(err, profiles.ErrDeleted):
+		authError(w, 401, "account_deleted")
+	case errors.Is(err, profiles.ErrNotFound):
+		authError(w, 403, "profile_required")
+	case err != nil:
+		authError(w, 503, "database_unavailable")
+	default:
+		writeAuthJSON(w, 200, map[string]bool{"enabled": *input.Enabled})
+	}
+}
+
 func (p profileHandler) publicProfile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	handle := r.PathValue("handle")

@@ -191,6 +191,67 @@ func TestProfilesPostgres(t *testing.T) {
 		t.Fatalf("no public icons: %d %s", w.Code, w.Body.String())
 	}
 
+	// The folder view beta is saved apart from the profile: turning it on keeps the version, so a settings page left
+	// open still saves, and that save keeps the switch. Nobody else sees it.
+	type ownProfile struct {
+		Avatar     string `json:"avatar"`
+		Version    int64  `json:"version"`
+		FolderView bool   `json:"folderView"`
+	}
+	readProfile := func(w *httptest.ResponseRecorder) ownProfile {
+		t.Helper()
+		var result struct {
+			Profile ownProfile `json:"profile"`
+		}
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &result) != nil {
+			t.Fatalf("own profile: %d %s", w.Code, w.Body.String())
+		}
+		return result.Profile
+	}
+	if w := request("PUT", "/my/profile", "dave", `{"handle":"dave","avatar":"","version":0}`); w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	fresh := request("GET", "/my/profile", "dave", "")
+	if !strings.Contains(fresh.Body.String(), `"folderView":false`) {
+		t.Fatalf("new profile: %s", fresh.Body.String())
+	}
+	opened := readProfile(fresh)
+	if w := request("PUT", "/my/folder-view", "", `{"enabled":true}`); w.Code != 401 {
+		t.Fatalf("anonymous folder view: %d", w.Code)
+	}
+	for _, body := range []string{`{}`, `{"enabled":null}`, `{"enabled":"true"}`, `{"enabled":true,"version":1}`} {
+		expect(t, request("PUT", "/my/folder-view", "dave", body), 400, "invalid_request")
+	}
+	if w := request("PUT", "/my/folder-view", "dave", `{"enabled":true}`); w.Code != 200 || strings.TrimSpace(w.Body.String()) != `{"enabled":true}` {
+		t.Fatalf("folder view on: %d %s", w.Code, w.Body.String())
+	}
+	if p := readProfile(request("GET", "/my/profile", "dave", "")); !p.FolderView || p.Version != opened.Version {
+		t.Fatalf("folder view on: %+v, version was %d", p, opened.Version)
+	}
+	if p := readProfile(request("GET", "/my/profile", "carol", "")); p.FolderView {
+		t.Fatal("folder view leaked to another user")
+	}
+	// The profile save takes no switch, so a page that never showed it cannot turn it off.
+	if w := request("PUT", "/my/profile", "dave", fmt.Sprintf(`{"handle":"dave","avatar":"","version":%d,"folderView":false}`, opened.Version)); w.Code != 400 {
+		t.Fatalf("profile save took the switch: %d %s", w.Code, w.Body.String())
+	}
+	saved := readProfile(request("PUT", "/my/profile", "dave", fmt.Sprintf(`{"handle":"dave","avatar":%q,"version":%d}`, carolAvatar, opened.Version)))
+	if !saved.FolderView || saved.Avatar != carolAvatar || saved.Version != opened.Version+1 {
+		t.Fatalf("profile save after the switch: %+v", saved)
+	}
+	if p := readProfile(request("GET", "/my/profile", "dave", "")); !p.FolderView || p.Avatar != carolAvatar {
+		t.Fatalf("profile after the save: %+v", p)
+	}
+	if w := request("GET", "/users/dave", "", ""); w.Code != 200 || strings.Contains(w.Body.String(), "folderView") {
+		t.Fatalf("public profile shows the switch: %d %s", w.Code, w.Body.String())
+	}
+	if w := request("PUT", "/my/folder-view", "dave", `{"enabled":false}`); w.Code != 200 || strings.TrimSpace(w.Body.String()) != `{"enabled":false}` {
+		t.Fatalf("folder view off: %d %s", w.Code, w.Body.String())
+	}
+	if p := readProfile(request("GET", "/my/profile", "dave", "")); p.FolderView || p.Version != saved.Version {
+		t.Fatalf("folder view off: %+v", p)
+	}
+
 	// All mutation paths enforce ownership and version.
 	if w := request("PUT", "/my/profile", "bob", `{"handle":"bob","avatar":"","version":0}`); w.Code != 200 {
 		t.Fatal(w.Body.String())

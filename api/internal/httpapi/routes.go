@@ -258,6 +258,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	private("DELETE /my/account", account.remove, true)
 	mux.HandleFunc("GET /my/profile", auth.require(profiles.profile, false, 10*time.Second))
 	mux.HandleFunc("PUT /my/profile", auth.require(profiles.profile, false, 10*time.Second))
+	private("PUT /my/folder-view", profiles.folderView, false)
 	private("GET /my/problems", problems.problem, true)
 	private("GET /my/problems/{id}", problems.problem, true)
 	private("GET /my/problems/{id}/submissions", submissions.problemSubmissions, true)
