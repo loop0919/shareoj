@@ -19,8 +19,10 @@ import (
 
 	"judge/api/internal/accounts"
 	"judge/api/internal/contests"
+	"judge/api/internal/folders"
 	"judge/api/internal/images"
 	"judge/api/internal/notifications"
+	"judge/api/internal/posts"
 	"judge/api/internal/problems"
 	"judge/api/internal/profiles"
 	"judge/api/internal/submissions"
@@ -76,7 +78,7 @@ func newTeamTest(t *testing.T, users ...string) teamTest {
 	}
 	sign := newSigningFixture(t)
 	f := teamTest{t: t, ctx: ctx, store: store, sign: sign}
-	f.handler = newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: pool}, Images: &images.Store{Pool: pool}, Notifications: &notifications.Store{Pool: pool}, Profiles: profiles.New(pool), Submissions: &submissions.Store{Pool: pool}, JudgeImage: "sha256:" + strings.Repeat("a", 64), JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: "cpp17", Verifier: newCognitoVerifier(sign.server.URL, "client")})
+	f.handler = newHandler(AuthConfig{}, handlerDependencies{Store: store, Contests: &contests.Store{Pool: pool}, Folders: folders.New(pool), Images: &images.Store{Pool: pool}, Posts: posts.New(pool), Notifications: &notifications.Store{Pool: pool}, Profiles: profiles.New(pool), Submissions: &submissions.Store{Pool: pool}, JudgeImage: "sha256:" + strings.Repeat("a", 64), JudgeRuntime: "cpp17-isolate", JudgeEnabledRuntimes: "cpp17", Verifier: newCognitoVerifier(sign.server.URL, "client")})
 	return f
 }
 
