@@ -2,7 +2,7 @@
 import { vDialogDismiss } from '~/utils/dialog-dismiss'
 import { accountListSchema, accountProblemSchema, type AccountSummary } from '~~/shared/types/account-problems'
 import { accountError } from '~/utils/account-problems'
-import { problemStatus, type ProblemStatus } from '~/utils/problem-readiness'
+import { problemStatusGroup, problemStatusOptions } from '~/utils/library-entries'
 import { shortId } from '~~/shared/utils/short-id'
 const props = defineProps<{ testing?: boolean }>()
 const heading = computed(() => props.testing ? 'テスト中の問題' : '自分の問題')
@@ -52,18 +52,8 @@ async function loadAccount(more = false) {
   finally { accountLoading.value = false }
 }
 
-// The labels the 状態 column shows, so the filter reads the same for authors and testers.
-const statusOptions = [
-  { key: 'preparing', label: '準備中' },
-  { key: 'applying', label: '応募中' },
-  { key: 'scheduled', label: '公開予約中' },
-  { key: 'published', label: '公開中' },
-] as const
-const statusGroups: Record<ProblemStatus['kind'], typeof statusOptions[number]['key']> = {
-  scheduled: 'scheduled', incomplete: 'preparing', ready: 'preparing', unknown: 'preparing', contest: 'applying', featured: 'applying', published: 'published',
-}
 const status = defineModel<string>('status', { default: '' })
-const { filter, counts, visible: visibleEntries, label: filterLabel } = useStatusFilter(statusOptions, status, () => accountEntries.value, entry => statusGroups[problemStatus(entry).kind])
+const { filter, counts, visible: visibleEntries, label: filterLabel } = useStatusFilter(problemStatusOptions, status, () => accountEntries.value, problemStatusGroup)
 // A filter needs every page, or a matching problem past the first 50 would look absent.
 watch([filter, nextCursor, accountLoading], () => {
   if (filter.value && nextCursor.value && !accountLoading.value && !accountMessage.value) void loadAccount(true)
@@ -85,7 +75,7 @@ onMounted(() => { void loadAccount() })
     <template v-else>
       <EmptyState v-if="!accountEntries.length && !accountMessage && testing" kind="testing" title="テスト中の問題はまだありません。" description="テスターリンクから参加すると、ここに表示されます。" />
       <EmptyState v-else-if="!accountEntries.length && !accountMessage" kind="problem" title="保存した問題はまだありません。" description="「新規問題」から作成すると、ここに表示されます。" />
-      <StatusFilter v-if="accountEntries.length" v-model="filter" :options="statusOptions" :counts="nextCursor ? undefined : counts" />
+      <StatusFilter v-if="accountEntries.length" v-model="filter" :options="problemStatusOptions" :counts="nextCursor ? undefined : counts" />
       <EmptyState v-if="accountEntries.length && !visibleEntries.length && !nextCursor && !accountLoading" :kind="testing ? 'testing' : 'problem'" :title="`「${filterLabel}」の問題はありません。`"><button type="button" class="editor-button" @click="filter = ''">すべて表示</button></EmptyState>
       <div v-if="visibleEntries.length" class="content-table-scroll">
         <table class="content-table content-table--cards" :aria-label="heading">

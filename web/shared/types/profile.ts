@@ -18,6 +18,8 @@ export const profileSchema = z.object({
   handle: z.string().regex(userHandle),
   avatar: z.string().max(180000).refine(v => v === '' || /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(v)),
   version: z.number().int().positive(), createdAt: z.string().datetime({ offset: true }),
+  // The my page's folder view beta. Its own call saves it without a new version, so a settings page left open still saves.
+  folderView: z.boolean().default(false),
 })
 export const profileResultSchema = z.object({ profile: profileSchema.nullable() })
 export type Profile = z.infer<typeof profileSchema>
