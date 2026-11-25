@@ -64,6 +64,37 @@ test('a later batch that fails keeps what was saved and says how many moved', as
   expect(library.message.value).toBe('250件中100件を移動しました。残りは移動できませんでした。もう一度お試しください。')
 })
 
+test('writes run in turn, so a refused write never undoes a later one', async () => {
+  const library = useLibrary()
+  const [ref] = problems(1)
+  let fail!: () => void
+  const failing = new Promise<void>(resolve => { fail = resolve })
+  let firstSettled = false
+  let sentAfterFirst = false
+  const calls = answer(async () => { await failing; refused()() }, () => { sentAfterFirst = firstSettled })
+  const first = library.place([ref!], FOLDER)
+  void first.then(() => { firstSettled = true })
+  const second = library.place([ref!], OTHER)
+  await new Promise(resolve => setTimeout(resolve, 10))
+  // Only the first is out, and the screen shows only its move.
+  expect(calls).toHaveLength(1)
+  expect(library.placed.value.get(key(ref!))).toBe(FOLDER)
+  fail()
+  expect(await first).toBe(false)
+  expect(await second).toBe(true)
+  expect(calls.map(call => call.options?.body?.folderId)).toEqual([FOLDER, OTHER])
+  expect(sentAfterFirst).toBe(true)
+  // The first refusal put back only its own move; the second, made after it, stands.
+  expect(library.placed.value.get(key(ref!))).toBe(OTHER)
+  // Asking for the second cleared the message before the first failed, so the first refusal is still said.
+  expect(library.message.value).toBe('保存できませんでした。もう一度お試しください。何も変わっていません。')
+  // The next write asked for clears it.
+  answer(ok)
+  expect(await library.place([ref!], null)).toBe(true)
+  expect(library.message.value).toBe('')
+  expect(library.placed.value.has(key(ref!))).toBe(false)
+})
+
 test('a refused write leaves the loaded list loaded, and a failed load is not a write message', async () => {
   const library = useLibrary()
   // Loading from the start, so the first frame shows the spinner rather than nothing.

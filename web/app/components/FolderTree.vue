@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import type { Folder, FolderRef } from '~~/shared/types/folders'
 import { vDialogDismiss } from '~/utils/dialog-dismiss'
-import { canNest, descendantIds, folderPath, sortedChildren } from '~/utils/folder-tree'
-// counts comes from folderCounts and is not narrowed by the filters, so a folder's number is what it holds. saveName
-// makes a folder (id null) or renames one and resolves to '' once saved or else to why it was refused, which the name
-// dialog shows while it stays open.
-const props = defineProps<{ folders: Folder[], counts: { all: number, unsorted: number, byFolder: Map<string, number> }, saveName: (id: string | null, name: string, parentId: string | null) => Promise<string> }>()
+import { canNest, descendantIds, folderPath, refKey, sortedChildren } from '~/utils/folder-tree'
+// counts comes from folderCounts and is not narrowed by the filters, so a folder's number is what it holds. placed maps
+// a refKey to its folder, as useLibrary keeps it. saveName makes a folder (id null) or renames one and resolves to ''
+// once saved or else to why it was refused, which the name dialog shows while it stays open.
+const props = defineProps<{ folders: Folder[], counts: { all: number, unsorted: number, byFolder: Map<string, number> }, placed: Map<string, string>, saveName: (id: string | null, name: string, parentId: string | null) => Promise<string> }>()
 // '' is everything and 'unsorted' what no folder holds; any other value is a folder's id.
 const selected = defineModel<string>('selected', { required: true })
 // Moves and deletions the list asks for, and rows dropped on it; ContentLibrary saves them. A null parentId is the top
@@ -111,15 +111,25 @@ async function move(folder: Folder) {
 }
 
 // Dragging. A spot is a folder's id, 'unsorted', 'all' for すべて, or 'top' for the list's blank space. Rows go into any
-// folder or 未整理. A folder goes where canNest lets it, the top included, but not where it already is, which would
-// change nothing. すべて takes nothing. A spot that takes nothing leaves dragover alone, so the browser shows the drop
-// is refused and never fires it.
+// folder or 未整理, and a folder where canNest lets it, the top included. Neither goes where it already is: a folder
+// that holds every dragged row, 未整理 when they are all unsorted, or a dragged folder's own parent, since a drop there
+// would change nothing. すべて takes nothing. A spot that takes nothing leaves dragover alone, so the browser shows the
+// drop is refused and never fires it.
 const { dragging, start, end } = useLibraryDrag()
 const canDrag = useCanDrag()
 const targets = computed(() => {
   const drag = dragging.value
   if (!drag) return new Set<string>()
-  if (drag.kind === 'items') return new Set(['unsorted', ...props.folders.map(folder => folder.id)])
+  if (drag.kind === 'items') {
+    // A placement in a folder that is not listed counts as unsorted, as in the counts.
+    const known = new Set(props.folders.map(folder => folder.id))
+    const homes = new Set(drag.refs.map(ref => {
+      const folderId = props.placed.get(refKey(ref))
+      return folderId !== undefined && known.has(folderId) ? folderId : 'unsorted'
+    }))
+    const home = homes.size === 1 ? [...homes][0] : undefined
+    return new Set(['unsorted', ...known].filter(spot => spot !== home))
+  }
   const dragged = props.folders.find(folder => folder.id === drag.id)
   if (!dragged) return new Set<string>()
   const into = props.folders.filter(folder => folder.id !== dragged.parentId && canNest(props.folders, dragged.id, folder.id)).map(folder => folder.id)

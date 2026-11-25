@@ -150,7 +150,7 @@ onMounted(() => { void reload() })
     <button v-if="loadError" type="button" class="editor-button" @click="reload()">再試行</button>
     <LoadingSpinner v-if="loading && !loaded" label="問題と記事を読み込み中" />
     <div v-else-if="loaded" class="library-body">
-      <FolderTree v-model:selected="selected" :folders="folders" :counts="treeCounts" :save-name="saveName" @update="updateFolder" @remove="deleteFolder" @place="drop" />
+      <FolderTree v-model:selected="selected" :folders="folders" :counts="treeCounts" :placed="placed" :save-name="saveName" @update="updateFolder" @remove="deleteFolder" @place="drop" />
       <div class="library-content">
         <nav class="library-location" aria-label="今いる場所">
           <span v-if="!selected" aria-current="location">すべて</span>

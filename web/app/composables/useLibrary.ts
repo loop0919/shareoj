@@ -72,88 +72,106 @@ export function useLibrary() {
   // name dialog does: then refused hears it and message stays clear.
   const showRefusal = (text: string) => { message.value = text }
 
-  // The folder is added once the API has made it, so it can be opened or filled right away.
-  async function createFolder(name: string, parentId: string | null, refused = showRefusal): Promise<Folder | undefined> {
+  // Writes run one at a time, in the order they were asked for. Each changes the screen and keeps what to put back only
+  // when its turn comes, so a refused write never undoes a later one and the screen never shows a change the server
+  // did not take. With nothing running, a write starts at once, so the screen moves before the next render. Asking for
+  // a write clears the last message; a refusal said while a later write waits stays until something else clears it.
+  let running: Promise<unknown> | undefined
+  function inTurn<T>(write: () => Promise<T>): Promise<T> {
     message.value = ''
-    try {
-      const folder = folderSchema.parse(await $fetch('/api/my/folders', { method: 'POST', body: { name, parentId } }))
-      folders.value = [...folders.value, folder]
-      return folder
-    } catch (error) {
-      refused(folderError(error))
-      return undefined
-    }
+    const turn = running ? running.then(write) : write()
+    const settled = turn.then(() => undefined, () => undefined)
+    running = settled
+    void settled.then(() => { if (running === settled) running = undefined })
+    return turn
   }
 
-  async function updateFolder(id: string, name: string, parentId: string | null, refused = showRefusal): Promise<boolean> {
-    message.value = ''
-    const before = folders.value.find(folder => folder.id === id)
-    if (!before) return false
-    folders.value = folders.value.map(folder => folder.id === id ? { ...folder, name: name.trim(), parentId } : folder)
-    try {
-      const folder = folderSchema.parse(await $fetch(`/api/my/folders/${id}`, { method: 'PUT', body: { name, parentId } }))
-      folders.value = folders.value.map(item => item.id === id ? folder : item)
-      return true
-    } catch (error) {
-      folders.value = folders.value.map(item => item.id === id ? before : item)
-      refused(folderError(error))
-      return false
-    }
+  // The folder is added once the API has made it, so it can be opened or filled right away.
+  function createFolder(name: string, parentId: string | null, refused = showRefusal): Promise<Folder | undefined> {
+    return inTurn(async () => {
+      try {
+        const folder = folderSchema.parse(await $fetch('/api/my/folders', { method: 'POST', body: { name, parentId } }))
+        folders.value = [...folders.value, folder]
+        return folder
+      } catch (error) {
+        refused(folderError(error))
+        return undefined
+      }
+    })
+  }
+
+  function updateFolder(id: string, name: string, parentId: string | null, refused = showRefusal): Promise<boolean> {
+    return inTurn(async () => {
+      const before = folders.value.find(folder => folder.id === id)
+      if (!before) return false
+      folders.value = folders.value.map(folder => folder.id === id ? { ...folder, name: name.trim(), parentId } : folder)
+      try {
+        const folder = folderSchema.parse(await $fetch(`/api/my/folders/${id}`, { method: 'PUT', body: { name, parentId } }))
+        folders.value = folders.value.map(item => item.id === id ? folder : item)
+        return true
+      } catch (error) {
+        folders.value = folders.value.map(item => item.id === id ? before : item)
+        refused(folderError(error))
+        return false
+      }
+    })
   }
 
   // The folders below go too, and what they held becomes unsorted.
-  async function deleteFolder(id: string): Promise<boolean> {
-    message.value = ''
-    const gone = new Set([id, ...descendantIds(folders.value, id)])
-    const removed = folders.value.filter(folder => gone.has(folder.id))
-    const released = [...placed.value].filter(([, folderId]) => gone.has(folderId))
-    folders.value = folders.value.filter(folder => !gone.has(folder.id))
-    placed.value = new Map([...placed.value].filter(([, folderId]) => !gone.has(folderId)))
-    try {
-      await $fetch(`/api/my/folders/${id}`, { method: 'DELETE' })
-      return true
-    } catch (error) {
-      folders.value = [...folders.value, ...removed]
-      const back = new Map(placed.value)
-      // An item placed again meanwhile keeps its new folder.
-      for (const [key, folderId] of released) if (!back.has(key)) back.set(key, folderId)
-      placed.value = back
-      message.value = folderError(error)
-      return false
-    }
+  function deleteFolder(id: string): Promise<boolean> {
+    return inTurn(async () => {
+      const gone = new Set([id, ...descendantIds(folders.value, id)])
+      const removed = folders.value.filter(folder => gone.has(folder.id))
+      const released = [...placed.value].filter(([, folderId]) => gone.has(folderId))
+      folders.value = folders.value.filter(folder => !gone.has(folder.id))
+      placed.value = new Map([...placed.value].filter(([, folderId]) => !gone.has(folderId)))
+      try {
+        await $fetch(`/api/my/folders/${id}`, { method: 'DELETE' })
+        return true
+      } catch (error) {
+        folders.value = [...folders.value, ...removed]
+        const back = new Map(placed.value)
+        // An item placed again meanwhile keeps its new folder.
+        for (const [key, folderId] of released) if (!back.has(key)) back.set(key, folderId)
+        placed.value = back
+        message.value = folderError(error)
+        return false
+      }
+    })
   }
 
   // A null folderId makes the items unsorted. The API takes maxFolderItems at a time. When a batch after the first
   // fails, the batches before it are saved, so they stay moved on the screen too and the message says how many moved.
-  async function place(refs: FolderRef[], folderId: string | null): Promise<boolean> {
-    message.value = ''
-    const keys = refs.map(refKey)
-    const before = new Map(keys.map(key => [key, placed.value.get(key)]))
-    const moved = new Map(placed.value)
-    for (const key of keys) {
-      if (folderId === null) moved.delete(key)
-      else moved.set(key, folderId)
-    }
-    placed.value = moved
-    for (let start = 0; start < refs.length; start += maxFolderItems) {
-      const items = refs.slice(start, start + maxFolderItems).map(({ kind, id }) => ({ kind, id }))
-      try {
-        await $fetch('/api/my/folder-items', { method: 'PUT', body: { folderId, items } })
-      } catch (error) {
-        const saved = new Set(keys.slice(0, start))
-        const back = new Map(placed.value)
-        for (const key of keys.slice(start)) {
-          if (saved.has(key)) continue
-          const previous = before.get(key)
-          if (previous === undefined) back.delete(key)
-          else back.set(key, previous)
-        }
-        placed.value = back
-        message.value = start === 0 ? folderError(error) : `${refs.length}件中${start}件を移動しました。残りは移動できませんでした。もう一度お試しください。`
-        return false
+  function place(refs: FolderRef[], folderId: string | null): Promise<boolean> {
+    return inTurn(async () => {
+      const keys = refs.map(refKey)
+      const before = new Map(keys.map(key => [key, placed.value.get(key)]))
+      const moved = new Map(placed.value)
+      for (const key of keys) {
+        if (folderId === null) moved.delete(key)
+        else moved.set(key, folderId)
       }
-    }
-    return true
+      placed.value = moved
+      for (let start = 0; start < refs.length; start += maxFolderItems) {
+        const items = refs.slice(start, start + maxFolderItems).map(({ kind, id }) => ({ kind, id }))
+        try {
+          await $fetch('/api/my/folder-items', { method: 'PUT', body: { folderId, items } })
+        } catch (error) {
+          const saved = new Set(keys.slice(0, start))
+          const back = new Map(placed.value)
+          for (const key of keys.slice(start)) {
+            if (saved.has(key)) continue
+            const previous = before.get(key)
+            if (previous === undefined) back.delete(key)
+            else back.set(key, previous)
+          }
+          placed.value = back
+          message.value = start === 0 ? folderError(error) : `${refs.length}件中${start}件を移動しました。残りは移動できませんでした。もう一度お試しください。`
+          return false
+        }
+      }
+      return true
+    })
   }
 
   return { entries, folders, placed, loading, loadError, message, load, createFolder, updateFolder, deleteFolder, place }
