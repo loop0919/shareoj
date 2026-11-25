@@ -52,3 +52,4 @@ Architecture Decision Record（ADR）は、採用した設計だけでなく、�
 | [0041](0041-add-functional-languages.md) | Accepted（2026-11-18に公開） | Common Lisp、F#、Gleam、Fixを加える |
 | [0042](0042-close-staff-views-in-streaming-mode.md) | Accepted（2026-11-26に公開） | 配信モードで、スタッフ向けの画面を既定で閉じる |
 | [0043](0043-withhold-case-results-while-ongoing.md) | Accepted | コンテストと定期便の開催中は、テストケースごとの結果を件数だけにする |
+| [0044](0044-sort-own-content-into-folders.md) | Accepted | マイページの問題と記事を、自分で作るフォルダに分けられるようにする |

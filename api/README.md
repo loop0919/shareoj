@@ -318,7 +318,7 @@ DB接続先のURLや資格情報はエラー応答へ含めない。
 | --- | --- |
 | `GET /auth/me` | 検証済みユーザーのIDを取得 |
 | `GET /my/problems` | 自分の問題を更新日時の降順で50件取得。部分点の問題には`partial`と`fullScore`（満点）を付ける |
-| `GET /my/problems?role=tester` | テスト中の問題を更新日時の降順で50件取得。コンテストのセッターとしてだけ扱える問題には`viaContest`（`id`と`title`）を付ける |
+| `GET /my/problems?role=tester` | テスト中の問題を更新日時の降順で50件取得。作者のユーザーIDを`author`に付ける。コンテストのセッターとしてだけ扱える問題には`viaContest`（`id`と`title`）を付ける |
 | `GET /my/problems/{id}` | 作者またはテスターとして問題の本文と更新番号を取得。コンテストのセッターとして扱える人は`contestEditors`に返す |
 | `PUT /my/problems/{id}` | UUID v4のIDを指定して作成または更新 |
 | `DELETE /my/problems/{id}?version=1` | 指定した更新番号の問題を削除 |
@@ -424,7 +424,7 @@ Lambda用バイナリでは、ビルド時に`CGO_ENABLED=0`と対象アーキ�
 - `DELETE /my/account`：確認として`{"handle":"現在のユーザーID"}`を受け取り、[ADR 0016](../docs/adr/0016-anonymize-deleted-accounts.md)に従ってアカウントを削除し、204を返す。ユーザーIDが違えば`400 confirmation_mismatch`、共同作成者のいない結果確定していない自分のコンテスト（凍結のあるコンテストでは結果の公開まで）があるか、終了していないコンテストに自分の未公開の問題が入っていれば`409 account_has_active_contest`とする。
 - [ADR 0022](../docs/adr/0022-share-contests-among-setters.md)に従い、共同作成者の削除は共同作成者から抜けたものとして扱う。
   オーナーの結果確定していないコンテストと下書きのうち、共同作成者のいるものは、最も早く加わった共同作成者にオーナーを移す。
-- 削除では、公開していない問題・記事・コンテストの下書き、公開済みの問題・記事の未公開の編集内容、お気に入り、自分宛ての通知、残るコンテンツから参照されない画像を消す。公開済みの問題・記事、終了したコンテスト、提出、開始したコンテストの参加登録とチームの所属、難易度の投票、テスターの担当は残す。開始前のコンテストの参加登録とチームの所属は外す（[ADR 0024](../docs/adr/0024-team-and-onsite-participation.md)）。
+- 削除では、公開していない問題・記事・コンテストの下書き、公開済みの問題・記事の未公開の編集内容、お気に入り、マイページのフォルダと振り分け、自分宛ての通知、残るコンテンツから参照されない画像を消す。公開済みの問題・記事、終了したコンテスト、提出、開始したコンテストの参加登録とチームの所属、難易度の投票、テスターの担当は残す。開始前のコンテストの参加登録とチームの所属は外す（[ADR 0024](../docs/adr/0024-team-and-onsite-participation.md)）。
 - プロフィールの行は残し、ユーザーIDを`deleted_`で始まる値に置き換え、アイコンと外部アカウントを消して`deleted_at`を記録する。Cognitoのユーザーは`AdminDeleteUser`で削除し、失敗した場合はDBの変更も取り消す。
 - Cognitoのアクセストークンは期限まで有効なため、削除済みアカウントのトークンはすべての認証付きAPIで`401 account_deleted`とする。
 - `AdminGetUser`と`AdminDeleteUser`は、APIのLambdaロールの権限（`infra/api/main.tf`の`cognito_users`）で呼ぶ。Googleでログインしたトークンには、トークンで呼ぶ操作に必要なスコープがないためである。
@@ -444,6 +444,10 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 - `GET /posts`、`GET /posts/{id}`: 公開された記事の一覧と詳細（認証不要）。
 - `GET /my/posts`、`GET|PUT|DELETE /my/posts/{id}`: 自分の記事の保存・取得・削除。
 - `PUT /my/problems/{id}/publication`、`PUT /my/posts/{id}/publication`: `{ "version": 1, "publish": true }` で現在の保存内容を公開。`false` で非公開に戻す。
+- `GET|POST /my/folders`、`PUT|DELETE /my/folders/{id}`: マイページのフォルダ（[ADR 0044](../docs/adr/0044-sort-own-content-into-folders.md)）。`GET`は自分のフォルダ（`id`、`parentId`、`name`）を`folders`に、振り分け（`kind`、`id`、`folderId`）を`items`に入れて返す。`items`は、自分が作者か`can_manage_problem`で扱える問題と、自分の記事に限る。テスターから外れた問題の振り分けは残すが、外れている間は返さない。`POST`は`{ "name": "...", "parentId": null }`で作って201、`PUT`は`name`と`parentId`の両方で名前と親を変えて200、`DELETE`は下のフォルダごと消して204を返す。消したフォルダの問題と記事は未整理に戻る。
+- フォルダは1人100個、深さ3段、名前は前後の空白を除いて1〜40文字までで、同じ親の下に同じ名前は置けない。上限を超えるか同じ名前があると、それぞれ409 `folder_limit`、`folder_depth`、`folder_name_taken`を返す。自分自身や下のフォルダへの移動は409 `folder_cycle`、自分のものでないフォルダと親は404 `not_found`。`name`がないか、`PUT`で`parentId`がなければ400 `invalid_request`、名前やIDの形が違えば400 `invalid_folder`とする。
+- `PUT /my/folder-items`: `{ "folderId": "...", "items": [{ "kind": "problem", "id": "..." }] }`で、問題と記事を1回100件までフォルダに入れて204を返す。`folderId`が`null`なら未整理に戻す。`kind`は`problem`（自分の問題とテスト中の問題）か`post`。入れるのは`GET`の`items`と同じ範囲の問題と記事だけで、ほかのIDは無視し、存在しないIDと応答を区別しない。`folderId`がない、`items`が0件か101件以上、`kind`かIDの形が違うときは400 `invalid_request`、自分のものでないフォルダは404 `not_found`とする。
+- `PUT /my/folder-view`: `{ "enabled": true }`でマイページのフォルダ表示（ベータ）を切り替え、同じ形で返す。プロフィールの`version`は変えないので、開いたままの設定画面の保存と衝突しない。今の値は`GET /my/profile`の`folderView`で返す。
 
 公開中の問題を保存すると、問題文、解説、採点設定を公開内容とともに更新します。
 公開中・公開予約中の問題と結果確定前のコンテストに入っている問題では、公開条件を満たさない入力を 400 `incomplete_problem` で拒否し、保存済みの内容を保ちます。
