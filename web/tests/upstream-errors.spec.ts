@@ -7,6 +7,7 @@ const cases = [
   { id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f003', name: 'passes a listed code on a 429 without the wait', status: 429, data: { code: 'team_full' } },
   { id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f004', name: 'drops an unknown code and the wait on a 429', status: 429, data: undefined },
   { id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f005', name: 'answers 502 for an unexpected status and keeps a listed code', status: 502, data: { code: 'team_full' } },
+  { id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f006', name: 'passes a listed code on a 409', status: 409, data: { code: 'folder_depth' } },
 ]
 for (const { id, name, status, data } of cases) {
   test(`the web server ${name}`, async ({ request }) => {
