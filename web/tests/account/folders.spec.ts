@@ -80,7 +80,7 @@ test('turning the folder view on lists problems and posts in one table', async (
   await expect(rows(page)).toHaveCount(2)
   await expect(kindCell(row(page, 'フォルダの問題A'))).toHaveText('自分の問題')
   await expect(kindCell(row(page, 'フォルダの記事A'))).toHaveText('記事')
-  await expect(page.getByText('「フォルダを作る」でフォルダを作り、行の「フォルダへ移動」で問題や記事を入れられます。', { exact: true })).toBeVisible()
+  await expect(page.getByText('「フォルダを作る」でフォルダを作り、行をドラッグするか「フォルダへ移動」で問題や記事を入れられます。', { exact: true })).toBeVisible()
   await expect(page.getByRole('main').getByRole('link', { name: '新規問題', exact: true })).toHaveAttribute('href', '/problems/new?fresh=1')
   await expect(page.getByRole('main').getByRole('link', { name: '新規記事', exact: true })).toHaveAttribute('href', '/blog/new')
   await page.reload()
@@ -97,7 +97,7 @@ test('folders count what they hold, and a folder opens into the folders below it
   expect((await page.request.put('/api/my/folder-items', { headers: { origin }, data: { folderId: third, items: [{ kind: 'problem', id: problem }] } })).status()).toBe(204)
   await page.reload()
   await expect(folder(page, 'コンテスト用')).toHaveAccessibleName('コンテスト用 1')
-  await expect(page.getByText('「フォルダを作る」でフォルダを作り、行の「フォルダへ移動」で問題や記事を入れられます。', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('「フォルダを作る」でフォルダを作り、行をドラッグするか「フォルダへ移動」で問題や記事を入れられます。', { exact: true })).toHaveCount(0)
   await expect(folder(page, 'すべて')).toHaveAccessibleName('すべて 2')
   await expect(folder(page, '未整理')).toHaveAccessibleName('未整理 1')
   await folder(page, '未整理').click()
@@ -517,4 +517,187 @@ test('a renamed folder keeps the focus where its new name sorts it', async ({ pa
   // The renamed folder now comes before メモ, and its actions button still has the focus.
   await expect(tree(page).getByRole('button', { name: 'アーカイブの操作', exact: true })).toBeFocused()
   expect(await top('アーカイブ')).toBeLessThan(await top('メモ'))
+})
+
+// The tests below drag rows and folders. They start from what the tests above leave: メモ and アーカイブ, holding 段2,
+// at the top, and the problem, the post and the tested problem in 未整理.
+// A folder list row is marked while something is dragged; the tests read the marks only to see which places are offered.
+const treeRow = (page: Page, name: string) => tree(page).getByRole('listitem').filter({ has: page.getByRole('button', { name: new RegExp(`^${name} \\d+$`) }) })
+
+// Drags from one place and holds it over another without letting go, so the marks can be read; page.mouse.up() drops.
+async function hold(page: Page, from: Locator, over: Locator) {
+  await from.hover()
+  await page.mouse.down()
+  await over.hover()
+}
+
+// What the page puts on each drag it starts, and the text of any image it shows in place of the row.
+type SeenDrags = { starts: { effect: string, text: string }[], images: string[] }
+async function watchDrags(page: Page) {
+  await page.evaluate(() => {
+    const seen: SeenDrags = { starts: [], images: [] }
+    Object.assign(window, { seenDrags: seen })
+    document.addEventListener('dragstart', event => { seen.starts.push({ effect: event.dataTransfer?.effectAllowed ?? '', text: event.dataTransfer?.getData('text/plain') ?? '' }) })
+    const setDragImage = DataTransfer.prototype.setDragImage
+    DataTransfer.prototype.setDragImage = function (image: Element, x: number, y: number) {
+      seen.images.push(image.textContent ?? '')
+      setDragImage.call(this, image, x, y)
+    }
+  })
+}
+const seenDrags = (page: Page) => page.evaluate(() => (window as unknown as { seenDrags: SeenDrags }).seenDrags)
+
+test('a row dragged onto a folder goes into it', async ({ page }) => {
+  await signIn(page)
+  await createFolder(page, '定期便', null)
+  await page.goto('/my?tab=library&folder=unsorted')
+  await expect(rows(page)).toHaveCount(3)
+  await watchDrags(page)
+  await row(page, 'フォルダの記事A').dragTo(folder(page, '定期便'))
+  await expect(row(page, 'フォルダの記事A')).toHaveCount(0)
+  await expect(rows(page)).toHaveCount(2)
+  await expect(folder(page, '定期便')).toHaveAccessibleName('定期便 1')
+  await expect(folder(page, '未整理')).toHaveAccessibleName('未整理 2')
+  // One row shows itself while dragged.
+  expect(await seenDrags(page)).toEqual({ starts: [{ effect: 'move', text: '1件を移動' }], images: [] })
+  await page.reload()
+  await expect(folder(page, '定期便')).toHaveAccessibleName('定期便 1')
+  await expect(rows(page)).toHaveCount(2)
+  await expect(row(page, 'フォルダの記事A')).toHaveCount(0)
+})
+
+test('chosen rows are dragged together', async ({ page }) => {
+  await signIn(page)
+  await expect(folder(page, 'すべて')).toHaveAttribute('aria-current', 'true')
+  const chooseProblem = row(page, 'フォルダの問題A').getByRole('checkbox', { name: 'フォルダの問題Aを選択', exact: true })
+  const chooseTested = row(page, 'フォルダで受けたテストの問題').getByRole('checkbox', { name: 'フォルダで受けたテストの問題を選択', exact: true })
+  await chooseProblem.check()
+  await chooseTested.check()
+  await watchDrags(page)
+  await row(page, 'フォルダで受けたテストの問題').dragTo(folder(page, '定期便'))
+  await expect(folder(page, '定期便')).toHaveAccessibleName('定期便 3')
+  await expect(folder(page, '未整理')).toHaveAccessibleName('未整理 0')
+  // Once moved, the rows are no longer chosen, as after a move from the dialog.
+  await expect(library(page).getByRole('checkbox', { checked: true })).toHaveCount(0)
+  await expect(chosenMove(page)).toHaveCount(0)
+  expect(await seenDrags(page)).toEqual({ starts: [{ effect: 'move', text: '2件を移動' }], images: ['2件を移動'] })
+  // The image's element is on the page only while the browser takes its picture.
+  await expect(page.locator('.library-drag-image')).toHaveCount(0)
+  await page.reload()
+  await expect(folder(page, '定期便')).toHaveAccessibleName('定期便 3')
+  await folder(page, '定期便').click()
+  await expect(rows(page)).toHaveCount(3)
+})
+
+test('a row dragged onto 未整理 leaves its folder', async ({ page }) => {
+  await signIn(page)
+  await folder(page, '定期便').click()
+  await expect(rows(page)).toHaveCount(3)
+  // A row that is not chosen goes alone, and the chosen row stays chosen.
+  const chooseProblem = row(page, 'フォルダの問題A').getByRole('checkbox', { name: 'フォルダの問題Aを選択', exact: true })
+  await chooseProblem.check()
+  await hold(page, row(page, 'フォルダの記事A'), folder(page, '未整理'))
+  // Rows go into any folder or 未整理, never into すべて.
+  await expect(treeRow(page, '未整理')).toContainClass('drop-target drop-over')
+  await expect(treeRow(page, 'メモ')).toContainClass('drop-target')
+  await expect(treeRow(page, 'メモ')).not.toContainClass('drop-over')
+  await expect(treeRow(page, '定期便')).toContainClass('drop-target')
+  await expect(treeRow(page, 'すべて')).not.toContainClass('drop-target')
+  await page.mouse.up()
+  await expect(row(page, 'フォルダの記事A')).toHaveCount(0)
+  await expect(rows(page)).toHaveCount(2)
+  await expect(folder(page, '定期便')).toHaveAccessibleName('定期便 2')
+  await expect(folder(page, '未整理')).toHaveAccessibleName('未整理 1')
+  await expect(chooseProblem).toBeChecked()
+  await expect(chosenMove(page)).toHaveText('選んだ1件をフォルダへ移動')
+  await expect(treeRow(page, '未整理')).not.toContainClass('drop-target')
+  await page.reload()
+  await expect(folder(page, '定期便')).toHaveAccessibleName('定期便 2')
+  await expect(folder(page, '未整理')).toHaveAccessibleName('未整理 1')
+  await expect(row(page, 'フォルダの記事A')).toHaveCount(0)
+})
+
+test('a folder dragged onto another goes inside it, but not where it would be too deep', async ({ page }) => {
+  await signIn(page)
+  const left = async (name: string) => (await folder(page, name).boundingBox())!.x
+  await watchDrags(page)
+  await folder(page, '定期便').dragTo(folder(page, 'メモ'))
+  await expect(folder(page, 'メモ')).toHaveAccessibleName('メモ 2')
+  // メモ opens to show where it went.
+  await expect(folder(page, '定期便')).toBeVisible()
+  expect(await left('定期便')).toBeGreaterThan(await left('メモ'))
+  expect(await seenDrags(page)).toEqual({ starts: [{ effect: 'move', text: '定期便' }], images: [] })
+  await page.reload()
+  await expect(folder(page, 'メモ')).toHaveAccessibleName('メモ 2')
+  await tree(page).getByRole('button', { name: 'メモの中のフォルダ', exact: true }).click()
+  await tree(page).getByRole('button', { name: 'アーカイブの中のフォルダ', exact: true }).click()
+  expect(await left('定期便')).toBe(await left('段2'))
+  // メモ now takes two levels: it fits in アーカイブ but not in 段2, the second level, nor in itself or the folder below it.
+  await hold(page, folder(page, 'メモ'), folder(page, '段2'))
+  await expect(treeRow(page, 'アーカイブ')).toContainClass('drop-target')
+  await expect(treeRow(page, '段2')).not.toContainClass('drop-target')
+  await expect(treeRow(page, '段2')).not.toContainClass('drop-over')
+  await expect(treeRow(page, 'メモ')).not.toContainClass('drop-target')
+  await expect(treeRow(page, '定期便')).not.toContainClass('drop-target')
+  await expect(treeRow(page, '未整理')).not.toContainClass('drop-target')
+  await expect(treeRow(page, 'すべて')).not.toContainClass('drop-target')
+  await page.mouse.up()
+  await expect(treeRow(page, 'アーカイブ')).not.toContainClass('drop-target')
+  await expect(folder(page, '段2')).toHaveAccessibleName('段2 0')
+  await expect(folder(page, 'メモ')).toHaveAccessibleName('メモ 2')
+  expect(await left('メモ')).toBe(await left('アーカイブ'))
+  // Dropped on the folder list's blank space, below its button, a folder goes to the top.
+  await createButton(page).evaluate(button => button.scrollIntoView({ block: 'center' }))
+  await folder(page, '定期便').hover()
+  const button = (await createButton(page).boundingBox())!
+  await page.mouse.down()
+  await page.mouse.move(button.x + 8, button.y + button.height + 16)
+  // The mark is on the list around the navigation. メモ, where the folder is, is not offered, as it would change nothing.
+  await expect(tree(page).locator('..')).toContainClass('drop-over')
+  await expect(treeRow(page, 'アーカイブ')).toContainClass('drop-target')
+  await expect(treeRow(page, 'メモ')).not.toContainClass('drop-target')
+  await page.mouse.up()
+  await expect(folder(page, 'メモ')).toHaveAccessibleName('メモ 0')
+  expect(await left('定期便')).toBe(await left('メモ'))
+  await page.reload()
+  await expect(folder(page, 'メモ')).toHaveAccessibleName('メモ 0')
+  await expect(folder(page, '定期便')).toHaveAccessibleName('定期便 2')
+  expect(await left('定期便')).toBe(await left('メモ'))
+  await expect(tree(page).getByRole('button', { name: 'メモの中のフォルダ', exact: true })).toHaveCount(0)
+})
+
+test('a drop the API refuses leaves the rows where they were', async ({ page }) => {
+  await signIn(page)
+  await folder(page, '定期便').click()
+  await expect(rows(page)).toHaveCount(2)
+  const chooseProblem = row(page, 'フォルダの問題A').getByRole('checkbox', { name: 'フォルダの問題Aを選択', exact: true })
+  const chooseTested = row(page, 'フォルダで受けたテストの問題').getByRole('checkbox', { name: 'フォルダで受けたテストの問題を選択', exact: true })
+  await chooseProblem.check()
+  await chooseTested.check()
+  await page.route('**/api/my/folder-items', route => route.fulfill({ status: 503 }))
+  await row(page, 'フォルダの問題A').dragTo(folder(page, 'メモ'))
+  await expect(page.getByRole('alert')).toHaveText('保存できませんでした。もう一度お試しください。何も変わっていません。')
+  // Both come back, still chosen.
+  await expect(rows(page)).toHaveCount(2)
+  await expect(chooseProblem).toBeChecked()
+  await expect(chooseTested).toBeChecked()
+  await expect(folder(page, '定期便')).toHaveAccessibleName('定期便 2')
+  await expect(folder(page, 'メモ')).toHaveAccessibleName('メモ 0')
+  await page.unroute('**/api/my/folder-items')
+  await page.reload()
+  await expect(folder(page, '定期便')).toHaveAttribute('aria-current', 'true')
+  await expect(rows(page)).toHaveCount(2)
+  await expect(folder(page, '定期便')).toHaveAccessibleName('定期便 2')
+  await expect(folder(page, 'メモ')).toHaveAccessibleName('メモ 0')
+})
+
+test('a narrow screen drags neither rows nor folders', async ({ page }) => {
+  await signIn(page)
+  await expect(row(page, 'フォルダの記事A')).toHaveAttribute('draggable', 'true')
+  await expect(treeRow(page, 'メモ')).toHaveAttribute('draggable', 'true')
+  await page.setViewportSize({ width: 600, height: 900 })
+  await expect(row(page, 'フォルダの記事A')).not.toHaveAttribute('draggable')
+  await expect(treeRow(page, 'メモ')).not.toHaveAttribute('draggable')
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await expect(row(page, 'フォルダの記事A')).toHaveAttribute('draggable', 'true')
 })

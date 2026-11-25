@@ -90,7 +90,16 @@ async function move(refs: FolderRef[]) {
   const index = visible.value.indexOf(first)
   const folderId = await picker.value?.open(places.size === 1 ? [...places][0] : undefined)
   if (folderId === undefined) return
-  // Moved rows leave the open folder at once and so the selection too; a refusal brings them back still chosen.
+  await moveTo(refs, folderId, trigger, index)
+}
+// Rows dropped on the folder list need no picker; the focus stays where it was unless a moved row took it along.
+function drop(refs: FolderRef[], folderId: string | null) {
+  const keys = new Set(refs.map(refKey))
+  void moveTo(refs, folderId, document.activeElement, Math.max(0, visible.value.findIndex(entry => keys.has(entry.key))))
+}
+// Moved rows leave the open folder at once and so the selection too; a refusal brings them back still chosen.
+async function moveTo(refs: FolderRef[], folderId: string | null, trigger: Element | null, index: number) {
+  const keys = refs.map(refKey)
   const before = chosen.value
   const moving = place(refs, folderId)
   await keepFocus(trigger, index)
@@ -141,7 +150,7 @@ onMounted(() => { void reload() })
     <button v-if="loadError" type="button" class="editor-button" @click="reload()">再試行</button>
     <LoadingSpinner v-if="loading && !loaded" label="問題と記事を読み込み中" />
     <div v-else-if="loaded" class="library-body">
-      <FolderTree v-model:selected="selected" :folders="folders" :counts="treeCounts" :save-name="saveName" @update="updateFolder" @remove="deleteFolder" />
+      <FolderTree v-model:selected="selected" :folders="folders" :counts="treeCounts" :save-name="saveName" @update="updateFolder" @remove="deleteFolder" @place="drop" />
       <div class="library-content">
         <nav class="library-location" aria-label="今いる場所">
           <span v-if="!selected" aria-current="location">すべて</span>

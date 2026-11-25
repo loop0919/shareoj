@@ -4,6 +4,9 @@
 .library-body { display: grid; gap: 24px; align-items: start; }
 @media (min-width: 40rem) {
   .library-body { grid-template-columns: 15rem minmax(0, 1fr); gap: 32px; }
+  /* The list reaches down beside the table and keeps a strip below its button, so a folder has room to be dropped at
+   * the top. */
+  .folder-tree { align-self: stretch; padding-bottom: 32px; }
 }
 .library-content { min-width: 0; }
 
@@ -40,6 +43,11 @@ span.folder-tree-menu-button { cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   .folder-tree-toggle svg { transition: none; }
 }
+/* While something is dragged, the folders and 未整理 that would take it get a dashed outline, and the one under the
+ * pointer fills. A folder held over the list's blank space outlines the whole list. */
+.folder-tree-row.drop-target .folder-tree-item { outline: 1px dashed var(--color-accent); outline-offset: -1px; }
+.folder-tree-row.drop-over .folder-tree-item { background: var(--color-accent-soft); outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.folder-tree.drop-over { outline: 2px dashed var(--color-accent); outline-offset: 4px; border-radius: 6px; }
 
 /* Where the list is, with the folders above the open one to go back to. */
 .library-location { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 36px; margin-bottom: 16px; font-weight: 600; overflow-wrap: anywhere; }
@@ -63,6 +71,10 @@ span.folder-tree-menu-button { cursor: default; }
 .library-selection .editor-button { min-height: 40px; padding-inline: 16px; font-size: .875rem; }
 .library-actions { display: flex; align-items: center; gap: 8px; }
 .library-move { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; }
+/* A row can be taken onto the folder list. More than one shows this badge by the pointer instead of the row; it is on
+ * the page only for the moment the browser takes its picture. */
+.library-table tbody tr[draggable="true"] { cursor: grab; }
+.library-drag-image { position: fixed; z-index: 1000; pointer-events: none; padding: 6px 12px; border-radius: 6px; background: var(--color-accent); color: var(--color-paper); font-size: .875rem; font-weight: 600; white-space: nowrap; }
 
 /* Dialogs: a folder's name, and where something goes. */
 .folder-name-form { display: grid; gap: 6px; margin-top: 16px; }

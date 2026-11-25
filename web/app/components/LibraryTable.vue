@@ -25,6 +25,15 @@ function release() {
   allBox.value?.focus()
 }
 
+// A chosen row carries every chosen row onto the folder list; any other row carries itself alone. A link inside a row
+// drags its address as usual.
+const { start, end } = useLibraryDrag()
+const canDrag = useCanDrag()
+function grab(entry: LibraryEntry, event: DragEvent) {
+  if (event.target !== event.currentTarget) return
+  start({ kind: 'items', refs: selected.value.has(entry.key) ? chosen.value.map(item => item.ref) : [entry.ref] }, event)
+}
+
 // When a moved row leaves the table, the row that takes its place, or else the last, gets the focus.
 const scroll = ref<HTMLElement>()
 function focusMove(index: number) {
@@ -51,7 +60,7 @@ defineExpose({ focusMove })
           <th scope="row"><button type="button" class="library-folder-open" @click="emit('open', folder.id)">{{ folder.name }}</button></th>
           <td /><td /><td /><td />
         </tr>
-        <tr v-for="entry in entries" :key="entry.key">
+        <tr v-for="entry in entries" :key="entry.key" :draggable="canDrag ? 'true' : undefined" @dragstart="grab(entry, $event)" @dragend="end()">
           <td class="select-cell"><input type="checkbox" :checked="selected.has(entry.key)" :aria-label="`${entryTitle(entry)}を選択`" @change="choose(entry.key, ($event.target as HTMLInputElement).checked)"></td>
           <td class="lead-cell">{{ kindLabels[entry.kind] }}</td>
           <template v-if="entry.problem">

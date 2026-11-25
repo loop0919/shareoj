@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Folder } from '~~/shared/types/folders'
+import type { Folder, FolderRef } from '~~/shared/types/folders'
 import { vDialogDismiss } from '~/utils/dialog-dismiss'
 import { canNest, descendantIds, folderPath, sortedChildren } from '~/utils/folder-tree'
 // counts comes from folderCounts and is not narrowed by the filters, so a folder's number is what it holds. saveName
@@ -8,8 +8,9 @@ import { canNest, descendantIds, folderPath, sortedChildren } from '~/utils/fold
 const props = defineProps<{ folders: Folder[], counts: { all: number, unsorted: number, byFolder: Map<string, number> }, saveName: (id: string | null, name: string, parentId: string | null) => Promise<string> }>()
 // '' is everything and 'unsorted' what no folder holds; any other value is a folder's id.
 const selected = defineModel<string>('selected', { required: true })
-// Moves and deletions the list asks for; ContentLibrary saves them. A null parentId is the top.
-const emit = defineEmits<{ update: [id: string, name: string, parentId: string | null], remove: [id: string] }>()
+// Moves and deletions the list asks for, and rows dropped on it; ContentLibrary saves them. A null parentId is the top
+// and a null folderId 未整理.
+const emit = defineEmits<{ update: [id: string, name: string, parentId: string | null], remove: [id: string], place: [refs: FolderRef[], folderId: string | null] }>()
 const root = ref<HTMLElement>()
 
 // The folders opened by hand. The open folder and those above it open too, so the selection stays in sight.
@@ -109,6 +110,60 @@ async function move(folder: Folder) {
   await keepFocus(current.id)
 }
 
+// Dragging. A spot is a folder's id, 'unsorted', 'all' for すべて, or 'top' for the list's blank space. Rows go into any
+// folder or 未整理. A folder goes where canNest lets it, the top included, but not where it already is, which would
+// change nothing. すべて takes nothing. A spot that takes nothing leaves dragover alone, so the browser shows the drop
+// is refused and never fires it.
+const { dragging, start, end } = useLibraryDrag()
+const canDrag = useCanDrag()
+const targets = computed(() => {
+  const drag = dragging.value
+  if (!drag) return new Set<string>()
+  if (drag.kind === 'items') return new Set(['unsorted', ...props.folders.map(folder => folder.id)])
+  const dragged = props.folders.find(folder => folder.id === drag.id)
+  if (!dragged) return new Set<string>()
+  const into = props.folders.filter(folder => folder.id !== dragged.parentId && canNest(props.folders, dragged.id, folder.id)).map(folder => folder.id)
+  return new Set(dragged.parentId === null ? into : ['top', ...into])
+})
+// The spot under the pointer. A row's drag events stop at the row, so the list itself hears only its blank space.
+const hovered = ref('')
+watch(dragging, drag => { if (!drag) hovered.value = '' })
+const spotClass = (spot: string) => ({ 'drop-target': targets.value.has(spot), 'drop-over': hovered.value === spot })
+function grab(folder: Folder, event: DragEvent) {
+  if (event.target !== event.currentTarget) return
+  closeMenu()
+  start({ kind: 'folder', id: folder.id }, event, folder.name)
+}
+function dragOver(spot: string, event: DragEvent) {
+  event.stopPropagation()
+  if (!targets.value.has(spot)) {
+    hovered.value = ''
+    return
+  }
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  hovered.value = spot
+}
+function dragLeave(event: DragEvent) {
+  if (!(event.relatedTarget instanceof Node && root.value?.contains(event.relatedTarget))) hovered.value = ''
+}
+// ContentLibrary saves a drop as it saves a move from the dialogs: the screen moves first and comes back if the API
+// refuses.
+function drop(spot: string, event: DragEvent) {
+  event.stopPropagation()
+  const drag = dragging.value
+  if (!drag || !targets.value.has(spot)) return
+  event.preventDefault()
+  end()
+  const folderId = spot === 'unsorted' || spot === 'top' ? null : spot
+  if (drag.kind === 'items') {
+    emit('place', drag.refs, folderId)
+    return
+  }
+  const folder = props.folders.find(item => item.id === drag.id)
+  if (folder) emit('update', folder.id, folder.name, folderId)
+}
+
 // The confirmation says how many folders go with it and how many problems and posts it gives back to 未整理.
 const removeId = useId()
 const removeDialog = ref<HTMLDialogElement>()
@@ -143,15 +198,15 @@ function removeClosed() {
 </script>
 
 <template>
-  <div ref="root" class="folder-tree">
+  <div ref="root" class="folder-tree" :class="{ 'drop-over': hovered === 'top' }" @dragenter="dragOver('top', $event)" @dragover="dragOver('top', $event)" @dragleave="dragLeave" @drop="drop('top', $event)">
     <nav aria-label="フォルダ">
       <ul class="folder-tree-list">
-        <li class="folder-tree-row">
+        <li class="folder-tree-row" @dragenter="dragOver('all', $event)" @dragover="dragOver('all', $event)">
           <span class="folder-tree-toggle" />
           <button type="button" class="folder-tree-item" :aria-current="selected === '' ? 'true' : undefined" @click="selected = ''"><span class="folder-tree-name">すべて</span><span class="folder-tree-count">{{ counts.all }}</span></button>
           <span class="folder-tree-menu-button" />
         </li>
-        <li v-for="row in rows" :key="row.folder.id" class="folder-tree-row" :style="{ '--folder-depth': row.depth }">
+        <li v-for="row in rows" :key="row.folder.id" class="folder-tree-row" :class="spotClass(row.folder.id)" :style="{ '--folder-depth': row.depth }" :draggable="canDrag ? 'true' : undefined" @dragstart="grab(row.folder, $event)" @dragend="end()" @dragenter="dragOver(row.folder.id, $event)" @dragover="dragOver(row.folder.id, $event)" @drop="drop(row.folder.id, $event)">
           <button v-if="row.parent" type="button" class="folder-tree-toggle" :aria-expanded="row.open" :aria-label="`${row.folder.name}の中のフォルダ`" @click="toggle(row.folder.id)">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
           </button>
@@ -168,14 +223,14 @@ function removeClosed() {
             </span>
           </span>
         </li>
-        <li class="folder-tree-row">
+        <li class="folder-tree-row" :class="spotClass('unsorted')" @dragenter="dragOver('unsorted', $event)" @dragover="dragOver('unsorted', $event)" @drop="drop('unsorted', $event)">
           <span class="folder-tree-toggle" />
           <button type="button" class="folder-tree-item" :aria-current="selected === 'unsorted' ? 'true' : undefined" @click="selected = 'unsorted'"><span class="folder-tree-name">未整理</span><span class="folder-tree-count">{{ counts.unsorted }}</span></button>
           <span class="folder-tree-menu-button" />
         </li>
       </ul>
     </nav>
-    <p v-if="!folders.length" class="folder-tree-hint">「フォルダを作る」でフォルダを作り、行の「フォルダへ移動」で問題や記事を入れられます。</p>
+    <p v-if="!folders.length" class="folder-tree-hint">「フォルダを作る」でフォルダを作り、行をドラッグするか「フォルダへ移動」で問題や記事を入れられます。</p>
     <button type="button" class="editor-button folder-tree-create" :disabled="!canCreate" :title="canCreate ? undefined : depthReason" :aria-describedby="canCreate ? undefined : reasonId" @click="create()">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>フォルダを作る
     </button>
