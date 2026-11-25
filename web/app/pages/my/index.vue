@@ -23,7 +23,8 @@ const statusFilter = computed({
 const tabStatus = (tab: string) => activeContent.value === tab ? statusFilter.value : ''
 const joined = computed(() => profile.value ? new Date(profile.value.createdAt).toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', timeZone: 'Asia/Tokyo' }) : '')
 
-// The switch moves at once and the view follows once the API has saved it; a failed save puts the switch back.
+// The switch moves at once and the view follows once the API has saved it; a failed save puts the switch back. While
+// the save runs the switch is busy, not disabled, so a keyboard user keeps the focus on it.
 const switchOn = ref(false)
 watch(folderView, on => { switchOn.value = on }, { immediate: true })
 const switching = ref(false)
@@ -53,7 +54,7 @@ async function switchFolderView(enabled: boolean) {
     </header>
     <ProfileAccounts :accounts="profile.accounts" />
     <div class="folder-view-switch">
-      <InlineSwitch :model-value="switchOn" :describedby="switchNote" :disabled="switching" @update:model-value="switchFolderView">フォルダ表示（ベータ）</InlineSwitch>
+      <InlineSwitch :model-value="switchOn" :describedby="switchNote" :busy="switching" @update:model-value="switchFolderView">フォルダ表示（ベータ）</InlineSwitch>
       <p class="muted"><span :id="switchNote">自分の問題、テスト中の問題、記事を1つの一覧にまとめ、フォルダに分けて整理できます。</span><a href="https://github.com/loop0919/shareoj/issues/new?template=feature_request.yml" target="_blank" rel="noopener noreferrer">意見を送る ↗</a></p>
       <p v-if="switchMessage" role="alert" class="editor-error">{{ switchMessage }}</p>
     </div>

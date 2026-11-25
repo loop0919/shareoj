@@ -253,9 +253,11 @@ func split(refs []Ref) (problemIDs, postIDs []string, ok bool) {
 }
 
 // lock takes the owner's profile row, so that the owner's writes run one at a time: nothing else of the owner's
-// changes between counting the folders and writing.
+// changes between counting the folders and writing. FOR NO KEY UPDATE serializes these writes as FOR UPDATE would,
+// but does not conflict with the FOR KEY SHARE lock that a foreign key check takes, so the owner's inserts elsewhere
+// that reference user_profiles do not wait for a folder write.
 func lock(ctx context.Context, tx pgx.Tx, owner string) error {
-	err := tx.QueryRow(ctx, `SELECT 1 FROM user_profiles WHERE owner_id=$1 AND deleted_at IS NULL FOR UPDATE`, owner).Scan(new(int))
+	err := tx.QueryRow(ctx, `SELECT 1 FROM user_profiles WHERE owner_id=$1 AND deleted_at IS NULL FOR NO KEY UPDATE`, owner).Scan(new(int))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}

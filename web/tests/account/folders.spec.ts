@@ -224,8 +224,27 @@ test('turning the folder view off brings the old tabs back, and the folders stay
   await page.goto('/my?tab=library')
   await expect(page.getByRole('button', { name: '自分の問題', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByRole('table', { name: '自分の問題', exact: true }).getByText('フォルダの問題A')).toBeVisible()
-  await toggleView(page)
+  // The switch keeps the focus while its change is saved, and ignores presses until the save ends.
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  let saves = 0
+  await page.route('**/api/my/folder-view', async route => { saves++; await held; await route.continue() })
+  await viewSwitch(page).focus()
+  await page.keyboard.press('Space')
+  await expect(viewSwitch(page)).toBeChecked()
+  await expect(viewSwitch(page)).toBeFocused()
+  await expect(viewSwitch(page)).toHaveAttribute('aria-busy', 'true')
+  await page.keyboard.press('Space')
+  await expect(viewSwitch(page)).toBeChecked()
+  const saved = page.waitForResponse(response => response.url().endsWith('/api/my/folder-view') && response.ok())
+  release()
+  await saved
   await expect(tabs(page)).toHaveText(['問題と記事', 'コンテスト', '通知'])
+  await expect(viewSwitch(page)).not.toHaveAttribute('aria-busy')
+  await expect(viewSwitch(page)).toBeChecked()
+  await expect(viewSwitch(page)).toBeFocused()
+  expect(saves).toBe(1)
+  await page.unroute('**/api/my/folder-view')
   await folder(page, 'コンテスト用').click()
   await folder(page, '第3回').click()
   await expect(folder(page, '第3回')).toHaveAccessibleName('第3回 1')

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"fmt"
 	"maps"
 	"net/http"
@@ -239,6 +240,41 @@ func TestFolderItemsPostgres(t *testing.T) {
 	}
 	expect("alice", item{"problem", p1, fa2.ID})
 
+	// Sorting leaves the problem and the post alone: placing them, moving them, unsorting them and deleting the folder
+	// that holds them change neither their edit time nor their version.
+	content := func() string {
+		t.Helper()
+		var s string
+		if err := f.store.Pool().QueryRow(f.ctx, `SELECT format('%s %s %s %s',d.updated_at,d.version,p.updated_at,p.version)
+ FROM problem_drafts d, blog_posts p WHERE d.id=$1 AND p.id=$2`, p1, post1).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	var fc folders.Folder
+	f.decode(f.request("POST", "/my/folders", "alice", map[string]any{"name": "消す用", "parentId": nil}, 201), &fc)
+	before := content()
+	both := []map[string]string{problem(p1), article(post1)}
+	for _, step := range []struct {
+		name         string
+		method, path string
+		body         any
+		want         int
+	}{
+		{"placing", "PUT", path, place(fa.ID, both...), 204},
+		{"moving", "PUT", path, place(fc.ID, both...), 204},
+		{"unsorting", "PUT", path, place(nil, both...), 204},
+		{"placing again", "PUT", path, place(fc.ID, both...), 204},
+		{"deleting their folder", "DELETE", "/my/folders/" + fc.ID, nil, 204},
+	} {
+		f.request(step.method, step.path, "alice", step.body, step.want)
+		if after := content(); after != before {
+			t.Fatalf("problem and post after %s: %s, before %s", step.name, after, before)
+		}
+	}
+	expect("alice")
+	f.request("PUT", path, "alice", place(fa2.ID, problem(p1)), 204)
+
 	// Nothing tells alice a problem she cannot open, a post of bob's and an id of nothing apart: each answers the same,
 	// into a folder or out of one, and writes nothing.
 	var first *httptest.ResponseRecorder
@@ -259,6 +295,18 @@ func TestFolderItemsPostgres(t *testing.T) {
 		t.Fatalf("placements after ids alice cannot sort: %d", n)
 	}
 	expect("alice", item{"problem", p1, fa2.ID})
+	// Nor does a batch that mixes them with what she may sort: it answers byte for byte like a batch of two she may
+	// sort, places the one and writes nothing for bob's problem.
+	sortable := f.do(f.newRequest("PUT", path, "alice", place(fa.ID, problem(p1), article(post1))))
+	mixed := f.do(f.newRequest("PUT", path, "alice", place(fa2.ID, problem(p1), problem(p2))))
+	if mixed.Code != 204 || mixed.Body.Len() != 0 || mixed.Code != sortable.Code || !bytes.Equal(mixed.Body.Bytes(), sortable.Body.Bytes()) || !maps.EqualFunc(mixed.Header(), sortable.Header(), slices.Equal) {
+		t.Fatalf("mixed batch: %d %q %v, sortable batch: %d %q %v", mixed.Code, mixed.Body.String(), mixed.Header(), sortable.Code, sortable.Body.String(), sortable.Header())
+	}
+	if n := f.count(`SELECT count(*) FROM problem_folder_items WHERE problem_id=$1`, p2); n != 0 {
+		t.Fatalf("placements of bob's problem after the mixed batch: %d", n)
+	}
+	expect("alice", item{"problem", p1, fa2.ID}, item{"post", post1, fa.ID})
+	f.request("PUT", path, "alice", place(nil, article(post1)), 204)
 
 	// A folder of someone else is not there.
 	f.fail("PUT", path, "alice", place(fb.ID, problem(p1)), 404, "not_found")
