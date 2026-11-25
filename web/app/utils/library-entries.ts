@@ -11,6 +11,9 @@ export type LibraryStatus = 'preparing' | 'applying' | 'scheduled' | 'published'
 // One row of the folder view: an own problem, a tested problem or a post, with the list item it came from.
 export type LibraryEntry = { key: string, ref: FolderRef, kind: LibraryKind, title: string, updatedAt: string, status: LibraryStatus, problem?: AccountSummary, post?: PostSummary }
 
+// The title a row shows and names its buttons by.
+export const entryTitle = (entry: LibraryEntry) => entry.title.trim() || (entry.post ? '無題の記事' : '無題の問題')
+
 export const libraryKinds = [{ key: 'own', label: '自分の問題' }, { key: 'testing', label: 'テスト中' }, { key: 'post', label: '記事' }] as const
 // The labels the 状態 column shows, so the filter reads the same for authors and testers.
 export const problemStatusOptions = [

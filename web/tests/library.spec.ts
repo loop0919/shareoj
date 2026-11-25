@@ -66,6 +66,8 @@ test('a later batch that fails keeps what was saved and says how many moved', as
 
 test('a refused write leaves the loaded list loaded, and a failed load is not a write message', async () => {
   const library = useLibrary()
+  // Loading from the start, so the first frame shows the spinner rather than nothing.
+  expect(library.loading.value).toBe(true)
   const lists = (call: Call) => call.url === '/api/my/folders' ? { folders: [], items: [] } : { items: [], nextCursor: '' }
   answer(lists, lists, lists, lists)
   await library.load()

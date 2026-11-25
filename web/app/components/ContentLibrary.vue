@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { folderCounts, folderPath, sortedChildren } from '~/utils/folder-tree'
-import { libraryKinds, problemStatusGroup, problemStatusOptions, type LibraryEntry, type LibraryKind } from '~/utils/library-entries'
+import type { FolderRef } from '~~/shared/types/folders'
+import { folderCounts, folderPath, refKey, sortedChildren } from '~/utils/folder-tree'
+import { entryTitle, libraryKinds, problemStatusGroup, problemStatusOptions, type LibraryEntry, type LibraryKind } from '~/utils/library-entries'
 const route = useRoute()
 const router = useRouter()
-const { entries, folders, placed, loading, loadError, message, load } = useLibrary()
+const { entries, folders, placed, loading, loadError, message, load, createFolder, updateFolder, deleteFolder, place } = useLibrary()
 
 // The URL holds the open folder, kind and status, so a reload or the back button shows the same list. A value this
 // page does not know counts as absent. The old tabs' URLs still land here, narrowed to their kind.
@@ -24,11 +25,16 @@ const kindQuery = computed({
   set: kind => { show({ kind }) },
 })
 const statusQuery = computed({ get: () => queryValue('status'), set: status => { show({ status }) } })
-// Writes what is shown, so that leaving an old tab's URL keeps its kind and drops what was not understood.
+// Writes what is shown, so that leaving an old tab's URL keeps its kind and drops what was not understood. Another
+// folder or filter starts afresh, so a failed write's message goes; the back and forward buttons do the same.
 function show(changes: { folder?: string, kind?: string, status?: string }) {
+  message.value = ''
   const next = { folder: selected.value, kind: kindFilter.value, status: statusFilter.value, ...changes }
   void router.replace({ query: { ...route.query, tab: 'library', folder: next.folder || undefined, kind: next.kind || undefined, status: next.status || undefined } })
 }
+const forget = () => { message.value = '' }
+onMounted(() => window.addEventListener('popstate', forget))
+onBeforeUnmount(() => window.removeEventListener('popstate', forget))
 
 // The open folder holds only what was put in it directly; its own folders lead the table instead.
 const inFolder = computed(() => {
@@ -57,6 +63,48 @@ const emptyTitle = computed(() => {
   return selected.value === 'unsorted' ? '未整理の問題と記事はありません。' : 'このフォルダは空です。'
 })
 
+// The chosen rows, as refKeys. A row the folder or the filters no longer show is let go, so a move takes only rows in
+// sight.
+const chosen = ref(new Set<string>())
+watch(visible, list => {
+  const shown = new Set(list.map(entry => entry.key))
+  if ([...chosen.value].some(key => !shown.has(key))) chosen.value = new Set([...chosen.value].filter(key => shown.has(key)))
+})
+
+// Problems and posts go where the picker says. It starts on their folder when they share one.
+const root = ref<HTMLElement>()
+const table = ref<{ focusMove: (index: number) => boolean }>()
+const picker = ref<{ open: (current?: string | null) => Promise<string | null | undefined> }>()
+const pickerTitle = ref('')
+const folderOf = (key: string) => {
+  const folderId = placed.value.get(key)
+  return folderId !== undefined && folders.value.some(folder => folder.id === folderId) ? folderId : null
+}
+async function move(refs: FolderRef[]) {
+  const keys = refs.map(refKey)
+  const first = visible.value.find(entry => entry.key === keys[0])
+  if (!first) return
+  pickerTitle.value = refs.length === 1 ? `「${entryTitle(first)}」をフォルダへ移動` : `選んだ${refs.length}件をフォルダへ移動`
+  const places = new Set(keys.map(folderOf))
+  const trigger = document.activeElement
+  const index = visible.value.indexOf(first)
+  const folderId = await picker.value?.open(places.size === 1 ? [...places][0] : undefined)
+  if (folderId === undefined) return
+  const moving = place(refs, folderId)
+  await keepFocus(trigger, index)
+  if (!await moving) return
+  const moved = new Set(keys)
+  chosen.value = new Set([...chosen.value].filter(key => !moved.has(key)))
+  await keepFocus(trigger, index)
+}
+// A row that moved out of the open folder takes its button with it, and so does the selection bar once the selection
+// is let go. The row now in its place, or else the open folder in the list, gets the focus, unless it went elsewhere.
+async function keepFocus(trigger: Element | null, index: number) {
+  await nextTick()
+  if (!trigger || trigger.isConnected || (document.activeElement && document.activeElement !== document.body)) return
+  if (!table.value?.focusMove(index)) root.value?.querySelector<HTMLElement>('.folder-tree-item[aria-current="true"]')?.focus()
+}
+
 // The tree waits for every list, since counts made from part of them would be too small. Once shown, the list stays;
 // a refused write only sets message.
 const loaded = ref(false)
@@ -68,7 +116,7 @@ onMounted(() => { void reload() })
 </script>
 
 <template>
-  <section class="draft-library library">
+  <section ref="root" class="draft-library library">
     <header class="draft-library-heading library-heading">
       <h2>問題と記事</h2>
       <NuxtLink class="editor-button primary" to="/problems/new?fresh=1">新規問題</NuxtLink>
@@ -78,7 +126,7 @@ onMounted(() => { void reload() })
     <button v-if="loadError" type="button" class="editor-button" @click="reload()">再試行</button>
     <LoadingSpinner v-if="loading && !loaded" label="問題と記事を読み込み中" />
     <div v-else-if="loaded" class="library-body">
-      <FolderTree v-model:selected="selected" :folders="folders" :counts="treeCounts" />
+      <FolderTree v-model:selected="selected" :folders="folders" :counts="treeCounts" @create="createFolder" @update="updateFolder" @remove="deleteFolder" />
       <div class="library-content">
         <nav class="library-location" aria-label="今いる場所">
           <span v-if="!selected" aria-current="location">すべて</span>
@@ -96,10 +144,11 @@ onMounted(() => { void reload() })
           <StatusFilter v-model="kindFilter" :options="libraryKinds" :counts="kindCounts" label="種類で絞り込む" />
           <StatusFilter v-model="statusFilter" :options="problemStatusOptions" :counts="statusCounts" />
         </div>
-        <LibraryTable v-if="subfolders.length || visible.length" :entries="visible" :subfolders="subfolders" @open="selected = $event" />
+        <LibraryTable v-if="subfolders.length || visible.length" ref="table" v-model:selected="chosen" :entries="visible" :subfolders="subfolders" @open="selected = $event" @move="move" />
         <EmptyState v-if="emptyTitle && inFolder.length" kind="problem" :title="emptyTitle"><button type="button" class="editor-button" @click="show({ kind: '', status: '' })">すべて表示</button></EmptyState>
         <EmptyState v-else-if="emptyTitle" kind="problem" :title="emptyTitle" :description="selected ? undefined : '「新規問題」「新規記事」から作成すると、ここに表示されます。'" />
       </div>
+      <FolderPicker ref="picker" :folders="folders" :title="pickerTitle" />
     </div>
   </section>
 </template>

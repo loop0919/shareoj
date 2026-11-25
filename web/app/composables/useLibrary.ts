@@ -33,12 +33,13 @@ async function everyPage<T>(read: (query: { cursor?: string }) => Promise<{ item
 // The folder view's rows, folders and placements. placed maps a refKey to its folder; what it leaves out is unsorted.
 // loadError is about reading the lists and message about the last write, so a refused write never makes a loaded list
 // look unloaded. Updating, deleting and placing change the screen first and put it back when the API refuses; a new
-// folder appears once the API has made it, with its id.
+// folder appears once the API has made it, with its id. A library is loading until its first load ends, so the first
+// frame shows the spinner.
 export function useLibrary() {
   const entries = ref<LibraryEntry[]>([])
   const folders = ref<Folder[]>([])
   const placed = ref(new Map<string, string>())
-  const loading = ref(false)
+  const loading = ref(true)
   const loadError = ref('')
   const message = ref('')
   let generation = 0
