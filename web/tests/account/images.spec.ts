@@ -1,11 +1,8 @@
 import { expect, test } from '@playwright/test'
+import { signIn } from './helpers'
 
 test('images drop into all editors, deduplicate, follow publication, and can be reclaimed', async ({ page, browser, baseURL }, testInfo) => {
-  await page.goto('/login')
-  await page.getByLabel('メールアドレス').fill('alice@example.test')
-  await page.getByLabel('パスワード', { exact: true }).fill('test-password')
-  await page.getByRole('button', { name: 'ログイン', exact: true }).click()
-  await expect(page).toHaveURL('/my')
+  await signIn(page, 'alice')
   page.on('dialog', dialog => dialog.accept())
   let imageURL = ''
   for (const [path, selector] of [

@@ -2,30 +2,14 @@ import { expect, test, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { fullId, shortId } from '../../shared/utils/short-id'
 import { moveContest } from './schedule'
+import { japanDate, origin, seedProblem, signIn } from './helpers'
 
-const origin = 'http://127.0.0.1:13002'
-async function login(page: Page, name = 'alice') {
-  await page.goto('/login')
-  await page.getByLabel('メールアドレス').fill(`${name}@example.test`)
-  await page.getByLabel('パスワード', { exact: true }).fill('test-password')
-  await page.getByRole('button', { name: 'ログイン', exact: true }).click()
-  await expect(page).toHaveURL('/my')
-}
-async function seed(page: Page, title: string) {
-  const id = randomUUID()
-  const response = await page.request.put(`/api/my/problems/${id}`, { headers: { origin }, data: { version: 0, draft: { title, difficulty: 3, markdown: '## コンテスト本文\n整数を出力してください。', editorial: '## コンテスト解説\n答えは2です。', timeLimitMs: '1500', memoryLimitMb: '256', testCases: [{ input: '1', output: '2', isSample: true }] } } })
-  expect(response.status()).toBe(200)
-  return id
-}
-// The date input reads Japan time.
-function japanDate(value: number) {
-  return new Date(value + 9 * 60 * 60 * 1000).toISOString().slice(0, 16)
-}
+const seed = (page: Page, title: string) => seedProblem(page, title, 'コンテスト')
 
 test('a contest is created in the editor, its problems reordered and pointed, and published', async ({ page }, testInfo) => {
   // Creation and the editor at every width, against the real DB. The next test opens such a contest.
   test.slow()
-  await login(page)
+  await signIn(page)
   const first = await seed(page, 'コンテスト選択A')
   const second = await seed(page, 'コンテスト選択B')
   await page.goto('/my')
@@ -92,7 +76,7 @@ test('a published contest\'s views fit every width, edit in place, and keep unst
   // The contest the editor publishes in the test above, saved through the API under other titles,
   // so that the two tests can share a database.
   test.slow()
-  await login(page)
+  await signIn(page)
   const first = await seed(page, 'コンテスト表示A')
   const second = await seed(page, 'コンテスト表示B')
   const id = randomUUID()
@@ -226,7 +210,7 @@ test('a published contest\'s views fit every width, edit in place, and keep unst
 })
 
 test('an incomplete contest saves as a private draft and publishes once the server finds nothing missing', async ({ page, browser }) => {
-  await login(page)
+  await signIn(page)
   const problem = await seed(page, '下書きコンテスト用の問題')
   await page.goto('/my/contests/new')
   const title = page.getByLabel('コンテストタイトル', { exact: true })
@@ -291,11 +275,11 @@ test('an incomplete contest saves as a private draft and publishes once the serv
 })
 
 test('scheduled problems open for submission, then publish with editorial and source after the deadline', async ({ page, browser }, testInfo) => {
-  await login(page)
+  await signIn(page)
   const pid = await seed(page, '時間で公開する問題')
   const participant = await browser.newContext({ baseURL: origin })
   const frank = await participant.newPage()
-  await login(frank, 'frank')
+  await signIn(frank, 'frank')
   const guest = await browser.newContext({ baseURL: origin })
   const id = randomUUID()
   const now = Date.now()
@@ -428,7 +412,7 @@ test('scheduled problems open for submission, then publish with editorial and so
 })
 
 test('register before a contest and appear immediately in standings without submissions', async ({ page, browser }, testInfo) => {
-  await login(page)
+  await signIn(page)
   const pid = await seed(page, '参加登録用の問題')
   const id = randomUUID()
   expect((await page.request.put(`/api/my/contests/${id}`, { headers: { origin }, data: {

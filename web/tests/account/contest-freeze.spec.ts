@@ -1,25 +1,10 @@
-import { expect, test, type Browser, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { shortId } from '../../shared/utils/short-id'
 import { moveContest } from './schedule'
+import { origin, seedProblem, user } from './helpers'
 
-const origin = 'http://127.0.0.1:13002'
-async function user(browser: Browser, name: string) {
-  const context = await browser.newContext({ baseURL: origin })
-  const page = await context.newPage()
-  await page.goto('/login')
-  await page.getByLabel('メールアドレス', { exact: true }).fill(`${name}@example.test`)
-  await page.getByLabel('パスワード', { exact: true }).fill('test-password')
-  await page.getByRole('button', { name: 'ログイン', exact: true }).click()
-  await expect(page).toHaveURL('/my')
-  return page
-}
-async function seed(page: Page, title: string) {
-  const id = randomUUID()
-  const response = await page.request.put(`/api/my/problems/${id}`, { headers: { origin }, data: { version: 0, draft: { title, difficulty: 3, markdown: '## 凍結の本文\n整数を出力してください。', editorial: '## 凍結の解説\n答えは2です。', timeLimitMs: '1500', memoryLimitMb: '256', testCases: [{ input: '1', output: '2', isSample: true }] } } })
-  expect(response.status()).toBe(200)
-  return id
-}
+const seed = (page: Page, title: string) => seedProblem(page, title, '凍結の')
 // The page names the date too when the contest crosses midnight in Japan.
 function freezeText(contest: { startsAt: string, endsAt: string, freezeAt: string }) {
   const day = (value: string) => new Intl.DateTimeFormat('ja-JP', { dateStyle: 'short', timeZone: 'Asia/Tokyo' }).format(new Date(value))

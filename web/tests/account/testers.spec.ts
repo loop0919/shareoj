@@ -1,11 +1,6 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { shortId } from '../../shared/utils/short-id'
-
-async function login(page: Page, name: string) {
-  await page.getByLabel('メールアドレス', { exact: true }).fill(`${name}@example.test`)
-  await page.getByLabel('パスワード', { exact: true }).fill('test-password')
-  await page.getByRole('button', { name: 'ログイン', exact: true }).click()
-}
+import { login, origin } from './helpers'
 
 test('tester invitation requires consent, resumes after login, and grants shared editing', async ({ page, browser }, testInfo) => {
   await page.goto('/login')
@@ -18,7 +13,7 @@ test('tester invitation requires consent, resumes after login, and grants shared
   const link = await page.getByLabel('招待リンク', { exact: true }).inputValue()
   expect(link).toMatch(/\/my\/tester-invitations\/[A-Z2-7]{32}$/)
   const id = new URL(page.url()).searchParams.get('problem')!
-  const context = await browser.newContext({ baseURL: 'http://127.0.0.1:13002' })
+  const context = await browser.newContext({ baseURL: origin })
   const tester = await context.newPage()
   try {
     await tester.goto(link)
@@ -73,7 +68,7 @@ test('tester invitation requires consent, resumes after login, and grants shared
     await expect(tester.getByText('この問題はすでに操作できます。')).toBeVisible()
     await expect(tester.getByRole('button', { name: '許可する' })).toHaveCount(0)
   } finally { await context.close() }
-  const newcomerContext = await browser.newContext({ baseURL: 'http://127.0.0.1:13002' })
+  const newcomerContext = await browser.newContext({ baseURL: origin })
   try {
     const newcomer = await newcomerContext.newPage()
     const email = `tester-${Date.now()}@example.test`
@@ -81,7 +76,7 @@ test('tester invitation requires consent, resumes after login, and grants shared
       ['signup', { email, password: 'ValidPassword123!' }],
       ['confirm-signup', { email, code: '123456' }],
     ] as const) {
-      expect((await newcomer.request.post(`/api/auth/${action}`, { headers: { origin: 'http://127.0.0.1:13002' }, data })).ok()).toBe(true)
+      expect((await newcomer.request.post(`/api/auth/${action}`, { headers: { origin }, data })).ok()).toBe(true)
     }
     await newcomer.goto(link)
     await expect(newcomer).toHaveURL(/\/login\?next=/)

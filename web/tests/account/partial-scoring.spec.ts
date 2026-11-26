@@ -2,17 +2,13 @@ import { randomUUID } from 'node:crypto'
 import { expect, test } from '@playwright/test'
 import { shortId } from '../../shared/utils/short-id'
 import { moveContest } from './schedule'
+import { origin, signIn } from './helpers'
 
 // Partial scoring against the real API (ADR 0025). This fixture has no judge, so scores are covered by the UI tests.
 test('a grouped problem saves through the editor, names what is missing, takes its full score into a contest and is locked from the start', async ({ page }) => {
   test.setTimeout(90000)
-  const origin = 'http://127.0.0.1:13002'
-  await page.goto('/login')
   // frank only joins other setters' contests, so his own problems and contest stay apart from theirs.
-  await page.getByLabel('メールアドレス').fill('frank@example.test')
-  await page.getByLabel('パスワード', { exact: true }).fill('test-password')
-  await page.getByRole('button', { name: 'ログイン', exact: true }).click()
-  await expect(page).toHaveURL('/my')
+  await signIn(page, 'frank')
   page.on('dialog', dialog => void dialog.accept())
   await page.goto('/problems/new')
   await page.getByLabel('問題のタイトル').fill('部分点のテスト')
