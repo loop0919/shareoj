@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { durationsOf, line, merge, split, testsOf } from './shard-tests.mjs'
+import { durationsOf, line, merge, serialFiles, split, testsOf } from './shard-tests.mjs'
 
 // The shape of `playwright test --list --reporter=json`, and of the JSON report with results.
 const report = {
@@ -61,4 +61,30 @@ test('splits the same way every time', () => {
   const tests = Array.from({ length: 20 }, (_, i) => ({ file: `${i % 3}.spec.ts`, titles: [`t${i}`] }))
   assert.deepEqual(split(tests, {}, 4), split(tests, {}, 4))
   assert.equal(split(tests, {}, 4).flat().length, 20)
+})
+
+test('keeps the tests of a file that runs in series on one shard, and evens out the rest around it', () => {
+  const serial = ['s1', 's2', 's3'].map(title => ({ file: 'serial.spec.ts', titles: [title] }))
+  const free = ['a', 'b', 'c', 'd'].map(title => ({ file: 'x.spec.ts', titles: [title] }))
+  // In running order the serial file sits between the others.
+  const tests = [free[0], free[1], ...serial, free[2], free[3]]
+  const durations = { 'serial.spec.ts › s1': 1, 'serial.spec.ts › s2': 1, 'serial.spec.ts › s3': 1, 'x.spec.ts › a': 2, 'x.spec.ts › b': 2, 'x.spec.ts › c': 1, 'x.spec.ts › d': 1 }
+  const shards = split(tests, durations, 3, new Set(['serial.spec.ts']))
+  assert.deepEqual(shards.flat().map(line).sort(), tests.map(line).sort())
+  const holders = shards.filter(shard => shard.some(item => item.file === 'serial.spec.ts'))
+  assert.equal(holders.length, 1)
+  assert.deepEqual(holders[0].filter(item => item.file === 'serial.spec.ts'), serial)
+  for (const shard of shards) assert.deepEqual(shard, tests.filter(item => shard.includes(item)))
+  assert.deepEqual(shards.map(shard => shard.reduce((sum, item) => sum + durations[line(item)], 0)), [3, 3, 3])
+  // Without the set the same tests are spread, which is what breaks a file whose tests build on each other.
+  assert.ok(split(tests, durations, 3).filter(shard => shard.some(item => item.file === 'serial.spec.ts')).length > 1)
+})
+
+test('finds the files that run in series from their source', () => {
+  const sources = {
+    '/repo/web/tests/account/folders.spec.ts': "import { test } from '@playwright/test'\ntest.describe.configure({ mode: 'serial' })\n",
+    '/repo/web/tests/a.spec.ts': "import { test } from '@playwright/test'\ntest.describe.configure({ mode: 'parallel' })\n// mode: 'serial' is only named in this comment\n",
+  }
+  const tests = [{ file: 'account/folders.spec.ts', titles: ['x'] }, { file: 'account/folders.spec.ts', titles: ['y'] }, { file: 'a.spec.ts', titles: ['z'] }]
+  assert.deepEqual([...serialFiles(tests, '/repo/web/tests', path => sources[path])], ['account/folders.spec.ts'])
 })

@@ -6,7 +6,7 @@
 //          test when several reports have it; make a report with
 //          PLAYWRIGHT_JSON_OUTPUT_FILE=<report.json> bun run test --reporter=json
 // Playwright's own --shard gives each shard the same number of tests, so a shard of slow tests
-// ran twice as long as another. A test without a recorded duration counts as the median of the
+// ran twice as long as another. A file whose tests run in series stays whole, on one shard. A test without a recorded duration counts as the median of the
 // others: new tests still run, and old durations only make the shards less even.
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -46,18 +46,34 @@ export function durationsOf(report) {
   return durations
 }
 
-export function split(tests, durations, shards) {
+// The files whose tests run in series, by their source: a later test starts from what an earlier one left, so they
+// only pass on one shard, in order. root is the config's test directory, which a test's file is relative to.
+export function serialFiles(tests, root, read = path => readFileSync(path, 'utf8')) {
+  const serial = /\.describe\.configure\(\s*\{[^}]*\bmode:\s*['"]serial['"]|\.describe\.serial\(/
+  return new Set([...new Set(tests.map(test => test.file))].filter(file => serial.test(read(join(root, file)))))
+}
+
+// together names the files that go to a shard as one piece, with the time of all their tests.
+export function split(tests, durations, shards, together = new Set()) {
   const known = tests.map(test => durations[line(test)]).filter(value => value !== undefined).sort((a, b) => a - b)
   const median = known.length ? (known[Math.floor((known.length - 1) / 2)] + known[Math.ceil((known.length - 1) / 2)]) / 2 : 1
   // A test recorded at zero (skipped, or no page) still takes a moment, and must add to its shard.
   const weight = test => Math.max(durations[line(test)] ?? median, 0.1)
   // Longest first, each to the shard with the least time so far; the sort keeps ties in list order.
+  const pieces = new Map()
+  for (const test of tests) {
+    const key = together.has(test.file) ? test.file : test
+    if (!pieces.has(key)) pieces.set(key, { tests: [], weight: 0 })
+    const piece = pieces.get(key)
+    piece.tests.push(test)
+    piece.weight += weight(test)
+  }
   const loads = Array(shards).fill(0)
   const shardOf = new Map()
-  for (const test of [...tests].sort((a, b) => weight(b) - weight(a))) {
+  for (const piece of [...pieces.values()].sort((a, b) => b.weight - a.weight)) {
     const shard = loads.indexOf(Math.min(...loads))
-    loads[shard] += weight(test)
-    shardOf.set(test, shard)
+    loads[shard] += piece.weight
+    for (const test of piece.tests) shardOf.set(test, shard)
   }
   return loads.map((_, shard) => tests.filter(test => shardOf.get(test) === shard))
 }
@@ -95,14 +111,16 @@ if (import.meta.main) {
       // The account config wants a database before it loads; listing never connects to it.
       env: { ...process.env, TEST_DATABASE_URL: process.env.TEST_DATABASE_URL || 'postgresql://listing-only' },
     })
-    const tests = testsOf(JSON.parse(list))
+    const report = JSON.parse(list)
+    const tests = testsOf(report)
     const durations = readDurations()[basename(config)] ?? {}
-    const shards = split(tests, durations, Number(count))
+    const together = serialFiles(tests, report.config.rootDir)
+    const shards = split(tests, durations, Number(count), together)
     if (shards.some(shard => !shard.length)) throw new Error(`${config} has ${tests.length} tests, too few for ${count} shards`)
     mkdirSync(directory, { recursive: true })
     shards.forEach((shard, i) => writeFileSync(join(directory, `${i + 1}.txt`), `${shard.map(line).join('\n')}\n`))
     const seconds = shard => Math.round(shard.reduce((sum, test) => sum + (durations[line(test)] ?? 0), 0))
-    console.log(`${config}: ${tests.length} tests, ${tests.filter(test => durations[line(test)] === undefined).length} without a duration; recorded seconds per shard: ${shards.map(seconds).join(' ')}`)
+    console.log(`${config}: ${tests.length} tests, ${tests.filter(test => durations[line(test)] === undefined).length} without a duration; recorded seconds per shard: ${shards.map(seconds).join(' ')}${together.size ? `; kept on one shard: ${[...together].join(', ')}` : ''}`)
   } else if (command === 'record' && args.length) {
     const reports = args.map(path => JSON.parse(readFileSync(path, 'utf8')))
     writeFileSync(durationsFile, `${JSON.stringify(merge(readDurations(), reports), null, 2)}\n`)
