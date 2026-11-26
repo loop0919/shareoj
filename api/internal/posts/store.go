@@ -23,18 +23,20 @@ type ProblemRef struct {
 }
 
 type Post struct {
-	ID               string       `json:"id"`
-	Title            string       `json:"title"`
-	Markdown         string       `json:"markdown,omitempty"`
-	Version          int64        `json:"version,omitempty"`
-	PublishedVersion int64        `json:"publishedVersion"`
-	UpdatedAt        time.Time    `json:"updatedAt"`
-	PublishedAt      *time.Time   `json:"publishedAt"`
-	Author           string       `json:"author,omitempty"`
-	Operator         bool         `json:"isOperator"`
-	Owner            string       `json:"-"`
-	Problems         []ProblemRef `json:"problems,omitempty"`
-	Tags             []string     `json:"tags,omitempty"`
+	ID               string    `json:"id"`
+	Title            string    `json:"title"`
+	Markdown         string    `json:"markdown,omitempty"`
+	Version          int64     `json:"version,omitempty"`
+	PublishedVersion int64     `json:"publishedVersion"`
+	UpdatedAt        time.Time `json:"updatedAt"`
+	// CreatedAt is when the post was first saved; only the owner's list fills it.
+	CreatedAt   *time.Time   `json:"createdAt,omitempty"`
+	PublishedAt *time.Time   `json:"publishedAt"`
+	Author      string       `json:"author,omitempty"`
+	Operator    bool         `json:"isOperator"`
+	Owner       string       `json:"-"`
+	Problems    []ProblemRef `json:"problems,omitempty"`
+	Tags        []string     `json:"tags,omitempty"`
 }
 
 // Editorial is a published post that explains a problem.
@@ -139,7 +141,7 @@ func (s *Store) Delete(ctx context.Context, owner, id string, version int64) err
 
 func (s *Store) List(ctx context.Context, owner string, cursor *problems.Cursor) ([]Post, error) {
 	args := []any{owner}
-	query := `SELECT id,title,version,updated_at,published_version,published_at FROM blog_posts WHERE owner_id=$1`
+	query := `SELECT id,title,version,updated_at,published_version,published_at,created_at FROM blog_posts WHERE owner_id=$1`
 	if cursor != nil {
 		query += ` AND (updated_at,id)<($2,$3::uuid)`
 		args = append(args, cursor.UpdatedAt, cursor.ID)
@@ -150,7 +152,7 @@ func (s *Store) List(ctx context.Context, owner string, cursor *problems.Cursor)
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Post, error) {
 		var p Post
-		err := row.Scan(&p.ID, &p.Title, &p.Version, &p.UpdatedAt, &p.PublishedVersion, &p.PublishedAt)
+		err := row.Scan(&p.ID, &p.Title, &p.Version, &p.UpdatedAt, &p.PublishedVersion, &p.PublishedAt, &p.CreatedAt)
 		return p, err
 	})
 }

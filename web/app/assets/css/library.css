@@ -1,0 +1,151 @@
+/* Hallmark · macrostructure: my page folder view · tone: existing ShareOJ · anchor hue: existing accent
+ * From 40rem the folder list stands in a 15rem column left of the table; narrower screens fold it under a button above
+ * the table that names the open folder, and the table reads as cards. */
+.library-heading h2 { margin: 0 auto 0 0; }
+.library-body { display: grid; gap: 16px; align-items: start; }
+@media (min-width: 40rem) {
+  .library-body { grid-template-columns: 15rem minmax(0, 1fr); gap: 32px; }
+  /* The list reaches down beside the table and keeps a strip below its button, so a folder has room to be dropped at
+   * the top. */
+  .folder-tree { align-self: stretch; padding-bottom: 32px; }
+}
+.library-content { min-width: 0; }
+
+/* The button that opens the folded list. The list opens below it, in the page's flow, and rows grow to a finger's size. */
+.folder-tree-current { display: none; }
+@media (max-width: 39.999rem) {
+  .folder-tree-current { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-paper); color: var(--color-ink); font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+  .folder-tree-current-label { color: var(--color-muted); font-weight: 400; }
+  .folder-tree-current svg { flex: none; color: var(--color-muted); transition: transform 120ms cubic-bezier(.2, 0, 0, 1); }
+  .folder-tree-current[aria-expanded="true"] svg { transform: rotate(180deg); }
+  .folder-tree-current:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
+  .folder-tree:not(.is-open) .folder-tree-panel { display: none; }
+  .folder-tree-panel { margin-top: 8px; padding: 8px; border: 1px solid var(--color-line); border-radius: 6px; }
+  .folder-tree-item { min-height: 44px; }
+  .folder-tree-toggle, .folder-tree-menu-button { width: 36px; height: 44px; }
+  .folder-tree-create { min-height: 44px; }
+}
+
+/* Folder list: everything, the folders indented by depth, then unsorted. Every row keeps a toggle's width, so names line up. */
+.folder-tree-list { margin: 0; padding: 0; list-style: none; }
+.folder-tree-row { display: flex; align-items: center; gap: 2px; padding-left: calc(var(--folder-depth, 0) * 16px); }
+.folder-tree-toggle { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 36px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--color-muted); cursor: pointer; }
+span.folder-tree-toggle { cursor: default; }
+.folder-tree-toggle svg { transition: transform 120ms cubic-bezier(.2, 0, 0, 1); }
+.folder-tree-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
+.folder-tree-item { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 6px 10px; border: 0; border-radius: 6px; background: none; color: var(--color-ink); font: inherit; font-size: .875rem; line-height: 1.5; text-align: left; cursor: pointer; }
+.folder-tree-item[aria-current="true"] { background: var(--color-accent-soft); font-weight: 600; }
+.folder-tree-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.folder-tree-count { color: var(--color-muted); font-size: .8125rem; font-weight: 400; font-variant-numeric: tabular-nums; }
+.folder-tree-toggle:focus-visible, .folder-tree-item:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.folder-tree-hint { margin: 12px 0 0; color: var(--color-muted); font-size: .8125rem; line-height: 1.7; }
+/* A folder's actions sit at the end of its row and open a small panel under it; すべて and 未整理 keep their width. */
+.folder-tree-row { position: relative; }
+.folder-tree-actions { flex: none; display: flex; }
+.folder-tree-menu-button { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 36px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--color-muted); cursor: pointer; }
+span.folder-tree-menu-button { cursor: default; }
+.folder-tree-menu-button[aria-expanded="true"] { background: var(--color-surface); color: var(--color-ink); }
+.folder-tree-menu, .library-menu { position: absolute; top: 100%; right: 0; z-index: 20; display: grid; min-width: 10rem; padding: 6px; border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-paper); box-shadow: 0 4px 12px #0001; }
+.folder-tree-menu button, .library-menu button, .library-menu a { display: flex; align-items: center; min-height: 40px; padding: 0 12px; border: 0; border-radius: 4px; background: none; color: var(--color-ink); font: inherit; font-size: .875rem; font-weight: 400; text-align: left; text-decoration: none; white-space: nowrap; cursor: pointer; }
+.folder-tree-menu button:hover, .folder-tree-menu button:focus-visible, .library-menu :is(button, a):hover, .library-menu :is(button, a):focus-visible { background: var(--color-surface); }
+.library-menu :is(button, a):focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.folder-tree-menu .folder-tree-delete { color: var(--color-error); }
+.folder-tree-menu-button:focus-visible, .folder-tree-menu button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.folder-tree-create { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; margin-top: 12px; padding-inline: 12px; }
+.folder-tree-create + .folder-tree-hint { margin-top: 8px; }
+@media (hover: hover) {
+  .folder-tree-toggle:hover, .folder-tree-menu-button:hover { color: var(--color-ink); }
+  .folder-tree-item:hover:not([aria-current="true"]) { background: var(--color-surface); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .folder-tree-toggle svg, .folder-tree-current svg { transition: none; }
+}
+/* While something is dragged, the folders and 未整理 that would take it get a dashed outline, and the one under the
+ * pointer fills. A folder held over the list's blank space outlines the whole list. */
+.folder-tree-row.drop-target .folder-tree-item { outline: 1px dashed var(--color-accent); outline-offset: -1px; }
+.folder-tree-row.drop-over .folder-tree-item { background: var(--color-accent-soft); outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.folder-tree.drop-over { outline: 2px dashed var(--color-accent); outline-offset: 4px; border-radius: 6px; }
+
+/* Where the list is, with the folders above the open one to go back to. */
+.library-location { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 36px; margin-bottom: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.library-location > span[aria-hidden="true"] { color: var(--color-muted); font-weight: 400; }
+.library-location button { min-height: 36px; padding: 0 4px; border: 0; background: none; color: var(--color-accent); font: inherit; font-weight: 400; text-decoration: underline; text-underline-offset: 5px; cursor: pointer; }
+.library-location button:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; border-radius: 2px; }
+
+/* The two filters sit on one line, and wrap where the page is narrow. */
+.library-filters { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-bottom: 20px; }
+/* The order is not a filter, so it keeps to the far end of the line while there is room. */
+.library-filters .library-sort { margin-left: auto; }
+
+/* A tested problem's author and contest, under its title. */
+.library-note { display: block; margin-top: 2px; color: var(--color-muted); font-size: .8125rem; font-weight: 400; }
+.library-folder-open { padding: 0; border: 0; background: none; color: var(--color-accent); font: inherit; font-weight: 600; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.library-folder-open:hover { text-decoration: underline; text-underline-offset: 5px; }
+.library-folder-open:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 4px; border-radius: 2px; }
+
+/* The selection column and bar, as in the submission list's rejudge selection. */
+.library-table .select-cell input { display: block; width: 18px; height: 18px; margin: 0 6px; accent-color: var(--color-accent); cursor: pointer; }
+.library-table .select-cell input:disabled { cursor: not-allowed; }
+.library-selection { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.library-selection .editor-button { min-height: 40px; padding-inline: 16px; font-size: .875rem; }
+.library-actions { display: flex; align-items: center; gap: 8px; }
+/* A row's ⋯ button and its menu, which reads as a folder's menu does. */
+.library-menu-wrap { position: relative; display: inline-flex; }
+.library-menu-button { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; }
+.library-menu-button[aria-expanded="true"] { background: var(--color-surface); }
+/* The list of rows. The folder list beside it leaves less than a table of seven columns needs, so a row is two lines:
+ * its mark and title, then its state, update time and difficulty, which wrap. Nothing scrolls sideways at any width.
+ * The first two columns are fixed, since each row is its own grid and the marks must line up. */
+.library-content { container-type: inline-size; }
+.library-table, .library-table thead, .library-table tbody { display: block; }
+.library-table { width: 100%; font-size: .875rem; text-align: left; }
+.library-table thead tr { display: flex; align-items: center; padding: 0 8px 10px; border-bottom: 1px solid var(--color-line); }
+.library-table thead th { padding: 0; font-weight: 500; }
+.library-table thead .select-cell { display: flex; align-items: center; gap: 12px; color: var(--color-muted); font-size: .8125rem; white-space: nowrap; }
+.library-table thead .select-cell::after { content: "すべて選択"; }
+.library-table tbody tr { display: grid; grid-template-columns: 30px 30px minmax(0, 1fr) auto; grid-template-areas: "select kind title actions" "select kind meta actions"; align-items: center; gap: 4px 12px; padding: 10px 8px; border-bottom: 1px solid var(--color-line); }
+.library-table tbody th, .library-table tbody td { min-width: 0; padding: 0; }
+.library-table tbody .select-cell { grid-area: select; }
+.library-table .library-kind { grid-area: kind; }
+.library-table tbody th { grid-area: title; font-weight: 600; overflow-wrap: anywhere; }
+.library-table .library-meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; color: var(--color-muted); font-size: .8125rem; }
+.library-table .actions-cell { grid-area: actions; }
+.library-meta-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* A state is not pressed here, so it is smaller than a control. A post's state reads as a problem's does. */
+.library-table .library-meta .problem-status, .library-post-state { min-height: 26px; }
+/* A reserved time belongs to its state, so the two share one outline and are not read as a second date beside the
+ * update time. */
+.library-table .library-meta .problem-state:has(> time) { flex-wrap: nowrap; align-items: center; gap: 0; padding-right: 10px; border: 1px solid var(--color-line); border-radius: 999px; color: var(--color-ink); font-size: .75rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.library-table .library-meta .problem-state:has(> time) .problem-status { min-height: 24px; padding-right: 6px; border: 0; font-weight: 600; }
+.library-post-state { display: inline-flex; align-items: center; padding: 2px 10px; border: 1px solid var(--color-line); border-radius: 999px; font-size: .75rem; white-space: nowrap; }
+.library-post-state[data-published] { border-color: var(--color-accent-soft); background: var(--color-accent-soft); color: var(--color-ink); }
+.library-meta-kind { display: none; color: var(--color-ink); font-weight: 600; }
+@media not all and (hover: hover), (max-width: 39.999rem) { .library-meta-kind { display: inline; } }
+@media (hover: hover) { .library-table tbody tr:hover { background: var(--color-surface); } }
+/* Too narrow for the buttons beside the title: they go under the row, at its end. */
+@container (max-width: 36rem) {
+  .library-table tbody tr { grid-template-columns: 30px 30px minmax(0, 1fr); grid-template-areas: "select kind title" "select kind meta" "actions actions actions"; }
+  .library-table .actions-cell { justify-self: end; margin-top: 4px; }
+  .library-table .actions-cell:empty { display: none; }
+}
+/* A row can be taken onto the folder list. More than one shows this badge by the pointer instead of the row; it is on
+ * the page only for the moment the browser takes its picture. */
+.library-table tbody tr[draggable="true"] { cursor: grab; }
+.library-drag-image { position: fixed; z-index: 1000; pointer-events: none; padding: 6px 12px; border-radius: 6px; background: var(--color-accent); color: var(--color-paper); font-size: .875rem; font-weight: 600; white-space: nowrap; }
+
+/* Dialogs: a folder's name, and where something goes. */
+.folder-name-form { display: grid; gap: 6px; margin-top: 16px; }
+.folder-name-form label { font-size: .8125rem; font-weight: 600; }
+.folder-name-form input { min-height: 44px; padding: 8px 10px; border: 1px solid var(--color-line); border-radius: 4px; font: inherit; }
+.folder-name-form input:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
+.folder-name-form .editor-error { margin: 2px 0 0; }
+.folder-name-form .leave-dialog-actions { margin-top: 18px; }
+.folder-picker { display: grid; gap: 2px; max-height: min(50dvh, 24rem); overflow-y: auto; padding: 4px; border: 1px solid var(--color-line); border-radius: 6px; }
+.folder-picker-option { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 10px 6px calc(10px + var(--folder-depth, 0) * 16px); border-radius: 4px; font-size: .875rem; overflow-wrap: anywhere; cursor: pointer; }
+.folder-picker-option input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--color-accent); }
+.folder-picker-option:has(input:checked) { background: var(--color-accent-soft); font-weight: 600; }
+.folder-picker-option:has(input:disabled) { color: var(--color-muted); cursor: not-allowed; }
+.folder-picker-option:has(input:focus-visible) { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+@media (hover: hover) {
+  .folder-picker-option:hover:not(:has(input:checked, input:disabled)) { background: var(--color-surface); }
+}

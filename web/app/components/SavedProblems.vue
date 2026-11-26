@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { vDialogDismiss } from '~/utils/dialog-dismiss'
-import { accountListSchema, accountProblemSchema, type AccountSummary } from '~~/shared/types/account-problems'
+import { accountListSchema, type AccountSummary } from '~~/shared/types/account-problems'
 import { accountError } from '~/utils/account-problems'
-import { problemStatus, type ProblemStatus } from '~/utils/problem-readiness'
-import { shortId } from '~~/shared/utils/short-id'
+import { problemStatusGroup, problemStatusOptions } from '~/utils/library-entries'
 const props = defineProps<{ testing?: boolean }>()
 const heading = computed(() => props.testing ? 'テスト中の問題' : '自分の問題')
 const { user, refreshAccount } = useAccount()
@@ -12,30 +10,6 @@ const accountLoading = ref(true)
 const accountMessage = ref('')
 const nextCursor = ref('')
 let listedOwner = ''
-const withdrawing = ref('')
-const withdrawDialog = ref<HTMLDialogElement>()
-const withdrawEntry = ref<AccountSummary>()
-const withdrawMessage = ref('')
-function confirmWithdraw(entry: AccountSummary) {
-  if (withdrawing.value || props.testing) return
-  withdrawEntry.value = entry
-  withdrawMessage.value = ''
-  withdrawDialog.value?.showModal()
-}
-const tooltipId = useId()
-const preferenceLabel = (preference: string) => preference === 'soon' ? '早めに出したい' : 'ゆっくりで良い'
-async function withdraw(entry: AccountSummary) {
-  if (withdrawing.value || props.testing) return
-  withdrawing.value = entry.id
-  withdrawMessage.value = ''
-  try {
-    const problem = accountProblemSchema.parse(await $fetch(`/api/my/problems/${entry.id}`))
-    await $fetch(`/api/my/problems/${entry.id}/featured`, { method: 'PUT', body: { version: problem.version, preference: '' } })
-    entry.featuredPreference = ''
-    withdrawDialog.value?.close()
-  } catch (error) { withdrawMessage.value = accountError(error) }
-  finally { withdrawing.value = '' }
-}
 async function loadAccount(more = false) {
   accountLoading.value = true
   accountMessage.value = ''
@@ -52,18 +26,8 @@ async function loadAccount(more = false) {
   finally { accountLoading.value = false }
 }
 
-// The labels the 状態 column shows, so the filter reads the same for authors and testers.
-const statusOptions = [
-  { key: 'preparing', label: '準備中' },
-  { key: 'applying', label: '応募中' },
-  { key: 'scheduled', label: '公開予約中' },
-  { key: 'published', label: '公開中' },
-] as const
-const statusGroups: Record<ProblemStatus['kind'], typeof statusOptions[number]['key']> = {
-  scheduled: 'scheduled', incomplete: 'preparing', ready: 'preparing', unknown: 'preparing', contest: 'applying', featured: 'applying', published: 'published',
-}
 const status = defineModel<string>('status', { default: '' })
-const { filter, counts, visible: visibleEntries, label: filterLabel } = useStatusFilter(statusOptions, status, () => accountEntries.value, entry => statusGroups[problemStatus(entry).kind])
+const { filter, counts, visible: visibleEntries, label: filterLabel } = useStatusFilter(problemStatusOptions, status, () => accountEntries.value, problemStatusGroup)
 // A filter needs every page, or a matching problem past the first 50 would look absent.
 watch([filter, nextCursor, accountLoading], () => {
   if (filter.value && nextCursor.value && !accountLoading.value && !accountMessage.value) void loadAccount(true)
@@ -85,7 +49,7 @@ onMounted(() => { void loadAccount() })
     <template v-else>
       <EmptyState v-if="!accountEntries.length && !accountMessage && testing" kind="testing" title="テスト中の問題はまだありません。" description="テスターリンクから参加すると、ここに表示されます。" />
       <EmptyState v-else-if="!accountEntries.length && !accountMessage" kind="problem" title="保存した問題はまだありません。" description="「新規問題」から作成すると、ここに表示されます。" />
-      <StatusFilter v-if="accountEntries.length" v-model="filter" :options="statusOptions" :counts="nextCursor ? undefined : counts" />
+      <StatusFilter v-if="accountEntries.length" v-model="filter" :options="problemStatusOptions" :counts="nextCursor ? undefined : counts" />
       <EmptyState v-if="accountEntries.length && !visibleEntries.length && !nextCursor && !accountLoading" :kind="testing ? 'testing' : 'problem'" :title="`「${filterLabel}」の問題はありません。`"><button type="button" class="editor-button" @click="filter = ''">すべて表示</button></EmptyState>
       <div v-if="visibleEntries.length" class="content-table-scroll">
         <table class="content-table content-table--cards" :aria-label="heading">
@@ -93,23 +57,11 @@ onMounted(() => { void loadAccount() })
           <tbody><tr v-for="entry in visibleEntries" :key="entry.id">
             <th scope="row">{{ entry.title.trim() || '無題の問題' }}<span v-if="entry.viaContest" class="via-contest">コンテスト「{{ entry.viaContest.title.trim() || '無題のコンテスト' }}」の作成者として</span></th>
             <td class="line-cell" data-label="状態">
-              <span class="problem-state">
-                <ProblemStatus :problem="entry" />
-                <time v-if="entry.scheduledAt" :datetime="entry.scheduledAt">{{ new Date(entry.scheduledAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) }} (JST)</time>
-                <span v-if="!entry.publishedVersion && !entry.contestScheduled && entry.featuredPreference" class="featured-preference" tabindex="0" role="img" :aria-label="preferenceLabel(entry.featuredPreference)" :aria-describedby="`${tooltipId}-${entry.id}`">
-                  <FeaturedPreferenceIcon :preference="entry.featuredPreference === 'soon' ? 'soon' : 'later'" />
-                  <span :id="`${tooltipId}-${entry.id}`" class="preference-tooltip" role="tooltip">{{ preferenceLabel(entry.featuredPreference) }}</span>
-                </span>
-              </span>
+              <SavedProblemState :entry="entry" />
             </td>
             <td class="corner-cell"><time :datetime="entry.updatedAt">{{ updatedLabel(entry.updatedAt) }}</time></td>
             <td class="lead-cell"><DifficultyBadge :level="entry.difficulty" /></td>
-            <td class="actions-cell"><div class="problem-actions"><ContentActions :title="entry.title.trim() || '無題の問題'" :edit-to="{ path: '/problems/new', query: { problem: entry.id } }" :view-to="`/problems/${shortId(entry.id)}`" :published="!!entry.publishedVersion" can-view />
-              <NuxtLink v-if="!testing && entry.scheduledAt" class="editor-button" :to="{ path: '/problems/post', query: { problem: entry.id } }">予約を変更</NuxtLink>
-              <button v-if="!testing && entry.featuredPreference" class="editor-button withdraw-featured" :disabled="!!withdrawing" :aria-label="`${entry.title.trim() || '無題の問題'}の定期便応募を取り下げる`" title="定期便応募を取り下げる" @click="confirmWithdraw(entry)">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5-5 5 5 5M4 10h10a6 6 0 0 1 0 12" transform="translate(0 -2)" /></svg>
-              </button>
-            </div></td>
+            <td class="actions-cell"><SavedProblemActions :entry="entry" :testing="testing" /></td>
           </tr></tbody>
         </table>
       </div>
@@ -117,29 +69,10 @@ onMounted(() => { void loadAccount() })
       <button v-else-if="nextCursor" class="editor-button" @click="loadAccount(true)">さらに読み込む</button>
     </template>
     <button v-if="accountMessage" class="editor-button" :disabled="accountLoading" @click="loadAccount()">再試行</button>
-    <Teleport to="body">
-      <dialog v-dialog-dismiss ref="withdrawDialog" class="leave-dialog" :aria-labelledby="`${tooltipId}-withdraw-title`" :aria-describedby="`${tooltipId}-withdraw-description`" @cancel="withdrawing && $event.preventDefault()" @close="withdrawEntry = undefined">
-        <h2 :id="`${tooltipId}-withdraw-title`">定期便の応募を取り下げますか？</h2>
-        <p class="manage-problem-title">{{ withdrawEntry?.title.trim() || '無題の問題' }}</p>
-        <p :id="`${tooltipId}-withdraw-description`">取り下げると、定期便の出題待ちから外れます。問題は未公開のまま保存されます。</p>
-        <p v-if="withdrawMessage" role="alert" class="editor-error">{{ withdrawMessage }}</p>
-        <div class="leave-dialog-actions">
-          <button type="button" class="editor-button" autofocus :disabled="!!withdrawing" @click="withdrawDialog?.close()">キャンセル</button>
-          <button type="button" class="editor-button danger" :disabled="!!withdrawing" :aria-busy="!!withdrawing" @click="withdrawEntry && withdraw(withdrawEntry)">{{ withdrawing ? '取り下げ中…' : '取り下げる' }}</button>
-        </div>
-      </dialog>
-    </Teleport>
   </section>
 </template>
 
 <style scoped>
-.problem-state { display: inline-flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; }
-.featured-preference { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; color: var(--color-muted); cursor: help; }
-.featured-preference:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 4px; }
-.preference-tooltip { display: none; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); padding: 4px 8px; border-radius: 4px; background: var(--color-ink); color: var(--color-paper); font-size: .75rem; font-weight: 400; z-index: 1; }
-.featured-preference:hover .preference-tooltip, .featured-preference:focus .preference-tooltip { display: block; }
-.problem-actions { display: flex; align-items: center; gap: 8px; }
 /* Rights through a contest end with its results, unlike an invitation, so the row says where they come from. */
 .via-contest { display: block; margin-top: 2px; color: var(--color-muted); font-size: .8125rem; font-weight: 400; }
-.withdraw-featured { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; }
 </style>

@@ -203,7 +203,7 @@ test('schedule in Japan time, show the reservation, update it and cancel it', as
   const row = page.getByRole('row').filter({ hasText: '予約する問題' })
   await expect(row).toContainText('公開予約中')
   await expect(row).toContainText('23:00')
-  await expect(row.locator('.problem-state time')).toHaveText(`${year}/1/2 23:00:00 (JST)`)
+  await expect(row.locator('.problem-state time')).toHaveText(`${year}/01/02 23:00`)
   await expect(row).toContainText(`公開予定：${year}/1/2 23:00:00 (JST)`)
   await row.getByRole('link', { name: '予約を変更' }).click()
   await expect(page).toHaveURL(`/problems/post?problem=${id}`)

@@ -21,6 +21,7 @@ import (
 
 	"judge/api/internal/accounts"
 	"judge/api/internal/contests"
+	"judge/api/internal/folders"
 	"judge/api/internal/images"
 	"judge/api/internal/notifications"
 	"judge/api/internal/posts"
@@ -132,14 +133,27 @@ func TestBrowserFixture(t *testing.T) {
 	f := newSigningFixture(t)
 	cognito := &browserCognito{t: t, signer: f, users: make(map[string]*browserUser)}
 	// leaver exists so the account deletion test cannot take a shared user with it; carol and dave join contests
-	// as further co-setters and participants, and erin and frank as members of other teams.
-	for _, name := range []string{"alice", "bob", "carol", "dave", "erin", "frank", "test_cases", "shared_submission", "leaver"} {
+	// as further co-setters and participants, and erin and frank as members of other teams. Only folders and
+	// folders_many turn on the folder view, which stays with the account and would hide the old tabs from other tests.
+	for _, name := range []string{"alice", "bob", "carol", "dave", "erin", "frank", "test_cases", "shared_submission", "leaver", "folders", "folders_many"} {
 		if _, err := profileStore.Save(ctx, name+"@example.test", name, "", 0, profiles.Accounts{}); err != nil {
 			t.Fatal(err)
 		}
 		cognito.users[name+"@example.test"] = &browserUser{password: "test-password", confirmed: true}
 	}
-	dependencies := handlerDependencies{Accounts: &accounts.Store{Pool: store.Pool()}, CognitoUsers: cognito, UserPoolID: "local_browser", Store: store, Contests: &contests.Store{Pool: store.Pool()}, Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Profiles: profileStore, Posts: posts.New(store.Pool()), Submissions: &submissions.Store{Pool: store.Pool()}, JudgeImage: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Operators: map[string]bool{"alice@example.test": true}, Verifier: newCognitoVerifier(f.server.URL, "client")}
+	// folders_many holds more problems than one page of a list, so the folder view must read every page to count them.
+	// The oldest, 01, is the one the first page leaves out. Setup is not a person creating problems, so the quota of
+	// new problems is reset after each.
+	for i := 1; i <= 51; i++ {
+		draft := problems.Draft{Title: fmt.Sprintf("大量の問題 %02d", i), TimeLimitMS: "2000", MemoryLimitMB: "512"}
+		if _, err := store.Save(ctx, "folders_many@example.test", fmt.Sprintf("f01de200-0000-4000-8000-%012d", i), 0, draft); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.Pool().Exec(ctx, `DELETE FROM creation_quotas WHERE owner_id='folders_many@example.test'`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dependencies := handlerDependencies{Accounts: &accounts.Store{Pool: store.Pool()}, CognitoUsers: cognito, UserPoolID: "local_browser", Store: store, Contests: &contests.Store{Pool: store.Pool()}, Folders: folders.New(store.Pool()), Images: &images.Store{Pool: store.Pool()}, Notifications: &notifications.Store{Pool: store.Pool()}, Profiles: profileStore, Posts: posts.New(store.Pool()), Submissions: &submissions.Store{Pool: store.Pool()}, JudgeImage: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Operators: map[string]bool{"alice@example.test": true}, Verifier: newCognitoVerifier(f.server.URL, "client")}
 	address := os.Getenv("OPENOJ_BROWSER_API_ADDR")
 	if address == "" {
 		address = "127.0.0.1:18082"

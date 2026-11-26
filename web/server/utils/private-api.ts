@@ -62,6 +62,10 @@ const forwardedCodes = new Set([
   'confirmation_mismatch',
   'account_has_active_contest',
   'editorial_problem_unavailable',
+  'folder_limit',
+  'folder_depth',
+  'folder_name_taken',
+  'folder_cycle',
 ])
 
 // Passed on with Retry-After only on a 429; they are not in forwardedCodes, so other statuses drop them.

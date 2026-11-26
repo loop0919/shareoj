@@ -9,6 +9,7 @@ import (
 
 	"judge/api/internal/accounts"
 	"judge/api/internal/contests"
+	"judge/api/internal/folders"
 	"judge/api/internal/images"
 	"judge/api/internal/notifications"
 	"judge/api/internal/posts"
@@ -30,6 +31,7 @@ type handlerDependencies struct {
 	CognitoUsers         CognitoUsers
 	UserPoolID           string
 	Contests             *contests.Store
+	Folders              *folders.Store
 	Images               *images.Store
 	Notifications        *notifications.Store
 	DispatchJudge        func(context.Context) error
@@ -119,6 +121,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	images := imageHandler{Store: d.Images}
 	notifications := notificationHandler{Store: d.Notifications}
 	tagList := tagHandler{Store: d.Tags}
+	folders := folderHandler{Store: d.Folders}
 	auth := authentication{Verifier: d.Verifier, Profiles: d.Profiles}
 	public := func(pattern string, handler http.HandlerFunc, release bool, doc publicOperation) {
 		documentPublicRoute(docs, pattern, doc)
@@ -223,6 +226,11 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	private("DELETE /my/difficulty-votes/{id}", problems.difficultyVote, true)
 	private("GET /my/favorites/{id}", problems.favorite, true)
 	private("PUT /my/favorites/{id}", problems.favorite, true)
+	private("GET /my/folders", folders.list, false)
+	private("POST /my/folders", folders.create, false)
+	private("PUT /my/folders/{id}", folders.update, false)
+	private("DELETE /my/folders/{id}", folders.remove, false)
+	private("PUT /my/folder-items", folders.place, false)
 	private("POST /my/submissions", submissions.submission, true)
 	private("GET /my/submissions", submissions.submission, false)
 	private("POST /my/code-runs", submissions.codeRuns, false)
@@ -250,6 +258,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	private("DELETE /my/account", account.remove, true)
 	mux.HandleFunc("GET /my/profile", auth.require(profiles.profile, false, 10*time.Second))
 	mux.HandleFunc("PUT /my/profile", auth.require(profiles.profile, false, 10*time.Second))
+	private("PUT /my/folder-view", profiles.folderView, false)
 	private("GET /my/problems", problems.problem, true)
 	private("GET /my/problems/{id}", problems.problem, true)
 	private("GET /my/problems/{id}/submissions", submissions.problemSubmissions, true)

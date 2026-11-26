@@ -167,6 +167,12 @@ var codeRunsSchema string
 //go:embed 047_featured_starts_at_22.sql
 var featuredStartsAt22Schema string
 
+//go:embed 048_content_folders.sql
+var contentFoldersSchema string
+
+//go:embed 049_post_created_at.sql
+var postCreatedAtSchema string
+
 // migrations lists the schemas in version order: version N is the Nth entry, from NNN_*.sql.
 // Add a migration at the end under the next number. Deployed databases record the versions they applied, so never
 // remove or reorder an entry; a reverted migration keeps its number reserved, like 019_reserved.sql.
@@ -219,6 +225,8 @@ func migrations() []string {
 		clarificationSettersSchema,
 		codeRunsSchema,
 		featuredStartsAt22Schema,
+		contentFoldersSchema,
+		postCreatedAtSchema,
 	}
 }
 

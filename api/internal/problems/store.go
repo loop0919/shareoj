@@ -187,6 +187,8 @@ type Summary struct {
 	ContestID          string     `json:"contestId,omitempty"`
 	// ViaContest marks a tested problem that the viewer manages only as a setter of that contest.
 	ViaContest *ContestRef `json:"viaContest,omitempty"`
+	// Author is the handle of the problem's owner; only the tested list fills it.
+	Author string `json:"author,omitempty"`
 	// Partial marks a partially scored problem, whose full score becomes its points in a contest (ADR 0025).
 	Partial          bool      `json:"partial,omitempty"`
 	FullScore        int       `json:"fullScore,omitempty"`
@@ -195,6 +197,10 @@ type Summary struct {
 	Title            string    `json:"title"`
 	Difficulty       *int      `json:"difficulty"`
 	UpdatedAt        time.Time `json:"updatedAt"`
+	// PublishedAt is when the published version went out; an unpublished problem has none.
+	PublishedAt *time.Time `json:"publishedAt,omitempty"`
+	// CreatedAt is when the problem was first saved. Only its owner and testers read these lists.
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 type Cursor struct {
@@ -279,14 +285,14 @@ func (s *Store) ListTesting(ctx context.Context, owner string, cursor *Cursor) (
 	return s.list(ctx, owner, cursor, true)
 }
 
-// Both lists select these columns, then the three columns of ViaContest, which the owned list leaves NULL.
-const summaryColumns = `id, draft, updated_at, published_version,ever_published,COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at,COALESCE((SELECT preference FROM featured_applications WHERE problem_id=problem_drafts.id),''),EXISTS(SELECT 1 FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=problem_drafts.id AND NOT c.released)`
+// Both lists select these columns, then the three columns of ViaContest and the owner's handle, which the owned list leaves NULL.
+const summaryColumns = `id, draft, updated_at, created_at, CASE WHEN published_draft IS NOT NULL THEN published_at END, published_version,ever_published,COALESCE((SELECT contest_id::text FROM contest_problems WHERE problem_id=problem_drafts.id),''),scheduled_at,COALESCE((SELECT preference FROM featured_applications WHERE problem_id=problem_drafts.id),''),EXISTS(SELECT 1 FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id WHERE cp.problem_id=problem_drafts.id AND NOT c.released)`
 
-const ownedSummaries = `SELECT ` + summaryColumns + `,NULL::text,NULL::text,NULL::text FROM problem_drafts WHERE owner_id=$1`
+const ownedSummaries = `SELECT ` + summaryColumns + `,NULL::text,NULL::text,NULL::text,NULL::text FROM problem_drafts WHERE owner_id=$1`
 
 // Setters of a published contest test its problems until the results are final, without an invitation. The
 // subquery only narrows the candidates; can_manage_problem decides, so the list never shows what opens as 404.
-const testedSummaries = `SELECT ` + summaryColumns + `,via.via_id,via.via_title,via.via_author FROM problem_drafts
+const testedSummaries = `SELECT ` + summaryColumns + `,via.via_id,via.via_title,via.via_author,(SELECT handle FROM user_profiles u WHERE u.owner_id=problem_drafts.owner_id) FROM problem_drafts
  LEFT JOIN LATERAL (SELECT c.id::text AS via_id,c.title AS via_title,u.handle AS via_author FROM contest_problems cp JOIN contests c ON c.id=cp.contest_id
   JOIN user_profiles u ON u.owner_id=problem_drafts.owner_id
   WHERE cp.problem_id=problem_drafts.id AND NOT EXISTS(SELECT 1 FROM problem_testers t WHERE t.problem_id=problem_drafts.id AND t.owner_id=$1)) via ON true
@@ -312,13 +318,16 @@ func (s *Store) list(ctx context.Context, owner string, cursor *Cursor, testing 
 		var p Summary
 		var data []byte
 		var via ContestRef
-		var viaID, viaTitle, viaAuthor *string
-		if err := row.Scan(&p.ID, &data, &p.UpdatedAt, &p.PublishedVersion, &p.EverPublished, &p.ContestID, &p.ScheduledAt, &p.FeaturedPreference, &p.ContestScheduled, &viaID, &viaTitle, &viaAuthor); err != nil {
+		var viaID, viaTitle, viaAuthor, author *string
+		if err := row.Scan(&p.ID, &data, &p.UpdatedAt, &p.CreatedAt, &p.PublishedAt, &p.PublishedVersion, &p.EverPublished, &p.ContestID, &p.ScheduledAt, &p.FeaturedPreference, &p.ContestScheduled, &viaID, &viaTitle, &viaAuthor, &author); err != nil {
 			return p, err
 		}
 		if viaID != nil && viaTitle != nil && viaAuthor != nil {
 			via.ID, via.Title, via.Author = *viaID, *viaTitle, *viaAuthor
 			p.ViaContest = &via
+		}
+		if author != nil {
+			p.Author = *author
 		}
 		err := json.Unmarshal(data, &p.Draft)
 		p.Title, p.Difficulty = p.Draft.Title, p.Draft.Difficulty

@@ -20,6 +20,7 @@ import (
 	"judge/api/internal/accounts"
 	"judge/api/internal/contests"
 	"judge/api/internal/database"
+	"judge/api/internal/folders"
 	"judge/api/internal/images"
 	"judge/api/internal/notifications"
 	"judge/api/internal/posts"
@@ -109,6 +110,7 @@ func configuredStorage(getenv func(string) string, auth AuthConfig, region strin
 		private.Profiles = profiles.New(pool)
 		private.Accounts = &accounts.Store{Pool: pool}
 		private.Posts = posts.New(pool)
+		private.Folders = folders.New(pool)
 		private.Tags = &tags.Store{Pool: pool}
 		private.Submissions = &submissions.Store{Pool: pool}
 		auth.Registrations = database.RegistrationQuota{Pool: pool}

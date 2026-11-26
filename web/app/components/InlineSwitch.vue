@@ -1,14 +1,17 @@
 <script setup lang="ts">
 // A small on/off switch with its label beside it, for lists and toolbars. The parent places it through a class.
 // label names the switch for screen readers when the visible text is short, as in a table row. disabled is for a switch
-// outside a disabled fieldset; attributes on the component land on the label, not the input.
-defineProps<{ describedby?: string, label?: string, disabled?: boolean }>()
+// outside a disabled fieldset; attributes on the component land on the label, not the input. busy is for a switch whose
+// change is being saved: it keeps the focus, ignores presses until the save ends and tells screen readers why.
+const props = defineProps<{ describedby?: string, label?: string, disabled?: boolean, busy?: boolean }>()
 const on = defineModel<boolean>({ required: true })
+// Cancelling the click keeps the box as it is, so neither a click nor Space toggles it, and no change reaches the model.
+function ignoreWhileBusy(event: MouseEvent) { if (props.busy) event.preventDefault() }
 </script>
 
 <template>
   <label class="inline-switch">
-    <input v-model="on" type="checkbox" role="switch" :aria-describedby="describedby" :aria-label="label" :disabled="disabled">
+    <input v-model="on" type="checkbox" role="switch" :aria-describedby="describedby" :aria-label="label" :aria-busy="busy || undefined" :aria-disabled="busy || undefined" :disabled="disabled" @click="ignoreWhileBusy">
     <span class="switch-track" aria-hidden="true"><span class="switch-thumb" /></span>
     <slot />
   </label>
@@ -16,7 +19,7 @@ const on = defineModel<boolean>({ required: true })
 
 <style scoped>
 /* Hallmark · component: inline switch · genre: modern-minimal · theme: existing ShareOJ tokens (Plain)
- * states: off · on · hover · focus-visible · active · disabled · reduced motion
+ * states: off · on · hover · focus-visible · active · disabled · busy · reduced motion
  * A switch is a checkbox: the input covers the whole label, so a click toggles it without moving focus or the page. */
 .inline-switch { position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: .8125rem; white-space: nowrap; cursor: pointer; }
 .inline-switch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
@@ -28,6 +31,7 @@ const on = defineModel<boolean>({ required: true })
 .inline-switch input:active + .switch-track .switch-thumb { width: 16px; }
 .inline-switch:has(input:disabled) { opacity: .55; cursor: not-allowed; }
 .inline-switch input:disabled { cursor: not-allowed; }
+.inline-switch:has(input[aria-busy="true"]), .inline-switch input[aria-busy="true"] { cursor: progress; }
 @media (hover: hover) {
   .inline-switch:hover .switch-track { border-color: var(--color-ink); }
   .inline-switch:hover input:checked + .switch-track { border-color: var(--color-accent); }

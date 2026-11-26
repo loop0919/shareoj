@@ -191,6 +191,67 @@ func TestProfilesPostgres(t *testing.T) {
 		t.Fatalf("no public icons: %d %s", w.Code, w.Body.String())
 	}
 
+	// The folder view beta is saved apart from the profile: turning it on keeps the version, so a settings page left
+	// open still saves, and that save keeps the switch. Nobody else sees it.
+	type ownProfile struct {
+		Avatar     string `json:"avatar"`
+		Version    int64  `json:"version"`
+		FolderView bool   `json:"folderView"`
+	}
+	readProfile := func(w *httptest.ResponseRecorder) ownProfile {
+		t.Helper()
+		var result struct {
+			Profile ownProfile `json:"profile"`
+		}
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &result) != nil {
+			t.Fatalf("own profile: %d %s", w.Code, w.Body.String())
+		}
+		return result.Profile
+	}
+	if w := request("PUT", "/my/profile", "dave", `{"handle":"dave","avatar":"","version":0}`); w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	fresh := request("GET", "/my/profile", "dave", "")
+	if !strings.Contains(fresh.Body.String(), `"folderView":false`) {
+		t.Fatalf("new profile: %s", fresh.Body.String())
+	}
+	opened := readProfile(fresh)
+	if w := request("PUT", "/my/folder-view", "", `{"enabled":true}`); w.Code != 401 {
+		t.Fatalf("anonymous folder view: %d", w.Code)
+	}
+	for _, body := range []string{`{}`, `{"enabled":null}`, `{"enabled":"true"}`, `{"enabled":true,"version":1}`} {
+		expect(t, request("PUT", "/my/folder-view", "dave", body), 400, "invalid_request")
+	}
+	if w := request("PUT", "/my/folder-view", "dave", `{"enabled":true}`); w.Code != 200 || strings.TrimSpace(w.Body.String()) != `{"enabled":true}` {
+		t.Fatalf("folder view on: %d %s", w.Code, w.Body.String())
+	}
+	if p := readProfile(request("GET", "/my/profile", "dave", "")); !p.FolderView || p.Version != opened.Version {
+		t.Fatalf("folder view on: %+v, version was %d", p, opened.Version)
+	}
+	if p := readProfile(request("GET", "/my/profile", "carol", "")); p.FolderView {
+		t.Fatal("folder view leaked to another user")
+	}
+	// The profile save takes no switch, so a page that never showed it cannot turn it off.
+	if w := request("PUT", "/my/profile", "dave", fmt.Sprintf(`{"handle":"dave","avatar":"","version":%d,"folderView":false}`, opened.Version)); w.Code != 400 {
+		t.Fatalf("profile save took the switch: %d %s", w.Code, w.Body.String())
+	}
+	saved := readProfile(request("PUT", "/my/profile", "dave", fmt.Sprintf(`{"handle":"dave","avatar":%q,"version":%d}`, carolAvatar, opened.Version)))
+	if !saved.FolderView || saved.Avatar != carolAvatar || saved.Version != opened.Version+1 {
+		t.Fatalf("profile save after the switch: %+v", saved)
+	}
+	if p := readProfile(request("GET", "/my/profile", "dave", "")); !p.FolderView || p.Avatar != carolAvatar {
+		t.Fatalf("profile after the save: %+v", p)
+	}
+	if w := request("GET", "/users/dave", "", ""); w.Code != 200 || strings.Contains(w.Body.String(), "folderView") {
+		t.Fatalf("public profile shows the switch: %d %s", w.Code, w.Body.String())
+	}
+	if w := request("PUT", "/my/folder-view", "dave", `{"enabled":false}`); w.Code != 200 || strings.TrimSpace(w.Body.String()) != `{"enabled":false}` {
+		t.Fatalf("folder view off: %d %s", w.Code, w.Body.String())
+	}
+	if p := readProfile(request("GET", "/my/profile", "dave", "")); p.FolderView || p.Version != saved.Version {
+		t.Fatalf("folder view off: %+v", p)
+	}
+
 	// All mutation paths enforce ownership and version.
 	if w := request("PUT", "/my/profile", "bob", `{"handle":"bob","avatar":"","version":0}`); w.Code != 200 {
 		t.Fatal(w.Body.String())
@@ -466,7 +527,7 @@ func TestProfilesPostgres(t *testing.T) {
 	if _, err = store.Save(ctx, "alice", id, 0, problems.Draft{Title: "before upgrade"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = store.Pool().Exec(ctx, `DROP TABLE contest_clarifications; DROP FUNCTION contest_clarification_manager(uuid,uuid,text); DROP FUNCTION submission_full_score(jsonb); DROP FUNCTION contest_onsite(contests,text); DROP FUNCTION contest_teammates(uuid,text); DROP TABLE contest_attempt_failures; DROP FUNCTION contest_freeze_at(contests); DROP FUNCTION can_manage_problem_directly(uuid,text); DROP TABLE contest_setter_invitations; DROP TABLE contest_setters; DROP FUNCTION contest_competitor(contests,text); DROP FUNCTION contest_submission_public(contests,timestamptz); DROP FUNCTION contest_results_final(contests); DROP FUNCTION contest_results_final_at(contests); DROP FUNCTION contest_problem_access(uuid,uuid,text); DROP FUNCTION contest_staff(uuid,text); DROP FUNCTION contest_excluded(uuid,text); DROP FUNCTION contest_problem_staff(uuid,text,timestamptz); DROP FUNCTION contest_setter(uuid,text); DROP TABLE contest_exclusions; ALTER TABLE problem_drafts DROP COLUMN scheduled_at, DROP COLUMN scheduled_draft, DROP COLUMN scheduled_version; DROP FUNCTION problem_tags_hidden(uuid); DROP FUNCTION notify_user_editorial() CASCADE; DROP TABLE contest_drafts; DROP TABLE registration_quotas; DROP TABLE creation_quotas; DROP FUNCTION remember_problem_publication() CASCADE; DROP FUNCTION featured_reveal_at(uuid); DROP TABLE featured_previews; DROP TABLE featured_slots,featured_applications,featured_schedule; ALTER TABLE problem_drafts DROP COLUMN ever_published; DROP FUNCTION content_image_access(uuid,text,text,boolean); DROP TABLE content_images; DROP TABLE notifications; DROP FUNCTION notify_problem_activity() CASCADE; DROP FUNCTION notify_first_accept() CASCADE; DROP FUNCTION can_manage_problem(uuid,text); DROP TABLE problem_tester_invitations; DROP TABLE problem_difficulty_votes; DROP TABLE problem_favorites; DROP TABLE code_runs; DROP TABLE test_files; DROP TABLE submissions; DROP TABLE contest_problems; DROP TABLE contest_participants; DROP TABLE contest_teams; DROP TABLE contests; DROP TABLE problem_testers; DROP TABLE blog_posts; DROP TABLE user_profiles; ALTER TABLE problem_drafts DROP COLUMN published_draft, DROP COLUMN published_version, DROP COLUMN published_at; DELETE FROM schema_migrations WHERE version>=2`); err != nil {
+	if _, err = store.Pool().Exec(ctx, `DROP TABLE problem_folder_items,post_folder_items,content_folders; DROP TABLE contest_clarifications; DROP FUNCTION contest_clarification_manager(uuid,uuid,text); DROP FUNCTION submission_full_score(jsonb); DROP FUNCTION contest_onsite(contests,text); DROP FUNCTION contest_teammates(uuid,text); DROP TABLE contest_attempt_failures; DROP FUNCTION contest_freeze_at(contests); DROP FUNCTION can_manage_problem_directly(uuid,text); DROP TABLE contest_setter_invitations; DROP TABLE contest_setters; DROP FUNCTION contest_competitor(contests,text); DROP FUNCTION contest_submission_public(contests,timestamptz); DROP FUNCTION contest_results_final(contests); DROP FUNCTION contest_results_final_at(contests); DROP FUNCTION contest_problem_access(uuid,uuid,text); DROP FUNCTION contest_staff(uuid,text); DROP FUNCTION contest_excluded(uuid,text); DROP FUNCTION contest_problem_staff(uuid,text,timestamptz); DROP FUNCTION contest_setter(uuid,text); DROP TABLE contest_exclusions; ALTER TABLE problem_drafts DROP COLUMN scheduled_at, DROP COLUMN scheduled_draft, DROP COLUMN scheduled_version; DROP FUNCTION problem_tags_hidden(uuid); DROP FUNCTION notify_user_editorial() CASCADE; DROP TABLE contest_drafts; DROP TABLE registration_quotas; DROP TABLE creation_quotas; DROP FUNCTION remember_problem_publication() CASCADE; DROP FUNCTION featured_reveal_at(uuid); DROP TABLE featured_previews; DROP TABLE featured_slots,featured_applications,featured_schedule; ALTER TABLE problem_drafts DROP COLUMN ever_published; DROP FUNCTION content_image_access(uuid,text,text,boolean); DROP TABLE content_images; DROP TABLE notifications; DROP FUNCTION notify_problem_activity() CASCADE; DROP FUNCTION notify_first_accept() CASCADE; DROP FUNCTION can_manage_problem(uuid,text); DROP TABLE problem_tester_invitations; DROP TABLE problem_difficulty_votes; DROP TABLE problem_favorites; DROP TABLE code_runs; DROP TABLE test_files; DROP TABLE submissions; DROP TABLE contest_problems; DROP TABLE contest_participants; DROP TABLE contest_teams; DROP TABLE contests; DROP TABLE problem_testers; DROP TABLE blog_posts; DROP TABLE user_profiles; ALTER TABLE problem_drafts DROP COLUMN published_draft, DROP COLUMN published_version, DROP COLUMN published_at; DELETE FROM schema_migrations WHERE version>=2`); err != nil {
 		t.Fatal(err)
 	}
 	if err = store.Migrate(ctx); err != nil {

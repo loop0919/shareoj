@@ -132,6 +132,7 @@ const upstreamRefusals = [
   { id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f003', status: 429, error: 'team_full', retryAfter: '30' },
   { id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f004', status: 429, error: 'private-upstream-diagnostic', retryAfter: '30' },
   { id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f005', status: 500, error: 'team_full' },
+  { id: 'f0f0f0f0-f0f0-4f0f-8f0f-f0f0f0f0f006', status: 409, error: 'folder_depth' },
 ]
 let runtimeReads = 0
 // Requests that play the gateway in front of the API refusing under load (tests/upstream-errors.spec.ts). The name in
