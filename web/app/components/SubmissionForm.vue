@@ -3,7 +3,7 @@ import type { Submission } from '../../shared/types/submission'
 import { shortId } from '~~/shared/utils/short-id'
 import type { ErrorCode } from '~/utils/api-error'
 import { usableRuntimes } from '~/utils/judge-catalog'
-import { hasSource } from '~/utils/has-source'
+import { hasSource, sourceLimit, sourceRefusal } from '~/utils/has-source'
 
 // team is a team contest's member, whose own submissions are listed as the team's (ADR 0024).
 const props = defineProps<{ problemId: string, hasSamples: boolean, contestId?: string, team?: boolean, beforeSubmit?: () => Promise<boolean>, disabled?: boolean }>()
@@ -11,8 +11,6 @@ const { user } = useAccount()
 const sampleHelpId = useId()
 const sampleSubmitHelpId = useId()
 const source = ref('')
-// The largest source the API accepts, in UTF-8 bytes.
-const sourceLimit = 131072
 const runtime = ref('cpp23-gcc')
 const { data: catalog, error: catalogError, refresh: refreshCatalog } = await useJudgeCatalog()
 const available = computed(() => usableRuntimes(catalog.value, catalogError.value))
@@ -48,8 +46,9 @@ function post(easyTest: boolean) {
 }
 async function submit(requested: Action = 'submit') {
   if ((requested === 'sample' && !props.hasSamples) || props.disabled || sending.value || !available.value.some(item => item.id === runtime.value)) return
-  if (!hasSource(runtime.value, source.value) || new TextEncoder().encode(source.value).length > sourceLimit) {
-    message.value = `ソースコードを1〜${sourceLimit.toLocaleString('en-US')}バイトで入力してください。`
+  const refusal = sourceRefusal(runtime.value, source.value)
+  if (refusal) {
+    message.value = refusal
     return
   }
   action.value = requested
