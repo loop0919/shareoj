@@ -47,23 +47,7 @@ function grab(entry: LibraryEntry, event: DragEvent) {
 
 // What a row is seldom asked for waits behind its ⋯ button, as a folder's does in the folder list: one menu is open at
 // a time, and it closes on Esc, on a press outside, or when the focus leaves it.
-const menuId = useId()
-const menu = ref('')
-const menuButtons = new Map<string, HTMLElement>()
-function closeMenu(refocus = false) {
-  const key = menu.value
-  menu.value = ''
-  if (refocus) menuButtons.get(key)?.focus()
-}
-function leaveMenu(event: FocusEvent) {
-  const actions = event.currentTarget as HTMLElement
-  if (!(event.relatedTarget instanceof Node && actions.contains(event.relatedTarget))) closeMenu()
-}
-function outside(event: PointerEvent) {
-  if (menu.value && event.target instanceof Element && !event.target.closest('.library-menu-wrap')) closeMenu()
-}
-onMounted(() => document.addEventListener('pointerdown', outside))
-onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
+const { menuId, menu, menuButtons, closeMenu, leaveMenu } = useRowMenu('.library-menu-wrap')
 // The focus goes back to the ⋯ button first, so the move starts from a button that stays while the row does.
 function moveFromMenu(entry: LibraryEntry) {
   closeMenu(true)

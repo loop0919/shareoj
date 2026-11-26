@@ -73,23 +73,7 @@ const rows = computed(() => {
 })
 
 // A folder's actions open under its row. Escape, a click elsewhere or tabbing away closes them.
-const menuId = useId()
-const menu = ref('')
-const menuButtons = new Map<string, HTMLElement>()
-function closeMenu(refocus = false) {
-  const id = menu.value
-  menu.value = ''
-  if (refocus) menuButtons.get(id)?.focus()
-}
-function leaveMenu(event: FocusEvent) {
-  const actions = event.currentTarget as HTMLElement
-  if (!(event.relatedTarget instanceof Node && actions.contains(event.relatedTarget))) closeMenu()
-}
-function outside(event: PointerEvent) {
-  if (menu.value && event.target instanceof Element && !event.target.closest('.folder-tree-actions')) closeMenu()
-}
-onMounted(() => document.addEventListener('pointerdown', outside))
-onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
+const { menuId, menu, menuButtons, closeMenu, leaveMenu } = useRowMenu('.folder-tree-actions')
 // After a change the row may have moved or gone; its actions button, or else the open folder, keeps the focus.
 async function keepFocus(id: string) {
   await nextTick()
