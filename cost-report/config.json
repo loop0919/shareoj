@@ -1,0 +1,74 @@
+{
+  "start": "2026-09",
+  "sponsors_url": null,
+  "standing_note": "メインのサーバー代は2026年10月に3年分を前払いしたため、以降の月の請求には含まれません。",
+  "month_notes": {
+    "2026-10": "3年分のサーバー前払い {prepay} を含みます。"
+  },
+  "groups": [
+    {
+      "id": "prepay",
+      "label": "サーバーの前払い",
+      "aws": "Savings Plans",
+      "record_types": ["SavingsPlanUpfrontFee", "SavingsPlanRecurringFee", "Fee"]
+    },
+    {
+      "id": "database",
+      "label": "データベース",
+      "aws": "Amazon RDS",
+      "services": [
+        "Amazon Relational Database Service",
+        "AWS Secrets Manager",
+        "Amazon ElastiCache"
+      ]
+    },
+    {
+      "id": "judge",
+      "label": "ジャッジサーバー",
+      "aws": "Amazon EC2、Lightsail",
+      "services": [
+        "Amazon Elastic Compute Cloud - Compute",
+        "EC2 - Other",
+        "Amazon Lightsail",
+        "Amazon Simple Queue Service"
+      ]
+    },
+    {
+      "id": "site",
+      "label": "サイトとAPI",
+      "aws": "API Gateway、Lambda、S3、Cognito",
+      "services": [
+        "Amazon API Gateway",
+        "AWS Lambda",
+        "Amazon CloudFront",
+        "Amazon Simple Storage Service",
+        "Amazon Cognito",
+        "AWS Certificate Manager"
+      ]
+    },
+    {
+      "id": "security",
+      "label": "監視・セキュリティ",
+      "aws": "CloudWatch、GuardDuty、Security Hub、Config",
+      "services": [
+        "AmazonCloudWatch",
+        "CloudWatch Events",
+        "AWS CloudTrail",
+        "AWS Config",
+        "AWS Security Hub",
+        "Amazon GuardDuty",
+        "AWS Key Management Service",
+        "Amazon Simple Notification Service",
+        "AWS Cost Explorer"
+      ]
+    },
+    {
+      "id": "domain",
+      "label": "ドメイン",
+      "aws": "Route 53",
+      "services": ["Amazon Route 53", "Amazon Registrar"]
+    },
+    { "id": "other", "label": "その他" },
+    { "id": "tax", "label": "消費税", "record_types": ["Tax"] }
+  ]
+}

@@ -1,0 +1,126 @@
+name: Cost report
+
+# Publishes last month's AWS costs on GitHub Pages. The months live on the cost-data branch:
+# a push to main would start Deploy dev once a month.
+on:
+  schedule:
+    # 09:23 JST on the 8th to the 14th. AWS finalizes a month a few days after it ends,
+    # so the first run that sees final figures publishes them and the later ones change nothing.
+    - cron: '23 0 8-14 * *'
+  workflow_dispatch:
+    inputs:
+      fetch:
+        description: AWSから読み直す。外すと、保存済みのデータでページだけ作り直す
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: cost-report
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Read costs and build the page
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # The AWS role trusts this environment only, and the environment is limited to main.
+    environment: cost-report
+    permissions:
+      contents: write
+      id-token: write
+    outputs:
+      publish: ${{ steps.artifact.outcome == 'success' }}
+    env:
+      # Scheduled runs have no inputs and always read from AWS.
+      FETCH: ${{ github.event_name != 'workflow_dispatch' || inputs.fetch }}
+    steps:
+      - name: Check out the scripts
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Check out the stored months
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: cost-data
+          path: data
+
+      # The credentials step logs the role's unique ID, and its account-ID mask does not cover that.
+      # GitHub hides secret values in the log, so the ID is stored as a secret and read here.
+      - name: Require the role ID secret
+        if: env.FETCH == 'true'
+        env:
+          ROLE_ID: ${{ secrets.AWS_COST_REPORT_ROLE_ID }}
+        run: |
+          if [[ -z "$ROLE_ID" ]]; then
+            echo "::error::Set the AWS_COST_REPORT_ROLE_ID secret in the cost-report environment."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        if: env.FETCH == 'true'
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ secrets.AWS_COST_REPORT_ROLE_ARN }}
+          role-session-name: GitHubActions-${{ github.run_id }}
+          # Cost Explorer is served from us-east-1 only.
+          aws-region: us-east-1
+          mask-aws-account-id: true
+
+      - name: Update the months and build the page
+        id: update
+        run: |
+          arguments=(--config cost-report/config.json --data data/costs.json --site site)
+          if [[ "$FETCH" != "true" ]]; then
+            arguments+=(--no-fetch)
+          fi
+          python3 cost-report/update.py "${arguments[@]}"
+
+      - name: Wait for AWS to finalize the month
+        if: steps.update.outputs.status == 'pending'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$(date -u +%-d)" -ge 14 ]]; then
+            echo "::error::AWS has not finalized last month's costs. Nothing was published."
+            exit 1
+          fi
+          echo "::notice::AWS has not finalized last month's costs yet. A later scheduled run publishes them."
+
+      - name: Save the months
+        if: steps.update.outputs.status == 'updated'
+        working-directory: data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add costs.json
+          git commit -m "data: 運用費のデータを更新する"
+          git push origin HEAD:cost-data
+
+      # Unchanged months are published again: the page may have changed on main,
+      # and a run whose deployment failed after saving is repaired by the next one.
+      - name: Upload the page
+        id: artifact
+        if: steps.update.outputs.status == 'updated' || steps.update.outputs.status == 'unchanged'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+  deploy:
+    name: Publish the page
+    needs: build
+    if: needs.build.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

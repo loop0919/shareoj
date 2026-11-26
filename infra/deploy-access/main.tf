@@ -237,6 +237,40 @@ resource "aws_iam_role_policy" "deploy" {
   })
 }
 output "deploy_role_arn" { value = aws_iam_role.github_deploy.arn }
+# The running-cost page reads monthly costs through this role. It is separate from the deploy role
+# so that the scheduled workflow can do nothing else in the account. The subject carries no branch:
+# the cost-report environment in GitHub must itself be limited to main.
+resource "aws_iam_role" "github_cost_report" {
+  name = "${local.name}-github-cost-report"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Federated = "${local.arn}:iam::${local.account}:oidc-provider/token.actions.githubusercontent.com" }
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Condition = { StringEquals = {
+        "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+        "token.actions.githubusercontent.com:sub" = var.github_cost_report_subject
+      } }
+    }]
+  })
+}
+resource "aws_iam_role_policy" "cost_report" {
+  name = "cost-report"
+  role = aws_iam_role.github_cost_report.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "ReadCosts"
+      Effect   = "Allow"
+      Action   = ["ce:GetCostAndUsage"]
+      Resource = "*"
+    }]
+  })
+}
+output "github_cost_report_role_arn" { value = aws_iam_role.github_cost_report.arn }
+# The workflow keeps this as a secret so that GitHub hides it in the public log.
+output "github_cost_report_role_id" { value = aws_iam_role.github_cost_report.unique_id }
 # RDS Enhanced Monitoring publishes OS metrics through this role. It is created here because the
 # deploy role may pass it but must not manage roles other than the execution roles.
 resource "aws_iam_role" "rds_monitoring" {

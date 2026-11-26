@@ -8,11 +8,12 @@ mock_provider "aws" {
   mock_resource "aws_iam_role" { defaults = { arn = "arn:aws:iam::123456789012:role/judge-dev-github-deploy" } }
 }
 variables {
-  state_bucket            = "example-state"
-  github_subject          = "repo:owner@123/project@456:environment:dev"
-  api_execution_role_name = "example-api"
-  gateway_ids             = ["example"]
-  user_pool_ids           = ["ap-northeast-1_example"]
+  state_bucket               = "example-state"
+  github_subject             = "repo:owner@123/project@456:environment:dev"
+  github_cost_report_subject = "repo:owner@123/project@456:environment:cost-report"
+  api_execution_role_name    = "example-api"
+  gateway_ids                = ["example"]
+  user_pool_ids              = ["ap-northeast-1_example"]
 }
 run "deployment_boundary" {
   command = plan
