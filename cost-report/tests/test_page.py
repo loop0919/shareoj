@@ -179,7 +179,9 @@ class PageTest(unittest.TestCase):
         self.assertIn('<html lang="ja">', html)
         self.assertIn('<meta name="viewport"', html)
         self.assertIn("<title>ShareOJの運用費</title>", html)
-        self.assertIn("残高のマイナスは、運営者が自分で負担している額です。", html)
+        self.assertIn("金額は米ドルです。", html)
+        # The page states the balance and leaves its reading to the reader.
+        self.assertNotIn("運営者が自分で負担", html)
         for banned in ("noindex", "<script", "http://", "${"):
             self.assertNotIn(banned, html)
 
