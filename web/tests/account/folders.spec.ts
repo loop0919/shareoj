@@ -869,7 +869,7 @@ async function placement(page: Page, kind: 'problem' | 'post', id: string) {
 test('a phone opens the folders from a button above the table and moves rows through the dialog', async ({ page }, testInfo) => {
   await signIn(page)
   const opened = await createFolder(page, 'スマホで開く', null)
-  await createFolder(page, 'スマホで入れる', null)
+  const filled = await createFolder(page, 'スマホで入れる', null)
   await placeProblem(page, opened, 'フォルダの問題A')
   await page.setViewportSize({ width: 375, height: 812 })
   await page.reload()
@@ -923,6 +923,8 @@ test('a phone opens the folders from a button above the table and moves rows thr
   await expect(tree(page)).toBeHidden()
   await expect(rows(page)).toHaveCount(1)
   await expect(rows(page)).toContainText('フォルダの問題A')
+  // The list changes at once and the address follows after the my page's checks; a reload reads the address.
+  await expect(page).toHaveURL(new RegExp(`folder=${filled}`))
   await page.reload()
   await expect(choosing(page)).toHaveAccessibleName('フォルダ: スマホで入れる')
   await expect(rows(page)).toContainText('フォルダの問題A')
