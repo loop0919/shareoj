@@ -1,5 +1,64 @@
 {
-  "months": {},
-  "updated": null,
+  "months": {
+    "2026-09": {
+      "rows": [
+        {
+          "amount": "22.77",
+          "group": "database"
+        },
+        {
+          "amount": "5.31",
+          "group": "judge"
+        },
+        {
+          "amount": "1.36",
+          "group": "site"
+        },
+        {
+          "amount": "51.52",
+          "group": "domain"
+        },
+        {
+          "amount": "8.10",
+          "group": "tax"
+        }
+      ],
+      "total": "89.06"
+    },
+    "2026-10": {
+      "rows": [
+        {
+          "amount": "268.06",
+          "group": "prepay"
+        },
+        {
+          "amount": "34.99",
+          "group": "database"
+        },
+        {
+          "amount": "39.16",
+          "group": "judge"
+        },
+        {
+          "amount": "4.13",
+          "group": "site"
+        },
+        {
+          "amount": "3.79",
+          "group": "security"
+        },
+        {
+          "amount": "0.53",
+          "group": "domain"
+        },
+        {
+          "amount": "35.07",
+          "group": "tax"
+        }
+      ],
+      "total": "385.73"
+    }
+  },
+  "updated": "2026-11-26",
   "version": 1
 }
