@@ -16,7 +16,7 @@
     {
       "id": "prepay",
       "label": "サーバーの前払い",
-      "record_types": ["SavingsPlanUpfrontFee", "SavingsPlanRecurringFee", "Fee"]
+      "record_types": ["SavingsPlanUpfrontFee", "SavingsPlanRecurringFee", "Upfront"]
     },
     {
       "id": "database",
