@@ -485,6 +485,18 @@ jobs:
           terraform -chdir="infra/${{ matrix.root }}" validate
           terraform -chdir="infra/${{ matrix.root }}" test
 
+  cost-report:
+    name: Test cost report
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.0
+      - name: Test the cost report
+        run: python3 -m unittest discover -s cost-report/tests -v
+
   test:
     # Keep the existing required check; every API job must succeed before it passes.
     name: Test and package API
