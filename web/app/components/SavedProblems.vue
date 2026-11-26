@@ -2,6 +2,7 @@
 import { accountListSchema, type AccountSummary } from '~~/shared/types/account-problems'
 import { accountError } from '~/utils/account-problems'
 import { problemStatusGroup, problemStatusOptions } from '~/utils/library-entries'
+import { japanMinute } from '~/utils/japan-time'
 const props = defineProps<{ testing?: boolean }>()
 const heading = computed(() => props.testing ? 'テスト中の問題' : '自分の問題')
 const { user, refreshAccount } = useAccount()
@@ -33,7 +34,6 @@ watch([filter, nextCursor, accountLoading], () => {
   if (filter.value && nextCursor.value && !accountLoading.value && !accountMessage.value) void loadAccount(true)
 })
 
-const updatedLabel = (date: string) => new Date(date).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })
 onMounted(() => { void loadAccount() })
 </script>
 
@@ -59,7 +59,7 @@ onMounted(() => { void loadAccount() })
             <td class="line-cell" data-label="状態">
               <SavedProblemState :entry="entry" />
             </td>
-            <td class="corner-cell"><time :datetime="entry.updatedAt">{{ updatedLabel(entry.updatedAt) }}</time></td>
+            <td class="corner-cell"><time :datetime="entry.updatedAt">{{ japanMinute(entry.updatedAt) }}</time></td>
             <td class="lead-cell"><DifficultyBadge :level="entry.difficulty" /></td>
             <td class="actions-cell"><SavedProblemActions :entry="entry" :testing="testing" /></td>
           </tr></tbody>

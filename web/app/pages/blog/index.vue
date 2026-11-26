@@ -2,6 +2,7 @@
 import type { z } from 'zod'
 import type { postListSchema } from '~~/shared/types/post'
 import { shortId } from '~~/shared/utils/short-id'
+import { japanDate } from '~/utils/japan-time'
 // Each tag gets a fresh list and pagination.
 definePageMeta({ key: route => `posts:${typeof route.query.tag === 'string' ? route.query.tag : ''}` })
 const route = useRoute()
@@ -14,7 +15,6 @@ const { data, error } = await useFetch('/api/posts', { query: tag ? { tag } : {}
 if (error.value?.statusCode === 400) throw createError({ statusCode: 404, statusMessage: 'タグが見つかりません', fatal: true })
 if (error.value || !data.value) throw createError({ statusCode: 502, statusMessage: '記事を取得できませんでした', fatal: true })
 const { current, index, loading, message, move } = useContentPages(data.value, cursor => $fetch<z.infer<typeof postListSchema>>('/api/posts', { query: tag ? { cursor, tag } : { cursor } }))
-const date = (value: string) => new Date(value).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' })
 const heading = tag ? `タグ「${tag}」の記事` : '記事'
 const description = tag ? `ShareOJ で「${tag}」のタグが付いた記事の一覧。` : 'ShareOJ の記事一覧。プログラミング問題の解き方や学んだことを共有する記事を読めます。'
 useSeoMeta({ title: `${heading} | ShareOJ`, description, ogDescription: description, ogTitle: `${heading} | ShareOJ`, ogUrl: canonical, ogType: 'website' })
@@ -32,7 +32,7 @@ useSharePreview({ type: 'website', title: heading, path, description })
         <tbody><tr v-for="post in current.items" :key="post.id">
           <th scope="row"><NuxtLink :to="`/blog/${shortId(post.id)}`">{{ post.title }}</NuxtLink><TagLinks v-if="post.tags.length" class="post-row-tags" :tags="post.tags" to="/blog" /></th>
           <td class="inline-cell"><UserLink :handle="post.author" /> <span v-if="post.isOperator" class="operator-label">運営</span></td>
-          <td class="end-cell"><time v-if="post.publishedAt" :datetime="post.publishedAt">{{ date(post.publishedAt) }}</time><span v-else>—</span></td>
+          <td class="end-cell"><time v-if="post.publishedAt" :datetime="post.publishedAt">{{ japanDate(post.publishedAt) }}</time><span v-else>—</span></td>
         </tr></tbody>
       </table>
     </div>

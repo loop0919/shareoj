@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { fullId, shortId } from '~~/shared/utils/short-id'
+import { japanDate } from '~/utils/japan-time'
 definePageMeta({ key: route => String(route.params.id) })
 const route = useRoute()
 const config = useRuntimeConfig()
@@ -14,7 +15,7 @@ useSharePreview({ title: () => post.value!.title, path: () => `/blog/${shortId(p
   <article v-if="post" class="post-page">
     <div class="breadcrumb-row"><nav class="breadcrumb" aria-label="パンくずリスト"><NuxtLink to="/blog">記事</NuxtLink><span aria-hidden="true">/</span><span>{{ post.title }}</span></nav><TweetButton :title="post.title" :url="canonical" /></div>
     <h1>{{ post.title }}</h1>
-    <p class="muted"><UserLink :handle="post.author" /> <span v-if="post.isOperator">・運営</span> · <time :datetime="post.publishedAt">{{ new Date(post.publishedAt).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' }) }}</time></p>
+    <p class="muted"><UserLink :handle="post.author" /> <span v-if="post.isOperator">・運営</span> · <time :datetime="post.publishedAt">{{ japanDate(post.publishedAt) }}</time></p>
     <TagLinks v-if="post.tags.length" class="post-tags" :tags="post.tags" to="/blog" />
     <p v-if="post.problems.length" class="post-problems">解説している問題 <template v-for="(problem, index) in post.problems" :key="problem.id"><span v-if="index" aria-hidden="true">、</span><NuxtLink :to="`/problems/${shortId(problem.id)}`">{{ problem.title }}</NuxtLink></template></p>
     <ProblemMarkdown :source="post.markdown" />
