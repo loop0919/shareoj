@@ -379,6 +379,20 @@ class RolloutTests(unittest.TestCase):
         self.assertEqual(len(plans), 2)
         self.assertTrue(all('-refresh-only' in args for args in plans))
 
+    def test_finish_restores_the_alarms_after_delivery_and_applies_each_refreshed_plan(self):
+        _, calls, events, _, _ = self.run_finish()
+        alarms = [e for e in events if e[0].endswith('-alarm-actions')]
+        self.assertEqual(alarms, [('enable-alarm-actions', '--alarm-names', 'enabled'),
+                                  ('disable-alarm-actions', '--alarm-names', 'disabled')])
+        self.assertLess(events.index(('delivery',)), events.index(alarms[0]))
+        terraform = [args for args in calls if args[0] == 'terraform']
+        self.assertEqual([args[1:3] for args in terraform], [('-chdir=infra/api', 'plan'), ('-chdir=infra/api', 'apply'),
+                                                             ('-chdir=infra/judge', 'plan'), ('-chdir=infra/judge', 'apply')])
+        for plan, apply in zip(terraform[::2], terraform[1::2]):
+            self.assertEqual(plan[3:5], ('-input=false', '-refresh-only'))
+            self.assertEqual(apply[3:], ('-input=false', plan[5].removeprefix('-out=')))
+            self.assertTrue(plan[5].endswith(plan[1].removeprefix('-chdir=').replace('/', '-') + '.tfplan'))
+
     def test_finish_tags_the_pool_after_health_and_releases_the_hold(self):
         state, _, events, nodes, digest = self.run_finish(pool='judge-dev')
         names = [e[0] for e in events]
