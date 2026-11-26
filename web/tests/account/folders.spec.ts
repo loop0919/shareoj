@@ -31,9 +31,10 @@ const folder = (page: Page, name: string) => tree(page).getByRole('button', { na
 // Below 40rem the folder list folds away under this button, which reads 「フォルダ: 」 and the open folder's name.
 const choosing = (page: Page) => page.getByRole('button', { name: /^フォルダ: / })
 const dialog = (page: Page, name: string) => page.getByRole('dialog', { name, exact: true })
-const filter = (group: Locator, label: string) => group.getByRole('button', { name: new RegExp(`^${label}(?: \\d+)?$`) })
-const kinds = (page: Page) => page.getByRole('group', { name: '種類で絞り込む' })
-const statuses = (page: Page) => page.getByRole('group', { name: '状態で絞り込む' })
+// A filter's choice, whose text ends with how many rows it would show.
+const choice = (select: Locator, label: string) => select.locator('option', { hasText: new RegExp(`^${label}（\\d+）$`) })
+const kinds = (page: Page) => page.getByRole('combobox', { name: '種類', exact: true })
+const statuses = (page: Page) => page.getByRole('combobox', { name: '状態', exact: true })
 
 async function toggleView(page: Page) {
   await Promise.all([page.waitForResponse(response => response.url().endsWith('/api/my/folder-view') && response.ok()), viewSwitch(page).click()])
@@ -127,25 +128,25 @@ test('kind and status filters combine', async ({ page }) => {
   await signIn(page)
   await expect(folder(page, 'すべて')).toHaveAttribute('aria-current', 'true')
   await expect(rows(page)).toHaveCount(2)
-  await expect(filter(kinds(page), '記事')).toHaveAccessibleName('記事 1')
-  await filter(kinds(page), '記事').click()
+  await expect(choice(kinds(page), '記事')).toHaveText('記事（1）')
+  await kinds(page).selectOption('post')
   await expect(page).toHaveURL(/kind=post/)
   await expect(rows(page)).toHaveCount(1)
   await expect(rows(page)).toContainText('フォルダの記事A')
   // A draft post is 準備中, like an unfinished problem.
-  await filter(statuses(page), '準備中').click()
+  await statuses(page).selectOption('preparing')
   await expect(page).toHaveURL(/status=preparing/)
   await expect(page).toHaveURL(/kind=post/)
   await expect(rows(page)).toHaveCount(1)
   await expect(rows(page)).toContainText('フォルダの記事A')
-  await expect(filter(kinds(page), 'すべて')).toHaveAccessibleName('すべて 2')
+  await expect(choice(kinds(page), 'すべて')).toHaveText('すべて（2）')
 })
 
 test('the old tabs open the library narrowed to their kind', async ({ page }) => {
   await signIn(page)
   await page.goto('/my?tab=posts')
   await expect(page.getByRole('button', { name: '問題と記事', exact: true })).toHaveAttribute('aria-pressed', 'true')
-  await expect(filter(kinds(page), '記事')).toHaveAttribute('aria-pressed', 'true')
+  await expect(kinds(page)).toHaveValue('post')
   await expect(rows(page)).toHaveCount(1)
   await expect(rows(page)).toContainText('フォルダの記事A')
 })
@@ -183,7 +184,7 @@ test('a tested problem shows its author', async ({ page, browser }) => {
     await page.getByRole('button', { name: '許可する', exact: true }).click()
     await expect(page).toHaveURL('/my?tab=testing')
     await expect(page.getByRole('button', { name: '問題と記事', exact: true })).toHaveAttribute('aria-pressed', 'true')
-    await expect(filter(kinds(page), 'テスト中')).toHaveAttribute('aria-pressed', 'true')
+    await expect(kinds(page)).toHaveValue('testing')
     const tested = row(page, 'フォルダで受けたテストの問題')
     await expect(kindCell(tested)).toHaveText('テスト中')
     await expect(tested).toContainText('作者: alice')
@@ -202,7 +203,7 @@ test('counts read every page of a long list', async ({ browser }) => {
     await toggleView(page)
     await expect(folder(page, 'すべて')).toHaveAccessibleName('すべて 51')
     await expect(folder(page, '未整理')).toHaveAccessibleName('未整理 51')
-    await expect(filter(statuses(page), '準備中')).toHaveAccessibleName('準備中 51')
+    await expect(choice(statuses(page), '準備中')).toHaveText('準備中（51）')
     // The oldest problem is past the first page of 50.
     await expect(library(page).getByText('大量の問題 01', { exact: true })).toBeVisible()
   } finally { await context.close() }
@@ -369,9 +370,9 @@ test('chosen rows move together', async ({ page }) => {
   await chooseProblem.check()
   await expect(chosenMove(page)).toHaveText('選んだ1件をフォルダへ移動')
   // A row the filter hides is no longer chosen.
-  await filter(kinds(page), '記事').click()
+  await kinds(page).selectOption('post')
   await expect(chosenMove(page)).toHaveCount(0)
-  await filter(kinds(page), 'すべて').click()
+  await kinds(page).selectOption('')
   await expect(chooseProblem).not.toBeChecked()
   // Choosing all takes every row shown, and 選択を解除 lets them go.
   await library(page).getByRole('checkbox', { name: '表示している問題と記事をすべて選択', exact: true }).check()
@@ -477,7 +478,7 @@ test('deleting a folder puts what it held back in 未整理', async ({ page }) =
   await picker.getByRole('button', { name: '移動する', exact: true }).click()
   await expect(folder(page, 'コンテスト用')).toHaveAccessibleName('コンテスト用 1')
   await expect(folder(page, 'すべて')).toHaveAccessibleName('すべて 3')
-  await expect(filter(kinds(page), '自分の問題')).toHaveAccessibleName('自分の問題 1')
+  await expect(choice(kinds(page), '自分の問題')).toHaveText('自分の問題（1）')
   await folderAction(page, 'コンテスト用', '削除')
   const confirm = dialog(page, '「コンテスト用」を削除しますか？')
   await expect(confirm).toHaveAccessibleDescription('中のフォルダ2個も削除されます。問題と記事1件は「未整理」に戻り、削除されません。')
@@ -489,13 +490,13 @@ test('deleting a folder puts what it held back in 未整理', async ({ page }) =
   await expect(folder(page, 'すべて')).toBeFocused()
   await expect(folder(page, 'すべて')).toHaveAccessibleName('すべて 3')
   await expect(folder(page, '未整理')).toHaveAccessibleName('未整理 3')
-  await expect(filter(kinds(page), '自分の問題')).toHaveAccessibleName('自分の問題 1')
+  await expect(choice(kinds(page), '自分の問題')).toHaveText('自分の問題（1）')
   await folder(page, '未整理').click()
   await expect(row(page, 'フォルダの問題A')).toHaveCount(1)
   await page.reload()
   await expect(folder(page, 'コンテスト用')).toHaveCount(0)
   await expect(row(page, 'フォルダの問題A')).toHaveCount(1)
-  await expect(filter(kinds(page), '自分の問題')).toHaveAccessibleName('自分の問題 1')
+  await expect(choice(kinds(page), '自分の問題')).toHaveText('自分の問題（1）')
 })
 
 test('the third level holds no more folders', async ({ page }) => {

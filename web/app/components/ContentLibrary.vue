@@ -52,7 +52,7 @@ const newIn = computed(() => selected.value && selected.value !== 'unsorted' ? s
 const path = computed(() => selected.value && selected.value !== 'unsorted' ? folderPath(folders.value, selected.value) : [])
 const treeCounts = computed(() => folderCounts(folders.value, placed.value, entries.value.map(entry => entry.key)))
 
-// Each filter counts within the open folder and the other filter, so a number is the rows its button shows.
+// Each filter counts within the open folder and the other filter, so a number is the rows its choice shows.
 // A problem's status is read again, since withdrawing from 定期便 changes it in place.
 const statusOf = (entry: LibraryEntry) => entry.problem ? problemStatusGroup(entry.problem) : entry.status
 const { filter: kindFilter, counts: kindCounts, visible } = useStatusFilter(libraryKinds, kindQuery, () => inFolder.value.filter(entry => !statusFilter.value || statusOf(entry) === statusFilter.value), entry => entry.kind)
@@ -167,8 +167,8 @@ onMounted(() => { void reload() })
         </nav>
         <p v-if="message" role="alert" class="editor-error">{{ message }}</p>
         <div v-if="inFolder.length" class="library-filters">
-          <StatusFilter v-model="kindFilter" :options="libraryKinds" :counts="kindCounts" label="種類で絞り込む" />
-          <StatusFilter v-model="statusFilter" :options="problemStatusOptions" :counts="statusCounts" />
+          <FilterSelect v-model="kindFilter" label="種類" :options="libraryKinds" :counts="kindCounts" />
+          <FilterSelect v-model="statusFilter" label="状態" :options="problemStatusOptions" :counts="statusCounts" />
         </div>
         <LibraryTable v-if="subfolders.length || visible.length" ref="table" v-model:selected="chosen" :entries="visible" :subfolders="subfolders" @open="selected = $event" @move="move" />
         <EmptyState v-if="emptyTitle && inFolder.length" kind="problem" :title="emptyTitle"><button type="button" class="editor-button" @click="show({ kind: '', status: '' })">すべて表示</button></EmptyState>
