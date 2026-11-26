@@ -603,6 +603,7 @@ func TestCommandNames(t *testing.T) {
 	}
 }
 
+// Options may follow the arguments, so a repeated push changes only its last words.
 func TestOptionsAfterArguments(t *testing.T) {
 	t.Setenv("SHAREOJ_CONFIG_DIR", t.TempDir())
 	t.Setenv("SHAREOJ_API_URL", "")
