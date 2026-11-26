@@ -668,6 +668,7 @@ class RollingTests(unittest.TestCase):
         """Run rolling (or another action) against fakes; lane a is 'qa' (queues[0]) and lane b is 'qb' (request_queue_b).
 
         Pass the same live, queues, clock and purges to a resumed run: they are the AWS side, which outlives a process.
+        A run in a directory that already holds state.json resumes from that file, as the command does.
         `contest_at` is the bridge's next contest window; `extra` replaces any fake.
         """
         events = [] if events is None else events
@@ -676,6 +677,12 @@ class RollingTests(unittest.TestCase):
                       worker_alarms=['alarm'], runtimes=['python314'], queues=['qa', 'r', 'da', 'dr'], request_queue_b='qb')
         config = {key: value for key, value in {**config, **overrides}.items() if value is not None}
         state = {} if state is None else state
+        if directory and (directory / 'state.json').exists():
+            # A resumed process knows only what the stopped one saved, so a change that was never saved must not
+            # carry over in the caller's dict.
+            saved = json.loads((directory / 'state.json').read_text())
+            state.clear()
+            state.update(saved)
         live = self.live_lambdas() if live is None else live
         queues = {} if queues is None else queues
         counted, clock = [], [0.0] if clock is None else clock
@@ -1391,6 +1398,7 @@ class RollingTests(unittest.TestCase):
             directory = Path(name)
             state, live = self.stopped_rolling(directory)
             state['switchWatcher'] = dict(pid=1)
+            (directory / 'state.json').write_text(json.dumps(state))
             (directory / 'switch-watch.cleanup.json').write_text(json.dumps(dict(users=[dict(username='u')])))
             events = []
 
