@@ -38,7 +38,9 @@ gh workflow run cost-report.yml -f fetch=false
 - 1つめは、AWSから読み直して載せる。
   前月がまだ確定していないと失敗する。
 - 2つめは、AWSを読まずに、保存済みの金額でページだけ作り直す。
-  ページの見た目や`config.json`を変えたあとに使う。
+  ページの見た目、行の表示名、注記、リンクを変えたあとに使う。
+  行への割り振り（`services`と`record_types`）を変えたときは、1つめを使う。
+  保存済みの金額は行ごとの額なので、AWSから読み直さないと割り振りは変わらない。
 
 ## 内訳を直す
 
@@ -52,6 +54,8 @@ gh workflow run cost-report.yml -f fetch=false
 - `aws`は、行の下に小さく出すサービス名である。金額には関わらない。
 - 行の`id`は`costs.json`に保存される。
   `id`を消すと、その行の古い月の金額は「その他」に寄せて表示される。
+- 割り振りを変えて読み直すと、実行日から12か月前までの月が新しい割り振りに直る。
+  それより古い月は、元の割り振りのまま残る。
 
 サービス名を確かめるときは、手元でCost Explorerを読む。
 生の応答にはサービスごとの金額が入っている。
@@ -70,14 +74,15 @@ gh workflow run cost-report.yml -f fetch=false
 ## 予約購入をしたとき
 
 RDSなどを予約購入（リザーブドインスタンス）で前払いすると、その額はサービスの料金の中に出る。
-そのままでは「データベース」などの行に入る。
+料金の種類が`Fee`の行を「サーバーの前払い」に移すよう、設定してある。
+ただし`Fee`という値は、AWSの文書から取ったもので、実際の購入では確かめていない。
 
-1. 買った月の応答を手元で読み、前払いの行の`RECORD_TYPE`を確かめる。
-2. その値を`prepay`の`record_types`に足す。
+1. 買った月の請求が確定したら、ページでその額が「サーバーの前払い」に入っているかを見る。
+2. 「データベース」などに入っていたら、その月の応答を手元で読み、前払いの行の`RECORD_TYPE`を確かめる。
+   その値を`prepay`の`record_types`に足し、AWSから読み直す。
 3. 必要なら`month_notes`にその月の注記を書く。
-4. 手で動かして、ページを確かめる。
 
-Savings Planの前払いは、設定済みである。
+Savings Planの前払いは、実際の請求で確かめてある。
 
 ## Sponsorsへのリンクを出す
 
@@ -90,8 +95,9 @@ Savings Planの前払いは、設定済みである。
 | --- | --- |
 | `AWS has not finalized last month's costs` | AWSの請求の画面で、前月の請求書が出ているかを確かめる。出たあとに手で動かす |
 | `Could not assume role with OIDC` | Environment `cost-report`のシークレットと、ロールの信頼関係のsubject |
+| `Set the AWS_COST_REPORT_ROLE_ID secret` | Environment `cost-report`に、ロールのIDのシークレットがない |
 | `aws ce get-cost-and-usage failed` | ロールの許可（`ce:GetCostAndUsage`）と、Cost Explorerが有効か |
 | `the output contains an account ID or an ARN` | `config.json`に12桁の数字や`arn:`を書いていないか。公開を止めるための検査である |
 | `Publish the page`だけが失敗 | 金額は保存済みである。`fetch=false`で手で動かせば載る |
 
-失敗した実行は、ページも`costs.json`も変えない。
+取得やページの組み立てで失敗した実行は、ページも`costs.json`も変えない。
