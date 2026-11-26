@@ -1,3 +1,5 @@
+import type { ErrorCode } from '~/utils/api-error'
+
 // Rejudging is offered to the problem's author and testers and to operators. The API answers
 // 404 to everyone else, so a failed check simply hides the controls. Streaming mode refuses the route, so it asks nothing.
 export function useRejudge(problemId: MaybeRefOrGetter<string>) {
@@ -27,7 +29,7 @@ export function useRejudge(problemId: MaybeRefOrGetter<string>) {
       await refresh()
       return queued
     } catch (error) {
-      const failure = error as { statusCode?: number, data?: { data?: { code?: string } } }
+      const failure = error as { statusCode?: number, data?: { data?: { code?: ErrorCode } } }
       const code = failure.data?.data?.code
       if (code === 'judge_maintenance') message.value = judgeMaintenanceMessage
       else if (code === 'tests_not_ready') message.value = '今の問題の設定では採点できません。テストケース、判定コード、利用できる言語の設定を確認してください。'

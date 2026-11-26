@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { accountSchema } from '~~/shared/types/profile'
+import type { ErrorCode } from '~/utils/api-error'
 const account = ref<{ email: string, provider: string } | null>(null)
 const loadError = ref('')
 const current = ref('')
@@ -22,7 +23,7 @@ async function change() {
     await $fetch('/api/my/password', { method: 'POST', body: { current: current.value, proposed: proposed.value } })
     current.value = ''; proposed.value = ''; confirmation.value = ''; done.value = true
   } catch (e) {
-    const failure = e as { data?: { data?: { code?: string } }, statusCode?: number }
+    const failure = e as { data?: { data?: { code?: ErrorCode } }, statusCode?: number }
     const code = failure.data?.data?.code
     error.value = code === 'incorrect_password' ? '現在のパスワードが正しくありません。'
       : code === 'invalid_password' ? 'パスワードは12文字以上で、英大文字・英小文字・数字・記号を含めてください。空白は使えません。'

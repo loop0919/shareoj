@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Submission } from '../../shared/types/submission'
 import { shortId } from '~~/shared/utils/short-id'
+import type { ErrorCode } from '~/utils/api-error'
 import { usableRuntimes } from '~/utils/judge-catalog'
 import { hasSource } from '~/utils/has-source'
 
@@ -83,7 +84,7 @@ async function submit(requested: Action = 'submit') {
     const result = await post(false)
     await navigateTo(props.contestId ? `/contests/${shortId(props.contestId)}/my-submissions/${shortId(result.id)}${props.team ? '?from=team' : ''}` : `/my/submissions/${shortId(result.id)}`)
   } catch (error) {
-    const failure = error as { statusCode?: number, data?: { data?: { code?: string, retryAfter?: number } } }
+    const failure = error as { statusCode?: number, data?: { data?: { code?: ErrorCode, retryAfter?: number } } }
     const code = failure.data?.data?.code
     const easyTest = runningEasyTest.value
     if (code === 'judge_maintenance') { message.value = judgeMaintenanceMessage; await refreshCatalog() }

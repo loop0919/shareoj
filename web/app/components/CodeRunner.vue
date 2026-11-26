@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { codeRunInputLimit, type CodeRun } from '~~/shared/types/code-run'
+import type { ErrorCode } from '~/utils/api-error'
 import { usableRuntimes } from '~/utils/judge-catalog'
 import { hasSource } from '~/utils/has-source'
 import { executionTime, memoryUsage } from '~/utils/submission-usage'
@@ -105,7 +106,7 @@ async function execute() {
     sending.value = false
     await follow()
   } catch (error) {
-    const failure = error as { statusCode?: number, data?: { data?: { code?: string, retryAfter?: number } } }
+    const failure = error as { statusCode?: number, data?: { data?: { code?: ErrorCode, retryAfter?: number } } }
     const code = failure.data?.data?.code
     if (code === 'judge_maintenance') { message.value = judgeMaintenanceMessage; await refreshCatalog() }
     else if (failure.statusCode === 401) message.value = 'コードを実行するにはログインしてください。入力したコードはこの画面に残っています。'
