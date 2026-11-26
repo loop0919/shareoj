@@ -81,6 +81,45 @@ class SummarizeTest(unittest.TestCase):
             {"group": "other", "amount": "0.33"},
         ])
 
+    def test_separately_billed_rows_round_on_their_own(self):
+        # AWS invoices an upfront fee and tax as their own lines, so those rows must match the invoice to the cent.
+        summary = costs.summarize([month("2026-10-01", [
+            (PLANS, "SavingsPlanUpfrontFee", "120.036"),
+            (RDS, "Usage", "20.4875"),
+            (EC2, "Usage", "30.6564"),
+            ("Amazon Braket", "Usage", "7.9594"),
+            ("Tax", "Tax", "17.91"),
+        ])], CONFIG)
+        self.assertEqual(summary["2026-10"], {"total": "197.05", "rows": [
+            {"group": "prepay", "amount": "120.04"},
+            {"group": "database", "amount": "20.49"},
+            {"group": "judge", "amount": "30.65"},
+            {"group": "other", "amount": "7.96"},
+            {"group": "tax", "amount": "17.91"},
+        ]})
+
+    def test_usage_rows_give_back_a_cent_when_fees_round_up(self):
+        summary = costs.summarize([month("2026-10-01", [
+            (PLANS, "SavingsPlanUpfrontFee", "10.005"),
+            (RDS, "Usage", "1.002"),
+            ("Tax", "Tax", "5.005"),
+        ])], CONFIG)
+        self.assertEqual(summary["2026-10"], {"total": "16.01", "rows": [
+            {"group": "prepay", "amount": "10.01"},
+            {"group": "database", "amount": "0.99"},
+            {"group": "tax", "amount": "5.01"},
+        ]})
+
+    def test_largest_fee_absorbs_the_cent_without_usage_rows(self):
+        summary = costs.summarize([month("2026-10-01", [
+            (PLANS, "SavingsPlanUpfrontFee", "10.005"),
+            ("Tax", "Tax", "5.005"),
+        ])], CONFIG)
+        self.assertEqual(summary["2026-10"], {"total": "15.01", "rows": [
+            {"group": "prepay", "amount": "10.00"},
+            {"group": "tax", "amount": "5.01"},
+        ]})
+
     def test_tiny_amounts_are_dropped(self):
         summary = costs.summarize([month("2026-10-01", [
             (RDS, "Usage", "0.004"),

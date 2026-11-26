@@ -51,16 +51,35 @@ def _dollars(cents):
     return f"{sign}{abs(cents) // 100}.{abs(cents) % 100:02d}"
 
 
+def _cents(amount, rounding):
+    return int((amount * 100).to_integral_value(rounding=rounding))
+
+
 def _rows(amounts, groups):
-    """Rounds each row to cents so that the rows add up to the rounded total."""
-    total = int((sum(amounts.values(), Decimal(0)) * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+    """Rounds each row to cents so that the rows add up to the rounded total.
+
+    AWS invoices fees and tax (the rows picked by record type) as lines of their own,
+    so those round by themselves and match the invoice. The usage rows share the rest.
+    """
+    total = _cents(sum(amounts.values(), Decimal(0)), ROUND_HALF_UP)
     order = [group["id"] for group in groups if group["id"] in amounts]
-    floors = {name: int((amounts[name] * 100).to_integral_value(rounding=ROUND_FLOOR)) for name in order}
-    # sorted() is stable, so rows with equal remainders keep the configured order.
-    by_remainder = sorted(order, key=lambda name: floors[name] - amounts[name] * 100)
-    for name in by_remainder[: total - sum(floors.values())]:
-        floors[name] += 1
-    return _dollars(total), [{"group": name, "amount": _dollars(floors[name])} for name in order if floors[name]]
+    billed_alone = {group["id"] for group in groups if group.get("record_types")}
+    cents = {
+        name: _cents(amounts[name], ROUND_HALF_UP if name in billed_alone else ROUND_FLOOR)
+        for name in order
+    }
+    usage = [name for name in order if name not in billed_alone]
+    left = total - sum(cents.values())
+    if usage:
+        # sorted() is stable, so rows with equal remainders keep the configured order.
+        by_remainder = sorted(usage, key=lambda name: cents[name] - amounts[name] * 100)
+        step = 1 if left > 0 else -1
+        takers = by_remainder if left > 0 else by_remainder[::-1]
+        for index in range(abs(left)):
+            cents[takers[index % len(takers)]] += step
+    elif order:
+        cents[max(order, key=lambda name: abs(cents[name]))] += left
+    return _dollars(total), [{"group": name, "amount": _dollars(cents[name])} for name in order if cents[name]]
 
 
 def summarize(results, config):

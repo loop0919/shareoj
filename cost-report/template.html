@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ShareOJの運用費</title>
+<meta name="description" content="ShareOJを動かすためにAWSへ毎月支払っている金額と、その内訳。">
+<style>
+:root {
+  color-scheme: light dark;
+  --color-paper: light-dark(#fff, #151b23);
+  --color-surface: light-dark(#f5f7fa, #202a36);
+  --color-ink: light-dark(#192431, #e6edf3);
+  --color-muted: light-dark(#536171, #a8b6c5);
+  --color-line: light-dark(#dce2e8, #3a4858);
+  --color-accent: light-dark(#18794e, #70dba2);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  color: var(--color-ink);
+  background: var(--color-paper);
+  font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui, sans-serif;
+  line-height: 1.85;
+}
+main { max-width: 40rem; margin: 0 auto; padding: 2.5rem 16px 4rem; }
+h1 { margin: 0 0 .5rem; font-size: 1.5rem; line-height: 1.45; }
+h2 { margin: 3rem 0 .5rem; font-size: 1.125rem; line-height: 1.45; }
+p { margin: 0; }
+a { color: var(--color-accent); }
+.lead { color: var(--color-muted); }
+.latest { margin-top: 2.5rem; }
+.month { font-weight: 700; }
+.basis { margin-left: .75em; color: var(--color-muted); font-size: .8125rem; font-weight: 400; }
+.total { font-size: 2.75rem; font-weight: 700; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.note { color: var(--color-muted); font-size: .875rem; }
+.empty { margin-top: 2.5rem; color: var(--color-muted); }
+table { width: 100%; margin-top: 1rem; border-collapse: collapse; }
+th, td { padding: .5rem 0; border-bottom: 1px solid var(--color-line); vertical-align: top; }
+th { text-align: left; font-weight: 400; }
+thead th { color: var(--color-muted); font-size: .8125rem; }
+td, thead th:last-child { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 1rem; }
+tfoot th, tfoot td { border-bottom: 0; font-weight: 700; }
+.aws { display: block; color: var(--color-muted); font-size: .75rem; line-height: 1.5; }
+details { border-bottom: 1px solid var(--color-line); }
+details:first-of-type { border-top: 1px solid var(--color-line); }
+summary {
+  display: flex; justify-content: space-between; gap: 1rem;
+  padding: .75rem 0; cursor: pointer; list-style: none;
+  font-variant-numeric: tabular-nums;
+}
+summary::-webkit-details-marker { display: none; }
+summary span:first-child::before { content: "▸"; display: inline-block; width: 1.25em; color: var(--color-muted); }
+details[open] summary span:first-child::before { content: "▾"; }
+summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+details .body { padding: 0 0 1.25rem 1.25em; }
+details table { margin-top: .5rem; }
+footer { margin-top: 3rem; color: var(--color-muted); font-size: .875rem; }
+footer p + p { margin-top: .5rem; }
+</style>
+</head>
+<body>
+<main>
+<h1>ShareOJの運用費</h1>
+<p class="lead">ShareOJを動かすために、AWSへ毎月支払っている金額です。AWSの請求額を、月に一度、自動でそのまま載せています。</p>
+$latest
+$past
+<footer>
+$updated
+$sponsors
+<p><a href="https://www.share-oj.net">ShareOJ</a></p>
+</footer>
+</main>
+</body>
+</html>
