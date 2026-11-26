@@ -24,6 +24,10 @@ CONFIG = {
         {"id": "other", "label": "その他"},
         {"id": "tax", "label": "消費税", "record_types": ["Tax"]},
     ],
+    "columns": [
+        {"label": "サーバー利用料", "groups": ["database", "other"]},
+        {"label": "消費税", "groups": ["tax"]},
+    ],
 }
 EMPTY = {"version": 1, "updated": None, "months": {}}
 
@@ -92,7 +96,8 @@ class UpdateTest(unittest.TestCase):
             "2026-10": {"total": "89.63", "rows": [{"group": "database", "amount": "83.22"}, {"group": "tax", "amount": "6.41"}]},
         }})
         html = (self.site / "index.html").read_text(encoding="utf-8")
-        self.assertIn('<p class="total">$89.63</p>', html)
+        self.assertIn('<td class="expense">$83.22</td>', html)
+        self.assertIn('<td class="balance">-$153.73</td>', html)
         self.assertIn("$64.10", html)
         self.assertIn("status=updated", out.splitlines())
 
@@ -123,7 +128,7 @@ class UpdateTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(fetcher.calls, [])
         self.assertIn("status=unchanged", out.splitlines())
-        self.assertIn('<p class="total">$89.63</p>', (self.site / "index.html").read_text(encoding="utf-8"))
+        self.assertIn('<td class="balance">-$153.73</td>', (self.site / "index.html").read_text(encoding="utf-8"))
 
     def test_nothing_to_query(self):
         fetcher = FakeFetch([SEPTEMBER])
@@ -153,6 +158,46 @@ class UpdateTest(unittest.TestCase):
         self.write_config({**CONFIG, "standing_note": "account 123456789012"})
         code, out, _ = self.run_update(FakeFetch([SEPTEMBER, OCTOBER]))
         self.assertNotEqual(code, 0)
+        self.assertNotIn("status=", out)
+        self.assertEqual(self.data.read_bytes(), before)
+        self.assertFalse(self.site.exists())
+
+    def write_income(self, income):
+        path = self.data.with_name("income.json")
+        path.write_text(json.dumps(income), encoding="utf-8")
+        return path
+
+    def test_income_file_is_shown_and_counted_in_the_balance(self):
+        income = self.write_income({"2026-10": "25.00"})
+        code, out, _ = self.run_update(FakeFetch([SEPTEMBER, OCTOBER]), "2026-11-08", "--income", str(income))
+        self.assertEqual(code, 0)
+        html = (self.site / "index.html").read_text(encoding="utf-8")
+        self.assertIn('<td class="income">$25.00</td>', html)
+        self.assertIn('<td class="balance">-$128.73</td>', html)
+        self.assertIn("status=updated", out.splitlines())
+
+    def test_income_written_later_reaches_the_page_without_touching_the_months(self):
+        income = self.data.with_name("income.json")
+        self.run_update(FakeFetch([SEPTEMBER, OCTOBER]), "2026-11-08", "--income", str(income))
+        before = self.data.read_bytes()
+        self.write_income({"2026-10": "25.00"})
+        code, out, _ = self.run_update(FakeFetch([SEPTEMBER]), "2026-11-20", "--income", str(income), "--no-fetch")
+        self.assertEqual(code, 0)
+        self.assertIn("status=unchanged", out.splitlines())
+        self.assertEqual(self.data.read_bytes(), before)
+        self.assertIn('<td class="income">$25.00</td>', (self.site / "index.html").read_text(encoding="utf-8"))
+
+    def test_missing_income_file_means_no_income(self):
+        code, _, _ = self.run_update(FakeFetch([SEPTEMBER, OCTOBER]), "2026-11-08", "--income", str(self.data.with_name("income.json")))
+        self.assertEqual(code, 0)
+        self.assertIn('<td class="balance">-$153.73</td>', (self.site / "index.html").read_text(encoding="utf-8"))
+
+    def test_bad_income_stops_publication_and_names_the_month(self):
+        before = self.data.read_bytes()
+        income = self.write_income({"2026-10": "about 25"})
+        code, out, err = self.run_update(FakeFetch([SEPTEMBER, OCTOBER]), "2026-11-08", "--income", str(income))
+        self.assertNotEqual(code, 0)
+        self.assertIn("2026-10", err)
         self.assertNotIn("status=", out)
         self.assertEqual(self.data.read_bytes(), before)
         self.assertFalse(self.site.exists())
