@@ -7,6 +7,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import costs
+import page
 
 CONFIG = json.loads(Path(__file__).resolve().parents[1].joinpath("config.json").read_text(encoding="utf-8"))
 RDS = "Amazon Relational Database Service"
@@ -46,6 +47,15 @@ class ShippedConfigTest(unittest.TestCase):
             groups_of([("Tax", "Tax", "3.10"), ("Amazon Braket", "Usage", "1.00")]),
             {"other": "1.00", "tax": "3.10"},
         )
+
+    def test_every_row_has_a_column_on_the_page(self):
+        # One dollar in each row the settings can produce: the page must show all of it, in four columns.
+        rows = [{"group": group["id"], "amount": "1.00"} for group in CONFIG["groups"]]
+        data = {"version": 1, "updated": "2026-12-08", "months": {"2026-11": {"total": f"{len(rows)}.00", "rows": rows}}}
+        html = page.render(data, CONFIG, {})
+        cells = [part.split("<")[0] for part in html.split('<td class="expense">')[1:]]
+        self.assertEqual(cells, ["$5.00", "$1.00", "$1.00", "$1.00"])
+        self.assertIn(f'<td class="balance">-${len(rows)}.00</td>', html)
 
 
 if __name__ == "__main__":

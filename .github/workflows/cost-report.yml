@@ -72,7 +72,7 @@ jobs:
       - name: Update the months and build the page
         id: update
         run: |
-          arguments=(--config cost-report/config.json --data data/costs.json --site site)
+          arguments=(--config cost-report/config.json --data data/costs.json --income data/income.json --site site)
           if [[ "$FETCH" != "true" ]]; then
             arguments+=(--no-fetch)
           fi

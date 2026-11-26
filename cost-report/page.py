@@ -1,4 +1,4 @@
-"""Builds the running-cost page from the stored months."""
+"""Builds the running-cost page: one row a month with income, expenses and the balance."""
 
 from decimal import Decimal
 import html
@@ -8,7 +8,6 @@ import string
 import costs
 
 TEMPLATE = Path(__file__).with_name("template.html")
-AUTO_NOTE = "サーバーの前払い {prepay} を含みます。"
 PREPAY = "prepay"
 
 
@@ -27,80 +26,71 @@ def _date_label(day):
     return f"{year}年{int(month)}月{int(number)}日"
 
 
-def _rows(month, config):
-    """Returns (group, amount) in the configured order; rows of removed groups join the catch-all."""
-    known = {group["id"] for group in config["groups"]}
-    amounts = {}
+def _expenses(month, columns):
+    """Adds the month's rows up by column; a row of a group no column names joins the catch-all's column."""
+    place = {group: index for index, column in enumerate(columns) for group in column["groups"]}
+    sums = [Decimal(0)] * len(columns)
     for row in month["rows"]:
-        name = row["group"] if row["group"] in known else costs.OTHER
-        amounts[name] = amounts.get(name, Decimal(0)) + Decimal(row["amount"])
-    return [(group, amounts[group["id"]]) for group in config["groups"] if group["id"] in amounts]
+        sums[place.get(row["group"], place[costs.OTHER])] += Decimal(row["amount"])
+    return sums
 
 
-def _note(key, rows, config):
-    prepay = next((amount for group, amount in rows if group["id"] == PREPAY), None)
-    text = config.get("month_notes", {}).get(key)
-    if text is None and prepay:
-        text = AUTO_NOTE
-    if text is None:
-        return ""
-    filled = text.replace("{prepay}", money(prepay or 0))
-    return f'<p class="note">{html.escape(filled)}</p>'
+def _cell(kind, amount):
+    return f'<td class="{kind}">{money(amount) if amount else ""}</td>'
 
 
-def _table(rows, total):
-    lines = ['<table>', '<thead><tr><th scope="col">内訳</th><th scope="col">金額</th></tr></thead>', "<tbody>"]
-    for group, amount in rows:
-        aws = f'<span class="aws">{html.escape(group["aws"])}</span>' if group.get("aws") else ""
-        lines.append(f'<tr><th scope="row">{html.escape(group["label"])}{aws}</th><td>{money(amount)}</td></tr>')
-    lines += ["</tbody>", f'<tfoot><tr><th scope="row">合計</th><td>{money(total)}</td></tr></tfoot>', "</table>"]
-    return "\n".join(lines)
+def _ledger(months, config, income):
+    """Returns the table's body rows, newest month first, and the notes under the table."""
+    columns = config["columns"]
+    notes = [config["standing_note"]] if config.get("standing_note") else []
+    rows = []
+    balance = Decimal(0)
+    numbered = 0
+    # Oldest first: the balance runs forward, and a note keeps its number when later months arrive.
+    for key in sorted(months):
+        month = months[key]
+        received = Decimal(income.get(key, "0"))
+        balance += received - Decimal(month["total"])
+        mark = ""
+        note = config.get("month_notes", {}).get(key)
+        if note is not None:
+            numbered += 1
+            prepay = sum((Decimal(row["amount"]) for row in month["rows"] if row["group"] == PREPAY), Decimal(0))
+            notes.append(f"※{numbered} " + note.replace("{prepay}", money(prepay)))
+            mark = f"<sup>※{numbered}</sup>"
+        cells = [_cell("income", received)] + [_cell("expense", amount) for amount in _expenses(month, columns)]
+        rows.append(f'<tr><th scope="row">{_month_label(key)}{mark}</th>{"".join(cells)}<td class="balance">{money(balance)}</td></tr>')
+    return rows[::-1], notes
 
 
-def _latest(key, month, config):
-    rows = _rows(month, config)
-    standing = config.get("standing_note")
-    return "\n".join(filter(None, [
-        '<section class="latest">',
-        f'<p class="month">{_month_label(key)}<span class="basis">AWSの請求額・税込</span></p>',
-        f'<p class="total">{money(month["total"])}</p>',
-        f'<p class="note">{html.escape(standing)}</p>' if standing else "",
-        _note(key, rows, config),
-        _table(rows, month["total"]),
-        "</section>",
-    ]))
+def _table(body, config):
+    columns = config["columns"]
+    heads = "".join(f'<th scope="col">{html.escape(column["label"])}</th>' for column in columns)
+    return "\n".join([
+        '<div class="ledger" role="region" aria-label="月ごとの収支" tabindex="0">',
+        "<table>",
+        "<thead>",
+        f'<tr><th rowspan="2" scope="col">月</th><th scope="col">収入</th><th colspan="{len(columns)}" scope="colgroup">支出</th><th rowspan="2" scope="col">残高</th></tr>',
+        f'<tr><th scope="col">GitHub Sponsors</th>{heads}</tr>',
+        "</thead>",
+        "<tbody>",
+        *body,
+        "</tbody>",
+        "</table>",
+        "</div>",
+    ])
 
 
-def _past(keys, months, config):
-    if not keys:
-        return ""
-    lines = ['<section class="past">', "<h2>これまでの月</h2>"]
-    for key in keys:
-        rows = _rows(months[key], config)
-        lines += [
-            "<details>",
-            f'<summary><span>{_month_label(key)}</span><span>{money(months[key]["total"])}</span></summary>',
-            '<div class="body">',
-            _note(key, rows, config),
-            _table(rows, months[key]["total"]),
-            "</div>",
-            "</details>",
-        ]
-    lines.append("</section>")
-    return "\n".join(filter(None, lines))
-
-
-def render(data, config):
+def render(data, config, income):
     months = data["months"]
-    keys = sorted(months, reverse=True)
-    if keys:
-        latest = _latest(keys[0], months[keys[0]], config)
+    if months:
+        body, notes = _ledger(months, config, income)
+        items = "\n".join(f"<li>{html.escape(note)}</li>" for note in notes)
+        ledger = _table(body, config) + (f'\n<ul class="notes">\n{items}\n</ul>' if notes else "")
         updated = f'<p>最終更新日: {_date_label(data["updated"])}</p>' if data.get("updated") else ""
     else:
-        latest = '<p class="empty">まだ載せられる月がありません。</p>'
+        ledger = '<p class="empty">まだ載せられる月がありません。</p>'
         updated = ""
     url = config.get("sponsors_url")
     sponsors = f'<p><a href="{html.escape(url, quote=True)}">GitHub SponsorsでShareOJを支援する</a></p>' if url else ""
-    return string.Template(TEMPLATE.read_text(encoding="utf-8")).substitute(
-        latest=latest, past=_past(keys[1:], months, config), updated=updated, sponsors=sponsors,
-    )
+    return string.Template(TEMPLATE.read_text(encoding="utf-8")).substitute(ledger=ledger, updated=updated, sponsors=sponsors)

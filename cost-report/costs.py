@@ -2,13 +2,14 @@
 
 import copy
 import datetime
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 import re
 
 OTHER = "other"
 # Cost Explorer keeps about 14 months; asking for more fails the whole call.
 READABLE_MONTHS = 12
 _PRIVATE = re.compile(r"(?<!\d)\d{12}(?!\d)|arn:")
+_MONTH = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
 
 
 class Pending(Exception):
@@ -115,6 +116,29 @@ def merge(stored, fresh, today):
     if changed:
         merged["updated"] = today.isoformat()
     return merged, changed
+
+
+def income(raw):
+    """Checks the hand-written income file, {"2026-12": "25.00"}, and returns amounts with two decimals.
+
+    The file is typed by a person and published without review, so anything odd stops the run.
+    """
+    if not isinstance(raw, dict):
+        raise ValueError("the income file must be an object of month: amount")
+    checked = {}
+    for month, amount in raw.items():
+        if not _MONTH.fullmatch(month):
+            raise ValueError(f"income: {month!r} is not a month like 2026-12")
+        if isinstance(amount, bool) or not isinstance(amount, (str, int, float)):
+            raise ValueError(f"income: the amount of {month} must be a number")
+        try:
+            value = Decimal(str(amount))
+        except InvalidOperation:
+            raise ValueError(f"income: the amount of {month} is not a number") from None
+        if not value.is_finite() or value < 0 or value != value.quantize(Decimal("0.01")):
+            raise ValueError(f"income: the amount of {month} must be zero or more, with at most two decimals")
+        checked[month] = f"{value:.2f}"
+    return checked
 
 
 def assert_public(text):

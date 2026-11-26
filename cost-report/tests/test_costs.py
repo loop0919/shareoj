@@ -232,6 +232,37 @@ class MergeTest(unittest.TestCase):
         self.assertEqual(stored, {"version": 1, "updated": None, "months": {}})
 
 
+class IncomeTest(unittest.TestCase):
+    def test_amounts_become_two_decimal_strings(self):
+        self.assertEqual(
+            costs.income({"2026-12": "25.00", "2027-01": 30, "2027-02": 12.5, "2027-03": "7"}),
+            {"2026-12": "25.00", "2027-01": "30.00", "2027-02": "12.50", "2027-03": "7.00"},
+        )
+
+    def test_empty(self):
+        self.assertEqual(costs.income({}), {})
+
+    def test_refuses_what_is_not_a_month_or_an_amount(self):
+        for bad in (
+            {"2026-13": "1.00"},
+            {"26-12": "1.00"},
+            {"2026-12": "-1.00"},
+            {"2026-12": "1.234"},
+            {"2026-12": "about 25"},
+            {"2026-12": True},
+            {"2026-12": None},
+            {"2026-12": float("inf")},
+            ["2026-12"],
+        ):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                costs.income(bad)
+
+    def test_error_names_the_month(self):
+        with self.assertRaises(ValueError) as caught:
+            costs.income({"2026-11": "5.00", "2026-12": "x"})
+        self.assertIn("2026-12", str(caught.exception))
+
+
 class AssertPublicTest(unittest.TestCase):
     def test_rejects_role_arn(self):
         with self.assertRaises(ValueError):

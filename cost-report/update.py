@@ -38,6 +38,7 @@ def main(argv, fetcher=fetch.fetch, now=_utc_now):
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--data", type=Path, required=True, help="costs.json on the data branch")
     parser.add_argument("--site", type=Path, required=True, help="directory that receives index.html")
+    parser.add_argument("--income", type=Path, help="income.json on the data branch, written by hand; may be absent")
     parser.add_argument("--today", type=datetime.date.fromisoformat, help="run as if it were this date")
     parser.add_argument("--no-fetch", action="store_true", help="rebuild the page from the stored months")
     args = parser.parse_args(argv)
@@ -49,10 +50,12 @@ def main(argv, fetcher=fetch.fetch, now=_utc_now):
     try:
         config = json.loads(args.config.read_text(encoding="utf-8"))
         stored = json.loads(args.data.read_text(encoding="utf-8")) if args.data.exists() else EMPTY
+        written = args.income is not None and args.income.exists()
+        income = costs.income(json.loads(args.income.read_text(encoding="utf-8")) if written else {})
         period = None if args.no_fetch else costs.query_period(config["start"], today)
         fresh = costs.summarize(fetcher(*period), config) if period else {}
         data, changed = costs.merge(stored, fresh, shown)
-        html = page.render(data, config)
+        html = page.render(data, config, income)
         text = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
         costs.assert_public(html)
         costs.assert_public(text)

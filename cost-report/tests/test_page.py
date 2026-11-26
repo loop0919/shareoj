@@ -1,5 +1,6 @@
 import copy
 from pathlib import Path
+import re
 import sys
 import unittest
 
@@ -13,10 +14,17 @@ CONFIG = {
     "standing_note": "メインのサーバー代は前払いしました。",
     "month_notes": {"2026-10": "3年分のサーバー前払い {prepay} を含みます。"},
     "groups": [
-        {"id": "prepay", "label": "サーバーの前払い", "aws": "Savings Plans", "record_types": ["SavingsPlanUpfrontFee"]},
-        {"id": "database", "label": "データベース", "aws": "Amazon RDS", "services": ["Amazon Relational Database Service"]},
+        {"id": "prepay", "label": "サーバーの前払い", "record_types": ["SavingsPlanUpfrontFee"]},
+        {"id": "database", "label": "データベース", "services": ["Amazon Relational Database Service"]},
+        {"id": "domain", "label": "ドメイン", "services": ["Amazon Route 53"]},
         {"id": "other", "label": "その他"},
         {"id": "tax", "label": "消費税", "record_types": ["Tax"]},
+    ],
+    "columns": [
+        {"label": "サーバー利用料", "groups": ["database", "other"]},
+        {"label": "前払い", "groups": ["prepay"]},
+        {"label": "ドメイン", "groups": ["domain"]},
+        {"label": "消費税", "groups": ["tax"]},
     ],
 }
 
@@ -25,11 +33,13 @@ DATA = {
     "updated": "2026-12-08",
     "months": {
         "2026-08": {"total": "51.20", "rows": [
-            {"group": "database", "amount": "46.55"},
+            {"group": "database", "amount": "40.00"},
+            {"group": "other", "amount": "6.55"},
             {"group": "tax", "amount": "4.65"},
         ]},
         "2026-09": {"total": "64.10", "rows": [
-            {"group": "database", "amount": "58.27"},
+            {"group": "database", "amount": "47.27"},
+            {"group": "domain", "amount": "11.00"},
             {"group": "tax", "amount": "5.83"},
         ]},
         "2026-10": {"total": "412.35", "rows": [
@@ -41,14 +51,24 @@ DATA = {
 }
 
 
-def render(data=DATA, **overrides):
+def render(data=DATA, income=None, **overrides):
     config = copy.deepcopy(CONFIG)
     config.update(overrides)
-    return page.render(data, config)
+    return page.render(data, config, income or {})
 
 
 def only(months):
     return {**DATA, "months": months}
+
+
+def body_rows(html):
+    """Each month's row as [month, income, expense columns..., balance], in page order."""
+    body = html[html.index("<tbody>"):html.index("</tbody>")]
+    found = []
+    for row in re.findall(r"<tr>(.*?)</tr>", body, flags=re.S):
+        cells = re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", row, flags=re.S)
+        found.append([re.sub(r"<[^>]+>", "", cell) for cell in cells])
+    return found
 
 
 class MoneyTest(unittest.TestCase):
@@ -59,97 +79,99 @@ class MoneyTest(unittest.TestCase):
         self.assertEqual(page.money("412.35"), "$412.35")
 
 
-class RenderTest(unittest.TestCase):
-    def test_latest_month_is_on_top(self):
-        html = render()
-        total = '<p class="total">$412.35</p>'
-        self.assertEqual(html.count(total), 1)
-        self.assertLess(html.index("2026年10月"), html.index(total))
-        self.assertLess(html.index(total), html.index("これまでの月"))
-        self.assertLess(html.index(total), html.index("<details"))
+class LedgerTest(unittest.TestCase):
+    def test_one_row_a_month_newest_first_with_expenses_by_column(self):
+        self.assertEqual(body_rows(render(standing_note=None, month_notes={})), [
+            ["2026年10月", "", "$56.85", "$318.00", "", "$37.50", "-$527.65"],
+            ["2026年9月", "", "$47.27", "", "$11.00", "$5.83", "-$115.30"],
+            ["2026年8月", "", "$46.55", "", "", "$4.65", "-$51.20"],
+        ])
 
-    def test_past_months_newest_first_in_details(self):
-        html = render()
-        self.assertEqual(html.count("<details"), 2)
-        past = html[html.index("<details"):]
-        self.assertLess(past.index("2026年9月"), past.index("2026年8月"))
-        self.assertNotIn("2026年10月", past)
-        self.assertIn("$64.10", past)
-        self.assertIn("$51.20", past)
+    def test_column_headings_follow_the_settings(self):
+        head = render()[render().index("<thead>"):render().index("</thead>")]
+        labels = re.findall(r"<th[^>]*>(.*?)</th>", head)
+        self.assertEqual(labels, ["月", "収入", "支出", "残高", "GitHub Sponsors", "サーバー利用料", "前払い", "ドメイン", "消費税"])
+        self.assertIn('<th colspan="4" scope="colgroup">支出</th>', head)
 
-    def test_rows_use_labels_in_config_order_with_total_last(self):
-        latest = render().split("<details")[0]
-        positions = [latest.index(label) for label in ("<th scope=\"row\">サーバーの前払い", "データベース", "消費税", "<th scope=\"row\">合計")]
-        self.assertEqual(positions, sorted(positions))
-        self.assertIn("$318.00", latest)
-        self.assertIn("$56.85", latest)
-        self.assertIn("$37.50", latest)
+    def test_income_is_added_to_the_balance_from_its_month_on(self):
+        rows = body_rows(render(income={"2026-09": "30.00"}, standing_note=None, month_notes={}))
+        self.assertEqual([row[1] for row in rows], ["", "$30.00", ""])
+        self.assertEqual([row[-1] for row in rows], ["-$497.65", "-$85.30", "-$51.20"])
 
-    def test_aws_names_are_shown_small(self):
-        self.assertIn('<span class="aws">Amazon RDS</span>', render())
+    def test_income_of_a_month_without_final_costs_is_not_shown(self):
+        with_later = render(income={"2026-11": "10.00"})
+        self.assertEqual(body_rows(with_later), body_rows(render()))
+        self.assertNotIn("$10.00", with_later)
 
-    def test_month_note_fills_prepay(self):
-        self.assertIn("3年分のサーバー前払い $318.00 を含みます。", render())
+    def test_balance_above_zero_has_no_minus(self):
+        rows = body_rows(render(income={"2026-08": "100.00"}))
+        self.assertEqual(rows[-1][-1], "$48.80")
 
-    def test_auto_note_when_prepay_without_month_note(self):
+    def test_credit_month_shows_a_negative_expense_and_raises_the_balance(self):
+        html = render(only({"2026-10": {"total": "-20.00", "rows": [{"group": "database", "amount": "-20.00"}]}}), month_notes={})
+        self.assertEqual(body_rows(html), [["2026年10月", "", "-$20.00", "", "", "", "$20.00"]])
+
+    def test_row_of_a_removed_group_joins_the_column_that_holds_the_catch_all(self):
+        html = render(only({"2026-10": {"total": "5.00", "rows": [
+            {"group": "removed", "amount": "3.00"},
+            {"group": "other", "amount": "2.00"},
+        ]}}), month_notes={})
+        self.assertEqual(body_rows(html), [["2026年10月", "", "$5.00", "", "", "", "-$5.00"]])
+
+    def test_table_scrolls_inside_a_region_keyboard_users_can_reach(self):
+        self.assertIn('<div class="ledger" role="region" aria-label="月ごとの収支" tabindex="0">', render())
+
+
+class NotesTest(unittest.TestCase):
+    def test_month_notes_are_numbered_oldest_first_and_marked_on_their_rows(self):
+        html = render(month_notes={
+            "2026-08": "移行の費用を含みます。",
+            "2026-10": "3年分のサーバー前払い {prepay} を含みます。",
+        })
+        rows = body_rows(html)
+        self.assertEqual([row[0] for row in rows], ["2026年10月※2", "2026年9月", "2026年8月※1"])
+        notes = re.findall(r"<li>(.*?)</li>", html[html.index('<ul class="notes">'):])
+        self.assertEqual(notes, [
+            "メインのサーバー代は前払いしました。",
+            "※1 移行の費用を含みます。",
+            "※2 3年分のサーバー前払い $318.00 を含みます。",
+        ])
+
+    def test_prepayment_without_a_note_gets_no_mark(self):
+        html = render(month_notes={}, standing_note=None)
+        self.assertNotIn("※", html)
+        self.assertNotIn('<ul class="notes">', html)
+
+    def test_note_of_a_month_that_is_not_shown_is_left_out(self):
+        html = render(month_notes={"2027-01": "まだ先の月です。"}, standing_note=None)
+        self.assertNotIn("まだ先の月", html)
+        self.assertNotIn("※", html)
+
+    def test_standing_note_alone(self):
         html = render(month_notes={})
-        self.assertEqual(html.count("サーバーの前払い $318.00 を含みます。"), 1)
-        self.assertNotIn("3年分", html)
+        self.assertEqual(re.findall(r"<li>(.*?)</li>", html), ["メインのサーバー代は前払いしました。"])
 
-    def test_no_note_for_month_without_prepay(self):
-        html = render(only({"2026-09": DATA["months"]["2026-09"]}), month_notes={}, standing_note=None)
-        self.assertNotIn('class="note"', html)
+    def test_text_is_escaped(self):
+        html = render(standing_note="a < b & c", month_notes={"2026-09": "<b>x</b>"})
+        self.assertIn("a &lt; b &amp; c", html)
+        self.assertIn("※1 &lt;b&gt;x&lt;/b&gt;", html)
+        self.assertNotIn("<b>x</b>", html)
 
-    def test_note_of_a_past_month_is_inside_its_details(self):
-        html = render(month_notes={"2026-09": "ドメインの登録料 $51.00 を含みます。"})
-        september = html[html.index("<details"):html.index("</details>")]
-        self.assertIn("2026年9月", september)
-        self.assertIn('<p class="note">ドメインの登録料 $51.00 を含みます。</p>', september)
-        self.assertEqual(html.count("ドメインの登録料"), 1)
 
-    def test_standing_note(self):
-        self.assertIn("メインのサーバー代は前払いしました。", render())
-        self.assertNotIn("メインのサーバー代", render(standing_note=None))
-
+class PageTest(unittest.TestCase):
     def test_sponsors_link_only_when_set(self):
-        self.assertNotIn("GitHub Sponsors", render())
+        self.assertNotIn("GitHub SponsorsでShareOJを支援する", render())
         html = render(sponsors_url="https://example.com/s")
         self.assertIn('<a href="https://example.com/s">GitHub SponsorsでShareOJを支援する</a>', html)
 
     def test_updated_date_in_japanese(self):
         self.assertIn("最終更新日: 2026年12月8日", render())
 
-    def test_single_month(self):
-        html = render(only({"2026-10": DATA["months"]["2026-10"]}))
-        self.assertIn('<p class="total">$412.35</p>', html)
-        self.assertNotIn("これまでの月", html)
-        self.assertNotIn("<details", html)
-
     def test_no_months(self):
-        html = render({"version": 1, "updated": None, "months": {}})
+        html = render({"version": 1, "updated": None, "months": {}}, income={"2026-09": "30.00"})
         self.assertIn("まだ載せられる月がありません。", html)
         self.assertNotIn("<table", html)
         self.assertNotIn("最終更新日", html)
-
-    def test_negative_amounts(self):
-        html = render(only({"2026-10": {"total": "-20.00", "rows": [{"group": "database", "amount": "-20.00"}]}}))
-        self.assertIn('<p class="total">-$20.00</p>', html)
-        self.assertIn('<td>-$20.00</td>', html)
-
-    def test_unknown_group_id_falls_into_other(self):
-        html = render(only({"2026-10": {"total": "5.00", "rows": [
-            {"group": "removed", "amount": "3.00"},
-            {"group": "other", "amount": "2.00"},
-        ]}}))
-        self.assertEqual(html.count('<th scope="row">その他'), 1)
-        self.assertIn("<td>$5.00</td>", html)
-        self.assertNotIn("removed", html)
-        self.assertNotIn("$3.00", html)
-
-    def test_text_is_escaped(self):
-        html = render(standing_note="a < b & c")
-        self.assertIn("a &lt; b &amp; c", html)
-        self.assertNotIn("a < b", html)
 
     def test_page_basics(self):
         html = render()
@@ -157,12 +179,12 @@ class RenderTest(unittest.TestCase):
         self.assertIn('<html lang="ja">', html)
         self.assertIn('<meta name="viewport"', html)
         self.assertIn("<title>ShareOJの運用費</title>", html)
-        self.assertIn("AWSの請求額・税込", html)
+        self.assertIn("残高のマイナスは、運営者が自分で負担している額です。", html)
         for banned in ("noindex", "<script", "http://", "${"):
             self.assertNotIn(banned, html)
 
     def test_output_is_public(self):
-        costs.assert_public(render())
+        costs.assert_public(render(income={"2026-09": "30.00"}))
 
 
 if __name__ == "__main__":
