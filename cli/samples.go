@@ -149,18 +149,12 @@ func writeSamples(directory string) (string, error) {
 		return "", errors.New("samples requires [tests] in problem.toml")
 	}
 	// The whole problem must be valid first, so that a statement is never rewritten from tests check would refuse.
-	if _, _, err := buildDraft(root, c); err != nil {
-		return "", err
-	}
-	cases, _, err := loadCases(root, c)
+	b, err := buildDraft(root, c)
 	if err != nil {
 		return "", err
 	}
-	text, err := readText(root, c.Statement, 400000)
-	if err != nil {
-		return "", err
-	}
-	samples, skipped := markedSamples(cases)
+	text := b.statement
+	samples, skipped := markedSamples(b.cases)
 	note := ""
 	if len(skipped) > 0 {
 		note = "; skipped names that cannot sit in a marker: " + strings.Join(skipped, ", ")

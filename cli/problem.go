@@ -216,7 +216,8 @@ func readProblem(directory string) (draft, []string, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return buildDraft(root, c)
+	b, err := buildDraft(root, c)
+	return b.draft, b.notes, err
 }
 
 func readConfig(root *os.Root) (problemConfig, error) {
@@ -231,12 +232,21 @@ func readConfig(root *os.Root) (problemConfig, error) {
 	return c, nil
 }
 
-func buildDraft(root *os.Root, c problemConfig) (draft, []string, error) {
+// built is a problem directory read once: the draft to save, the warnings about it, and the test cases and statement
+// text that went into it. cases is nil without [tests].
+type built struct {
+	draft     draft
+	notes     []string
+	cases     []testCase
+	statement string
+}
+
+func buildDraft(root *os.Root, c problemConfig) (built, error) {
 	if !validText(c.Title, 120) || c.TimeMS < 100 || c.TimeMS > 5000 || c.TimeMS%100 != 0 || c.MemoryMB < 64 || c.MemoryMB > 512 {
-		return nil, nil, errors.New("title must be at most 120 characters; time_limit_ms: 100..5000 in steps of 100; memory_limit_mb: 64..512")
+		return built{}, errors.New("title must be at most 120 characters; time_limit_ms: 100..5000 in steps of 100; memory_limit_mb: 64..512")
 	}
 	if c.Difficulty != nil && (*c.Difficulty < 1 || *c.Difficulty > 10) {
-		return nil, nil, errors.New("difficulty must be 1..10")
+		return built{}, errors.New("difficulty must be 1..10")
 	}
 	d := draft{}
 	d.set("title", c.Title)
@@ -246,6 +256,7 @@ func buildDraft(root *os.Root, c problemConfig) (draft, []string, error) {
 		d.set("difficulty", *c.Difficulty)
 	}
 	var imageWarnings []string
+	statement := ""
 	texts := map[string]string{"markdown": c.Statement}
 	if c.Editorial != nil {
 		texts["editorial"] = *c.Editorial
@@ -253,27 +264,30 @@ func buildDraft(root *os.Root, c problemConfig) (draft, []string, error) {
 	for key, name := range texts {
 		value, err := readText(root, name, 400000)
 		if err != nil {
-			return nil, nil, err
+			return built{}, err
 		}
 		if !validText(value, 100000) {
-			return nil, nil, fmt.Errorf("%s: exceeds 100000 characters", name)
+			return built{}, fmt.Errorf("%s: exceeds 100000 characters", name)
 		}
 		notes, err := imageNotes(root, name, value)
 		if err != nil {
-			return nil, nil, err
+			return built{}, err
 		}
 		imageWarnings = append(imageWarnings, notes...)
 		d.set(key, value)
+		if key == "markdown" {
+			statement = value
+		}
 	}
 	slices.Sort(imageWarnings)
 	generators := map[string]program{}
 	for role, config := range c.Generators {
 		if !slices.Contains([]string{"input", "output", "validation"}, role) {
-			return nil, nil, fmt.Errorf("unknown generator: %s", role)
+			return built{}, fmt.Errorf("unknown generator: %s", role)
 		}
 		p, err := loadProgram(root, config, false)
 		if err != nil {
-			return nil, nil, fmt.Errorf("%s generator: %w", role, err)
+			return built{}, fmt.Errorf("%s generator: %w", role, err)
 		}
 		generators[role] = p
 	}
@@ -292,12 +306,12 @@ func buildDraft(root *os.Root, c problemConfig) (draft, []string, error) {
 		chosen++
 	}
 	if chosen > 1 {
-		return nil, nil, errors.New("choose one of checker, interactor, run_twice or error_judge")
+		return built{}, errors.New("choose one of checker, interactor, run_twice or error_judge")
 	}
 	if c.ErrorJudge != nil {
 		e, err := loadErrorJudge(*c.ErrorJudge)
 		if err != nil {
-			return nil, nil, err
+			return built{}, err
 		}
 		d.set("errorJudge", e)
 	}
@@ -305,7 +319,7 @@ func buildDraft(root *os.Root, c problemConfig) (draft, []string, error) {
 		if config != nil {
 			p, err := loadProgram(root, *config, true)
 			if err != nil {
-				return nil, nil, fmt.Errorf("%s: %w", role, err)
+				return built{}, fmt.Errorf("%s: %w", role, err)
 			}
 			key := role
 			if role == "run_twice" {
@@ -317,24 +331,26 @@ func buildDraft(root *os.Root, c problemConfig) (draft, []string, error) {
 	if c.Scoring != nil {
 		s, err := loadScoring(root, c)
 		if err != nil {
-			return nil, nil, err
+			return built{}, err
 		}
 		d.set("scoring", s)
 	} else if c.Tests != nil && len(c.Tests.Groups) > 0 {
-		return nil, nil, errors.New(`[[tests.groups]] requires [scoring] with mode = "groups" or "aggregate"`)
+		return built{}, errors.New(`[[tests.groups]] requires [scoring] with mode = "groups" or "aggregate"`)
 	}
 	notes := imageWarnings
+	var cases []testCase
 	if c.Tests != nil {
-		cases, caseNotes, err := loadCases(root, c)
-		if err != nil {
-			return nil, nil, err
+		var caseNotes []string
+		var err error
+		if cases, caseNotes, err = loadCases(root, c); err != nil {
+			return built{}, err
 		}
 		d.set("testCases", cases)
 		notes = append(notes, caseNotes...)
 		// Only a statement that already uses the markers has asked to be kept in step.
-		if text, err := readText(root, c.Statement, 400000); err == nil && sampleStart.MatchString(text) {
+		if sampleStart.MatchString(statement) {
 			samples, _ := markedSamples(cases)
-			if synced, _, _ := syncSamples(text, samples); synced != text {
+			if synced, _, _ := syncSamples(statement, samples); synced != statement {
 				notes = append(notes, c.Statement+": the marked samples differ from the sample test cases; run shareoj samples <directory>")
 			}
 		}
@@ -342,7 +358,7 @@ func buildDraft(root *os.Root, c problemConfig) (draft, []string, error) {
 	if c.Scoring != nil && c.Scoring.Mode == "aggregate" && c.Scoring.Aggregator == nil {
 		notes = append(notes, `mode = "aggregate" without [scoring.aggregator]: push keeps the remote aggregator, and publishing needs one`)
 	}
-	return d, notes, nil
+	return built{draft: d, notes: notes, cases: cases, statement: statement}, nil
 }
 
 // loadScoring mirrors the server's structural rules for partial scoring, which refuse the whole save otherwise.
