@@ -225,6 +225,17 @@ type RunInput struct {
 	CheckerRuntimes                              []string
 }
 
+// localRuntimes lists, for an SQL IN, the runtimes the local Docker judge takes.
+const localRuntimes = `('cpp17-local','cpp23-gcc-local','python314-local')`
+
+// judgeFields lists the pairs of a job that tell the judge how to judge: the judge code and the limits, read from
+// draft, an SQL expression for the draft. CreateRun and Rejudge build the job with them, so a rejudge judges like a new
+// submission.
+func judgeFields(draft string) string {
+	return `'checker',` + draft + `->'checker','interactor',` + draft + `->'interactor','runTwice',` + draft + `->'runTwice','errorJudge',` + draft + `->'errorJudge',
+  'timeLimitMs',(` + draft + `->>'timeLimitMs')::int,'memoryLimitMb',(` + draft + `->>'memoryLimitMb')::int`
+}
+
 // judgeReady holds the conditions under which the judge can run a draft. CreateRun and Rejudge share them, so a
 // rejudge never queues a draft that a new submission refuses. The case-count bounds (1 to 100) stay with each caller,
 // written two ways there, and the callers must keep them equivalent. They are ANDed for a WHERE clause, placed after an AND.
@@ -235,33 +246,37 @@ type RunInput struct {
 // Scoring without groups, or an aggregate one without its aggregator, waits like missing judge code, since the judge
 // would turn every run into JE. Publication follows problems.ContentIssues, a separate rule.
 func judgeReady(draft, runtime, checkerRuntimes, sampleCheck string) string {
+	// unset holds for a key the draft lacks and for one it sets to null.
+	unset := func(key string) string {
+		return `COALESCE(` + draft + `->'` + key + `','null'::jsonb) = 'null'::jsonb`
+	}
 	return `(` + draft + `->>'memoryLimitMb')::int BETWEEN 64 AND 512
-  AND (COALESCE(` + draft + `->'checker','null'::jsonb) = 'null'::jsonb OR
-    (COALESCE(` + draft + `->'errorJudge','null'::jsonb) = 'null'::jsonb AND
+  AND (` + unset("checker") + ` OR
+    (` + unset("errorJudge") + ` AND
      ` + draft + `->'checker'->>'runtime'=ANY(` + checkerRuntimes + `) AND
      length(btrim(` + draft + `->'checker'->>'source', E' \t\r\n'))>0 AND
      (` + runtime + ` <> 'cpp17-local' OR ` + draft + `->'checker'->>'runtime'='cpp17')))
   AND (` + runtime + ` NOT IN ('cpp23-gcc-local','python314-local') OR
-    COALESCE(` + draft + `->'checker','null'::jsonb) = 'null'::jsonb OR
+    ` + unset("checker") + ` OR
     ` + draft + `->'checker'->>'runtime' IN ('cpp23-gcc','python314'))
-  AND (COALESCE(` + draft + `->'interactor','null'::jsonb) = 'null'::jsonb OR
-    (` + runtime + ` NOT IN ('cpp17-local','cpp23-gcc-local','python314-local') AND COALESCE(` + draft + `->'checker','null'::jsonb) = 'null'::jsonb AND
-     COALESCE(` + draft + `->'runTwice','null'::jsonb) = 'null'::jsonb AND
-     COALESCE(` + draft + `->'errorJudge','null'::jsonb) = 'null'::jsonb AND
+  AND (` + unset("interactor") + ` OR
+    (` + runtime + ` NOT IN ` + localRuntimes + ` AND ` + unset("checker") + ` AND
+     ` + unset("runTwice") + ` AND
+     ` + unset("errorJudge") + ` AND
      ` + draft + `->'interactor'->>'runtime'=ANY(` + checkerRuntimes + `) AND
      length(btrim(` + draft + `->'interactor'->>'source', E' \t\r\n'))>0))
-  AND (COALESCE(` + draft + `->'runTwice','null'::jsonb) = 'null'::jsonb OR
-    (` + runtime + ` NOT IN ('cpp17-local','cpp23-gcc-local','python314-local') AND COALESCE(` + draft + `->'checker','null'::jsonb) = 'null'::jsonb AND
-     COALESCE(` + draft + `->'interactor','null'::jsonb) = 'null'::jsonb AND
-     COALESCE(` + draft + `->'errorJudge','null'::jsonb) = 'null'::jsonb AND
+  AND (` + unset("runTwice") + ` OR
+    (` + runtime + ` NOT IN ` + localRuntimes + ` AND ` + unset("checker") + ` AND
+     ` + unset("interactor") + ` AND
+     ` + unset("errorJudge") + ` AND
      ` + draft + `->'runTwice'->>'runtime'=ANY(` + checkerRuntimes + `) AND
      length(btrim(` + draft + `->'runTwice'->>'source', E' \t\r\n'))>0))
-  AND (COALESCE(` + draft + `->'errorJudge','null'::jsonb) = 'null'::jsonb OR
-    (` + runtime + ` NOT IN ('cpp17-local','cpp23-gcc-local','python314-local') AND
-     COALESCE(` + draft + `->'checker','null'::jsonb) = 'null'::jsonb AND
-     COALESCE(` + draft + `->'interactor','null'::jsonb) = 'null'::jsonb AND
-     COALESCE(` + draft + `->'runTwice','null'::jsonb) = 'null'::jsonb))
-  AND (` + sampleCheck + ` OR COALESCE(` + draft + `->'scoring','null'::jsonb) = 'null'::jsonb OR
+  AND (` + unset("errorJudge") + ` OR
+    (` + runtime + ` NOT IN ` + localRuntimes + ` AND
+     ` + unset("checker") + ` AND
+     ` + unset("interactor") + ` AND
+     ` + unset("runTwice") + `))
+  AND (` + sampleCheck + ` OR ` + unset("scoring") + ` OR
     (CASE WHEN jsonb_typeof(` + draft + `->'scoring'->'groups')='array' THEN jsonb_array_length(` + draft + `->'scoring'->'groups') ELSE 0 END > 0 AND
      (` + draft + `->'scoring'->>'mode' <> 'aggregate' OR
      (` + draft + `->'scoring'->'aggregator'->>'runtime'=ANY(` + checkerRuntimes + `) AND
@@ -316,9 +331,7 @@ func (s *Store) CreateRun(ctx context.Context, in RunInput) (Submission, error) 
  INSERT INTO submissions
   (id,owner_id,problem_id,problem_version,problem_title,runtime,source,contest_id,created_at,job)
   SELECT $1,$2,id,selected_version,selected_draft->>'title',$6,$4,NULLIF($9,'')::uuid,moment.now,
-  jsonb_build_object('privateDraft',($9='' AND NOT EXISTS(SELECT 1 FROM problem_drafts p WHERE p.id=$3 AND p.published_draft IS NOT NULL)),'image',$5::text,'easyTest',$8::boolean,'cases',selected_cases,'checker',selected_draft->'checker','interactor',selected_draft->'interactor','runTwice',selected_draft->'runTwice','errorJudge',selected_draft->'errorJudge',
-  'timeLimitMs',(selected_draft->>'timeLimitMs')::int,
-  'memoryLimitMb',(selected_draft->>'memoryLimitMb')::int)
+  jsonb_build_object('privateDraft',($9='' AND NOT EXISTS(SELECT 1 FROM problem_drafts p WHERE p.id=$3 AND p.published_draft IS NOT NULL)),'image',$5::text,'easyTest',$8::boolean,'cases',selected_cases,`+judgeFields("selected_draft")+`)
   || CASE WHEN COALESCE(selected_draft->'scoring','null'::jsonb) = 'null'::jsonb THEN '{}'::jsonb
     WHEN NOT $8::boolean THEN jsonb_build_object('scoring',selected_draft->'scoring')
     WHEN selected_draft->'scoring'->>'mode' = 'aggregate' THEN jsonb_build_object('acceptPoints',true)
@@ -378,14 +391,14 @@ func (s *Store) List(ctx context.Context, owner string) ([]Submission, error) {
 
 func (s *Store) Claim(ctx context.Context) (Submission, Job, error) {
 	// ponytail: one attempt; interrupted jobs become JE after the judge deadline. Add retry attempts for production.
-	_, err := s.Pool.Exec(ctx, `UPDATE submissions SET status='DONE',finished_at=clock_timestamp(),result='{"verdict":"JE","passed":0,"total":0}' WHERE runtime IN ('cpp17-local','cpp23-gcc-local','python314-local') AND status='RUNNING' AND started_at < clock_timestamp()-$1::int * interval '1 second'`, int((JudgeTimeout+time.Minute)/time.Second))
+	_, err := s.Pool.Exec(ctx, `UPDATE submissions SET status='DONE',finished_at=clock_timestamp(),result='{"verdict":"JE","passed":0,"total":0}' WHERE runtime IN `+localRuntimes+` AND status='RUNNING' AND started_at < clock_timestamp()-$1::int * interval '1 second'`, int((JudgeTimeout+time.Minute)/time.Second))
 	if err != nil {
 		return Submission{}, Job{}, err
 	}
 	var id string
 	var raw []byte
 	err = s.Pool.QueryRow(ctx, `UPDATE submissions SET status='RUNNING',started_at=clock_timestamp()
-		WHERE id=(SELECT id FROM submissions WHERE runtime IN ('cpp17-local','cpp23-gcc-local','python314-local') AND status='QUEUED' ORDER BY rejudged_at IS NOT NULL,COALESCE(rejudged_at,created_at),id FOR UPDATE SKIP LOCKED LIMIT 1)
+		WHERE id=(SELECT id FROM submissions WHERE runtime IN `+localRuntimes+` AND status='QUEUED' ORDER BY rejudged_at IS NOT NULL,COALESCE(rejudged_at,created_at),id FOR UPDATE SKIP LOCKED LIMIT 1)
 		RETURNING id,job`).Scan(&id, &raw)
 	if err != nil {
 		return Submission{}, Job{}, err
