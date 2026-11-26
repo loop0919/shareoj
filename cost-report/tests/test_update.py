@@ -1,4 +1,5 @@
 import contextlib
+import datetime
 import io
 import json
 import os
@@ -155,6 +156,25 @@ class UpdateTest(unittest.TestCase):
         self.assertNotIn("status=", out)
         self.assertEqual(self.data.read_bytes(), before)
         self.assertFalse(self.site.exists())
+
+    def run_at(self, moment, fetcher):
+        argv = ["--config", str(self.config), "--data", str(self.data), "--site", str(self.site)]
+        clock = lambda: datetime.datetime.fromisoformat(moment)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return update.main(argv, fetcher=fetcher, now=clock)
+
+    def test_updated_date_is_the_date_in_japan(self):
+        # 16:05 UTC on the 26th is 01:05 on the 27th for the page's readers.
+        self.assertEqual(self.run_at("2026-11-26T16:05:00+00:00", FakeFetch([SEPTEMBER, OCTOBER])), 0)
+        self.assertEqual(self.stored()["updated"], "2026-11-27")
+        self.assertIn("最終更新日: 2026年11月27日", (self.site / "index.html").read_text(encoding="utf-8"))
+
+    def test_months_still_follow_utc_like_the_aws_bill(self):
+        # 01:00 on December 1 in Japan: AWS has not ended November yet, so it must not be asked for.
+        fetcher = FakeFetch([SEPTEMBER, OCTOBER])
+        self.assertEqual(self.run_at("2026-11-30T16:00:00+00:00", fetcher), 0)
+        self.assertEqual(fetcher.calls, [("2026-09-01", "2026-11-01")])
+        self.assertEqual(self.stored()["updated"], "2026-12-01")
 
     def test_github_output(self):
         output = self.dir / "github-output"

@@ -100,6 +100,13 @@ class RenderTest(unittest.TestCase):
         html = render(only({"2026-09": DATA["months"]["2026-09"]}), month_notes={}, standing_note=None)
         self.assertNotIn('class="note"', html)
 
+    def test_note_of_a_past_month_is_inside_its_details(self):
+        html = render(month_notes={"2026-09": "ドメインの登録料 $51.00 を含みます。"})
+        september = html[html.index("<details"):html.index("</details>")]
+        self.assertIn("2026年9月", september)
+        self.assertIn('<p class="note">ドメインの登録料 $51.00 を含みます。</p>', september)
+        self.assertEqual(html.count("ドメインの登録料"), 1)
+
     def test_standing_note(self):
         self.assertIn("メインのサーバー代は前払いしました。", render())
         self.assertNotIn("メインのサーバー代", render(standing_note=None))
