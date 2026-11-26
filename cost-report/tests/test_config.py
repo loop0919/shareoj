@@ -29,7 +29,7 @@ def groups_of(lines):
 class ShippedConfigTest(unittest.TestCase):
     def test_reserved_instance_upfront_fee_is_a_prepayment(self):
         self.assertEqual(
-            groups_of([(RDS, "Fee", "649.00"), (RDS, "Usage", "12.00")]),
+            groups_of([(RDS, "Upfront", "649.00"), (RDS, "Usage", "12.00")]),
             {"prepay": "649.00", "database": "12.00"},
         )
 
