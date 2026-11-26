@@ -4,17 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"judge/api/internal/submissions"
@@ -130,24 +123,9 @@ func TestRequeueDigestReturnsOnlyThePreviousDigestInFlight(t *testing.T) {
 func TestRequeuedSubmissionIsRebound(t *testing.T) {
 	ctx := context.Background()
 	db := requeueFixture(t)
-	var jobs [][]byte
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "PUT" {
-			data, _ := io.ReadAll(r.Body)
-			jobs = append(jobs, data)
-			w.Header().Set("x-amz-version-id", "version")
-			return
-		}
-		w.Header().Set("Content-Type", "application/x-amz-json-1.0")
-		_, _ = fmt.Fprint(w, `{"MessageId":"test"}`)
-	}))
-	defer server.Close()
-	cfg := aws.Config{Region: "ap-northeast-1", Credentials: credentials.NewStaticCredentialsProvider("test", "test", "")}
-	b := bridge{
-		db: db, bucket: "bucket", queueURL: server.URL + "/queue", runtime: requeueDigests.current, previous: requeueDigests.old, enabled: "python314",
-		objects: s3.NewFromConfig(cfg, func(o *s3.Options) { o.BaseEndpoint = aws.String(server.URL); o.UsePathStyle = true }),
-		queue:   sqs.NewFromConfig(cfg, func(o *sqs.Options) { o.BaseEndpoint = aws.String(server.URL) }),
-	}
+	fake := newFakeAWS(t)
+	b := fake.bridge(db, requeueDigests.current)
+	b.previous, b.enabled = requeueDigests.old, "python314"
 	if _, err := requeueCall(b, requeueDigests.old); err != nil {
 		t.Fatal(err)
 	}
@@ -158,10 +136,10 @@ func TestRequeuedSubmissionIsRebound(t *testing.T) {
 	if err := b.dispatch(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if len(jobs) == 0 {
+	if len(fake.puts) == 0 {
 		t.Fatal("nothing was sent after the requeue")
 	}
-	for _, job := range jobs {
+	for _, job := range fake.puts {
 		if !strings.Contains(string(job), `"runtimeDigest":"`+requeueDigests.current+`"`) || strings.Contains(string(job), requeueDigests.old) {
 			t.Fatalf("sent with a stale digest: %s", job)
 		}

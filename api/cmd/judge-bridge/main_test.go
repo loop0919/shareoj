@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -30,10 +29,7 @@ import (
 )
 
 func TestOperationalLogsDoNotAcceptUntrustedIdentities(t *testing.T) {
-	var out bytes.Buffer
-	old := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(&out, nil)))
-	defer slog.SetDefault(old)
+	out := captureLogs(t)
 	observe("failure", "platform", "invalid_result_envelope", "secret source", "secret expected output")
 	if strings.Contains(out.String(), "secret") {
 		t.Fatal("untrusted identity leaked")
@@ -299,6 +295,75 @@ func migratedDB(t *testing.T) *pgxpool.Pool {
 	return db
 }
 
+// fakeAWS stands in for S3 and SQS on one local server and keeps what a bridge wrote and sent.
+type fakeAWS struct {
+	url string
+	// failMethod is answered with 500: PUT fails S3 and POST fails SQS.
+	failMethod string
+	// version is the version ID S3 gives every object.
+	version string
+	// attempts bounds the SDK's tries per call; 0 keeps the SDK's default.
+	attempts int
+	puts     [][]byte // job bodies written to S3, in order
+	messages []string // message bodies sent to SQS, in order
+	sent     []string // the submission ID each message names
+}
+
+func newFakeAWS(t *testing.T) *fakeAWS {
+	t.Helper()
+	f := &fakeAWS{version: "version"}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == f.failMethod {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if r.Method == "PUT" {
+			body, _ := io.ReadAll(r.Body)
+			f.puts = append(f.puts, body)
+			w.Header().Set("x-amz-version-id", f.version)
+			return
+		}
+		data, _ := io.ReadAll(r.Body)
+		var request struct{ MessageBody string }
+		var pointer struct {
+			ID string `json:"submissionId"`
+		}
+		if json.Unmarshal(data, &request) != nil || json.Unmarshal([]byte(request.MessageBody), &pointer) != nil {
+			t.Error("invalid queue request")
+		}
+		f.messages = append(f.messages, request.MessageBody)
+		f.sent = append(f.sent, pointer.ID)
+		w.Header().Set("Content-Type", "application/x-amz-json-1.0")
+		if _, err := fmt.Fprint(w, `{"MessageId":"test"}`); err != nil {
+			t.Error(err)
+		}
+	}))
+	t.Cleanup(server.Close)
+	f.url = server.URL
+	return f
+}
+
+// bridge returns a bridge on db with digest as its runtime. It writes its jobs and sends its messages to the fake.
+func (f *fakeAWS) bridge(db *pgxpool.Pool, digest string) bridge {
+	cfg := aws.Config{Region: "ap-northeast-1", Credentials: credentials.NewStaticCredentialsProvider("test", "test", "")}
+	return bridge{
+		db: db, bucket: "bucket", queueURL: f.url + "/queue", runtime: digest,
+		objects: s3.NewFromConfig(cfg, func(o *s3.Options) {
+			o.BaseEndpoint = aws.String(f.url)
+			o.UsePathStyle = true
+			if f.attempts > 0 {
+				o.RetryMaxAttempts = f.attempts
+			}
+		}),
+		queue: sqs.NewFromConfig(cfg, func(o *sqs.Options) {
+			o.BaseEndpoint = aws.String(f.url)
+			if f.attempts > 0 {
+				o.RetryMaxAttempts = f.attempts
+			}
+		}),
+	}
+}
+
 func checkOutboxAndResultIdempotency(t *testing.T, runtime string, memory int, runTwice bool) {
 	ctx := context.Background()
 	db := migratedDB(t)
@@ -329,37 +394,13 @@ func checkOutboxAndResultIdempotency(t *testing.T, runtime string, memory int, r
 	if err != nil {
 		t.Fatal(err)
 	}
-	var sent []string
-	var jobs [][]byte
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "PUT" {
-			data, _ := io.ReadAll(r.Body)
-			jobs = append(jobs, data)
-			w.Header().Set("x-amz-version-id", "version-one")
-			w.WriteHeader(200)
-			return
-		}
-		data, _ := io.ReadAll(r.Body)
-		var request struct{ MessageBody string }
-		if err := json.Unmarshal(data, &request); err != nil {
-			t.Error(err)
-		}
-		sent = append(sent, request.MessageBody)
-		w.Header().Set("Content-Type", "application/x-amz-json-1.0")
-		if _, err := fmt.Fprint(w, `{"MessageId":"test"}`); err != nil {
-			t.Error(err)
-		}
-	}))
-	defer server.Close()
-	cfg := aws.Config{Region: "ap-northeast-1", Credentials: credentials.NewStaticCredentialsProvider("test", "test", "")}
-	b := bridge{
-		db: db, bucket: "test-bucket", queueURL: server.URL + "/queue", runtime: digest,
-		objects: s3.NewFromConfig(cfg, func(o *s3.Options) { o.BaseEndpoint = aws.String(server.URL); o.UsePathStyle = true }),
-		queue:   sqs.NewFromConfig(cfg, func(o *sqs.Options) { o.BaseEndpoint = aws.String(server.URL) }),
-	}
+	fake := newFakeAWS(t)
+	fake.version = "version-one"
+	b := fake.bridge(db, digest)
+	b.bucket = "test-bucket"
 	checkDeployment := func(pending, undispatched float64) {
 		t.Helper()
-		before := len(sent)
+		before := len(fake.messages)
 		value, err := b.handle(ctx, json.RawMessage(`{"operation":"deployment-status"}`))
 		if err != nil {
 			t.Fatal(err)
@@ -369,7 +410,7 @@ func checkOutboxAndResultIdempotency(t *testing.T, runtime string, memory int, r
 		if err := json.Unmarshal(data, &got); err != nil {
 			t.Fatal(err)
 		}
-		if got["kind"] != "judge-deployment-status" || got["runtimeDigest"] != digest || got["pending"] != pending || got["undispatched"] != undispatched || len(sent) != before {
+		if got["kind"] != "judge-deployment-status" || got["runtimeDigest"] != digest || got["pending"] != pending || got["undispatched"] != undispatched || len(fake.messages) != before {
 			t.Fatalf("invalid or mutating deployment status: %s", data)
 		}
 	}
@@ -383,10 +424,7 @@ func checkOutboxAndResultIdempotency(t *testing.T, runtime string, memory int, r
 		t.Fatal(err)
 	}
 	// The DB query covers undispatched submissions, including an idle zero.
-	var logs bytes.Buffer
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
-	defer slog.SetDefault(previous)
+	logs := captureLogs(t)
 	if err := b.pendingAge(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -404,19 +442,19 @@ func checkOutboxAndResultIdempotency(t *testing.T, runtime string, memory int, r
 		t.Fatal(err)
 	}
 	checkDeployment(1, 0)
-	if len(sent) != 2 || sent[0] != sent[1] || strings.Contains(sent[0], "secret") {
-		t.Fatalf("unsafe/unstable queue payloads: %v", sent)
+	if len(fake.messages) != 2 || fake.messages[0] != fake.messages[1] || strings.Contains(fake.messages[0], "secret") {
+		t.Fatalf("unsafe/unstable queue payloads: %v", fake.messages)
 	}
-	if len(jobs) != 2 || !bytes.Contains(jobs[0], []byte(`"versionId":"test-version"`)) || !bytes.Contains(jobs[0], []byte(`"key":"test-files/`)) {
-		t.Fatalf("test file locator missing from immutable job: %s", jobs[0])
+	if len(fake.puts) != 2 || !bytes.Contains(fake.puts[0], []byte(`"versionId":"test-version"`)) || !bytes.Contains(fake.puts[0], []byte(`"key":"test-files/`)) {
+		t.Fatalf("test file locator missing from immutable job: %s", fake.puts[0])
 	}
-	if !bytes.Contains(jobs[0], []byte(`"runtime":"`+runtime+`"`)) {
+	if !bytes.Contains(fake.puts[0], []byte(`"runtime":"`+runtime+`"`)) {
 		t.Fatal("submitted runtime was not preserved in dispatch")
 	}
 	var dispatched struct {
 		MemoryLimitMB int `json:"memoryLimitMb"`
 	}
-	if err := json.Unmarshal(jobs[0], &dispatched); err != nil || dispatched.MemoryLimitMB != memory {
+	if err := json.Unmarshal(fake.puts[0], &dispatched); err != nil || dispatched.MemoryLimitMB != memory {
 		t.Fatalf("memory limit was not preserved in dispatch: %+v %v", dispatched, err)
 	}
 	field := "checker"
@@ -426,7 +464,7 @@ func checkOutboxAndResultIdempotency(t *testing.T, runtime string, memory int, r
 	if job.RunTwice != nil {
 		field = "runTwice"
 	}
-	if !bytes.Contains(jobs[0], []byte(`"`+field+`":{"runtime":"python314","source":"checker-secret"}`)) {
+	if !bytes.Contains(fake.puts[0], []byte(`"`+field+`":{"runtime":"python314","source":"checker-secret"}`)) {
 		t.Fatal("checker was not preserved in dispatch")
 	}
 	if _, _, err = (&submissions.Store{Pool: db}).Claim(ctx); !errors.Is(err, pgx.ErrNoRows) {
@@ -564,26 +602,9 @@ func TestRollingUpdateHoldsAndRebindsUndispatchedSubmissions(t *testing.T) {
 	contest("44444444-4444-4444-8444-444444444441", time.Hour, 2*time.Hour, false)
 	contest("44444444-4444-4444-8444-444444444442", -3*time.Hour, -time.Hour, true)
 	contest("44444444-4444-4444-8444-444444444443", 3*time.Hour, 5*time.Hour, true)
-	var jobs [][]byte
-	sent := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "PUT" {
-			data, _ := io.ReadAll(r.Body)
-			jobs = append(jobs, data)
-			w.Header().Set("x-amz-version-id", "version")
-			return
-		}
-		sent++
-		w.Header().Set("Content-Type", "application/x-amz-json-1.0")
-		_, _ = fmt.Fprint(w, `{"MessageId":"test"}`)
-	}))
-	defer server.Close()
-	cfg := aws.Config{Region: "ap-northeast-1", Credentials: credentials.NewStaticCredentialsProvider("test", "test", "")}
-	b := bridge{
-		db: db, bucket: "bucket", queueURL: server.URL + "/queue", runtime: current, previous: old, enabled: "python314", paused: true,
-		objects: s3.NewFromConfig(cfg, func(o *s3.Options) { o.BaseEndpoint = aws.String(server.URL); o.UsePathStyle = true }),
-		queue:   sqs.NewFromConfig(cfg, func(o *sqs.Options) { o.BaseEndpoint = aws.String(server.URL) }),
-	}
+	fake := newFakeAWS(t)
+	b := fake.bridge(db, current)
+	b.previous, b.enabled, b.paused = old, "python314", true
 	status := func() map[string]any {
 		t.Helper()
 		value, err := b.handle(ctx, json.RawMessage(`{"operation":"deployment-status"}`))
@@ -601,8 +622,8 @@ func TestRollingUpdateHoldsAndRebindsUndispatchedSubmissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := status()
-	if sent != 0 || got["undispatched"] != 5.0 || got["dispatchPaused"] != true || got["previousRuntimeDigest"] != old {
-		t.Fatalf("paused dispatch sent requests: sent=%d status=%v", sent, got)
+	if len(fake.sent) != 0 || got["undispatched"] != 5.0 || got["dispatchPaused"] != true || got["previousRuntimeDigest"] != old {
+		t.Fatalf("paused dispatch sent requests: sent=%d status=%v", len(fake.sent), got)
 	}
 	window, err := time.Parse(time.RFC3339Nano, got["nextContestWindowAt"].(string))
 	if err != nil || time.Until(window) < 2*time.Hour || time.Until(window) > 3*time.Hour {
@@ -612,8 +633,8 @@ func TestRollingUpdateHoldsAndRebindsUndispatchedSubmissions(t *testing.T) {
 	if err := b.dispatch(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if sent != 2 || len(jobs) != 2 {
-		t.Fatalf("expected the rebound and current submissions only: sent=%d", sent)
+	if len(fake.sent) != 2 || len(fake.puts) != 2 {
+		t.Fatalf("expected the rebound and current submissions only: sent=%d", len(fake.sent))
 	}
 	// Both slots are taken, so the code run waits until they are done.
 	if _, err := db.Exec(ctx, `UPDATE submissions SET status='DONE' WHERE dispatched_at IS NOT NULL`); err != nil {
@@ -622,14 +643,14 @@ func TestRollingUpdateHoldsAndRebindsUndispatchedSubmissions(t *testing.T) {
 	if err := b.dispatch(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if sent != 3 || len(jobs) != 3 || !bytes.Contains(jobs[2], []byte(`"codeRun":true`)) {
-		t.Fatalf("expected the code run next: sent=%d", sent)
+	if len(fake.sent) != 3 || len(fake.puts) != 3 || !bytes.Contains(fake.puts[2], []byte(`"codeRun":true`)) {
+		t.Fatalf("expected the code run next: sent=%d", len(fake.sent))
 	}
 	var runImage string
 	if err := db.QueryRow(ctx, `SELECT image FROM code_runs WHERE id=$1`, codeRunID).Scan(&runImage); err != nil || runImage != current {
 		t.Fatalf("code run image: %s %v", runImage, err)
 	}
-	for _, job := range jobs {
+	for _, job := range fake.puts {
 		if !bytes.Contains(job, []byte(`"runtimeDigest":"`+current+`"`)) {
 			t.Fatalf("dispatched with a stale digest: %s", job)
 		}
