@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{ kind: 'problem' | 'testcase' | 'testing' | 'post' | 'contest' | 'submission' | 'event', title: string, description?: string }>()
+defineProps<{ kind: 'problem' | 'testcase' | 'testing' | 'post' | 'contest' | 'event', title: string, description?: string }>()
 </script>
 
 <template>
@@ -34,10 +34,6 @@ defineProps<{ kind: 'problem' | 'testcase' | 'testing' | 'post' | 'contest' | 's
         <path class="figure" d="M34 22H62V38A14 14 0 0 1 34 38Z" />
         <rect class="figure" x="37" y="64" width="22" height="10" rx="2" />
         <path class="sparkle" d="M48 27Q48 33 54 33Q48 33 48 39Q48 33 42 33Q48 33 48 27Z" />
-      </template>
-      <template v-else-if="kind === 'submission'">
-        <path class="figure" d="M18 46L76 22L58 78L45 55Z" />
-        <path class="detail" d="M76 22L45 55M14 66H24M18 74H28" />
       </template>
       <template v-else>
         <path class="figure" d="M48 20A4 4 0 0 1 52 24V26A18 18 0 0 1 66 44V56L72 64H24L30 56V44A18 18 0 0 1 44 26V24A4 4 0 0 1 48 20Z" />

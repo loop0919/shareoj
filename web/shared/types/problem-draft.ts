@@ -32,7 +32,6 @@ export const emptyGenerators = (): Generators => ({ input: { runtime: 'cpp23-gcc
 export const maxScoringGroups = 100
 export const maxFullScore = 1_000_000
 export const scoringGroupSchema = z.object({ name: z.string(), points: z.number().int() })
-export type ScoringGroup = z.infer<typeof scoringGroupSchema>
 export const scoringSchema = z.object({
   mode: z.enum(['groups', 'aggregate']),
   groups: z.array(scoringGroupSchema).nullish().transform(groups => groups ?? []),
