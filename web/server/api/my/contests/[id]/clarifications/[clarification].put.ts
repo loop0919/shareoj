@@ -1,3 +1,4 @@
-import { contestAction, contestParam, uuidPattern } from '../../../../../utils/private-contest'
+import { contestAction } from '../../../../../utils/private-contest'
+import { routeParam, uuidPattern } from '../../../../../utils/route-param'
 
-export default defineEventHandler(event => contestAction(event, () => `clarifications/${contestParam(event, 'clarification', uuidPattern)}`, 32 * 1024))
+export default defineEventHandler(event => contestAction(event, () => `clarifications/${routeParam(event, 'clarification', uuidPattern)}`, 32 * 1024))

@@ -3,12 +3,13 @@ import { hasSession } from './private-session'
 import { privateHeaders } from './private-request'
 import { publicContent } from './public-content'
 import { streamingMode } from './streaming-mode'
+import { uuidPattern } from './route-param'
 
 export default defineEventHandler(async event => {
   privateHeaders(event)
   const id = getRouterParam(event, 'id') ?? ''
   const submission = getRouterParam(event, 'submission')
-  if (!/^[a-f0-9-]{36}$/.test(id) || (submission && !/^[a-f0-9-]{36}$/.test(submission))) throw createError({ statusCode: 404 })
+  if (!uuidPattern.test(id) || (submission && !uuidPattern.test(submission))) throw createError({ statusCode: 404 })
   const query = getQuery(event)
   if (query.mine === '1' && !hasSession(event)) throw createError({ statusCode: 401 })
   const search = new URLSearchParams({ offset: typeof query.offset === 'string' ? query.offset : '0', mine: typeof query.mine === 'string' ? query.mine : '0' })

@@ -2,6 +2,7 @@ import { hasSession } from '../../utils/private-session'
 import { privateAPI } from '../../utils/private-api'
 import { privateHeaders } from '../../utils/private-request'
 import { streamingMode } from '../../utils/streaming-mode'
+import { uuidPattern } from '../../utils/route-param'
 
 // The API stores only PNG and JPEG. Tell them apart by the data, not by Blob.type:
 // Bun's Response.blob() sometimes drops the Content-Type the API sent.
@@ -13,7 +14,7 @@ const signatures = [
 export default defineEventHandler(async (event) => {
   privateHeaders(event)
   const id = getRouterParam(event, 'id') ?? ''
-  if (!/^[a-f0-9-]{36}$/.test(id)) throw createError({ statusCode: 404 })
+  if (!uuidPattern.test(id)) throw createError({ statusCode: 404 })
   let image: Blob
   try {
     // Streaming mode never reads a draft image, so it goes straight to the public route without a session.
