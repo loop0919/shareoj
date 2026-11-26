@@ -13,6 +13,10 @@ func (e *RateLimitError) Error() string { return "submission rate limit exceeded
 // AuthoringJob matches input generation, output generation and validation (ADR 0032).
 const AuthoringJob = `(COALESCE((job->>'generate')::boolean,false) OR COALESCE((job->>'validate')::boolean,false))`
 
+// accountLock takes the lock of an account ($1) until the transaction ends. Submissions and code runs count against
+// their limits under this one lock.
+const accountLock = `SELECT pg_advisory_xact_lock(hashtextextended($1, 709091002))`
+
 // Hold the account lock through insertion and commit. The separate query after
 // the lock sees submissions committed by concurrent API instances.
 // Submissions, sample runs and authoring runs each count only their own kind.
@@ -21,7 +25,7 @@ func (s *Store) beginSubmission(ctx context.Context, owner string, easyTest, aut
 	if err != nil {
 		return nil, err
 	}
-	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 709091002))`, owner); err != nil {
+	if _, err = tx.Exec(ctx, accountLock, owner); err != nil {
 		_ = tx.Rollback(ctx)
 		return nil, err
 	}

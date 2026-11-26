@@ -4,14 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
-
-	"judge/api/internal/problems"
 )
 
 // Code runs execute a source on a typed input without a problem (ADR 0031). The limits are fixed.
@@ -60,7 +57,7 @@ func (s *Store) CreateCodeRun(ctx context.Context, owner, id, runtime, image, so
 		return CodeRun{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 709091002))`, owner); err != nil {
+	if _, err = tx.Exec(ctx, accountLock, owner); err != nil {
 		return CodeRun{}, err
 	}
 	var retryAfter int
@@ -131,7 +128,7 @@ func (s Service) CreateCodeRun(ctx context.Context, owner, id string, input Code
 		return CodeRun{}, err
 	}
 	selected := s.storedRuntime(input.Runtime)
-	if selected == "" || !problems.HasSource(selected, input.Source) || len(input.Source) > 128<<10 || !utf8.ValidString(input.Source) || strings.ContainsRune(input.Source, 0) ||
+	if selected == "" || !validSource(selected, input.Source) ||
 		len(input.Stdin) > CodeRunInputLimit || !utf8.ValidString(input.Stdin) || strings.ContainsRune(input.Stdin, 0) {
 		return CodeRun{}, ErrInvalid
 	}
@@ -140,15 +137,8 @@ func (s Service) CreateCodeRun(ctx context.Context, owner, id string, input Code
 	if err != nil {
 		return CodeRun{}, err
 	}
-	if !s.local() && s.DispatchJudge != nil {
-		// The committed row and periodic dispatcher recover a failed wake-up.
-		wakeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		err := s.DispatchJudge(wakeCtx)
-		cancel()
-		if err != nil {
-			slog.Warn("immediate judge dispatch unavailable; periodic recovery retained", "codeRunId", item.ID)
-		}
-	}
+	// The committed row and periodic dispatcher recover a failed wake-up.
+	s.wake(ctx, "immediate judge dispatch unavailable; periodic recovery retained", "codeRunId", item.ID)
 	return item, nil
 }
 
