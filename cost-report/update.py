@@ -16,6 +16,8 @@ import fetch
 import page
 
 EMPTY = {"version": 1, "updated": None, "months": {}}
+# The page is read in Japan, so the date it shows is the date there.
+JAPAN = datetime.timezone(datetime.timedelta(hours=9))
 
 
 def _report(status):
@@ -27,22 +29,29 @@ def _report(status):
             stream.write(line + "\n")
 
 
-def main(argv, fetcher=fetch.fetch):
+def _utc_now():
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def main(argv, fetcher=fetch.fetch, now=_utc_now):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--data", type=Path, required=True, help="costs.json on the data branch")
     parser.add_argument("--site", type=Path, required=True, help="directory that receives index.html")
-    parser.add_argument("--today", type=datetime.date.fromisoformat, help="defaults to today in UTC")
+    parser.add_argument("--today", type=datetime.date.fromisoformat, help="run as if it were this date")
     parser.add_argument("--no-fetch", action="store_true", help="rebuild the page from the stored months")
     args = parser.parse_args(argv)
-    today = args.today or datetime.datetime.now(datetime.timezone.utc).date()
+    moment = now()
+    # AWS closes its months in UTC; the date printed on the page is Japan's.
+    today = args.today or moment.astimezone(datetime.timezone.utc).date()
+    shown = args.today or moment.astimezone(JAPAN).date()
 
     try:
         config = json.loads(args.config.read_text(encoding="utf-8"))
         stored = json.loads(args.data.read_text(encoding="utf-8")) if args.data.exists() else EMPTY
         period = None if args.no_fetch else costs.query_period(config["start"], today)
         fresh = costs.summarize(fetcher(*period), config) if period else {}
-        data, changed = costs.merge(stored, fresh, today)
+        data, changed = costs.merge(stored, fresh, shown)
         html = page.render(data, config)
         text = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
         costs.assert_public(html)

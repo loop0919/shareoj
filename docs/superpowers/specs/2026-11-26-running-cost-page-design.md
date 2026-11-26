@@ -1,7 +1,7 @@
 # 運用費ページの設計
 
 - 作成日: 2026-11-26
-- 状態: 承認待ち
+- 状態: 2026-11-27に公開
 - 対象: GitHub Actions、GitHub Pages、`infra/deploy-access/`。API、Web（`web/`）、ジャッジ、CLIは変えない。
 
 ## 目的
