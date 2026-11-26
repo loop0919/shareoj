@@ -8,29 +8,39 @@ const { entries, folders, placed, loading, loadError, message, load, createFolde
 
 // The URL holds the open folder, kind and status, so a reload or the back button shows the same list. A value this
 // page does not know counts as absent. The old tabs' URLs still land here, narrowed to their kind.
+// The page keeps its own copy and shows a change at once. The address follows after the my page's checks, and a
+// second change made before then builds on the first: read from the address, it would start from before the first
+// and undo it.
 const tabKinds: Record<string, LibraryKind> = { problems: 'own', testing: 'testing', posts: 'post' }
-const queryValue = (key: string) => typeof route.query[key] === 'string' ? route.query[key] : ''
+function fromQuery(query: typeof route.query) {
+  const value = (key: string) => typeof query[key] === 'string' ? query[key] : ''
+  const kind = value('kind')
+  return { folder: value('folder'), kind: libraryKinds.some(option => option.key === kind) ? kind : tabKinds[value('tab')] ?? '', status: value('status') }
+}
+const shown = ref(fromQuery(route.query))
+// While a change of ours is on its way, the address is behind the page and is not read. Once the last one has
+// landed or been turned away, the page follows the address again, as it does for the back button and for links.
+let changing = 0
+watch(() => route.query, (query) => { if (!changing) shown.value = fromQuery(query) })
 const selected = computed({
   get: () => {
-    const folder = queryValue('folder')
+    const folder = shown.value.folder
     return folder === 'unsorted' || folders.value.some(item => item.id === folder) ? folder : ''
   },
   set: folder => { show({ folder }) },
 })
-const kindQuery = computed({
-  get: () => {
-    const kind = queryValue('kind')
-    return libraryKinds.some(option => option.key === kind) ? kind : tabKinds[queryValue('tab')] ?? ''
-  },
-  set: kind => { show({ kind }) },
-})
-const statusQuery = computed({ get: () => queryValue('status'), set: status => { show({ status }) } })
+const kindQuery = computed({ get: () => shown.value.kind, set: kind => { show({ kind }) } })
+const statusQuery = computed({ get: () => shown.value.status, set: status => { show({ status }) } })
 // Writes what is shown, so that leaving an old tab's URL keeps its kind and drops what was not understood. Another
 // folder or filter starts afresh, so a failed write's message goes; the back and forward buttons do the same.
 function show(changes: { folder?: string, kind?: string, status?: string }) {
   message.value = ''
   const next = { folder: selected.value, kind: kindFilter.value, status: statusFilter.value, ...changes }
+  shown.value = next
+  changing++
   void router.replace({ query: { ...route.query, tab: 'library', folder: next.folder || undefined, kind: next.kind || undefined, status: next.status || undefined } })
+    .catch(() => {})
+    .finally(() => { if (!--changing) shown.value = fromQuery(route.query) })
 }
 const forget = () => { message.value = '' }
 onMounted(() => window.addEventListener('popstate', forget))

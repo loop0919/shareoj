@@ -343,6 +343,7 @@ PNG・JPEG・WebP（5MB以下）をブラウザーで中央から正方形に切
 `app/composables/useLibrary.ts` は `/api/my/problems`、`/api/my/problems?role=tester`、`/api/my/posts` を最後のページまで読み、`GET /api/my/folders` の振り分けとIDで突き合わせる。
 フォルダの件数と絞り込みを全件で数えるためである。
 開いているフォルダ、種類、状態は `/my?tab=library` の `folder`、`kind`、`status` に持ち、再読み込みと戻る操作で同じ表示に戻る。
+画面は同じ値を自分でも持ち、押したらすぐに表示を変えて、URLはあとから追いかける。続けて変えたとき、URLが追いつく前の値から次の変更を作って先の変更を消さないためである。
 並び順（更新、作成、公開が新しい順）はURLに入れず、`localStorage` の `openoj.library-sort` に覚える。
 フォルダの一覧は「すべて」、利用者のフォルダ、「未整理」の順に並び、「フォルダを作る」は開いているフォルダの中に作る。
 

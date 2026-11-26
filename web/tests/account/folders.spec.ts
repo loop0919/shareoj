@@ -149,6 +149,48 @@ test('kind and status filters combine', async ({ page }) => {
   await expect(choice(kinds(page), 'すべて')).toHaveText('すべて（2）')
 })
 
+test('filters and a folder changed before the address catches up all take effect', async ({ page }) => {
+  await signIn(page)
+  await expect(rows(page)).toHaveCount(2)
+  // Both lists change in one turn of the page, so the second starts while the first is still on its way to the address.
+  await page.evaluate(() => {
+    for (const [label, value] of [['種類', 'post'], ['状態', 'preparing']] as const) {
+      const select = [...document.querySelectorAll<HTMLLabelElement>('.library-filters label')].find(item => item.textContent === label)!.control as HTMLSelectElement
+      select.value = value
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+  })
+  await expect(kinds(page)).toHaveValue('post')
+  await expect(statuses(page)).toHaveValue('preparing')
+  await expect(rows(page)).toHaveCount(1)
+  await expect(rows(page)).toContainText('フォルダの記事A')
+  await expect(page).toHaveURL(/kind=post/)
+  await expect(page).toHaveURL(/status=preparing/)
+  // A folder opened and a filter cleared in the same turn: both hold as well.
+  await page.evaluate(() => {
+    document.querySelector<HTMLElement>('nav[aria-label="フォルダ"] li:last-child button')!.click()
+    const select = [...document.querySelectorAll<HTMLLabelElement>('.library-filters label')].find(item => item.textContent === '状態')!.control as HTMLSelectElement
+    select.value = ''
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  await expect(folder(page, '未整理')).toHaveAttribute('aria-current', 'true')
+  await expect(statuses(page)).toHaveValue('')
+  await expect(kinds(page)).toHaveValue('post')
+  await expect(page).toHaveURL(/folder=unsorted/)
+  await expect(page).toHaveURL(/kind=post/)
+  await expect(page).not.toHaveURL(/status=/)
+  // The back button still brings the address and the lists back together.
+  await page.goto('/my?tab=library&status=preparing')
+  await expect(statuses(page)).toHaveValue('preparing')
+  await kinds(page).selectOption('own')
+  await expect(page).toHaveURL(/kind=own/)
+  await page.goto('/my?tab=library')
+  await expect(kinds(page)).toHaveValue('')
+  await page.goBack()
+  await expect(kinds(page)).toHaveValue('own')
+  await expect(statuses(page)).toHaveValue('preparing')
+})
+
 test('the old tabs open the library narrowed to their kind', async ({ page }) => {
   await signIn(page)
   await page.goto('/my?tab=posts')
