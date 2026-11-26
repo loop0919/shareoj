@@ -269,6 +269,8 @@ resource "aws_iam_role_policy" "cost_report" {
   })
 }
 output "github_cost_report_role_arn" { value = aws_iam_role.github_cost_report.arn }
+# The workflow keeps this as a secret so that GitHub hides it in the public log.
+output "github_cost_report_role_id" { value = aws_iam_role.github_cost_report.unique_id }
 # RDS Enhanced Monitoring publishes OS metrics through this role. It is created here because the
 # deploy role may pass it but must not manage roles other than the execution roles.
 resource "aws_iam_role" "rds_monitoring" {

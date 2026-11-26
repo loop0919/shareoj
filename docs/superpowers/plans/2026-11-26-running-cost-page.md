@@ -583,9 +583,13 @@ gh api -X POST repos/{owner}/{repo}/environments/cost-report/deployment-branch-p
   -f name=main -f type=branch
 terraform -chdir=infra/deploy-access output -raw github_cost_report_role_arn \
   | gh secret set AWS_COST_REPORT_ROLE_ARN --env cost-report
+terraform -chdir=infra/deploy-access output -raw github_cost_report_role_id \
+  | gh secret set AWS_COST_REPORT_ROLE_ID --env cost-report
 ```
 
-ARNを画面に出さない（パイプで渡す）。
+ARNとロールのIDを画面に出さない（パイプで渡す）。
+環境とブランチの制限は、シークレットを入れる前、`main`に取り込む前に作る。
+環境がないままワークフローが動くと、制限のない環境が自動で作られる。
 
 確かめる。
 
@@ -619,9 +623,9 @@ Expected: `build`と`deploy`が成功。
 
 - 公開されたページの9月と10月の合計が、Task 1の請求額と0.05ドル以内で合う。
 - `cost-data`ブランチの`costs.json`に、行の金額だけが入っている。
-- ジョブごとにログを取り、12桁の数字と`arn:`が出ていないこと。
+- ジョブごとにログを取り、12桁の数字、`arn:`、ロールのID（`AROA`で始まる）が出ていないこと。
 
-  Run: `gh run view <id> --job <job-id> --log | grep -cE '(^|[^0-9])[0-9]{12}([^0-9]|$)|arn:'`
+  Run: `gh run view <id> --job <job-id> --log | grep -cE '(^|[^0-9])[0-9]{12}([^0-9]|$)|arn:|AROA'`
   Expected: `0`
 
 - `main`に新しいコミットができていない。`Deploy dev`が走っていない。

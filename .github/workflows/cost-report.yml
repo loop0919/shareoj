@@ -47,6 +47,18 @@ jobs:
           ref: cost-data
           path: data
 
+      # The credentials step logs the role's unique ID, and its account-ID mask does not cover that.
+      # GitHub hides secret values in the log, so the ID is stored as a secret and read here.
+      - name: Require the role ID secret
+        if: env.FETCH == 'true'
+        env:
+          ROLE_ID: ${{ secrets.AWS_COST_REPORT_ROLE_ID }}
+        run: |
+          if [[ -z "$ROLE_ID" ]]; then
+            echo "::error::Set the AWS_COST_REPORT_ROLE_ID secret in the cost-report environment."
+            exit 1
+          fi
+
       - name: Configure AWS credentials
         if: env.FETCH == 'true'
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3

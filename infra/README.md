@@ -438,11 +438,14 @@ GitHub Environment `dev`のデプロイ対象ブランチも運用に合わせ�
 - Environmentのsubjectにはブランチが入らない。
   `main`からしか使えないようにするのは、GitHub側の設定である。
   Environment `cost-report`のデプロイ対象ブランチを`main`だけに制限する。
-- ロールのARNは、Environment `cost-report`のシークレット`AWS_COST_REPORT_ROLE_ARN`に入れる。
+- ロールのARNとロールのIDは、Environment `cost-report`のシークレットに入れる。
+  認証のステップがロールのIDをログに書くので、シークレットにしてGitHubに伏せさせる。
 
 ```console
 terraform -chdir=infra/deploy-access output -raw github_cost_report_role_arn \
   | gh secret set AWS_COST_REPORT_ROLE_ARN --env cost-report
+terraform -chdir=infra/deploy-access output -raw github_cost_report_role_id \
+  | gh secret set AWS_COST_REPORT_ROLE_ID --env cost-report
 ```
 
 ## dev環境の管理
