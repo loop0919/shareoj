@@ -120,6 +120,33 @@ class SummarizeTest(unittest.TestCase):
             {"group": "tax", "amount": "5.01"},
         ]})
 
+    def test_rounding_takes_the_cent_back_from_the_row_that_rounded_up(self):
+        # 0.006 rounds up to a cent the total does not have; it must not come out of the row at zero.
+        summary = costs.summarize([month("2026-10-01", [
+            (RDS, "Usage", "0.006"),
+            (EC2, "Usage", "-0.004"),
+            ("Amazon Braket", "Usage", "5.00"),
+        ])], CONFIG)
+        self.assertEqual(summary["2026-10"], {"total": "5.00", "rows": [{"group": "other", "amount": "5.00"}]})
+
+    def test_usage_row_at_zero_does_not_pay_for_fee_rounding(self):
+        summary = costs.summarize([month("2026-10-01", [
+            (PLANS, "SavingsPlanUpfrontFee", "10.005"),
+            (RDS, "Usage", "0.002"),
+            ("Tax", "Tax", "5.005"),
+        ])], CONFIG)
+        self.assertEqual(summary["2026-10"], {"total": "15.01", "rows": [
+            {"group": "prepay", "amount": "10.00"},
+            {"group": "tax", "amount": "5.01"},
+        ]})
+
+    def test_sub_cent_rows_that_add_up_to_a_cent_still_show_it(self):
+        summary = costs.summarize([month("2026-10-01", [
+            (RDS, "Usage", "0.004"),
+            (EC2, "Usage", "0.004"),
+        ])], CONFIG)
+        self.assertEqual(summary["2026-10"], {"total": "0.01", "rows": [{"group": "database", "amount": "0.01"}]})
+
     def test_tiny_amounts_are_dropped(self):
         summary = costs.summarize([month("2026-10-01", [
             (RDS, "Usage", "0.004"),

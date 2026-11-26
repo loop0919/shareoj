@@ -2,7 +2,7 @@
 
 import copy
 import datetime
-from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal
 import re
 
 OTHER = "other"
@@ -51,34 +51,37 @@ def _dollars(cents):
     return f"{sign}{abs(cents) // 100}.{abs(cents) % 100:02d}"
 
 
-def _cents(amount, rounding):
-    return int((amount * 100).to_integral_value(rounding=rounding))
+def _cents(amount):
+    return int((amount * 100).to_integral_value(rounding=ROUND_HALF_UP))
 
 
 def _rows(amounts, groups):
     """Rounds each row to cents so that the rows add up to the rounded total.
 
-    AWS invoices fees and tax (the rows picked by record type) as lines of their own,
-    so those round by themselves and match the invoice. The usage rows share the rest.
+    Every row rounds on its own. When the rows then miss the total by a cent or two,
+    the usage rows make it up: AWS invoices fees and tax (the rows picked by record type)
+    as lines of their own, so those must keep the invoiced amount. A row at zero is not
+    shown, so it never gives or takes a cent while a shown row can.
     """
-    total = _cents(sum(amounts.values(), Decimal(0)), ROUND_HALF_UP)
+    total = _cents(sum(amounts.values(), Decimal(0)))
     order = [group["id"] for group in groups if group["id"] in amounts]
     billed_alone = {group["id"] for group in groups if group.get("record_types")}
-    cents = {
-        name: _cents(amounts[name], ROUND_HALF_UP if name in billed_alone else ROUND_FLOOR)
-        for name in order
-    }
-    usage = [name for name in order if name not in billed_alone]
+    cents = {name: _cents(amounts[name]) for name in order}
     left = total - sum(cents.values())
-    if usage:
-        # sorted() is stable, so rows with equal remainders keep the configured order.
-        by_remainder = sorted(usage, key=lambda name: cents[name] - amounts[name] * 100)
-        step = 1 if left > 0 else -1
-        takers = by_remainder if left > 0 else by_remainder[::-1]
+    shown_usage = [name for name in order if name not in billed_alone and cents[name]]
+    shown = [name for name in order if cents[name]]
+    if left and not shown_usage and shown:
+        cents[max(shown, key=lambda name: abs(cents[name]))] += left
+    elif left:
+        # Take a cent back from the rows that rounded up the most, or give one to those that
+        # rounded down the most. Ties fall on the later row when taking, the earlier when giving.
+        takers = sorted(
+            shown_usage or order,
+            key=lambda name: (cents[name] - amounts[name] * 100, order.index(name)),
+            reverse=left < 0,
+        )
         for index in range(abs(left)):
-            cents[takers[index % len(takers)]] += step
-    elif order:
-        cents[max(order, key=lambda name: abs(cents[name]))] += left
+            cents[takers[index % len(takers)]] += 1 if left > 0 else -1
     return _dollars(total), [{"group": name, "amount": _dollars(cents[name])} for name in order if cents[name]]
 
 
