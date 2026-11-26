@@ -290,7 +290,7 @@ func TestScoringPushAndPull(t *testing.T) {
 	if _, err := push(ctx, dir, client, -1); err != nil || string(remote.Draft["scoring"]) != `{"mode":"groups","groups":[{"name":"小課題1","points":30},{"name":" 小課題2 ","points":70}]}` {
 		t.Fatalf("groups mode: %s %v", remote.Draft["scoring"], err)
 	}
-	// Without [scoring], replacing the tests would leave every case ungrouped, so push stops before any request.
+	// Without [scoring], replacing the tests would leave every case ungrouped, so push stops before it saves.
 	write(t, filepath.Join(dir, "problem.toml"), template)
 	before := puts
 	if _, err := push(ctx, dir, client, -1); err == nil || !strings.Contains(err.Error(), "remote draft uses partial scoring") || puts != before {
