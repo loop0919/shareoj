@@ -272,7 +272,7 @@ function removeClosed() {
           </li>
         </ul>
       </nav>
-      <p v-if="!folders.length" class="folder-tree-hint">「フォルダを作る」でフォルダを作り、行をドラッグするか「フォルダへ移動」で問題や記事を入れられます。</p>
+      <p v-if="!folders.length" class="folder-tree-hint">「フォルダを作る」でフォルダを作り、行をドラッグするか、行の「⋯」から「フォルダへ移動」を選ぶと、問題や記事を入れられます。</p>
       <button type="button" class="editor-button folder-tree-create" :disabled="!canCreate" :title="canCreate ? undefined : depthReason" :aria-describedby="canCreate ? undefined : reasonId" @click="create()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>フォルダを作る
       </button>

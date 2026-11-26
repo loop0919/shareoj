@@ -3,7 +3,8 @@ import { vDialogDismiss } from '~/utils/dialog-dismiss'
 import { accountProblemSchema, type AccountSummary } from '~~/shared/types/account-problems'
 import { shortId } from '~~/shared/utils/short-id'
 import { accountError } from '~/utils/account-problems'
-const props = defineProps<{ entry: AccountSummary, testing?: boolean }>()
+// scheduleElsewhere leaves 予約を変更 to the caller, which lists it in a row's menu.
+const props = defineProps<{ entry: AccountSummary, testing?: boolean, scheduleElsewhere?: boolean }>()
 const tooltipId = useId()
 const withdrawing = ref('')
 // The dialog exists only while it is open, so a long list does not put one per row into <body>.
@@ -34,7 +35,7 @@ async function withdraw() {
 
 <template>
   <div class="problem-actions"><ContentActions :title="entry.title.trim() || '無題の問題'" :edit-to="{ path: '/problems/new', query: { problem: entry.id } }" :view-to="`/problems/${shortId(entry.id)}`" :published="!!entry.publishedVersion" can-view />
-    <NuxtLink v-if="!testing && entry.scheduledAt" class="editor-button" :to="{ path: '/problems/post', query: { problem: entry.id } }">予約を変更</NuxtLink>
+    <NuxtLink v-if="!testing && !scheduleElsewhere && entry.scheduledAt" class="editor-button" :to="{ path: '/problems/post', query: { problem: entry.id } }">予約を変更</NuxtLink>
     <button v-if="!testing && entry.featuredPreference" class="editor-button withdraw-featured" :disabled="!!withdrawing" :aria-label="`${entry.title.trim() || '無題の問題'}の定期便応募を取り下げる`" title="定期便応募を取り下げる" @click="confirmWithdraw()">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5-5 5 5 5M4 10h10a6 6 0 0 1 0 12" transform="translate(0 -2)" /></svg>
     </button>

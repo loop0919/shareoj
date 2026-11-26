@@ -45,9 +45,10 @@ span.folder-tree-toggle { cursor: default; }
 .folder-tree-menu-button { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 36px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--color-muted); cursor: pointer; }
 span.folder-tree-menu-button { cursor: default; }
 .folder-tree-menu-button[aria-expanded="true"] { background: var(--color-surface); color: var(--color-ink); }
-.folder-tree-menu { position: absolute; top: 100%; right: 0; z-index: 20; display: grid; min-width: 10rem; padding: 6px; border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-paper); box-shadow: 0 4px 12px #0001; }
-.folder-tree-menu button { min-height: 40px; padding: 0 12px; border: 0; border-radius: 4px; background: none; color: var(--color-ink); font: inherit; font-size: .875rem; text-align: left; cursor: pointer; }
-.folder-tree-menu button:hover, .folder-tree-menu button:focus-visible { background: var(--color-surface); }
+.folder-tree-menu, .library-menu { position: absolute; top: 100%; right: 0; z-index: 20; display: grid; min-width: 10rem; padding: 6px; border: 1px solid var(--color-line); border-radius: 6px; background: var(--color-paper); box-shadow: 0 4px 12px #0001; }
+.folder-tree-menu button, .library-menu button, .library-menu a { display: flex; align-items: center; min-height: 40px; padding: 0 12px; border: 0; border-radius: 4px; background: none; color: var(--color-ink); font: inherit; font-size: .875rem; font-weight: 400; text-align: left; text-decoration: none; white-space: nowrap; cursor: pointer; }
+.folder-tree-menu button:hover, .folder-tree-menu button:focus-visible, .library-menu :is(button, a):hover, .library-menu :is(button, a):focus-visible { background: var(--color-surface); }
+.library-menu :is(button, a):focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .folder-tree-menu .folder-tree-delete { color: var(--color-error); }
 .folder-tree-menu-button:focus-visible, .folder-tree-menu button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .folder-tree-create { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; margin-top: 12px; padding-inline: 12px; }
@@ -81,17 +82,45 @@ span.folder-tree-menu-button { cursor: default; }
 .library-folder-open:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 4px; border-radius: 2px; }
 
 /* The selection column and bar, as in the submission list's rejudge selection. */
-.library-table .select-cell { width: 44px; text-align: center; }
-.library-table .select-cell input { width: 18px; height: 18px; margin: 0; accent-color: var(--color-accent); cursor: pointer; }
+.library-table .select-cell input { display: block; width: 18px; height: 18px; margin: 0 6px; accent-color: var(--color-accent); cursor: pointer; }
 .library-table .select-cell input:disabled { cursor: not-allowed; }
 .library-selection { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .library-selection .editor-button { min-height: 40px; padding-inline: 16px; font-size: .875rem; }
 .library-actions { display: flex; align-items: center; gap: 8px; }
-.library-move { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; }
-/* A card's top line starts with the kind, then the difficulty. Cells a row leaves empty take no room in a card. */
-@media (max-width: 39.999rem) {
-  .content-table--cards td.library-kind { margin-right: 12px; font-weight: 600; }
-  .content-table--cards.library-table td:empty { display: none; }
+/* A row's ⋯ button and its menu, which reads as a folder's menu does. */
+.library-menu-wrap { position: relative; display: inline-flex; }
+.library-menu-button { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; }
+.library-menu-button[aria-expanded="true"] { background: var(--color-surface); }
+/* The list of rows. The folder list beside it leaves less than a table of seven columns needs, so a row is two lines:
+ * its mark and title, then its state, update time and difficulty, which wrap. Nothing scrolls sideways at any width.
+ * The first two columns are fixed, since each row is its own grid and the marks must line up. */
+.library-content { container-type: inline-size; }
+.library-table, .library-table thead, .library-table tbody { display: block; }
+.library-table { width: 100%; font-size: .875rem; text-align: left; }
+.library-table thead tr { display: flex; align-items: center; padding: 0 8px 10px; border-bottom: 1px solid var(--color-line); }
+.library-table thead th { padding: 0; font-weight: 500; }
+.library-table thead .select-cell { display: flex; align-items: center; gap: 12px; color: var(--color-muted); font-size: .8125rem; white-space: nowrap; }
+.library-table thead .select-cell::after { content: "すべて選択"; }
+.library-table tbody tr { display: grid; grid-template-columns: 30px 30px minmax(0, 1fr) auto; grid-template-areas: "select kind title actions" "select kind meta actions"; align-items: center; gap: 4px 12px; padding: 10px 8px; border-bottom: 1px solid var(--color-line); }
+.library-table tbody th, .library-table tbody td { min-width: 0; padding: 0; }
+.library-table tbody .select-cell { grid-area: select; }
+.library-table .library-kind { grid-area: kind; }
+.library-table tbody th { grid-area: title; font-weight: 600; overflow-wrap: anywhere; }
+.library-table .library-meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; color: var(--color-muted); font-size: .8125rem; }
+.library-table .actions-cell { grid-area: actions; }
+.library-meta-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* A state is not pressed here, so it is smaller than a control. A post's state reads as a problem's does. */
+.library-table .library-meta .problem-status, .library-post-state { min-height: 26px; }
+.library-post-state { display: inline-flex; align-items: center; padding: 2px 10px; border: 1px solid var(--color-line); border-radius: 999px; font-size: .75rem; white-space: nowrap; }
+.library-post-state[data-published] { border-color: var(--color-accent-soft); background: var(--color-accent-soft); color: var(--color-ink); }
+.library-meta-kind { display: none; color: var(--color-ink); font-weight: 600; }
+@media not all and (hover: hover), (max-width: 39.999rem) { .library-meta-kind { display: inline; } }
+@media (hover: hover) { .library-table tbody tr:hover { background: var(--color-surface); } }
+/* Too narrow for the buttons beside the title: they go under the row, at its end. */
+@container (max-width: 36rem) {
+  .library-table tbody tr { grid-template-columns: 30px 30px minmax(0, 1fr); grid-template-areas: "select kind title" "select kind meta" "actions actions actions"; }
+  .library-table .actions-cell { justify-self: end; margin-top: 4px; }
+  .library-table .actions-cell:empty { display: none; }
 }
 /* A row can be taken onto the folder list. More than one shows this badge by the pointer instead of the row; it is on
  * the page only for the moment the browser takes its picture. */

@@ -88,7 +88,9 @@ test('turning the folder view on lists problems and posts in one table', async (
   await expect(kindName).toHaveCSS('opacity', '0')
   await kindCell(row(page, 'フォルダの記事A')).hover()
   await expect(kindName).toHaveCSS('opacity', '1')
-  await expect(page.getByText('「フォルダを作る」でフォルダを作り、行をドラッグするか「フォルダへ移動」で問題や記事を入れられます。', { exact: true })).toBeVisible()
+  // The rows fit beside the folder list, so nothing scrolls sideways.
+  expect(await library(page).evaluate(table => table.scrollWidth <= table.clientWidth)).toBe(true)
+  await expect(page.getByText('「フォルダを作る」でフォルダを作り、行をドラッグするか、行の「⋯」から「フォルダへ移動」を選ぶと、問題や記事を入れられます。', { exact: true })).toBeVisible()
   await expect(page.getByRole('main').getByRole('link', { name: '新規問題', exact: true })).toHaveAttribute('href', '/problems/new?fresh=1')
   await expect(page.getByRole('main').getByRole('link', { name: '新規記事', exact: true })).toHaveAttribute('href', '/blog/new')
   await page.reload()
@@ -105,7 +107,7 @@ test('folders count what they hold, and a folder opens into the folders below it
   expect((await page.request.put('/api/my/folder-items', { headers: { origin }, data: { folderId: third, items: [{ kind: 'problem', id: problem }] } })).status()).toBe(204)
   await page.reload()
   await expect(folder(page, 'コンテスト用')).toHaveAccessibleName('コンテスト用 1')
-  await expect(page.getByText('「フォルダを作る」でフォルダを作り、行をドラッグするか「フォルダへ移動」で問題や記事を入れられます。', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('「フォルダを作る」でフォルダを作り、行をドラッグするか、行の「⋯」から「フォルダへ移動」を選ぶと、問題や記事を入れられます。', { exact: true })).toHaveCount(0)
   await expect(folder(page, 'すべて')).toHaveAccessibleName('すべて 2')
   await expect(folder(page, '未整理')).toHaveAccessibleName('未整理 1')
   await folder(page, '未整理').click()
@@ -261,7 +263,13 @@ test('turning the folder view off brings the old tabs back, and the folders stay
 // The tests below manage folders on the page. They start from what the tests above leave: the view on, 第3回 inside
 // コンテスト用 holding フォルダの問題A, and the post and the tested problem in 未整理.
 const createButton = (page: Page) => page.getByRole('button', { name: 'フォルダを作る', exact: true })
-const moveButton = (page: Page, title: string) => row(page, title).getByRole('button', { name: `${title}をフォルダへ移動`, exact: true })
+// A row's move waits behind its ⋯ button, with what else the row is seldom asked for.
+const menuButton = (page: Page, title: string) => row(page, title).getByRole('button', { name: `${title}の操作`, exact: true })
+const moveButton = (page: Page, title: string) => row(page, title).getByRole('button', { name: 'フォルダへ移動', exact: true })
+async function openMove(page: Page, title: string) {
+  await menuButton(page, title).click()
+  await moveButton(page, title).click()
+}
 const chosenMove = (page: Page) => page.getByRole('button', { name: /^選んだ\d+件をフォルダへ移動$/ })
 
 async function makeFolder(page: Page, name: string) {
@@ -338,7 +346,16 @@ test('a folder is made from the folder list and renamed from its row', async ({ 
 test('a row goes into a folder with the keyboard alone', async ({ page }) => {
   await signIn(page)
   await page.goto('/my?tab=library&folder=unsorted')
-  await moveButton(page, 'フォルダの記事A').focus()
+  // Esc closes the menu and gives the focus back to its button.
+  await menuButton(page, 'フォルダの記事A').focus()
+  await page.keyboard.press('Enter')
+  await expect(moveButton(page, 'フォルダの記事A')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(moveButton(page, 'フォルダの記事A')).toHaveCount(0)
+  await expect(menuButton(page, 'フォルダの記事A')).toBeFocused()
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Tab')
+  await expect(moveButton(page, 'フォルダの記事A')).toBeFocused()
   await page.keyboard.press('Enter')
   const picker = dialog(page, '「フォルダの記事A」をフォルダへ移動')
   // The choice starts where the row is now; the folders follow in the list's order.
@@ -358,7 +375,7 @@ test('a row goes into a folder with the keyboard alone', async ({ page }) => {
   await expect(row(page, 'フォルダの記事A')).toHaveCount(0)
   await expect(folder(page, '定期便')).toHaveAccessibleName('定期便 1')
   // The row that took its place has the focus, so the next move needs no mouse either.
-  await expect(moveButton(page, 'フォルダで受けたテストの問題')).toBeFocused()
+  await expect(menuButton(page, 'フォルダで受けたテストの問題')).toBeFocused()
   await page.reload()
   await expect(folder(page, '定期便')).toHaveAccessibleName('定期便 1')
   await expect(row(page, 'フォルダの記事A')).toHaveCount(0)
@@ -477,7 +494,7 @@ test('a folder moves into another folder, but not into one below itself', async 
 test('deleting a folder puts what it held back in 未整理', async ({ page }) => {
   await signIn(page)
   // 第3回 holds the problem again, so the deletion has something to give back.
-  await moveButton(page, 'フォルダの問題A').click()
+  await openMove(page, 'フォルダの問題A')
   const picker = dialog(page, '「フォルダの問題A」をフォルダへ移動')
   await picker.getByRole('radio', { name: 'コンテスト用 / 第3回', exact: true }).check()
   await picker.getByRole('button', { name: '移動する', exact: true }).click()
@@ -769,6 +786,7 @@ test('a touch screen moves rows through the dialog, not by dragging', async ({ b
     await expect(rows(page)).toHaveCount(3)
     await expect(library(page).locator('tbody tr[draggable]')).toHaveCount(0)
     await expect(tree(page).locator('li[draggable]')).toHaveCount(0)
+    await menuButton(page, 'フォルダの記事A').tap()
     await moveButton(page, 'フォルダの記事A').tap()
     const picker = dialog(page, '「フォルダの記事A」をフォルダへ移動')
     await picker.getByRole('radio', { name: 'メモ', exact: true }).tap()
@@ -831,15 +849,18 @@ test('a phone opens the folders from a button above the table and moves rows thr
   await expect(choosing(page)).toHaveAccessibleName('フォルダ: スマホで開く')
   await expect(choosing(page)).toBeFocused()
   await expect(rows(page)).toHaveCount(1)
-  // Each row is a card, led by its kind, and nothing is dragged.
+  // Nothing hovers on a phone, so the kind's name is written under the title; the buttons go under the row, and
+  // nothing is dragged.
   const card = row(page, 'フォルダの問題A')
-  await expect(library(page).getByRole('columnheader', { name: '種類', exact: true, includeHidden: true })).toBeHidden()
   await expect(kindCell(card)).toHaveText('自分の問題')
-  expect((await kindCell(card).boundingBox())!.y).toBeLessThan((await card.getByRole('rowheader').boundingBox())!.y)
+  await expect(card.locator('.library-meta-kind')).toHaveText('自分の問題')
+  await expect(card.locator('.library-meta-kind')).toBeVisible()
+  expect((await card.locator('.library-meta-kind').boundingBox())!.y).toBeGreaterThan((await card.getByRole('rowheader').boundingBox())!.y)
+  expect((await menuButton(page, 'フォルダの問題A').boundingBox())!.y).toBeGreaterThan((await card.locator('.library-meta-kind').boundingBox())!.y)
   await expect(library(page).locator('tbody tr[draggable]')).toHaveCount(0)
   expect(await fitsWidth(page)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('folder-view-phone.png'), fullPage: true })
-  await moveButton(page, 'フォルダの問題A').click()
+  await openMove(page, 'フォルダの問題A')
   const picker = dialog(page, '「フォルダの問題A」をフォルダへ移動')
   await picker.getByRole('radio', { name: 'スマホで入れる', exact: true }).check()
   await picker.getByRole('button', { name: '移動する', exact: true }).click()
@@ -863,11 +884,12 @@ test('a phone opens the folders from a button above the table and moves rows thr
   await page.reload()
   await expect(choosing(page)).toHaveAccessibleName('フォルダ: スマホで入れる')
   await expect(rows(page)).toContainText('フォルダの問題A')
-  // A folder below the open one is a card too, led by フォルダ.
+  // A folder below the open one is a row too, led by the folder's mark.
   await choosing(page).click()
   await folder(page, 'アーカイブ').click()
   const below = row(page, '段2')
-  expect((await below.getByRole('cell', { name: 'フォルダ', exact: true }).boundingBox())!.y).toBeLessThan((await below.getByRole('button', { name: '段2', exact: true }).boundingBox())!.y)
+  await expect(below.getByRole('cell', { name: 'フォルダ', exact: true })).toHaveCount(1)
+  expect((await kindCell(below).boundingBox())!.x).toBeLessThan((await below.getByRole('button', { name: '段2', exact: true }).boundingBox())!.x)
   expect(await fitsWidth(page)).toBe(true)
   // Opening a folder from the table folds the list as well.
   await choosing(page).click()
