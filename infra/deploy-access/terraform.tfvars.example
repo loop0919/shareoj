@@ -1,6 +1,8 @@
-state_bucket            = "YOUR_STATE_BUCKET"
+state_bucket = "YOUR_STATE_BUCKET"
 # Copy sub_claim_prefix from GitHub's OIDC customization API, then append :environment:dev.
-github_subject          = "repo:OWNER@OWNER_ID/REPO@REPO_ID:environment:dev"
-api_execution_role_name = "YOUR_API_EXECUTION_ROLE"
-gateway_ids             = ["YOUR_API_GATEWAY_ID", "YOUR_FRONTEND_GATEWAY_ID"]
-user_pool_ids           = ["YOUR_COGNITO_POOL_ID"]
+github_subject = "repo:OWNER@OWNER_ID/REPO@REPO_ID:environment:dev"
+# The same prefix with :environment:cost-report appended.
+github_cost_report_subject = "repo:OWNER@OWNER_ID/REPO@REPO_ID:environment:cost-report"
+api_execution_role_name    = "YOUR_API_EXECUTION_ROLE"
+gateway_ids                = ["YOUR_API_GATEWAY_ID", "YOUR_FRONTEND_GATEWAY_ID"]
+user_pool_ids              = ["YOUR_COGNITO_POOL_ID"]

@@ -13,7 +13,7 @@ Browser -> Frontend HTTP API -> Nuxt Lambda -> API HTTP API -> Go Lambda
 | `judge/` | 採点用EC2（常時1台と増設の台）と専用VPC、移行中のLightsail 2 GB、S3、SQS、配送Lambda | S3の`judge/dev/judge.tfstate` |
 | `frontend/` | Nuxt Lambda、HTTP API、パッケージ用S3、IAM、ログ | S3の`judge/dev/frontend.tfstate` |
 | `domain/` | 購入済みRoute 53ゾーン、ACM証明書、独自ドメインとAPIマッピング | S3の`judge/dev/domain.tfstate` |
-| `deploy-access/` | 既存GitHubデプロイロールの信頼関係・操作権限 | S3の`judge/dev/deploy-access.tfstate` |
+| `deploy-access/` | 既存GitHubデプロイロールの信頼関係・操作権限、運用費を読むロール | S3の`judge/dev/deploy-access.tfstate` |
 
 採点用のEC2とLightsail、SQS、配送用S3、配送と結果反映用Lambdaは`judge/`で管理する。
 EC2の台の構成と切り替えは[EC2の採点台の運用と切り替え](../docs/judge/ec2-pool.md)に記載する。
@@ -425,6 +425,25 @@ GatewayやUser Poolの新設・置換は管理者が実施し、IDをこの構�
 `Could not assume role with OIDC`は操作権限に到達する前の認証エラーなので、信頼関係を確認する。
 認証後の`AccessDenied`は、失敗した操作と対象ARNに対応する許可ポリシーを確認する。
 GitHub Environment `dev`のデプロイ対象ブランチも運用に合わせて制限する。
+
+## 運用費を読むロール
+
+`judge-dev-github-cost-report`は、[運用費のページ](../docs/cost-report.md)を毎月更新するワークフローが使う。
+デプロイロールとは別のロールで、`deploy-access/`が作る。
+
+- 許可は`ce:GetCostAndUsage`だけである。
+  Cost Explorerの読み取りのほかは、このアカウントで何もできない。
+- 信頼関係は、GitHubのAudienceと、Environment `cost-report`のsubjectに一致する場合だけを許可する。
+  `sub_claim_prefix`の末尾に`:environment:cost-report`を付けた値を`github_cost_report_subject`へ設定する。
+- Environmentのsubjectにはブランチが入らない。
+  `main`からしか使えないようにするのは、GitHub側の設定である。
+  Environment `cost-report`のデプロイ対象ブランチを`main`だけに制限する。
+- ロールのARNは、Environment `cost-report`のシークレット`AWS_COST_REPORT_ROLE_ARN`に入れる。
+
+```console
+terraform -chdir=infra/deploy-access output -raw github_cost_report_role_arn \
+  | gh secret set AWS_COST_REPORT_ROLE_ARN --env cost-report
+```
 
 ## dev環境の管理
 
