@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { FolderRef } from '~~/shared/types/folders'
 import { folderCounts, folderPath, refKey, sortedChildren } from '~/utils/folder-tree'
-import { entryTitle, libraryKinds, problemStatusGroup, problemStatusOptions, type LibraryEntry, type LibraryKind } from '~/utils/library-entries'
+import { entryTitle, libraryKinds, librarySorts, problemStatusGroup, problemStatusOptions, sortEntries, type LibraryEntry, type LibraryKind, type LibrarySort } from '~/utils/library-entries'
 const route = useRoute()
 const router = useRouter()
 const { entries, folders, placed, loading, loadError, message, load, createFolder, updateFolder, deleteFolder, place } = useLibrary()
@@ -36,12 +36,31 @@ const forget = () => { message.value = '' }
 onMounted(() => window.addEventListener('popstate', forget))
 onBeforeUnmount(() => window.removeEventListener('popstate', forget))
 
+// The order is a habit and not a place, so it stays with the browser and out of the URL. It is read once the page is
+// in the browser, and a browser that refuses storage keeps the order for this visit only.
+const sortKey = 'openoj.library-sort'
+const sortBy = ref<LibrarySort>('updated')
+onMounted(() => {
+  try {
+    const saved = librarySorts.find(option => option.key === localStorage.getItem(sortKey))
+    if (saved) sortBy.value = saved.key
+  } catch { /* storage is off */ }
+})
+const sortChoice = computed<string>({
+  get: () => sortBy.value,
+  set: (key) => {
+    sortBy.value = librarySorts.find(option => option.key === key)?.key ?? 'updated'
+    try { localStorage.setItem(sortKey, sortBy.value) } catch { /* storage is off */ }
+  },
+})
+const ordered = computed(() => sortEntries(entries.value, sortBy.value))
+
 // The open folder holds only what was put in it directly; its own folders lead the table instead.
 const inFolder = computed(() => {
   const folder = selected.value
-  if (!folder) return entries.value
+  if (!folder) return ordered.value
   const known = new Set(folders.value.map(item => item.id))
-  return entries.value.filter(entry => {
+  return ordered.value.filter(entry => {
     const placedIn = placed.value.get(entry.key)
     return folder === 'unsorted' ? placedIn === undefined || !known.has(placedIn) : placedIn === folder
   })
@@ -169,8 +188,9 @@ onMounted(() => { void reload() })
         <div v-if="inFolder.length" class="library-filters">
           <FilterSelect v-model="kindFilter" label="種類" :options="libraryKinds" :counts="kindCounts" />
           <FilterSelect v-model="statusFilter" label="状態" :options="problemStatusOptions" :counts="statusCounts" />
+          <FilterSelect v-model="sortChoice" class="library-sort" label="並び順" :options="librarySorts" />
         </div>
-        <LibraryTable v-if="subfolders.length || visible.length" ref="table" v-model:selected="chosen" :entries="visible" :subfolders="subfolders" @open="selected = $event" @move="move" />
+        <LibraryTable v-if="subfolders.length || visible.length" ref="table" v-model:selected="chosen" :entries="visible" :subfolders="subfolders" :sort="sortBy" @open="selected = $event" @move="move" />
         <EmptyState v-if="emptyTitle && inFolder.length" kind="problem" :title="emptyTitle"><button type="button" class="editor-button" @click="show({ kind: '', status: '' })">すべて表示</button></EmptyState>
         <EmptyState v-else-if="emptyTitle" kind="problem" :title="emptyTitle" :description="selected ? undefined : '「新規問題」「新規記事」から作成すると、ここに表示されます。'" />
       </div>

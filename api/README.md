@@ -317,7 +317,7 @@ DB接続先のURLや資格情報はエラー応答へ含めない。
 | API | 動作 |
 | --- | --- |
 | `GET /auth/me` | 検証済みユーザーのIDを取得 |
-| `GET /my/problems` | 自分の問題を更新日時の降順で50件取得。部分点の問題には`partial`と`fullScore`（満点）を付ける |
+| `GET /my/problems` | 自分の問題を更新日時の降順で50件取得。作成日時を`createdAt`に、公開中なら公開日時を`publishedAt`に付ける。部分点の問題には`partial`と`fullScore`（満点）を付ける |
 | `GET /my/problems?role=tester` | テスト中の問題を更新日時の降順で50件取得。作者のユーザーIDを`author`に付ける。コンテストのセッターとしてだけ扱える問題には`viaContest`（`id`と`title`）を付ける |
 | `GET /my/problems/{id}` | 作者またはテスターとして問題の本文と更新番号を取得。コンテストのセッターとして扱える人は`contestEditors`に返す |
 | `PUT /my/problems/{id}` | UUID v4のIDを指定して作成または更新 |
@@ -442,7 +442,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 
 - `GET /problems`、`GET /problems/{id}`: 公開された問題の一覧と詳細（認証不要）。
 - `GET /posts`、`GET /posts/{id}`: 公開された記事の一覧と詳細（認証不要）。
-- `GET /my/posts`、`GET|PUT|DELETE /my/posts/{id}`: 自分の記事の保存・取得・削除。
+- `GET /my/posts`、`GET|PUT|DELETE /my/posts/{id}`: 自分の記事の保存・取得・削除。一覧には作成日時を`createdAt`に付ける。
 - `PUT /my/problems/{id}/publication`、`PUT /my/posts/{id}/publication`: `{ "version": 1, "publish": true }` で現在の保存内容を公開。`false` で非公開に戻す。
 - `GET|POST /my/folders`、`PUT|DELETE /my/folders/{id}`: マイページのフォルダ（[ADR 0044](../docs/adr/0044-sort-own-content-into-folders.md)）。`GET`は自分のフォルダ（`id`、`parentId`、`name`）を`folders`に、振り分け（`kind`、`id`、`folderId`）を`items`に入れて返す。`items`は、自分が作者か`can_manage_problem`で扱える問題と、自分の記事に限る。テスターから外れた問題の振り分けは残すが、外れている間は返さない。`POST`は`{ "name": "...", "parentId": null }`で作って201、`PUT`は`name`と`parentId`の両方で名前と親を変えて200、`DELETE`は下のフォルダごと消して204を返す。消したフォルダの問題と記事は未整理に戻る。
 - フォルダは1人100個、深さ3段、名前は前後の空白を除いて1〜40文字までで、同じ親の下に同じ名前は置けない。上限を超えるか同じ名前があると、それぞれ409 `folder_limit`、`folder_depth`、`folder_name_taken`を返す。自分自身や下のフォルダへの移動は409 `folder_cycle`、自分のものでないフォルダと親は404 `not_found`。`name`がないか、`PUT`で`parentId`がなければ400 `invalid_request`、名前やIDの形が違えば400 `invalid_folder`とする。

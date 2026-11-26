@@ -1019,3 +1019,44 @@ test('a 定期便 application is withdrawn from the row menu', async ({ page }) 
   await expect(moveButton(page, 'フォルダの問題A')).toBeVisible()
   await expect(withdraw).toHaveCount(0)
 })
+
+test('the list is ordered by update or by creation, and the choice stays with the browser', async ({ page }) => {
+  await signIn(page)
+  // Saving an early post again makes it the last updated, while it stays among the first made.
+  type Listed = { id: string, title: string, createdAt: string, updatedAt: string }
+  const list = async (path: string) => (await (await page.request.get(path)).json() as { items: Listed[] }).items
+  const early = (await list('/api/my/posts')).find(item => item.title === 'フォルダの記事A')!
+  const post = await (await page.request.get(`/api/my/posts/${early.id}`)).json() as { version: number, title: string, markdown: string, problems?: { id: string }[], tags?: string[] }
+  const saved = await page.request.put(`/api/my/posts/${early.id}`, { headers: { origin }, data: { version: post.version, title: post.title, markdown: post.markdown, problemIds: (post.problems ?? []).map(problem => problem.id), tags: post.tags ?? [] } })
+  expect(saved.ok()).toBe(true)
+  const all = [...await list('/api/my/problems'), ...await list('/api/my/problems?role=tester'), ...await list('/api/my/posts')]
+  const newestFirst = (time: (item: Listed) => string) => [...all].sort((a, b) => Date.parse(time(b)) - Date.parse(time(a))).map(item => item.title)
+  const byUpdate = newestFirst(item => item.updatedAt)
+  const byCreation = newestFirst(item => item.createdAt)
+  expect(byUpdate[0]).toBe('フォルダの記事A')
+  expect(byCreation).not.toEqual(byUpdate)
+
+  await page.goto('/my?tab=library')
+  const titles = rows(page).getByRole('rowheader')
+  const order = page.getByRole('combobox', { name: '並び順', exact: true })
+  await expect(order).toHaveValue('updated')
+  await expect(order.locator('option')).toHaveText(['更新が新しい順', '作成が新しい順', '公開が新しい順'])
+  await expect(titles).toContainText(byUpdate)
+  await expect(row(page, 'フォルダの記事A').locator('.library-meta')).toContainText('更新')
+  // Each row shows the time it is ordered by.
+  await order.selectOption('created')
+  await expect(titles).toContainText(byCreation)
+  await expect(row(page, 'フォルダの記事A').locator('.library-meta')).toContainText('作成')
+  await expect(row(page, 'フォルダの記事A').locator('.library-meta')).not.toContainText('更新')
+  // The order is not part of the address, and a reload keeps it.
+  await expect(page).not.toHaveURL(/sort|order/)
+  await page.reload()
+  await expect(order).toHaveValue('created')
+  await expect(titles).toContainText(byCreation)
+  // Nothing here is published or reserved, so by publication everything follows its last update, and shows it.
+  await order.selectOption('published')
+  await expect(titles).toContainText(byUpdate)
+  await expect(row(page, 'フォルダの記事A').locator('.library-meta')).toContainText('更新')
+  await order.selectOption('updated')
+  await expect(titles).toContainText(byUpdate)
+})

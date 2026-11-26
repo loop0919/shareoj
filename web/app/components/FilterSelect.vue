@@ -1,17 +1,19 @@
 <script setup lang="ts">
 // One filter as a labelled list to pick from, for a page with more than one filter: rows of buttons take the page's
 // width twice over. '' shows everything, and each choice says how many rows it would show.
-const props = defineProps<{ label: string, options: readonly { key: string, label: string }[], counts: Record<string, number> }>()
+// Without counts it is a plain choice among the options, such as an order: nothing is hidden, so there is no すべて
+// and no mark that rows are held back.
+const props = defineProps<{ label: string, options: readonly { key: string, label: string }[], counts?: Record<string, number> }>()
 const selected = defineModel<string>({ required: true })
 const id = useId()
-const total = computed(() => Object.values(props.counts).reduce((sum, count) => sum + count, 0))
+const total = computed(() => Object.values(props.counts ?? {}).reduce((sum, count) => sum + count, 0))
 </script>
 <template>
   <div class="filter-select">
     <label :for="id">{{ label }}</label>
-    <select :id="id" v-model="selected" :class="{ 'filter-select-on': selected }">
-      <option value="">すべて（{{ total }}）</option>
-      <option v-for="option in options" :key="option.key" :value="option.key">{{ option.label }}（{{ counts[option.key] ?? 0 }}）</option>
+    <select :id="id" v-model="selected" :class="{ 'filter-select-on': counts && selected }">
+      <option v-if="counts" value="">すべて（{{ total }}）</option>
+      <option v-for="option in options" :key="option.key" :value="option.key">{{ option.label }}<template v-if="counts">（{{ counts[option.key] ?? 0 }}）</template></option>
     </select>
   </div>
 </template>

@@ -377,3 +377,75 @@ func TestFolderItemsPostgres(t *testing.T) {
 		t.Fatalf("placements left: %d", n)
 	}
 }
+
+// The owner's lists carry each item's creation time, which a later save leaves alone, and a problem's publication
+// time once it is published, so the folder view can order by either.
+func TestListsCarryCreationTimePostgres(t *testing.T) {
+	f := newTeamTest(t, "alice", "bob")
+	const (
+		problemID = "f4000000-0000-4000-8000-000000000001"
+		postID    = "f4000000-0000-4000-8000-000000000002"
+	)
+	type item struct {
+		ID          string     `json:"id"`
+		CreatedAt   time.Time  `json:"createdAt"`
+		UpdatedAt   time.Time  `json:"updatedAt"`
+		PublishedAt *time.Time `json:"publishedAt"`
+	}
+	find := func(path, owner, id string) item {
+		t.Helper()
+		var body struct {
+			Items []item `json:"items"`
+		}
+		f.decode(f.request("GET", path, owner, nil, 200), &body)
+		for _, it := range body.Items {
+			if it.ID == id {
+				return it
+			}
+		}
+		t.Fatalf("%s for %s lacks %s", path, owner, id)
+		return item{}
+	}
+	f.problem(problemID)
+	post := map[string]any{"version": 0, "title": "解説", "markdown": "本文", "problemIds": []string{}, "tags": []string{}}
+	f.request("PUT", "/my/posts/"+postID, "alice", post, 200)
+	f.exec(`INSERT INTO problem_testers(problem_id,owner_id) VALUES($1,'bob')`, problemID)
+
+	problem, article := find("/my/problems", "alice", problemID), find("/my/posts", "alice", postID)
+	if problem.CreatedAt.IsZero() || article.CreatedAt.IsZero() {
+		t.Fatalf("createdAt missing: problem=%v post=%v", problem.CreatedAt, article.CreatedAt)
+	}
+	if tested := find("/my/problems?role=tester", "bob", problemID); !tested.CreatedAt.Equal(problem.CreatedAt) {
+		t.Fatalf("tester sees createdAt=%v, owner sees %v", tested.CreatedAt, problem.CreatedAt)
+	}
+
+	difficulty := 3
+	if _, err := f.store.Save(f.ctx, "alice", problemID, 1, problems.Draft{Difficulty: &difficulty, Title: "Team（改）", Markdown: "statement", Editorial: "editorial", TimeLimitMS: "1000", MemoryLimitMB: "256", TestCases: []problems.TestCase{{Input: "1", Output: "2", IsSample: true}}}); err != nil {
+		t.Fatal(err)
+	}
+	post["version"], post["title"] = 1, "解説（改）"
+	f.request("PUT", "/my/posts/"+postID, "alice", post, 200)
+	for name, pair := range map[string][2]item{
+		"problem": {problem, find("/my/problems", "alice", problemID)},
+		"post":    {article, find("/my/posts", "alice", postID)},
+	} {
+		before, after := pair[0], pair[1]
+		if !after.CreatedAt.Equal(before.CreatedAt) {
+			t.Fatalf("%s: a save moved createdAt from %v to %v", name, before.CreatedAt, after.CreatedAt)
+		}
+		if !after.UpdatedAt.After(after.CreatedAt) {
+			t.Fatalf("%s: updatedAt=%v is not after createdAt=%v", name, after.UpdatedAt, after.CreatedAt)
+		}
+	}
+
+	// A problem gets its publication time when it is published.
+	if problem.PublishedAt != nil {
+		t.Fatalf("an unpublished problem has publishedAt=%v", problem.PublishedAt)
+	}
+	f.publish("alice", problemID, true, 200)
+	if published := find("/my/problems", "alice", problemID); published.PublishedAt == nil || published.PublishedAt.Before(published.CreatedAt) {
+		t.Fatalf("published problem has publishedAt=%v, createdAt=%v", published.PublishedAt, published.CreatedAt)
+	} else if tested := find("/my/problems?role=tester", "bob", problemID); tested.PublishedAt == nil || !tested.PublishedAt.Equal(*published.PublishedAt) {
+		t.Fatalf("tester sees publishedAt=%v, owner sees %v", tested.PublishedAt, published.PublishedAt)
+	}
+}

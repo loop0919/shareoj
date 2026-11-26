@@ -1,16 +1,24 @@
 <script setup lang="ts">
 import type { Folder, FolderRef } from '~~/shared/types/folders'
 import { shortId } from '~~/shared/utils/short-id'
-import { entryTitle, libraryKinds, type LibraryEntry, type LibraryKind } from '~/utils/library-entries'
+import { entryTitle, libraryKinds, type LibraryEntry, type LibraryKind, type LibrarySort } from '~/utils/library-entries'
 // subfolders are the open folder's own folders. They lead the table, and pressing one opens it.
 // The table is laid out as a list: the folder list beside it leaves no room for a column per fact, so a row's state,
 // update time and difficulty run in a line under its title and wrap. The roles are written out, since a table that is
 // not displayed as one loses them.
-const props = defineProps<{ entries: LibraryEntry[], subfolders: Folder[] }>()
+// sort is the order the rows came in. A row shows the time it was ordered by, so the order can be read off the list.
+const props = defineProps<{ entries: LibraryEntry[], subfolders: Folder[], sort: LibrarySort }>()
 // The refKeys of the chosen rows. ContentLibrary lets go of rows that leave the table.
 const selected = defineModel<Set<string>>('selected', { required: true })
 const emit = defineEmits<{ open: [id: string], move: [refs: FolderRef[]] }>()
 const kindLabels = Object.fromEntries(libraryKinds.map(kind => [kind.key, kind.label])) as Record<LibraryKind, string>
+// By publication, a row that is not published yet has no such time, and shows its last update as the rest of its
+// group is ordered.
+function shownTime(entry: LibraryEntry) {
+  if (props.sort === 'created') return { label: '作成', at: entry.createdAt }
+  if (props.sort === 'published' && entry.publishedAt) return { label: '公開', at: entry.publishedAt }
+  return { label: '更新', at: entry.updatedAt }
+}
 const updatedLabel = (date: string) => new Date(date).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })
 
 const chosen = computed(() => props.entries.filter(entry => selected.value.has(entry.key)))
@@ -104,12 +112,12 @@ defineExpose({ focusMove })
             <span class="library-meta-kind" aria-hidden="true">{{ kindLabels[entry.kind] }}</span>
             <template v-if="entry.problem">
               <SavedProblemState :entry="entry.problem" />
-              <span class="library-meta-item">更新 <time :datetime="entry.problem.updatedAt">{{ updatedLabel(entry.problem.updatedAt) }}</time></span>
+              <span class="library-meta-item">{{ shownTime(entry).label }} <time :datetime="shownTime(entry).at">{{ updatedLabel(shownTime(entry).at) }}</time></span>
               <span class="library-meta-item">難易度 <DifficultyBadge :level="entry.problem.difficulty" /></span>
             </template>
             <template v-else-if="entry.post">
               <span class="library-post-state" :data-published="entry.post.publishedVersion ? '' : undefined">{{ entry.post.publishedVersion ? '公開中' : '下書き' }}</span>
-              <span class="library-meta-item">更新 <time :datetime="entry.post.updatedAt">{{ updatedLabel(entry.post.updatedAt) }}</time></span>
+              <span class="library-meta-item">{{ shownTime(entry).label }} <time :datetime="shownTime(entry).at">{{ updatedLabel(shownTime(entry).at) }}</time></span>
             </template>
           </td>
           <td role="cell" class="actions-cell">

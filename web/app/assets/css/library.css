@@ -74,6 +74,8 @@ span.folder-tree-menu-button { cursor: default; }
 
 /* The two filters sit on one line, and wrap where the page is narrow. */
 .library-filters { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-bottom: 20px; }
+/* The order is not a filter, so it keeps to the far end of the line while there is room. */
+.library-filters .library-sort { margin-left: auto; }
 
 /* A tested problem's author and contest, under its title. */
 .library-note { display: block; margin-top: 2px; color: var(--color-muted); font-size: .8125rem; font-weight: 400; }

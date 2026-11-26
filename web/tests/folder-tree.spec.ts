@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { accountListSchema } from '../shared/types/account-problems'
 import { postSummarySchema } from '../shared/types/post'
 import { canNest, descendantIds, folderCounts, folderPath, sortedChildren } from '../app/utils/folder-tree'
-import { libraryEntries } from '../app/utils/library-entries'
+import { libraryEntries, sortEntries } from '../app/utils/library-entries'
 
 const A = 'aaaaaaaa-0000-4000-8000-000000000001'
 const B = 'aaaaaaaa-0000-4000-8000-000000000002'
@@ -68,4 +68,39 @@ test('problems and posts make one list, newest first, with their kind and status
   ])
   expect(entries[0]!.problem).toBe(testing[0])
   expect(entries[3]!.post).toBe(posts[0])
+})
+
+test('the list is ordered by update or by creation, and an item without a creation time uses its update time', () => {
+  const problems = (items: object[]) => accountListSchema.parse({ items, nextCursor: '' }).items
+  const own = problems([
+    { id: 'bbbbbbbb-0000-4000-8000-000000000001', title: '古く作って最近直した問題', createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-11-25T00:00:00Z' },
+    { id: 'bbbbbbbb-0000-4000-8000-000000000002', title: '最近作った問題', createdAt: '2026-11-20T00:00:00Z', updatedAt: '2026-11-20T00:00:00Z' },
+    { id: 'bbbbbbbb-0000-4000-8000-000000000003', title: '作成日時のない問題', updatedAt: '2026-11-10T00:00:00Z' },
+  ])
+  const posts = [{ id: 'cccccccc-0000-4000-8000-000000000001', title: '間に作った記事', publishedVersion: 0, publishedAt: null, createdAt: '2026-11-15T09:00:00+09:00', updatedAt: '2026-11-22T00:00:00Z', isOperator: false }].map(post => postSummarySchema.parse(post))
+  const entries = libraryEntries(own, [], posts)
+  expect(entries.map(entry => entry.title)).toEqual(['古く作って最近直した問題', '間に作った記事', '最近作った問題', '作成日時のない問題'])
+  expect(sortEntries(entries, 'updated')).toEqual(entries)
+  expect(sortEntries(entries, 'created').map(entry => entry.title)).toEqual(['最近作った問題', '間に作った記事', '作成日時のない問題', '古く作って最近直した問題'])
+  // Sorting leaves the list it was given alone.
+  expect(entries[0]!.title).toBe('古く作って最近直した問題')
+})
+
+test('ordered by publication, the published lead, then the reserved, then the rest', () => {
+  const problems = (items: object[]) => accountListSchema.parse({ items, nextCursor: '' }).items
+  const own = problems([
+    { id: 'bbbbbbbb-0000-4000-8000-000000000001', title: '準備中で最近直した問題', updatedAt: '2026-11-25T00:00:00Z' },
+    { id: 'bbbbbbbb-0000-4000-8000-000000000002', title: '先に公開した問題', publishedVersion: 1, publishedAt: '2026-10-01T00:00:00Z', updatedAt: '2026-11-24T00:00:00Z' },
+    { id: 'bbbbbbbb-0000-4000-8000-000000000003', title: '遅く公開される予約の問題', scheduledAt: '2027-02-01T00:00:00Z', updatedAt: '2026-11-01T00:00:00Z' },
+    { id: 'bbbbbbbb-0000-4000-8000-000000000004', title: '早く公開される予約の問題', scheduledAt: '2027-01-01T00:00:00Z', updatedAt: '2026-11-02T00:00:00Z' },
+    { id: 'bbbbbbbb-0000-4000-8000-000000000005', title: '準備中で前に直した問題', updatedAt: '2026-11-03T00:00:00Z' },
+  ])
+  const posts = [
+    { id: 'cccccccc-0000-4000-8000-000000000001', title: 'あとに公開した記事', publishedVersion: 1, publishedAt: '2026-11-10T00:00:00Z', updatedAt: '2026-11-10T00:00:00Z', isOperator: false },
+    { id: 'cccccccc-0000-4000-8000-000000000002', title: '下書きの記事', publishedVersion: 0, publishedAt: null, updatedAt: '2026-11-20T00:00:00Z', isOperator: false },
+  ].map(post => postSummarySchema.parse(post))
+  // The published run from the newest publication, the reserved from the soonest, and the rest from the last update.
+  expect(sortEntries(libraryEntries(own, [], posts), 'published').map(entry => entry.title)).toEqual([
+    'あとに公開した記事', '先に公開した問題', '早く公開される予約の問題', '遅く公開される予約の問題', '準備中で最近直した問題', '下書きの記事', '準備中で前に直した問題',
+  ])
 })
