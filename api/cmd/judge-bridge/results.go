@@ -13,6 +13,13 @@ import (
 	"judge/api/internal/testfiles"
 )
 
+// The bounds a worker's result must keep, for a submission and for a code run alike.
+const (
+	maxCompileLog    = 196608
+	maxMeasuredMS    = 120000
+	maxMeasuredBytes = 4 << 30
+)
+
 func validProgress(p submissions.Progress) bool {
 	if p.Verdict != "" {
 		switch p.Verdict {
@@ -32,7 +39,7 @@ func validProgress(p submissions.Progress) bool {
 // skip and the score of a groups-mode problem, are checked by FinishAttempt (ADR 0025).
 func validResult(r submissions.Result) bool {
 	allowed := map[string]bool{"AC": true, "WA": true, "TLE": true, "MLE": true, "OLE": true, "RE": true, "CE": true, "JE": true}
-	if !allowed[r.Verdict] || r.Total < 0 || r.Total > 100 || r.Passed < 0 || r.Passed > r.Total || len(r.CompileLog) > 196608 || len(r.CheckerLog) > 16384 {
+	if !allowed[r.Verdict] || r.Total < 0 || r.Total > 100 || r.Passed < 0 || r.Passed > r.Total || len(r.CompileLog) > maxCompileLog || len(r.CheckerLog) > 16384 {
 		return false
 	}
 	if r.Scoring != nil && !validScore(*r.Scoring, r.Verdict) {
@@ -103,7 +110,7 @@ func validResult(r submissions.Result) bool {
 		if !allowed[c.Verdict] || c.Verdict == "CE" || c.Verdict == "JE" || c.CPUTimeMS == nil || c.WallTimeMS == nil || c.MemoryBytes == nil {
 			return false
 		}
-		if *c.CPUTimeMS < 0 || *c.CPUTimeMS > 120000 || *c.WallTimeMS < 0 || *c.WallTimeMS > 120000 || *c.MemoryBytes < 0 || *c.MemoryBytes > 4<<30 {
+		if *c.CPUTimeMS < 0 || *c.CPUTimeMS > maxMeasuredMS || *c.WallTimeMS < 0 || *c.WallTimeMS > maxMeasuredMS || *c.MemoryBytes < 0 || *c.MemoryBytes > maxMeasuredBytes {
 			return false
 		}
 		if c.Verdict == "TLE" {
@@ -139,7 +146,7 @@ func validScore(s submissions.SubmissionScore, verdict string) bool {
 // a finished run has its measurements and both outputs, a compile error only its log, and a judge error nothing.
 // Expiry is set by the bridge itself, never by a worker.
 func validCodeRunResult(r submissions.CodeRunResult) bool {
-	if r.Expired || len(r.CompileLog) > 196608 {
+	if r.Expired || len(r.CompileLog) > maxCompileLog {
 		return false
 	}
 	switch r.Verdict {
@@ -157,11 +164,11 @@ func validCodeRunResult(r submissions.CodeRunResult) bool {
 	if *r.ExitCode < 0 || *r.ExitCode > 255 || (r.Verdict == "AC" && *r.ExitCode != 0) {
 		return false
 	}
-	if *r.CPUTimeMS < 0 || *r.CPUTimeMS > 120000 || *r.WallTimeMS < 0 || *r.WallTimeMS > 120000 || *r.MemoryBytes < 0 || *r.MemoryBytes > 4<<30 {
+	if *r.CPUTimeMS < 0 || *r.CPUTimeMS > maxMeasuredMS || *r.WallTimeMS < 0 || *r.WallTimeMS > maxMeasuredMS || *r.MemoryBytes < 0 || *r.MemoryBytes > maxMeasuredBytes {
 		return false
 	}
 	for _, preview := range []*submissions.TextPreview{r.Stdout, r.Stderr} {
-		if len(preview.Text) > 65536 || strings.ContainsRune(preview.Text, 0) {
+		if len(preview.Text) > submissions.CodeRunPreviewLimit || strings.ContainsRune(preview.Text, 0) {
 			return false
 		}
 	}
