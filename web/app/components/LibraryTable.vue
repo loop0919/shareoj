@@ -103,7 +103,7 @@ defineExpose({ focusMove })
             <!-- Where nothing hovers, the kind's name has no pointer to bring it out, so it leads this line. -->
             <span class="library-meta-kind" aria-hidden="true">{{ kindLabels[entry.kind] }}</span>
             <template v-if="entry.problem">
-              <SavedProblemState :entry="entry.problem" />
+              <SavedProblemState :entry="entry.problem" short-time />
               <span class="library-meta-item">更新 <time :datetime="entry.problem.updatedAt">{{ updatedLabel(entry.problem.updatedAt) }}</time></span>
               <span class="library-meta-item">難易度 <DifficultyBadge :level="entry.problem.difficulty" /></span>
             </template>

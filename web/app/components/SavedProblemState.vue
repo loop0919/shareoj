@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type { AccountSummary } from '~~/shared/types/account-problems'
-defineProps<{ entry: AccountSummary }>()
+// shortTime writes the reserved time as the folder view writes an update time, to the minute; that list is in JST
+// throughout, so the zone is not repeated.
+defineProps<{ entry: AccountSummary, shortTime?: boolean }>()
+const shortLabel = (date: string) => new Date(date).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })
 const tooltipId = useId()
 const preferenceLabel = (preference: string) => preference === 'soon' ? '早めに出したい' : 'ゆっくりで良い'
 </script>
@@ -8,7 +11,7 @@ const preferenceLabel = (preference: string) => preference === 'soon' ? '早め�
 <template>
   <span class="problem-state">
     <ProblemStatus :problem="entry" />
-    <time v-if="entry.scheduledAt" :datetime="entry.scheduledAt">{{ new Date(entry.scheduledAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }) }} (JST)</time>
+    <time v-if="entry.scheduledAt" :datetime="entry.scheduledAt">{{ shortTime ? shortLabel(entry.scheduledAt) : `${new Date(entry.scheduledAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })} (JST)` }}</time>
     <span v-if="!entry.publishedVersion && !entry.contestScheduled && entry.featuredPreference" class="featured-preference" tabindex="0" role="img" :aria-label="preferenceLabel(entry.featuredPreference)" :aria-describedby="`${tooltipId}-${entry.id}`">
       <FeaturedPreferenceIcon :preference="entry.featuredPreference === 'soon' ? 'soon' : 'later'" />
       <span :id="`${tooltipId}-${entry.id}`" class="preference-tooltip" role="tooltip">{{ preferenceLabel(entry.featuredPreference) }}</span>
