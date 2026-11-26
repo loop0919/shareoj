@@ -586,7 +586,23 @@ func TestPositionalArguments(t *testing.T) {
 	}
 }
 
-// Options may follow the arguments, so a repeated push changes only its last words.
+// The usage line names every command, and a name outside it is refused. version answers only when it stands alone.
+func TestCommandNames(t *testing.T) {
+	var out strings.Builder
+	if err := run(context.Background(), nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	want := "Usage: shareoj <guide|init|check|samples|pull|push|login|logout|version|completions> [options] [arguments]\n"
+	if !strings.HasPrefix(out.String(), want) {
+		t.Fatalf("usage: %s", &out)
+	}
+	for _, args := range [][]string{{"nope"}, {"version", "x"}, {"--version", "x"}} {
+		if err := run(context.Background(), args, io.Discard); err == nil || err.Error() != "unknown command: "+args[0] {
+			t.Errorf("%v: got %v", args, err)
+		}
+	}
+}
+
 func TestOptionsAfterArguments(t *testing.T) {
 	t.Setenv("SHAREOJ_CONFIG_DIR", t.TempDir())
 	t.Setenv("SHAREOJ_API_URL", "")
