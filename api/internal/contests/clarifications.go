@@ -33,6 +33,17 @@ func ValidClarificationText(text string) bool {
 	return strings.TrimSpace(text) != "" && utf8.ValidString(text) && !strings.ContainsRune(text, 0) && utf8.RuneCountInString(text) <= 4000
 }
 
+// clarificationManager is the SQL condition that actor may answer and publish a row of contest_clarifications: the
+// contest's staff for an announcement, which has no asker, and for a question those contest_clarification_manager
+// names. prefix is the row's table alias with its dot, or "".
+func clarificationManager(prefix, actor string) string {
+	return `CASE WHEN ` + prefix + `owner_id IS NULL THEN contest_staff(` + prefix + `contest_id,` + actor + `) ELSE contest_clarification_manager(` + prefix + `contest_id,` + prefix + `problem_id,` + actor + `) END`
+}
+
+// notifyPublished tells the participants of the contest ($1), except the actor ($2), that a clarification is public.
+const notifyPublished = `INSERT INTO notifications(owner_id,contest_id,actor_id,kind)
+ SELECT owner_id,contest_id,$2,'clarification_published' FROM contest_participants WHERE contest_id=$1 AND owner_id<>$2`
+
 func (s *Store) Clarifications(ctx context.Context, contest, viewer string, offset int) ([]Clarification, error) {
 	var exists bool
 	if err := s.Pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM contests WHERE id=$1)`, contest).Scan(&exists); err != nil {
@@ -43,7 +54,7 @@ func (s *Store) Clarifications(ctx context.Context, contest, viewer string, offs
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT q.id,COALESCE(q.problem_id::text,''),q.question,COALESCE(u.handle,''),q.answer,COALESCE(a.handle,''),
  q.answered_at,q.published_at,q.created_at,q.version,
- CASE WHEN q.owner_id IS NULL THEN contest_staff(q.contest_id,$2) ELSE contest_clarification_manager(q.contest_id,q.problem_id,$2) END
+ `+clarificationManager("q.", "$2")+`
  FROM contest_clarifications q LEFT JOIN user_profiles u ON u.owner_id=q.owner_id
  LEFT JOIN user_profiles a ON a.owner_id=q.answered_by
  WHERE q.contest_id=$1 AND $2<>'' AND (q.published_at IS NOT NULL OR q.owner_id=$2
@@ -104,8 +115,7 @@ func (s *Store) AnnounceClarification(ctx context.Context, contest, problem, act
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO notifications(owner_id,contest_id,actor_id,kind)
- SELECT owner_id,contest_id,$2,'clarification_published' FROM contest_participants WHERE contest_id=$1 AND owner_id<>$2`, contest, actor); err != nil {
+	if _, err = tx.Exec(ctx, notifyPublished, contest, actor); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -123,7 +133,7 @@ func (s *Store) UpdateClarification(ctx context.Context, contest, id, actor stri
 	var published bool
 	err = tx.QueryRow(ctx, `SELECT version,COALESCE(owner_id,''),published_at IS NOT NULL FROM contest_clarifications
  WHERE contest_id=$1 AND id=$2 AND
- CASE WHEN owner_id IS NULL THEN contest_staff(contest_id,$3) ELSE contest_clarification_manager(contest_id,problem_id,$3) END
+ `+clarificationManager("", "$3")+`
  FOR UPDATE`, contest, id, actor).Scan(&current, &asker, &published)
 	if err != nil {
 		return err
@@ -145,8 +155,7 @@ func (s *Store) UpdateClarification(ctx context.Context, contest, id, actor stri
 		}
 	}
 	if publish && !published {
-		if _, err = tx.Exec(ctx, `INSERT INTO notifications(owner_id,contest_id,actor_id,kind)
- SELECT owner_id,contest_id,$2,'clarification_published' FROM contest_participants WHERE contest_id=$1 AND owner_id<>$2`, contest, actor); err != nil {
+		if _, err = tx.Exec(ctx, notifyPublished, contest, actor); err != nil {
 			return err
 		}
 	}
