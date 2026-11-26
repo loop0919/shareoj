@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { privateAPI } from '../../../utils/private-api'
 import { limitedJSON, privateHeaders, requireSameOrigin } from '../../../utils/private-request'
+import { upstream } from '../../../utils/upstream'
 const resultSchema = z.object({ favorited: z.boolean(), favoriteCount: z.number().int().nonnegative() })
 export default defineEventHandler(async event => {
   privateHeaders(event)
@@ -14,7 +15,5 @@ export default defineEventHandler(async event => {
     if (!parsed.success) throw createError({ statusCode: 400 })
     body = parsed.data
   }
-  const result = resultSchema.safeParse(await privateAPI(event, `/my/favorites/${id}`, { method: event.method, body, streaming: true }))
-  if (!result.success) throw createError({ statusCode: 502 })
-  return result.data
+  return upstream(resultSchema, await privateAPI(event, `/my/favorites/${id}`, { method: event.method, body, streaming: true }))
 })

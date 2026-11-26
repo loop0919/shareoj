@@ -3,6 +3,7 @@ import { cognitoLogoutUrl, googleOAuthConfig } from '../../utils/google-oauth'
 import { privateAPI } from '../../utils/private-api'
 import { clearPrivateSession, saveSession, sessionTokensSchema, hasSession } from '../../utils/private-session'
 import { limitedJSON, privateHeaders, requireSameOrigin } from '../../utils/private-request'
+import { upstream } from '../../utils/upstream'
 
 const resultSchema = z.object({
   refresh_token: z.string().min(1).max(3800).optional(), access_token: z.string().optional(), expires_in: z.number().int().positive().optional(),
@@ -35,9 +36,7 @@ export default defineEventHandler(async event => {
   const body = await limitedJSON(event, 16 << 10)
   if (['signup', 'confirm-signup', 'resend-confirmation'].includes(action ?? '')) {
     const schema = action === 'resend-confirmation' ? z.object({ sent: z.literal(true) }) : z.object({ confirmed: z.boolean() })
-    const result = schema.safeParse(await privateAPI(event, `/auth/${action}`, { method: 'POST', body, headers: clientIPHeaders(event), streaming: true }))
-    if (!result.success) throw createError({ statusCode: 502 })
-    return result.data
+    return upstream(schema, await privateAPI(event, `/auth/${action}`, { method: 'POST', body, headers: clientIPHeaders(event), streaming: true }))
   }
   const result = resultSchema.safeParse(await privateAPI(event, `/auth/${action}`, { method: 'POST', body, streaming: true }))
   if (!result.success) throw createError({ statusCode: 502 })

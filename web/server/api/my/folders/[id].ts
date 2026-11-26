@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { folderSchema } from '~~/shared/types/folders'
 import { privateAPI } from '../../../utils/private-api'
 import { limitedJSON, privateHeaders, requireSameOrigin } from '../../../utils/private-request'
+import { upstream } from '../../../utils/upstream'
 // A rename sends the parent too, so that a body without it cannot move the folder to the top.
 const bodySchema = z.object({ name: z.string(), parentId: z.string().uuid().nullable() }).strict()
 export default defineEventHandler(async event => {
@@ -16,7 +17,5 @@ export default defineEventHandler(async event => {
   }
   const body = bodySchema.safeParse(await limitedJSON(event, 16 << 10))
   if (!body.success) throw createError({ statusCode: 400 })
-  const result = folderSchema.safeParse(await privateAPI(event, `/my/folders/${id}`, { method: 'PUT', body: body.data }))
-  if (!result.success) throw createError({ statusCode: 502 })
-  return result.data
+  return upstream(folderSchema, await privateAPI(event, `/my/folders/${id}`, { method: 'PUT', body: body.data }))
 })
