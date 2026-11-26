@@ -1,13 +1,11 @@
 import { expect, test, type Page } from '@playwright/test'
 import { shortId } from '../shared/utils/short-id'
+import { visit } from './fixtures/visit'
 
 const id = '88888888-8888-4888-8888-888888888888'
 const pid = '11111111-1111-4111-8111-111111111111'
 const sid = '22222222-2222-4222-8222-222222222222'
 
-async function visit(page: Page, path: string) {
-  await page.evaluate(to => (window as unknown as { useNuxtApp: () => { $router: { push: (to: string) => Promise<unknown> } } }).useNuxtApp().$router.push(to), path)
-}
 // The menus offer the whole list only to those who may read it (ADR 0030); a link from elsewhere still reaches it.
 async function openWholeList(page: Page, offered: boolean) {
   const menu = page.getByRole('navigation', { name: 'コンテストメニュー' })

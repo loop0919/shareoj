@@ -3,6 +3,7 @@ import { expect, test } from './fixtures/account'
 import type { Contest, Entrant, MyTeam, Standing } from '../shared/types/contest'
 import type { Submission } from '../shared/types/submission'
 import { shortId } from '../shared/utils/short-id'
+import { visit } from './fixtures/visit'
 
 // The fixture user is ui_test. The fixture API serves this contest to the server-rendered page; the routes below replace
 // it once the page refreshes (ADR 0024).
@@ -42,10 +43,6 @@ async function menu(page: Page, view: keyof typeof views) {
   // The whole list sits under 「提出」 (ADR 0030).
   if (view === 'submissions') await nav.getByText('提出', { exact: true }).click()
   await nav.getByRole('link', { name: views[view], exact: true }).click()
-}
-// Opens a view no menu offers, as a link from elsewhere would.
-async function visit(page: Page, path: string) {
-  await page.evaluate(to => (window as unknown as { useNuxtApp: () => { $router: { push: (to: string) => Promise<unknown> } } }).useNuxtApp().$router.push(to), path)
 }
 // The server render reads the fixture API, so the page refreshes in the browser to read the routed contest.
 async function open(page: Page, view: keyof typeof views = 'overview', query = '') {
