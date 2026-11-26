@@ -147,6 +147,19 @@ const (
 	maxScoringGroups = 100
 )
 
+// The server's limits on a draft's files, which check and pull apply before anything is sent or written.
+const (
+	maxCodeBytes  = 65536     // a program, and problem.toml
+	maxTextBytes  = 400000    // the statement or the editorial as a file
+	maxTextChars  = 100000    // the same text in characters
+	maxCases      = 100       // test cases
+	maxCaseBytes  = 16 << 20  // one input or one output
+	maxTestsBytes = 512 << 20 // every input and output together
+)
+
+// generatorRoles are the programs [generators] may hold.
+var generatorRoles = []string{"input", "output", "validation"}
+
 func validText(value string, limit int) bool {
 	return utf8.ValidString(value) && !strings.ContainsRune(value, 0) && utf8.RuneCountInString(value) <= limit
 }
@@ -196,7 +209,7 @@ func loadProgram(root *os.Root, config codeConfig, judge bool) (program, error) 
 		return p, errors.New("invalid runtime/protocol (testlib requires cpp23-gcc or cpp23-clang)")
 	}
 	var err error
-	p.Source, err = readText(root, config.Source, 65536)
+	p.Source, err = readText(root, config.Source, maxCodeBytes)
 	return p, err
 }
 
@@ -222,7 +235,7 @@ func readProblem(directory string) (draft, []string, error) {
 
 func readConfig(root *os.Root) (problemConfig, error) {
 	c := problemConfig{TimeMS: 2000, MemoryMB: 512}
-	data, err := readText(root, "problem.toml", 65536)
+	data, err := readText(root, "problem.toml", maxCodeBytes)
 	if err != nil {
 		return c, err
 	}
@@ -262,11 +275,11 @@ func buildDraft(root *os.Root, c problemConfig) (built, error) {
 		texts["editorial"] = *c.Editorial
 	}
 	for key, name := range texts {
-		value, err := readText(root, name, 400000)
+		value, err := readText(root, name, maxTextBytes)
 		if err != nil {
 			return built{}, err
 		}
-		if !validText(value, 100000) {
+		if !validText(value, maxTextChars) {
 			return built{}, fmt.Errorf("%s: exceeds 100000 characters", name)
 		}
 		notes, err := imageNotes(root, name, value)
@@ -282,7 +295,7 @@ func buildDraft(root *os.Root, c problemConfig) (built, error) {
 	slices.Sort(imageWarnings)
 	generators := map[string]program{}
 	for role, config := range c.Generators {
-		if !slices.Contains([]string{"input", "output", "validation"}, role) {
+		if !slices.Contains(generatorRoles, role) {
 			return built{}, fmt.Errorf("unknown generator: %s", role)
 		}
 		p, err := loadProgram(root, config, false)
@@ -437,7 +450,7 @@ func loadCases(root *os.Root, c problemConfig) ([]testCase, []string, error) {
 	}
 	slices.Sort(inputs)
 	slices.Sort(outputs)
-	if !slices.Equal(inputs, outputs) || len(inputs) > 100 {
+	if !slices.Equal(inputs, outputs) || len(inputs) > maxCases {
 		return nil, nil, errors.New("tests require paired input/output files, at most 100 cases")
 	}
 	samples, err := matchCases(inputs, t.Samples)
@@ -490,18 +503,18 @@ func loadCases(root *os.Root, c problemConfig) ([]testCase, []string, error) {
 			return nil, nil, fmt.Errorf("invalid or duplicate test case name: %q", label)
 		}
 		names[trimmed] = true
-		input, err := readText(dir, name+".in", 16<<20)
+		input, err := readText(dir, name+".in", maxCaseBytes)
 		if err != nil {
 			return nil, nil, err
 		}
-		output, err := readText(dir, name+t.Suffix, 16<<20)
+		output, err := readText(dir, name+t.Suffix, maxCaseBytes)
 		if err != nil {
 			return nil, nil, err
 		}
 		// Files written on Windows are CRLF, and Python's input() on Linux keeps the CR.
 		input, output = normalizeTestData(input), normalizeTestData(output)
 		total += len(input) + len(output)
-		if total > 512<<20 {
+		if total > maxTestsBytes {
 			return nil, nil, errors.New("test data exceeds 512 MiB")
 		}
 		cases = append(cases, testCase{Name: label, IsSample: samples[name], Input: input, Output: output, Groups: groups[name]})

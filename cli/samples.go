@@ -163,7 +163,7 @@ func writeSamples(directory string) (string, error) {
 	if next == text {
 		return fmt.Sprintf("%s already matches the %d sample(s)%s", c.Statement, len(samples), note), nil
 	}
-	if !validText(next, 100000) {
+	if !validText(next, maxTextChars) {
 		return "", fmt.Errorf("%s: would exceed 100000 characters", c.Statement)
 	}
 	// Written beside the statement and renamed, so an interrupted run leaves the old file whole.
