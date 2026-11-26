@@ -83,6 +83,11 @@ test('turning the folder view on lists problems and posts in one table', async (
   await expect(rows(page)).toHaveCount(2)
   await expect(kindCell(row(page, 'フォルダの問題A'))).toHaveText('自分の問題')
   await expect(kindCell(row(page, 'フォルダの記事A'))).toHaveText('記事')
+  // The kind is a mark, and its name shows while the pointer is on the cell.
+  const kindName = kindCell(row(page, 'フォルダの記事A')).getByText('記事', { exact: true })
+  await expect(kindName).toHaveCSS('opacity', '0')
+  await kindCell(row(page, 'フォルダの記事A')).hover()
+  await expect(kindName).toHaveCSS('opacity', '1')
   await expect(page.getByText('「フォルダを作る」でフォルダを作り、行をドラッグするか「フォルダへ移動」で問題や記事を入れられます。', { exact: true })).toBeVisible()
   await expect(page.getByRole('main').getByRole('link', { name: '新規問題', exact: true })).toHaveAttribute('href', '/problems/new?fresh=1')
   await expect(page.getByRole('main').getByRole('link', { name: '新規記事', exact: true })).toHaveAttribute('href', '/blog/new')

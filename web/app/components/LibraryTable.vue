@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import type { Folder, FolderRef } from '~~/shared/types/folders'
 import { shortId } from '~~/shared/utils/short-id'
-import { entryTitle, libraryKinds, type LibraryEntry, type LibraryKind } from '~/utils/library-entries'
+import { entryTitle, type LibraryEntry } from '~/utils/library-entries'
 // subfolders are the open folder's own folders. They lead the table, and pressing one opens it.
 const props = defineProps<{ entries: LibraryEntry[], subfolders: Folder[] }>()
 // The refKeys of the chosen rows. ContentLibrary lets go of rows that leave the table.
 const selected = defineModel<Set<string>>('selected', { required: true })
 const emit = defineEmits<{ open: [id: string], move: [refs: FolderRef[]] }>()
-const kindLabels = Object.fromEntries(libraryKinds.map(kind => [kind.key, kind.label])) as Record<LibraryKind, string>
 const updatedLabel = (date: string) => new Date(date).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })
 
 const chosen = computed(() => props.entries.filter(entry => selected.value.has(entry.key)))
@@ -56,13 +55,13 @@ defineExpose({ focusMove })
       <tbody>
         <tr v-for="folder in subfolders" :key="folder.id" class="library-folder">
           <td class="select-cell" />
-          <td class="lead-cell library-kind">フォルダ</td>
+          <td class="lead-cell library-kind"><LibraryKind kind="folder" /></td>
           <th scope="row"><button type="button" class="library-folder-open" @click="emit('open', folder.id)">{{ folder.name }}</button></th>
           <td /><td /><td /><td />
         </tr>
         <tr v-for="entry in entries" :key="entry.key" :draggable="canDrag ? 'true' : undefined" @dragstart="grab(entry, $event)" @dragend="end()">
           <td class="select-cell"><input type="checkbox" :checked="selected.has(entry.key)" :aria-label="`${entryTitle(entry)}を選択`" @change="choose(entry.key, ($event.target as HTMLInputElement).checked)"></td>
-          <td class="lead-cell library-kind">{{ kindLabels[entry.kind] }}</td>
+          <td class="lead-cell library-kind"><LibraryKind :kind="entry.kind" /></td>
           <template v-if="entry.problem">
             <th scope="row">{{ entryTitle(entry) }}<span v-if="entry.kind === 'testing' && entry.problem.author" class="library-note">作者: {{ entry.problem.author }}</span><span v-if="entry.problem.viaContest" class="library-note">コンテスト「{{ entry.problem.viaContest.title.trim() || '無題のコンテスト' }}」の作成者として</span></th>
             <td class="line-cell" data-label="状態"><SavedProblemState :entry="entry.problem" /></td>
