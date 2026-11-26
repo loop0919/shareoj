@@ -1,4 +1,4 @@
-"""Builds the running-cost page: one row a month with income, expenses and the balance."""
+"""Builds the running-cost page: one row a month with income, expenses and the running balance (累計収支)."""
 
 from decimal import Decimal
 import html
@@ -70,7 +70,7 @@ def _table(body, config):
         '<div class="ledger" role="region" aria-label="月ごとの収支" tabindex="0">',
         "<table>",
         "<thead>",
-        f'<tr><th rowspan="2" scope="col">月</th><th scope="col">収入</th><th colspan="{len(columns)}" scope="colgroup">支出</th><th rowspan="2" scope="col">残高</th></tr>',
+        f'<tr><th rowspan="2" scope="col">月</th><th scope="col">収入</th><th colspan="{len(columns)}" scope="colgroup">支出</th><th rowspan="2" scope="col">累計収支</th></tr>',
         f'<tr><th scope="col">GitHub Sponsors</th>{heads}</tr>',
         "</thead>",
         "<tbody>",

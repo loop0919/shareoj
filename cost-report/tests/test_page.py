@@ -90,7 +90,7 @@ class LedgerTest(unittest.TestCase):
     def test_column_headings_follow_the_settings(self):
         head = render()[render().index("<thead>"):render().index("</thead>")]
         labels = re.findall(r"<th[^>]*>(.*?)</th>", head)
-        self.assertEqual(labels, ["月", "収入", "支出", "残高", "GitHub Sponsors", "サーバー利用料", "前払い", "ドメイン", "消費税"])
+        self.assertEqual(labels, ["月", "収入", "支出", "累計収支", "GitHub Sponsors", "サーバー利用料", "前払い", "ドメイン", "消費税"])
         self.assertIn('<th colspan="4" scope="colgroup">支出</th>', head)
 
     def test_income_is_added_to_the_balance_from_its_month_on(self):
