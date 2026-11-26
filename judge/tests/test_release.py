@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tarfile
@@ -43,3 +44,16 @@ class ReleaseTests(unittest.TestCase):
                 actual = {member.name.removeprefix('./'): archive.extractfile(member).read()
                           for member in archive.getmembers() if member.isfile()}
             self.assertEqual(actual, expected)
+
+    def test_the_built_installed_and_fingerprinted_runner_files_agree(self):
+        """A runner file added to one list but not the others is either not installed, or installed outside the digest."""
+        built = set(re.search(r'^cp runner/\{([^}]+)\} ', (ROOT / 'build-assets.sh').read_text(), re.M)[1].split(','))
+        installed = set(re.search(r'^install -m 0644 (.+) /opt/judge/$', (ROOT / 'deploy/install.sh').read_text(), re.M)[1].split())
+        listed = re.search(r"Path\('/opt/judge'\) / name\) for name in\s*\(([^)]+)\)", (ROOT / 'runner/fingerprint.py').read_text())[1]
+        fingerprinted = {name for name in re.findall(r"'([^']+)'", listed) if '/' not in name}
+        # smoke.sh is installed on its own line, as an executable. It and fingerprint.py, which computes the digest,
+        # stay outside the digest.
+        self.assertEqual(installed, built - {'smoke.sh'})
+        self.assertEqual(fingerprinted, installed - {'fingerprint.py'})
+        self.assertGreater(len(fingerprinted), 10)
+
