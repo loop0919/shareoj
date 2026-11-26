@@ -1,7 +1,8 @@
+import { errorCode, type ErrorCode } from './api-error'
 import { venuePassphraseMessage } from './venue-passphrase'
 
 // Messages for the participation, team and onsite errors of ADR 0024. Callers pass their own fallback for anything else.
-const messages: Record<string, string> = {
+const messages: Partial<Record<ErrorCode, string>> = {
   contest_participation_unavailable: 'このコンテストには参加登録できません。スタッフ（作成者・作問者・テスター）と、スタッフを務めた人は参加できません。終了後は新しく参加登録できません。',
   contest_participation_locked: 'コンテストが始まったため、参加登録は取り消せません。ページを再読み込みしてください。',
   incorrect_team_code: '参加コードが違います。チームのメンバーに確かめてください。',
@@ -18,10 +19,6 @@ const messages: Record<string, string> = {
   team_not_found: 'チームが見つかりません。ページを再読み込みしてください。',
   team_member_not_found: 'このメンバーはもうチームにいません。ページを再読み込みしてください。',
   participant_not_found: '参加者が見つかりません。一覧を更新してください。',
-}
-
-export function errorCode(error: unknown) {
-  return (error as { data?: { data?: { code?: string } } }).data?.data?.code
 }
 
 // The wait the server asks for, in the coarsest unit that still tells when to come back.

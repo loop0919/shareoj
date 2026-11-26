@@ -2,10 +2,11 @@ import { ref } from 'vue'
 import { accountListSchema } from '~~/shared/types/account-problems'
 import { folderSchema, folderTreeSchema, maxFolderItems, type Folder, type FolderRef } from '~~/shared/types/folders'
 import { postListSchema } from '~~/shared/types/post'
+import { errorCode, type ErrorCode } from '~/utils/api-error'
 import { descendantIds, refKey } from '~/utils/folder-tree'
 import { libraryEntries, type LibraryEntry } from '~/utils/library-entries'
 
-const folderMessages: Record<string, string> = {
+const folderMessages: Partial<Record<ErrorCode, string>> = {
   folder_limit: 'フォルダは100個までです。使っていないフォルダを消してから、もう一度お試しください。',
   folder_depth: 'フォルダの入れ子は3段までです。',
   folder_name_taken: '同じ場所に同じ名前のフォルダがあります。別の名前にしてください。',
@@ -14,8 +15,8 @@ const folderMessages: Record<string, string> = {
 
 // The API names why it refused a folder change; any other failure is a plain retry. Either way the screen is back as it was.
 function folderError(error: unknown) {
-  const code = (error as { data?: { data?: { code?: string } } }).data?.data?.code ?? ''
-  return `${folderMessages[code] ?? '保存できませんでした。もう一度お試しください。'}何も変わっていません。`
+  const code = errorCode(error)
+  return `${(code ? folderMessages[code] : undefined) ?? '保存できませんでした。もう一度お試しください。'}何も変わっていません。`
 }
 
 // Folder counts and filters need every item, so a list is read to its last page.

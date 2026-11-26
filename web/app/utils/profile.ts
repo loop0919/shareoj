@@ -1,7 +1,11 @@
+import { errorCode } from './api-error'
+
 export function profileError(error: unknown) {
-  const e = error as { data?: { data?: { code?: string } }, statusCode?: number }
-  const code = e.data?.data?.code
-  if (code === 'invalid_accounts') return '外部アカウントの ID の形式を確認してください。'
+  const e = error as { statusCode?: number }
+  const code = errorCode(error)
+  // The BFF does not forward invalid_accounts, so it is outside ErrorCode and is compared as plain text. Until it is
+  // forwarded, a save the API refuses for the accounts shows the last message below.
+  if ((code as string | undefined) === 'invalid_accounts') return '外部アカウントの ID の形式を確認してください。'
   if (code === 'handle_taken') return 'このユーザーIDは使われています。別のIDを入力してください。'
   if (code === 'invalid_profile') return 'このユーザーIDは使えません。別のIDを入力してください。'
   if (code === 'invalid_avatar') return 'アイコンの画像を保存できませんでした。別の画像を選ぶか、アイコンを削除してから保存してください。'

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { contestDate, type Contest, type Entrant, type Venue } from '~~/shared/types/contest'
-import { contestTeamError, errorCode } from '~/utils/contest-team'
+import { errorCode } from '~/utils/api-error'
+import { contestTeamError } from '~/utils/contest-team'
 import { venuePassphraseRule } from '~/utils/venue-passphrase'
 // Setters replace the venue passphrase until the end, and move an open participant or team onsite and rename teams
 // until the results are final; nothing moves back to open. The editor locks at the start, so these live on the contest
