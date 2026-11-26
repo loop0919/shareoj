@@ -2,6 +2,7 @@
 import type { SetterInvitation } from '~~/shared/types/contest'
 import { shortId } from '~~/shared/utils/short-id'
 import { accountError } from '~/utils/account-problems'
+import { errorCode } from '~/utils/api-error'
 useSeoMeta({ title: '共同作成者への招待 | ShareOJ', robots: 'noindex, nofollow', referrer: 'no-referrer' })
 useResponseHeader('Cache-Control').value = 'no-store'
 useResponseHeader('Referrer-Policy').value = 'no-referrer'
@@ -32,7 +33,7 @@ async function accept() {
     const result = await $fetch<SetterInvitation>(endpoint(), { method: 'POST' })
     await navigateTo(editorPath(result.id))
   } catch (error) {
-    const code = (error as { data?: { data?: { code?: string } } }).data?.data?.code
+    const code = errorCode(error)
     message.value = code === 'contest_participant_locked'
       ? 'このコンテストに参加登録しているため、共同作成者になれません。開始前なら、参加登録を取り消すとなれます。'
       : (error as { statusCode?: number }).statusCode === 404 ? missing : accountError(error)

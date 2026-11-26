@@ -3,6 +3,7 @@ import { accountListSchema, type AccountSummary } from '~~/shared/types/account-
 import { contestAuthors, contestDate, problemLabel, type Contest, type ContestDraft, type ContestDraftResult, type DraftProblem, type Venue } from '~~/shared/types/contest'
 import { shortId } from '~~/shared/utils/short-id'
 import { accountError } from '~/utils/account-problems'
+import { errorCode } from '~/utils/api-error'
 import { formFromContest, formFromDraft, initialContestForm, participationForm } from '~/utils/contest-form'
 import { fromJapanInput } from '~/utils/japan-time'
 import { issueMessage } from '~/utils/problem-readiness'
@@ -356,7 +357,7 @@ function participationBody(size: number | null) {
 const noLongerSetter = 'このコンテストの作成者ではなくなったため保存できません。入力内容をコピーしてください。'
 const invalidContest = '保存できない値があります。「タイトル・説明」「問題・配点」「期間・ペナルティ」「参加形式」の内容を確認してください。'
 function failure(error: unknown) {
-  const code = (error as { data?: { data?: { code?: string } } }).data?.data?.code
+  const code = errorCode(error)
   if (code === 'creation_quota_exceeded') return accountError(error)
   if (code === 'invalid_contest') return invalidContest
   const status = (error as { statusCode?: number }).statusCode
@@ -386,7 +387,7 @@ async function publish() {
     await navigateTo(`/contests/${shortId(id.value)}`)
     showToast('公開しました')
   } catch (error) {
-    const code = (error as { data?: { data?: { code?: string } } }).data?.data?.code
+    const code = errorCode(error)
     message.value = code === 'contest_not_ready' ? '公開の条件を満たしていません。再読み込みして内容を確認してください。' : (error as { statusCode?: number }).statusCode === 409 ? '公開できませんでした。問題が別のコンテストに登録されたか、別の画面で更新されています。再読み込みしてください。' : failure(error)
   } finally { busy.value = false }
 }
@@ -413,7 +414,7 @@ let setterCopiedTimer: ReturnType<typeof setTimeout> | undefined
 onBeforeUnmount(() => clearTimeout(setterCopiedTimer))
 const canManageSetters = computed(() => (ready.value || settersOnly.value) && !busy.value && !setterBusy.value)
 function setterError(error: unknown) {
-  if ((error as { data?: { data?: { code?: string } } }).data?.data?.code === 'contest_invitation_closed') return '結果が確定したため、共同作成者の招待はできません。'
+  if (errorCode(error) === 'contest_invitation_closed') return '結果が確定したため、共同作成者の招待はできません。'
   return (error as { statusCode?: number }).statusCode === 404 ? 'このコンテストの作成者ではなくなったか、相手がすでに抜けています。ページを再読み込みしてください。' : accountError(error)
 }
 // Removal or leaving can leave problems that no setter manages; reread who sets the contest without touching edits.
@@ -499,7 +500,7 @@ async function save() {
     await navigateTo(`/contests/${shortId(id.value)}`)
   } catch (error) {
     const status = (error as { statusCode?: number }).statusCode
-    const code = (error as { data?: { data?: { code?: string } } }).data?.data?.code
+    const code = errorCode(error)
     if (code === 'contest_participant_problem') {
       section.value = 'problems'; message.value = '参加登録した人が作者・テスターである問題は出題できません。該当する問題を外すか、本人に参加登録を取り消してもらってください。'; return
     }

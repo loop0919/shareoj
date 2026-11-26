@@ -1,3 +1,5 @@
+import { errorCode } from './api-error'
+
 const maxStoredBytes = 512 * 1024
 
 // Keep transparent diagrams as PNG; photographs become JPEG. Never discard alpha.
@@ -34,7 +36,7 @@ export async function prepareContentImage(file: File): Promise<string> {
 }
 
 export function contentImageError(error: unknown): string {
-  const code = (error as { data?: { data?: { code?: string } } }).data?.data?.code
+  const code = errorCode(error)
   if (code === 'image_in_use') return '保存済みの本文や公開中の内容で使用されています。画像の参照を削除して保存・公開を更新してください。'
   if (code === 'invalid_image') return '画像を保存できませんでした。小さいPNG・JPEG・WebP画像でお試しください。'
   if (error instanceof Error && !('statusCode' in error) && !('response' in error)) return error.message

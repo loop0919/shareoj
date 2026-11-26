@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { errorCode } from '~/utils/api-error'
 import { submissionUsage } from '~/utils/submission-usage'
 import { runtimeLabel } from '~/utils/runtime-label'
 import { formatScore } from '~/utils/score'
@@ -187,7 +188,7 @@ async function reveal() {
     await nextTick()
     standingsTitle.value?.focus()
   } catch (error) {
-    const code = (error as { data?: { data?: { code?: string } } }).data?.data?.code
+    const code = errorCode(error)
     revealError.value = code === 'contest_results_pending' ? '判定待ちの提出が残っているため、まだ結果を公開できません。判定が終わってから、もう一度お試しください。'
       : code === 'contest_conflict' ? '終了前のコンテストと、順位表を凍結しないコンテストでは結果を公開できません。'
       : '結果を公開できませんでした。時間をおいてもう一度お試しください。'
