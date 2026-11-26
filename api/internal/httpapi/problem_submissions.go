@@ -3,7 +3,6 @@ package httpapi
 import (
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/jackc/pgx/v5"
 
@@ -71,13 +70,9 @@ func (p submissionHandler) problemSubmissions(w http.ResponseWriter, r *http.Req
 	} else if sid != "" {
 		result, err = p.Submissions.ProblemGet(r.Context(), pid, sid, owner)
 	} else {
-		offset := 0
-		if raw := r.URL.Query().Get("offset"); raw != "" {
-			offset, err = strconv.Atoi(raw)
-			if err != nil || offset < 0 || offset > 1000000 {
-				authError(w, 400, "invalid_request")
-				return
-			}
+		offset, ok := pageOffset(w, r)
+		if !ok {
+			return
 		}
 		result, err = p.Submissions.ProblemList(r.Context(), pid, "", owner, scope, false, offset)
 	}

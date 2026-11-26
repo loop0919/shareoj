@@ -61,7 +61,7 @@ func (p contestHandler) contestList(w http.ResponseWriter, r *http.Request, owne
 	if !p.available(w) {
 		return
 	}
-	offset, ok := contestOffset(w, r)
+	offset, ok := pageOffset(w, r)
 	if !ok {
 		return
 	}
@@ -234,7 +234,7 @@ func (p contestHandler) contestProblemSubmissions(w http.ResponseWriter, r *http
 	if !ok || !p.judging(w) {
 		return
 	}
-	offset, ok := contestOffset(w, r)
+	offset, ok := pageOffset(w, r)
 	if !ok {
 		return
 	}
@@ -283,7 +283,7 @@ func (p contestHandler) contestSubmissions(w http.ResponseWriter, r *http.Reques
 	if !ok || !p.judging(w) {
 		return
 	}
-	offset, ok := contestOffset(w, r)
+	offset, ok := pageOffset(w, r)
 	if !ok {
 		return
 	}
@@ -344,7 +344,7 @@ func (p contestHandler) contestDrafts(w http.ResponseWriter, r *http.Request, ow
 	if !p.available(w) {
 		return
 	}
-	offset, ok := contestOffset(w, r)
+	offset, ok := pageOffset(w, r)
 	if !ok {
 		return
 	}
@@ -706,19 +706,6 @@ func (p contestHandler) renameEntrantTeam(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeAuthJSON(w, 200, result)
-}
-
-func contestOffset(w http.ResponseWriter, r *http.Request) (int, bool) {
-	raw := r.URL.Query().Get("offset")
-	if raw == "" {
-		return 0, true
-	}
-	offset, err := strconv.Atoi(raw)
-	if err != nil || offset < 0 || offset > 1000000 {
-		authError(w, 400, "invalid_request")
-		return 0, false
-	}
-	return offset, true
 }
 
 func contestError(w http.ResponseWriter, err error) {
