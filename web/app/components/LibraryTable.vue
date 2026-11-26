@@ -61,6 +61,13 @@ function moveFromMenu(entry: LibraryEntry) {
   closeMenu(true)
   emit('move', [entry.ref])
 }
+// The withdrawal's dialog belongs to the row's problem actions; the focus is on the ⋯ button when it opens, and comes
+// back there when it closes.
+const problemActions = new Map<string, { confirmWithdraw: () => Promise<void> }>()
+function withdrawFromMenu(entry: LibraryEntry) {
+  closeMenu(true)
+  void problemActions.get(entry.key)?.confirmWithdraw()
+}
 
 // When a moved row leaves the table, the row that takes its place, or else the last, gets the focus.
 const scroll = ref<HTMLElement>()
@@ -107,7 +114,7 @@ defineExpose({ focusMove })
           </td>
           <td role="cell" class="actions-cell">
             <div class="library-actions">
-              <SavedProblemActions v-if="entry.problem" :entry="entry.problem" :testing="entry.kind === 'testing'" schedule-elsewhere />
+              <SavedProblemActions v-if="entry.problem" :ref="el => { if (el) problemActions.set(entry.key, el as unknown as { confirmWithdraw: () => Promise<void> }); else problemActions.delete(entry.key) }" :entry="entry.problem" :testing="entry.kind === 'testing'" extras-elsewhere />
               <ContentActions v-else-if="entry.post" :title="entryTitle(entry)" :edit-to="{ path: '/blog/new', query: { post: entry.post.id } }" :view-to="`/blog/${shortId(entry.post.id)}`" :published="!!entry.post.publishedVersion" />
               <span class="library-menu-wrap" @focusout="leaveMenu" @keydown.esc="closeMenu(true)">
                 <button :ref="el => { if (el) menuButtons.set(entry.key, el as HTMLElement); else menuButtons.delete(entry.key) }" type="button" class="editor-button library-menu-button" :aria-label="`${entryTitle(entry)}の操作`" title="その他の操作" :aria-expanded="menu === entry.key" :aria-controls="menu === entry.key ? menuId : undefined" @click="menu = menu === entry.key ? '' : entry.key">
@@ -116,6 +123,7 @@ defineExpose({ focusMove })
                 <span v-if="menu === entry.key" :id="menuId" class="library-menu" role="group" :aria-label="`${entryTitle(entry)}の操作`">
                   <button type="button" @click="moveFromMenu(entry)">フォルダへ移動</button>
                   <NuxtLink v-if="entry.kind === 'own' && entry.problem?.scheduledAt" :to="{ path: '/problems/post', query: { problem: entry.problem.id } }">予約を変更</NuxtLink>
+                  <button v-if="entry.kind === 'own' && entry.problem?.featuredPreference" type="button" @click="withdrawFromMenu(entry)">定期便の応募を取り下げる</button>
                 </span>
               </span>
             </div>

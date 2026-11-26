@@ -981,3 +981,41 @@ test('a saved problem opened with another folder in its address stays where it i
   await expect(rows(page)).toContainText('フォルダの問題A')
   await expect(folder(page, '別の場所')).toHaveAccessibleName('別の場所 0')
 })
+
+test('a 定期便 application is withdrawn from the row menu', async ({ page }) => {
+  // Applying needs a finished problem, so the list is told this one has applied and the withdrawal is answered here.
+  await page.route(url => url.pathname === '/api/my/problems', async route => {
+    const response = await route.fetch()
+    const body = await response.json() as { items: { title: string, featuredPreference?: string }[] }
+    for (const item of body.items) if (item.title === 'フォルダの問題A') item.featuredPreference = 'soon'
+    await route.fulfill({ response, json: body })
+  })
+  let withdrawn = false
+  await page.route(/\/api\/my\/problems\/[^/]+\/featured$/, async route => {
+    withdrawn = route.request().method() === 'PUT' && route.request().postDataJSON().preference === ''
+    await route.fulfill({ status: 204 })
+  })
+  await signIn(page)
+  await page.goto('/my?tab=library')
+  const withdraw = row(page, 'フォルダの問題A').getByRole('button', { name: '定期便の応募を取り下げる', exact: true })
+  // The row keeps three buttons; the withdrawal waits in the menu.
+  await expect(row(page, 'フォルダの問題A').getByRole('button', { name: 'フォルダの問題Aの定期便応募を取り下げる', exact: true })).toHaveCount(0)
+  await menuButton(page, 'フォルダの問題A').click()
+  await withdraw.click()
+  const confirm = dialog(page, '定期便の応募を取り下げますか？')
+  await expect(confirm).toBeVisible()
+  await expect(withdraw).toHaveCount(0)
+  // Cancelling gives the focus back to the row's menu button.
+  await confirm.getByRole('button', { name: 'キャンセル', exact: true }).click()
+  await expect(confirm).toHaveCount(0)
+  await expect(menuButton(page, 'フォルダの問題A')).toBeFocused()
+  await page.keyboard.press('Enter')
+  await withdraw.click()
+  await confirm.getByRole('button', { name: '取り下げる', exact: true }).click()
+  await expect(confirm).toHaveCount(0)
+  expect(withdrawn).toBe(true)
+  // Once withdrawn, the menu no longer offers it.
+  await menuButton(page, 'フォルダの問題A').click()
+  await expect(moveButton(page, 'フォルダの問題A')).toBeVisible()
+  await expect(withdraw).toHaveCount(0)
+})
