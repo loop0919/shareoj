@@ -1,6 +1,6 @@
 import { publicContent } from '../../utils/public-content'
 import { privateAPI } from '../../utils/private-api'
-import { hasSession } from '../../utils/private-session'
+import { hasSession, sessionRefused } from '../../utils/private-session'
 import { privateHeaders } from '../../utils/private-request'
 import { refuseStreaming, streamingContestView, streamingMode } from '../../utils/streaming-mode'
 export default defineEventHandler(async event => {
@@ -30,11 +30,11 @@ export default defineEventHandler(async event => {
   // frozen table, which everyone else gets from the public route, so the default view never depends on a session.
   if (hasSession(event) && !streaming && path.endsWith('/standings') && query.live === '1') {
     try { return await privateAPI(event, `/my/contests/${path}?live=1${onsite}`) }
-    catch (error) { if (![401, 403].includes((error as { statusCode?: number }).statusCode ?? 0)) throw error }
+    catch (error) { if (!sessionRefused(error)) throw error }
   }
   if (hasSession(event) && !staffView && sessionRoute) {
     try { return await privateAPI(event, `/my/contests/${path}?${search}`, { streaming: true }) }
-    catch (error) { if (![401, 403].includes((error as { statusCode?: number }).statusCode ?? 0)) throw error }
+    catch (error) { if (!sessionRefused(error)) throw error }
   }
   return publicContent(event, `/contests/${path}?${search}`)
 })

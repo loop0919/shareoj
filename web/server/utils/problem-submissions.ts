@@ -1,5 +1,5 @@
 import { privateAPI } from './private-api'
-import { hasSession } from './private-session'
+import { hasSession, sessionRefused } from './private-session'
 import { privateHeaders } from './private-request'
 import { publicContent } from './public-content'
 import { streamingMode } from './streaming-mode'
@@ -18,7 +18,7 @@ export default defineEventHandler(async event => {
   const streaming = streamingMode(event)
   if (hasSession(event) && (!streaming || (query.mine === '1' && !submission))) {
     try { return await privateAPI(event, `/my${path}`, streaming ? { streaming: true } : {}) }
-    catch (error) { if (![401, 403].includes((error as { statusCode?: number }).statusCode ?? 0) || query.mine === '1') throw error }
+    catch (error) { if (!sessionRefused(error) || query.mine === '1') throw error }
   }
   return publicContent(event, path)
 })

@@ -12,6 +12,11 @@ export function hasSession(event: H3Event) {
   return Boolean(getCookie(event, sessionCookie) || getCookie(event, refreshCookie))
 }
 
+// Whether a call made with the session was refused (401 or 403). A route that also has a public answer falls back to it then.
+export function sessionRefused(error: unknown) {
+  return [401, 403].includes((error as { statusCode?: number }).statusCode ?? 0)
+}
+
 export function clearPrivateSession(event: H3Event) {
   deleteCookie(event, sessionCookie, cookieOptions(event))
   deleteCookie(event, refreshCookie, cookieOptions(event))
