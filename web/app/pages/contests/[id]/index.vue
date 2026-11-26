@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import { errorCode } from '~/utils/api-error'
-import { submissionUsage } from '~/utils/submission-usage'
-import { runtimeLabel } from '~/utils/runtime-label'
 import { formatScore } from '~/utils/score'
 import { clampPage, lastPage, pageOffset } from '~/utils/pagination'
 import { isOwnStanding, pinnedStanding, standingSubmissionPath } from '~/utils/standings-page'
@@ -213,15 +211,8 @@ const showSubmissionScore = computed(() => contest.value?.partialScoring === tru
 // page's list did before ADR 0034. Only finished judgements can be rejudged, and the selection belongs to the visible page.
 const { allowed: rejudgeAllowed, busy: rejudging, message: rejudgeMessage, rejudge } = useRejudge(() => chosenProblem.value?.id ?? '')
 const canRejudge = computed(() => rejudgeAllowed.value && !!chosenProblem.value)
-const selected = ref<string[]>([])
-const selectable = computed(() => canRejudge.value ? submissions.value?.items.filter(item => item.status === 'DONE').map(item => item.id) ?? [] : [])
-const allSelected = computed(() => selectable.value.length > 0 && selectable.value.every(id => selected.value.includes(id)))
-watch(selectable, ids => { selected.value = selected.value.filter(id => ids.includes(id)) })
-async function rejudgeSelected() {
-  const count = selected.value.length
-  if (!count || !window.confirm(`選択した${count}件の提出をリジャッジしますか？\n保存済みの問題の内容で採点し直します。`)) return
-  if (await rejudge([...selected.value])) { selected.value = []; await loadSubmissions() }
-}
+// Without the rejudge no row can be chosen, so leaving the problem drops the selection.
+const { selected, selectable, rejudgeSelected } = useRejudgeSelection(() => canRejudge.value ? submissions.value?.items : undefined, rejudge, loadSubmissions)
 // Follow rejudged rows more closely than the regular refresh.
 usePolling(loadSubmissions, 3000, { enabled: () => canRejudge.value && !!submissions.value?.items.some(item => item.status !== 'DONE') })
 function elapsed(acceptedAt: string) { return duration(new Date(acceptedAt).getTime() - new Date(contest.value!.startsAt).getTime()) }
@@ -339,7 +330,7 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <p v-if="submissionsClosed" class="notice">配信モード中は表示できません。</p>
       <p v-if="submissionsError" class="notice notice-error" role="alert">{{ submissionsError }}</p>
       <LoadingSpinner v-if="!submissions && !submissionsError && !submissionsClosed" label="提出一覧を読み込み中" />
-      <template v-if="submissions"><ListToolbar v-if="showSubmissionPages" :total="submissions.total" :page="submissionsPage" :size="submissionsSize" unit="件" :link="pageLink" @update:size="resizeSubmissions" /><p v-if="!submissions.items.length" class="contest-empty muted">提出はまだありません。</p><div v-else class="content-table-scroll" role="region" aria-label="提出一覧のスクロール領域" tabindex="0"><table class="content-table content-table--cards"><thead><tr><th v-if="canRejudge" scope="col" class="select-cell"><input type="checkbox" :checked="allSelected" :disabled="!selectable.length" aria-label="このページの提出をすべて選択" @change="selected = ($event.target as HTMLInputElement).checked ? [...selectable] : []"></th><th scope="col">提出日時 (JST)</th><th scope="col">問題</th><th scope="col">ユーザー</th><th scope="col">言語</th><th scope="col">コード長</th><th scope="col" title="各テストケースの最大CPU時間・最大メモリ使用量">実行時間・メモリ</th><th v-if="showSubmissionScore" scope="col">得点</th><th scope="col">結果</th><th scope="col">詳細</th></tr></thead><tbody><tr v-for="s in submissions.items" :key="s.id"><td v-if="canRejudge" class="select-cell"><input v-model="selected" type="checkbox" :value="s.id" :disabled="!selectable.includes(s.id)" :aria-label="`${contestDate(s.createdAt)}の提出を選択`"></td><td class="corner-cell"><time :datetime="s.createdAt">{{ contestDate(s.createdAt) }}</time><span v-if="new Date(s.createdAt) >= new Date(contest.endsAt)" class="practice-badge">練習</span></td><td class="submission-problem title-cell"><NuxtLink v-if="problemIndex(s) >= 0" :to="contestProblemPath(contest.id, problemIndex(s))"><ContestProblemTitle :index="problemIndex(s)" :title="s.problemTitle" /></NuxtLink><template v-else>{{ s.problemTitle }}</template></td><td class="inline-cell"><UserLink :handle="s.author" /></td><td class="inline-cell">{{ runtimeLabel(s.runtime) }}</td><td class="submission-usage stat-cell wide-cell" data-label="コード長">{{ s.sourceBytes == null ? '—' : `${s.sourceBytes.toLocaleString('en-US')} bytes` }}</td><td class="submission-usage stat-cell wide-cell" data-label="実行時間・メモリ">{{ submissionUsage(s.result) }}</td><td v-if="showSubmissionScore" class="submission-score stat-cell" data-label="得点" :data-full="(s.result?.scoring && s.result.scoring.score === s.result.scoring.maxScore) || undefined">{{ s.result?.scoring ? formatScore(s.result.scoring.score) : '—' }}</td><td class="lead-cell"><SubmissionStatus :item="s" /></td><td class="end-cell"><NuxtLink :to="submissionLink(s)">詳細</NuxtLink></td></tr></tbody></table></div><PageNav v-if="showSubmissionPages" class="submissions-pages" :page="submissionsPage" :last="submissionsLast" :link="pageLink" /></template>
+      <template v-if="submissions"><ListToolbar v-if="showSubmissionPages" :total="submissions.total" :page="submissionsPage" :size="submissionsSize" unit="件" :link="pageLink" @update:size="resizeSubmissions" /><p v-if="!submissions.items.length" class="contest-empty muted">提出はまだありません。</p><SubmissionTable v-else v-model:selected="selected" :items="submissions.items" :detail="submissionLink" :show-score="showSubmissionScore" :select="canRejudge" :selectable="selectable"><template #after-time="{ item }"><span v-if="new Date(item.createdAt) >= new Date(contest.endsAt)" class="practice-badge">練習</span></template><template #problem="{ item }"><NuxtLink v-if="problemIndex(item) >= 0" :to="contestProblemPath(contest.id, problemIndex(item))"><ContestProblemTitle :index="problemIndex(item)" :title="item.problemTitle" /></NuxtLink><template v-else>{{ item.problemTitle }}</template></template></SubmissionTable><PageNav v-if="showSubmissionPages" class="submissions-pages" :page="submissionsPage" :last="submissionsLast" :link="pageLink" /></template>
       </template>
     </section>
     <section v-if="activeView === 'editorials'" id="editorials" class="contest-section" aria-labelledby="editorials-title">
@@ -358,12 +349,8 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
   </div>
 </template>
 <style scoped>
-.submission-usage { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.submission-problem { min-width: 200px; overflow-wrap: anywhere; }
 /* A submission after the end, set back like the onsite mark but without its accent. */
 .practice-badge { display: inline-block; margin-inline-start: 6px; padding: 0 6px; border: 1px solid var(--color-line); border-radius: 4px; color: var(--color-muted); font-size: .6875rem; font-weight: 600; white-space: nowrap; }
-.submission-score { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.submission-score[data-full] { color: var(--color-accent); font-weight: 600; }
 /* Hallmark · component: contest standings · genre: modern-minimal · theme: existing ShareOJ tokens
  * pre-emit critique: P4 H4 E4 S5 R5 V4
  * modern-minimal · Long Document · existing problem page tokens and hierarchy */
@@ -420,9 +407,6 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 .submissions-problem select:hover { border-color: var(--color-muted); }
 .submissions-problem select:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
 .rejudge-message { margin: 8px 0 0; color: var(--color-muted); font-size: .8125rem; }
-.select-cell { width: 44px; text-align: center; }
-.select-cell input { width: 18px; height: 18px; margin: 0; accent-color: var(--color-accent); cursor: pointer; }
-.select-cell input:disabled { cursor: not-allowed; }
 .standings-scope-note { margin: 0 0 16px; font-size: .8125rem; }
 .standing-team { display: block; font-weight: 600; overflow-wrap: anywhere; }
 .standing-members { display: block; color: var(--color-muted); font-size: .75rem; font-weight: 400; }
