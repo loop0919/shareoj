@@ -1,11 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 import { shortId } from '../../shared/utils/short-id'
+import { origin, signIn } from './helpers'
 async function login(page: Page) {
-  await page.goto('/login')
-  await page.getByLabel('メールアドレス').fill('alice@example.test')
-  await page.getByLabel('パスワード', { exact: true }).fill('test-password')
-  await page.getByRole('button', { name: 'ログイン', exact: true }).click()
-  await expect(page).toHaveURL('/my')
+  await signIn(page)
   page.on('dialog', dialog => dialog.accept())
 }
 test('published problem saves update the public content', async ({ page, browser }, testInfo) => {
@@ -26,7 +23,7 @@ test('published problem saves update the public content', async ({ page, browser
   await expect(page).toHaveURL(/problem=/)
   await expect(page.locator('.draft-status').getByRole('status')).toHaveText('保存済み')
   const id = new URL(page.url()).searchParams.get('problem')!
-  const guest = await browser.newContext({ baseURL: 'http://127.0.0.1:13002' })
+  const guest = await browser.newContext({ baseURL: origin })
   expect((await guest.request.get(`/api/problems/${id}`)).status()).toBe(404)
   await page.getByRole('button', { name: '問題管理', exact: true }).click()
   await page.getByRole('button', { name: '公開・応募', exact: true }).click()
@@ -174,7 +171,7 @@ test('blog draft, preview, publication, editing and withdrawal', async ({ page, 
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page).toHaveURL(/post=/)
   const id = new URL(page.url()).searchParams.get('post')!
-  const guest = await browser.newContext({ baseURL: 'http://127.0.0.1:13002' })
+  const guest = await browser.newContext({ baseURL: origin })
   expect((await guest.request.get(`/api/posts/${id}`)).status()).toBe(404)
   await page.getByRole('button', { name: '記事管理', exact: true }).click()
   await page.getByRole('button', { name: '公開する', exact: true }).click()

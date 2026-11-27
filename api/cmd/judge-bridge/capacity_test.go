@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -20,9 +19,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/jackc/pgx/v5"
-
-	"judge/api/internal/database"
 )
 
 const poolDigest = "sha256:current"
@@ -261,37 +257,8 @@ func TestEC2FleetReadsTagsAndMapsStateErrors(t *testing.T) {
 }
 
 func TestCapacityRunsOnlyOnScheduleAndReadsDemand(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL required")
-	}
 	ctx := context.Background()
-	admin, err := pgx.Connect(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = admin.Close(ctx) }()
-	schema := fmt.Sprintf("test_capacity_%d", time.Now().UnixNano())
-	if _, err = admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if _, err := admin.Exec(ctx, "DROP SCHEMA "+schema+" CASCADE"); err != nil {
-			t.Error(err)
-		}
-	}()
-	u, _ := url.Parse(dsn)
-	q := u.Query()
-	q.Set("search_path", schema)
-	u.RawQuery = q.Encode()
-	db, err := database.Open(ctx, u.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if err = database.Migrate(ctx, db); err != nil {
-		t.Fatal(err)
-	}
+	db := migratedDB(t)
 	exec := func(sql string, args ...any) {
 		t.Helper()
 		if _, err := db.Exec(ctx, sql, args...); err != nil {

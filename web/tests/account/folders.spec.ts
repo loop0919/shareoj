@@ -1,16 +1,9 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
+import { login, origin } from './helpers'
 
 // The folder view stays with the account, so only folders and folders_many turn it on. The tests build on each other:
 // folders keeps the problem, post and folders made here, and later tests start from the view left on at the end.
 test.describe.configure({ mode: 'serial' })
-
-const origin = 'http://127.0.0.1:13002'
-
-async function login(page: Page, name: string) {
-  await page.getByLabel('メールアドレス', { exact: true }).fill(`${name}@example.test`)
-  await page.getByLabel('パスワード', { exact: true }).fill('test-password')
-  await page.getByRole('button', { name: 'ログイン', exact: true }).click()
-}
 
 async function signIn(page: Page, name = 'folders') {
   await page.goto('/login')

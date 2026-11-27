@@ -47,6 +47,27 @@ def login(args, pool, user):
                    {'username': user['username'], 'password': password})['access_token']
 
 
+def create_test_user(args, pool, cleanup_path, users, tokens, kind, title, cases):
+    """Create a throwaway user with a profile and one private problem, and add it to users and its token to tokens.
+
+    The cleanup record is saved before each step that leaves something behind, so --cleanup can remove what an
+    interrupted run created.
+    """
+    username = 'judge-' + kind + '-' + uuid.uuid4().hex + '@example.invalid'
+    user = dict(username=username, problem=None)
+    users.append(user)
+    save(cleanup_path, dict(pool=pool, api=args.api_url, users=users))
+    cognito(args.region, 'admin-create-user', dict(UserPoolId=pool, Username=username,
+        MessageAction='SUPPRESS', UserAttributes=[dict(Name='email', Value=username), dict(Name='email_verified', Value='true')]))
+    token = login(args, pool, user)
+    tokens.append(token)
+    request(args.api_url, 'PUT', '/my/profile', dict(handle=kind + '_' + uuid.uuid4().hex[:10], avatar='', version=0), token)
+    user['problem'] = str(uuid.uuid4())
+    save(cleanup_path, dict(pool=pool, api=args.api_url, users=users))
+    draft = dict(title=title, markdown='非公開の一時テスト', timeLimitMs='1000', memoryLimitMb='315', testCases=cases)
+    request(args.api_url, 'PUT', '/my/problems/' + user['problem'], dict(version=0, draft=draft), token)
+
+
 def cleanup(args, pool, users, path):
     remaining = []
     for user in users:
@@ -196,20 +217,8 @@ def watch(args, pool, cleanup_path):
         for _ in range(WATCH_USERS):
             if terminated.is_set():
                 break
-            username = 'judge-watch-' + uuid.uuid4().hex + '@example.invalid'
-            user = dict(username=username, problem=None)
-            users.append(user)
-            save(cleanup_path, dict(pool=pool, api=args.api_url, users=users))
-            cognito(args.region, 'admin-create-user', dict(UserPoolId=pool, Username=username,
-                MessageAction='SUPPRESS', UserAttributes=[dict(Name='email', Value=username), dict(Name='email_verified', Value='true')]))
-            token = login(args, pool, user)
-            tokens.append(token)
-            request(args.api_url, 'PUT', '/my/profile', dict(handle='watch_' + uuid.uuid4().hex[:10], avatar='', version=0), token)
-            user['problem'] = str(uuid.uuid4())
-            save(cleanup_path, dict(pool=pool, api=args.api_url, users=users))
-            draft = dict(title='ジャッジ切り替えの計測', markdown='非公開の一時テスト', timeLimitMs='1000', memoryLimitMb='315',
-                         testCases=[dict(name='case1', input='1', output='0', isSample=True)])
-            request(args.api_url, 'PUT', '/my/problems/' + user['problem'], dict(version=0, draft=draft), token)
+            create_test_user(args, pool, cleanup_path, users, tokens, 'watch', 'ジャッジ切り替えの計測',
+                             [dict(name='case1', input='1', output='0', isSample=True)])
         next_at, count, progress = time.monotonic(), 0, None
         while tokens and not terminated.is_set():
             if args.stop_file.exists():
@@ -318,20 +327,8 @@ def main():
     save(args.report, dict(status='running', results=[]))
     try:
         for _ in range(2):
-            username = 'judge-smoke-' + uuid.uuid4().hex + '@example.invalid'
-            user = dict(username=username, problem=None)
-            users.append(user)
-            save(cleanup_path, dict(pool=pool, api=args.api_url, users=users))
-            cognito(args.region, 'admin-create-user', dict(UserPoolId=pool, Username=username,
-                MessageAction='SUPPRESS', UserAttributes=[dict(Name='email', Value=username), dict(Name='email_verified', Value='true')]))
-            token = login(args, pool, user)
-            tokens.append(token)
-            request(args.api_url, 'PUT', '/my/profile', dict(handle='smoke_' + uuid.uuid4().hex[:10], avatar='', version=0), token)
-            user['problem'] = str(uuid.uuid4())
-            save(cleanup_path, dict(pool=pool, api=args.api_url, users=users))
-            draft = dict(title='ジャッジ配布検証', markdown='非公開の一時テスト', timeLimitMs='1000', memoryLimitMb='315',
-                         testCases=[dict(name='case' + str(n), input=str(n), output='0', isSample=True) for n in range(1, 5)])
-            request(args.api_url, 'PUT', '/my/problems/' + user['problem'], dict(version=0, draft=draft), token)
+            create_test_user(args, pool, cleanup_path, users, tokens, 'smoke', 'ジャッジ配布検証',
+                             [dict(name='case' + str(n), input=str(n), output='0', isSample=True) for n in range(1, 5)])
         for batch in range(2):
             pending = []
             for i, (user, token) in enumerate(zip(users, tokens)):

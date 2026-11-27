@@ -2,6 +2,7 @@
 import { postSchema, type PostProblem } from '~~/shared/types/post'
 import { maxTags } from '~~/shared/types/tag'
 import { accountError } from '~/utils/account-problems'
+import { errorCode } from '~/utils/api-error'
 import { placeNewItem } from '~/utils/folder-items'
 import { shortId } from '~~/shared/utils/short-id'
 useSeoMeta({ title: '記事を書く | ShareOJ', robots: 'noindex, nofollow' })
@@ -39,7 +40,7 @@ let saved = ''
 let leaving = false
 const snapshot = () => JSON.stringify({ title: title.value, markdown: markdown.value, problems: problems.value.map(problem => problem.id), tags: tags.value })
 function failure(e: unknown) {
-  const reason = (e as { data?: { data?: { code?: string } } }).data?.data?.code
+  const reason = errorCode(e)
   if (reason === 'creation_quota_exceeded') return accountError(e)
   if (reason === 'editorial_problem_unavailable') return '解説する問題に、公式解説がまだ公開されていない問題が含まれています。その問題を外してから保存してください。'
   const code = (e as { statusCode?: number }).statusCode

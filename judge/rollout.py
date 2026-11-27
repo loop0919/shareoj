@@ -512,6 +512,14 @@ def sync_settings(config, directory, digest, runtimes, previous=None, lane=None)
         save(path, {**(json.loads(path.read_text() or '{}') if path.exists() else {}), **values})
 
 
+def refresh_terraform(directory):
+    """Bring the Terraform state in step with what the run changed by hand, without changing any resource."""
+    for root in ('infra/api', 'infra/judge'):
+        plan = directory / (root.replace('/', '-') + '.tfplan')
+        run('terraform', '-chdir=' + root, 'plan', '-input=false', '-refresh-only', '-out=' + str(plan))
+        run('terraform', '-chdir=' + root, 'apply', '-input=false', str(plan))
+
+
 def finish(config, directory, state, report_path):
     if not state.get('prepared'):
         raise ValueError('prepare must finish first')
@@ -527,8 +535,7 @@ def finish(config, directory, state, report_path):
     healthy_workers(config, directory, digest, live_lane(config))
     retired_workers_stopped(config, directory)
     if config.get('pool'):
-        # The bridge starts a stopped host only when this matches its dispatch digest.
-        aws(config['region'], 'ec2', 'create-tags', '--resources', *config['nodes'], '--tags', 'Key=JudgeInstalledDigest,Value=' + digest)
+        tag_digest(config, config['nodes'], digest)
     checkpoint(directory, state, 'sync-bridge', runtimeDigest=digest)
     update_env(config['region'], config['bridge'], dict(JUDGE_RUNTIME_DIGEST=digest, JUDGE_ENABLED_RUNTIMES=published))
     if database_status(config)['runtimeDigest'] != digest:
@@ -537,24 +544,15 @@ def finish(config, directory, state, report_path):
     sync_settings(config, directory, digest, config['runtimes'])
     checkpoint(directory, state, 'enable-delivery')
     delivery(config, True)
-    for name, enabled in state['alarm_actions'].items():
-        aws(config['region'], 'cloudwatch', 'enable-alarm-actions' if enabled else 'disable-alarm-actions', '--alarm-names', name)
+    restore_alarms(config, state)
     checkpoint(directory, state, 'publish')
     update_env(config['region'], config['api'], dict(JUDGE_CPP_IMAGE=digest, JUDGE_RUNTIME='cpp17-isolate', JUDGE_ENABLED_RUNTIMES=published))
     checkpoint(directory, state, 'api-smoke')
     api_report = api_smoke(config, directory, config['nodes'])
     checkpoint(directory, state, 'refresh-state')
-    for root in ('infra/api', 'infra/judge'):
-        plan = directory / (root.replace('/', '-') + '.tfplan')
-        run('terraform', '-chdir=' + root, 'plan', '-input=false', '-refresh-only', '-out=' + str(plan))
-        run('terraform', '-chdir=' + root, 'apply', '-input=false', str(plan))
-    released = True
-    if config.get('pool'):
-        # Let idle burst hosts stop soon; otherwise the 4-hour maintenance hold keeps them running.
-        try:
-            aws(config['region'], 'ec2', 'create-tags', '--resources', *config['nodes'], '--tags', 'Key=JudgeMaintenanceHoldUntil,Value=' + hold_time(900))
-        except Exception:
-            released = False
+    refresh_terraform(directory)
+    # Let idle burst hosts stop soon; otherwise the 4-hour maintenance hold keeps them running.
+    released = release_hold(config) if config.get('pool') else True
     checkpoint(directory, state, 'complete', maintenance=False, admissionPaused=False, status='passed', apiReport=str(api_report),
                maintenanceHoldReleased=released)
 
@@ -1300,10 +1298,7 @@ def rolling(config, directory, state):
     report = api_smoke(config, directory, config['nodes'])
     restore_alarms(config, state)
     checkpoint(directory, state, 'refresh-state')
-    for root in ('infra/api', 'infra/judge'):
-        plan = directory / (root.replace('/', '-') + '.tfplan')
-        run('terraform', '-chdir=' + root, 'plan', '-input=false', '-refresh-only', '-out=' + str(plan))
-        run('terraform', '-chdir=' + root, 'apply', '-input=false', str(plan))
+    refresh_terraform(directory)
     released = release_hold(config)
     if state.get('switchWatchFailed'):
         # The rollout itself is done, but it must not be reported as passed.

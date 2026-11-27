@@ -45,14 +45,11 @@ func notifyUpdate(ctx context.Context, args []string, out io.Writer) {
 	if !ok || len(args) == 0 || os.Getenv("SHAREOJ_NO_UPDATE_CHECK") == "1" {
 		return
 	}
-	online := false
-	switch args[0] {
-	case "login", "pull", "push":
-		online = true
-	case "guide", "init", "check", "logout":
-	default:
+	spec, _ := findCommand(args[0])
+	if spec.notice == noNotice {
 		return
 	}
+	online := spec.notice == freshNotice
 	for _, arg := range args[1:] {
 		if arg == "--help" || arg == "-help" || arg == "-h" || arg == "--h" {
 			return

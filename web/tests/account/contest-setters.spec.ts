@@ -1,31 +1,9 @@
-import { expect, test, type Browser, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { shortId } from '../../shared/utils/short-id'
+import { japanDate, login, origin, seedProblem, user } from './helpers'
 
-const origin = 'http://127.0.0.1:13002'
-async function login(page: Page, name: string) {
-  await page.getByLabel('メールアドレス', { exact: true }).fill(`${name}@example.test`)
-  await page.getByLabel('パスワード', { exact: true }).fill('test-password')
-  await page.getByRole('button', { name: 'ログイン', exact: true }).click()
-}
-async function user(browser: Browser, name: string) {
-  const context = await browser.newContext({ baseURL: origin })
-  const page = await context.newPage()
-  await page.goto('/login')
-  await login(page, name)
-  await expect(page).toHaveURL('/my')
-  return page
-}
-async function seed(page: Page, title: string) {
-  const id = randomUUID()
-  const response = await page.request.put(`/api/my/problems/${id}`, { headers: { origin }, data: { version: 0, draft: { title, difficulty: 3, markdown: '## 共同作成の本文\n整数を出力してください。', editorial: '## 共同作成の解説\n答えは2です。', timeLimitMs: '1500', memoryLimitMb: '256', testCases: [{ input: '1', output: '2', isSample: true }] } } })
-  expect(response.status()).toBe(200)
-  return id
-}
-// The date input reads Japan time.
-function japanDate(value: number) {
-  return new Date(value + 9 * 60 * 60 * 1000).toISOString().slice(0, 16)
-}
+const seed = (page: Page, title: string) => seedProblem(page, title, '共同作成の')
 const noScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)
 
 test('co-setters join through a link, publish together, and leave or are removed without competing', async ({ page, browser }, testInfo) => {

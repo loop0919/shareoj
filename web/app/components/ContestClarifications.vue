@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { contestDate, contestProblemTitle, type Contest } from '~~/shared/types/contest'
 import type { Clarification, ClarificationList } from '~~/shared/types/clarification'
-import { errorCode } from '~/utils/contest-team'
+import { errorCode } from '~/utils/api-error'
 
 const props = defineProps<{ contest: Contest }>()
 const { user } = useAccount()

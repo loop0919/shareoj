@@ -2,6 +2,7 @@
 import { clampPage, lastPage, pageOffset } from '~/utils/pagination'
 import type { PageSize } from '~/composables/usePageSize'
 import { shortId } from '~~/shared/utils/short-id'
+import { japanDate } from '~/utils/japan-time'
 // Each tag and each contest filter gets a fresh list and pagination.
 definePageMeta({ key: route => `problems:${typeof route.query.tag === 'string' ? route.query.tag : ''}:${typeof route.query.contest === 'string' ? route.query.contest : ''}` })
 const { user } = useAccount()
@@ -57,7 +58,6 @@ const toLastPage = () => data.value && requested.value > last.value ? navigateTo
 await toLastPage()
 watch(data, () => { void toLastPage() })
 const resizeProblems = (to: PageSize) => resize(size, page.value, to)
-const date = (value: string) => new Date(value).toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' })
 // The canonical is the page on screen; the first page leaves out page.
 const path = computed(() => {
   const query = new URLSearchParams({ ...filters, ...page.value > 1 ? { page: String(page.value) } : {} })
@@ -89,7 +89,7 @@ useSharePreview({ type: 'website', title: heading, path, description })
       <table class="content-table content-table--cards">
         <thead><tr><th scope="col">公開日</th><th scope="col">タイトル</th><th scope="col">作成者</th><th scope="col"><abbr title="実行時間制限 / メモリ制限">TL / ML</abbr></th><th scope="col">正解者数</th><th scope="col"><abbr title="お気に入り数">Fav</abbr></th><th scope="col">難易度</th></tr></thead>
         <tbody><tr v-for="problem in data.items" :key="problem.id" :class="{ solved: solved.has(problem.id) }">
-          <td class="corner-cell"><time :datetime="problem.publishedAt">{{ date(problem.publishedAt) }}</time></td>
+          <td class="corner-cell"><time :datetime="problem.publishedAt">{{ japanDate(problem.publishedAt) }}</time></td>
           <th scope="row"><NuxtLink :to="`/problems/${shortId(problem.id)}`" :aria-label="solved.has(problem.id) ? `${problem.title}（AC 済み）` : undefined">{{ problem.title }}</NuxtLink><TagLinks v-if="showTags && problem.tags.length" class="problem-row-tags" :tags="problem.tags" to="/problems" /></th>
           <td class="line-cell" data-label="作成者"><UserLink :handle="problem.author" /></td><td class="stat-cell wide-cell" data-label="TL / ML">{{ problem.timeLimitMs == null ? '—' : `${problem.timeLimitMs / 1000} 秒` }}・{{ problem.memoryLimitMb == null ? '—' : `${problem.memoryLimitMb} MiB` }}</td>
           <td class="stat-cell" data-label="正解者数">{{ problem.solverCount }}</td><td class="stat-cell" data-label="Fav">{{ problem.favoriteCount }}</td><td class="lead-cell"><DifficultyBadge :level="problem.difficulty" /></td>

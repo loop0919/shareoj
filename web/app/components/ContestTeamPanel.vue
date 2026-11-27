@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Contest, MyTeam } from '~~/shared/types/contest'
-import { contestTeamError, errorCode } from '~/utils/contest-team'
+import { errorCode } from '~/utils/api-error'
+import { contestTeamError } from '~/utils/contest-team'
 // The viewer's team on the team page of a team contest: members, the join code only members see, renaming, and before
 // the start leaving or removing a member (ADR 0024).
 const props = defineProps<{ contest: Contest }>()

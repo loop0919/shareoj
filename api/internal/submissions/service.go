@@ -44,7 +44,7 @@ func (s Service) Create(ctx context.Context, owner, id string, input CreateInput
 	if ((input.EasyTest || input.ContestID != "") && input.Generation != nil) ||
 		(input.Generation != nil && !problems.JudgeCodeRuntime(selected)) ||
 		(input.ContestID != "" && !problems.ValidID(input.ContestID)) || !problems.ValidID(input.ProblemID) || selected == "" ||
-		!problems.HasSource(selected, input.Source) || len(input.Source) > 128<<10 || !utf8.ValidString(input.Source) || strings.ContainsRune(input.Source, 0) {
+		!validSource(selected, input.Source) {
 		return Submission{}, ErrInvalid
 	}
 	params := RunInput{
@@ -75,24 +75,41 @@ func (s Service) Create(ctx context.Context, owner, id string, input CreateInput
 	if err != nil {
 		return Submission{}, err
 	}
-	if !s.local() && s.DispatchJudge != nil {
-		// The committed outbox and periodic dispatcher recover a failed wake-up.
-		wakeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		err := s.DispatchJudge(wakeCtx)
-		cancel()
-		if err != nil {
-			slog.Warn("immediate judge dispatch unavailable; periodic recovery retained", "submissionId", item.ID)
-		}
-	}
+	// The committed outbox and periodic dispatcher recover a failed wake-up.
+	s.wake(ctx, "immediate judge dispatch unavailable; periodic recovery retained", "submissionId", item.ID)
 	return item, nil
+}
+
+// validSource checks a source to run with a stored runtime: not blank, at most 128 KiB, and UTF-8 without NUL.
+func validSource(runtime, source string) bool {
+	return problems.HasSource(runtime, source) && len(source) <= 128<<10 && utf8.ValidString(source) && !strings.ContainsRune(source, 0)
+}
+
+// wake asks the dispatcher to send now and waits at most 2 seconds. A failure is only logged, as warning with the ID
+// under key, because the periodic dispatcher sends what is left.
+func (s Service) wake(ctx context.Context, warning, key, id string) {
+	if s.local() || s.DispatchJudge == nil {
+		return
+	}
+	wakeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	err := s.DispatchJudge(wakeCtx)
+	cancel()
+	if err != nil {
+		slog.Warn(warning, key, id)
+	}
+}
+
+// runtimeSuffix is what a stored runtime ID adds to the ID of an available runtime.
+func (s Service) runtimeSuffix() string {
+	if s.local() {
+		return "-local"
+	}
+	return "-isolate"
 }
 
 // storedRuntime maps a requested runtime ID to the runtime stored with a run, or "" when it is not available now.
 func (s Service) storedRuntime(id string) string {
-	suffix := "-isolate"
-	if s.local() {
-		suffix = "-local"
-	}
+	suffix := s.runtimeSuffix()
 	for _, available := range s.AvailableRuntimes() {
 		if id == available.ID || id == available.ID+suffix {
 			return available.ID + suffix
@@ -103,10 +120,7 @@ func (s Service) storedRuntime(id string) string {
 
 // submissionRuntimes lists the stored runtime IDs that new submissions may use now.
 func (s Service) submissionRuntimes() []string {
-	suffix := "-isolate"
-	if s.local() {
-		suffix = "-local"
-	}
+	suffix := s.runtimeSuffix()
 	ids := []string{}
 	for _, rt := range s.AvailableRuntimes() {
 		ids = append(ids, rt.ID+suffix)
@@ -134,12 +148,8 @@ func (s Service) Rejudge(ctx context.Context, actor, problemID string, submissio
 		Actor: actor, Operator: operator, ProblemID: problemID, SubmissionIDs: submissionIDs,
 		Image: s.JudgeImage, Runtimes: s.submissionRuntimes(), CheckerRuntimes: s.RuntimeIDs(),
 	})
-	if err == nil && queued > 0 && !s.local() && s.DispatchJudge != nil {
-		wakeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		if s.DispatchJudge(wakeCtx) != nil {
-			slog.Warn("immediate judge dispatch unavailable for rejudge; periodic recovery retained", "problemId", problemID)
-		}
-		cancel()
+	if err == nil && queued > 0 {
+		s.wake(ctx, "immediate judge dispatch unavailable for rejudge; periodic recovery retained", "problemId", problemID)
 	}
 	return queued, err
 }

@@ -5,17 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log/slog"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	"judge/api/internal/submissions"
 )
@@ -44,41 +36,15 @@ func TestRejudgesWaitBehindNewSubmissions(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var sent []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "PUT" {
-			w.Header().Set("x-amz-version-id", "version")
-			return
-		}
-		data, _ := io.ReadAll(r.Body)
-		var request struct{ MessageBody string }
-		var pointer struct {
-			ID string `json:"submissionId"`
-		}
-		if json.Unmarshal(data, &request) != nil || json.Unmarshal([]byte(request.MessageBody), &pointer) != nil {
-			t.Error("invalid queue request")
-		}
-		sent = append(sent, pointer.ID)
-		w.Header().Set("Content-Type", "application/x-amz-json-1.0")
-		_, _ = fmt.Fprint(w, `{"MessageId":"test"}`)
-	}))
-	defer server.Close()
-	cfg := aws.Config{Region: "ap-northeast-1", Credentials: credentials.NewStaticCredentialsProvider("test", "test", "")}
-	b := bridge{
-		db: db, bucket: "bucket", queueURL: server.URL + "/queue", runtime: digest,
-		objects: s3.NewFromConfig(cfg, func(o *s3.Options) { o.BaseEndpoint = aws.String(server.URL); o.UsePathStyle = true }),
-		queue:   sqs.NewFromConfig(cfg, func(o *sqs.Options) { o.BaseEndpoint = aws.String(server.URL) }),
-	}
-	var logs bytes.Buffer
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
-	defer slog.SetDefault(previous)
+	fake := newFakeAWS(t)
+	b := fake.bridge(db, digest)
+	logs := captureLogs(t)
 	if err := b.dispatch(ctx); err != nil {
 		t.Fatal(err)
 	}
 	// The fresh submission goes first; one rejudge fills the second in-flight slot.
-	if fmt.Sprint(sent) != fmt.Sprint([]string{ids["fresh"], ids["rejudge1"]}) {
-		t.Fatalf("dispatch order: %v", sent)
+	if fmt.Sprint(fake.sent) != fmt.Sprint([]string{ids["fresh"], ids["rejudge1"]}) {
+		t.Fatalf("dispatch order: %v", fake.sent)
 	}
 	verdict := func(name string) string {
 		t.Helper()
@@ -116,7 +82,7 @@ func TestRejudgesWaitBehindNewSubmissions(t *testing.T) {
 	if response := b.results(ctx, events.SQSEvent{Records: []events.SQSMessage{{MessageId: "one", Body: string(body)}}}); len(response.BatchItemFailures) != 0 {
 		t.Fatal(response)
 	}
-	if verdict("fresh") != "DONE/AC" || len(sent) != 3 || sent[2] != ids["rejudge2"] {
-		t.Fatalf("waiting rejudge not sent after a result: fresh=%s sent=%v", verdict("fresh"), sent)
+	if verdict("fresh") != "DONE/AC" || len(fake.sent) != 3 || fake.sent[2] != ids["rejudge2"] {
+		t.Fatalf("waiting rejudge not sent after a result: fresh=%s sent=%v", verdict("fresh"), fake.sent)
 	}
 }

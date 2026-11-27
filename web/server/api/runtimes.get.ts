@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { publicContent } from '../utils/public-content'
 import { cachedRead } from '../utils/cached-read'
+import { upstream } from '../utils/upstream'
 
 const catalog = z.object({ items: z.array(z.object({ id: z.string(), label: z.string() })), maintenance: z.boolean().default(false) })
 // Every page reads the catalog, on each render, each move to another page and every 30 seconds, and it changes only
@@ -10,9 +11,7 @@ const catalog = z.object({ items: z.array(z.object({ id: z.string(), label: z.st
 const cached = cachedRead<z.infer<typeof catalog>>(15_000, 300_000)
 export default defineEventHandler(async event => {
   const data = await cached(async () => {
-    const result = catalog.safeParse(await publicContent(event, '/runtimes'))
-    if (!result.success) throw createError({ statusCode: 502 })
-    return result.data
+    return upstream(catalog, await publicContent(event, '/runtimes'))
   })
   setResponseHeader(event, 'Cache-Control', 'no-store')
   return data

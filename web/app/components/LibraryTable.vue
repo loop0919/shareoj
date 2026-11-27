@@ -2,6 +2,7 @@
 import type { Folder, FolderRef } from '~~/shared/types/folders'
 import { shortId } from '~~/shared/utils/short-id'
 import { entryTitle, libraryKinds, type LibraryEntry, type LibraryKind, type LibrarySort } from '~/utils/library-entries'
+import { japanMinute } from '~/utils/japan-time'
 // subfolders are the open folder's own folders. They lead the table, and pressing one opens it.
 // The table is laid out as a list: the folder list beside it leaves no room for a column per fact, so a row's state,
 // update time and difficulty run in a line under its title and wrap. The roles are written out, since a table that is
@@ -19,7 +20,6 @@ function shownTime(entry: LibraryEntry) {
   if (props.sort === 'published' && entry.publishedAt) return { label: '公開', at: entry.publishedAt }
   return { label: '更新', at: entry.updatedAt }
 }
-const updatedLabel = (date: string) => new Date(date).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })
 
 const chosen = computed(() => props.entries.filter(entry => selected.value.has(entry.key)))
 const allChosen = computed(() => props.entries.length > 0 && chosen.value.length === props.entries.length)
@@ -47,23 +47,7 @@ function grab(entry: LibraryEntry, event: DragEvent) {
 
 // What a row is seldom asked for waits behind its ⋯ button, as a folder's does in the folder list: one menu is open at
 // a time, and it closes on Esc, on a press outside, or when the focus leaves it.
-const menuId = useId()
-const menu = ref('')
-const menuButtons = new Map<string, HTMLElement>()
-function closeMenu(refocus = false) {
-  const key = menu.value
-  menu.value = ''
-  if (refocus) menuButtons.get(key)?.focus()
-}
-function leaveMenu(event: FocusEvent) {
-  const actions = event.currentTarget as HTMLElement
-  if (!(event.relatedTarget instanceof Node && actions.contains(event.relatedTarget))) closeMenu()
-}
-function outside(event: PointerEvent) {
-  if (menu.value && event.target instanceof Element && !event.target.closest('.library-menu-wrap')) closeMenu()
-}
-onMounted(() => document.addEventListener('pointerdown', outside))
-onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
+const { menuId, menu, menuButtons, closeMenu, leaveMenu } = useRowMenu('.library-menu-wrap')
 // The focus goes back to the ⋯ button first, so the move starts from a button that stays while the row does.
 function moveFromMenu(entry: LibraryEntry) {
   closeMenu(true)
@@ -112,12 +96,12 @@ defineExpose({ focusMove })
             <span class="library-meta-kind" aria-hidden="true">{{ kindLabels[entry.kind] }}</span>
             <template v-if="entry.problem">
               <SavedProblemState :entry="entry.problem" />
-              <span class="library-meta-item">{{ shownTime(entry).label }} <time :datetime="shownTime(entry).at">{{ updatedLabel(shownTime(entry).at) }}</time></span>
+              <span class="library-meta-item">{{ shownTime(entry).label }} <time :datetime="shownTime(entry).at">{{ japanMinute(shownTime(entry).at) }}</time></span>
               <span class="library-meta-item">難易度 <DifficultyBadge :level="entry.problem.difficulty" /></span>
             </template>
             <template v-else-if="entry.post">
               <span class="library-post-state" :data-published="entry.post.publishedVersion ? '' : undefined">{{ entry.post.publishedVersion ? '公開中' : '下書き' }}</span>
-              <span class="library-meta-item">{{ shownTime(entry).label }} <time :datetime="shownTime(entry).at">{{ updatedLabel(shownTime(entry).at) }}</time></span>
+              <span class="library-meta-item">{{ shownTime(entry).label }} <time :datetime="shownTime(entry).at">{{ japanMinute(shownTime(entry).at) }}</time></span>
             </template>
           </td>
           <td role="cell" class="actions-cell">

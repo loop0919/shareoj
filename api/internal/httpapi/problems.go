@@ -89,7 +89,7 @@ func (p problemHandler) publishedProblems(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	offset, ok := contestOffset(w, r)
+	offset, ok := pageOffset(w, r)
 	if !ok {
 		return
 	}

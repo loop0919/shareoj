@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Submission } from '../../shared/types/submission'
 import { testFileSchema, type Generators } from '~~/shared/types/problem-draft'
+import type { ErrorCode } from '~/utils/api-error'
 import { testCaseError, persistedDraft, type TestCase } from '~/utils/problem-draft'
 import { judgeCodeRuntimes, usableRuntimes } from '~/utils/judge-catalog'
 import { hasSource } from '~/utils/has-source'
@@ -139,7 +140,7 @@ async function generate() {
     message.value = `${amount}件の${mode.value === 'input' ? '入力を追加' : '出力を更新'}しました。`
   } catch (error) {
     message.value = ''
-    const detail = (error as { data?: { data?: { code?: string, retryAfter?: number } } }).data?.data
+    const detail = (error as { data?: { data?: { code?: ErrorCode, retryAfter?: number } } }).data?.data
     if (detail?.code === 'judge_maintenance') { failure.value = judgeMaintenanceMessage; await refreshCatalog() }
     else if (detail?.code === 'submission_rate_limited') {
       failure.value = detail.retryAfter

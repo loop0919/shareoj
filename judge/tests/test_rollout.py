@@ -379,6 +379,20 @@ class RolloutTests(unittest.TestCase):
         self.assertEqual(len(plans), 2)
         self.assertTrue(all('-refresh-only' in args for args in plans))
 
+    def test_finish_restores_the_alarms_after_delivery_and_applies_each_refreshed_plan(self):
+        _, calls, events, _, _ = self.run_finish()
+        alarms = [e for e in events if e[0].endswith('-alarm-actions')]
+        self.assertEqual(alarms, [('enable-alarm-actions', '--alarm-names', 'enabled'),
+                                  ('disable-alarm-actions', '--alarm-names', 'disabled')])
+        self.assertLess(events.index(('delivery',)), events.index(alarms[0]))
+        terraform = [args for args in calls if args[0] == 'terraform']
+        self.assertEqual([args[1:3] for args in terraform], [('-chdir=infra/api', 'plan'), ('-chdir=infra/api', 'apply'),
+                                                             ('-chdir=infra/judge', 'plan'), ('-chdir=infra/judge', 'apply')])
+        for plan, apply in zip(terraform[::2], terraform[1::2]):
+            self.assertEqual(plan[3:5], ('-input=false', '-refresh-only'))
+            self.assertEqual(apply[3:], ('-input=false', plan[5].removeprefix('-out=')))
+            self.assertTrue(plan[5].endswith(plan[1].removeprefix('-chdir=').replace('/', '-') + '.tfplan'))
+
     def test_finish_tags_the_pool_after_health_and_releases_the_hold(self):
         state, _, events, nodes, digest = self.run_finish(pool='judge-dev')
         names = [e[0] for e in events]
@@ -654,6 +668,7 @@ class RollingTests(unittest.TestCase):
         """Run rolling (or another action) against fakes; lane a is 'qa' (queues[0]) and lane b is 'qb' (request_queue_b).
 
         Pass the same live, queues, clock and purges to a resumed run: they are the AWS side, which outlives a process.
+        A run in a directory that already holds state.json resumes from that file, as the command does.
         `contest_at` is the bridge's next contest window; `extra` replaces any fake.
         """
         events = [] if events is None else events
@@ -662,6 +677,12 @@ class RollingTests(unittest.TestCase):
                       worker_alarms=['alarm'], runtimes=['python314'], queues=['qa', 'r', 'da', 'dr'], request_queue_b='qb')
         config = {key: value for key, value in {**config, **overrides}.items() if value is not None}
         state = {} if state is None else state
+        if directory and (directory / 'state.json').exists():
+            # A resumed process knows only what the stopped one saved, so a change that was never saved must not
+            # carry over in the caller's dict.
+            saved = json.loads((directory / 'state.json').read_text())
+            state.clear()
+            state.update(saved)
         live = self.live_lambdas() if live is None else live
         queues = {} if queues is None else queues
         counted, clock = [], [0.0] if clock is None else clock
@@ -1377,6 +1398,7 @@ class RollingTests(unittest.TestCase):
             directory = Path(name)
             state, live = self.stopped_rolling(directory)
             state['switchWatcher'] = dict(pid=1)
+            (directory / 'state.json').write_text(json.dumps(state))
             (directory / 'switch-watch.cleanup.json').write_text(json.dumps(dict(users=[dict(username='u')])))
             events = []
 

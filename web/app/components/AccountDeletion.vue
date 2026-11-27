@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ErrorCode } from '~/utils/api-error'
 const { profile, signedOut } = useAccount()
 const confirmation = ref('')
 const busy = ref(false)
@@ -9,7 +10,7 @@ async function remove() {
   try {
     await signedOut(await $fetch<{ logoutUrl?: string } | undefined>('/api/my/account', { method: 'DELETE', body: { handle: confirmation.value } }), '/')
   } catch (e) {
-    const failure = e as { data?: { data?: { code?: string } } }
+    const failure = e as { data?: { data?: { code?: ErrorCode } } }
     const code = failure.data?.data?.code
     error.value = code === 'account_has_active_contest' ? '結果が確定していないコンテストがあるため削除できません。コンテストの終了後、順位表を凍結した場合は結果を公開してから削除してください。'
       : code === 'confirmation_mismatch' ? 'ユーザーIDが一致しません。'

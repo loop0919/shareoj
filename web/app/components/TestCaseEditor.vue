@@ -302,7 +302,6 @@ function add() {
 .case-info:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
 .case-info-tooltip { display: none; position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 3; max-width: 22rem; padding: 8px 12px; border-radius: 4px; background: var(--color-ink); color: var(--color-paper); font-size: .75rem; line-height: 1.7; }
 .case-info:hover .case-info-tooltip, .case-info:focus .case-info-tooltip { display: block; }
-.case-message { margin: 0; padding: 8px 16px; font-size: .75rem; color: var(--color-muted); border-bottom: 1px solid var(--color-line); }
 .import-pickers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .import-picker { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 12px; border: 1px dashed var(--color-line); border-radius: 6px; background: var(--color-surface); text-align: center; }
 .import-picker-label { font-size: .8125rem; font-weight: 600; }
@@ -379,7 +378,6 @@ function add() {
   .case-name .sample-option { flex: 1; }
   .case-toolbar { padding: 8px; }
   .case-toolbar h1 span { margin-left: 4px; }
-  .case-message { padding: 6px 8px; }
   .case-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; min-height: 0; }
   .case-files { border-right: 0; border-bottom: 1px solid var(--color-line); }
   .file-list-heading { padding: 4px 8px; }

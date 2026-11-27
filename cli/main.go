@@ -369,13 +369,66 @@ func parseArgs(flags *flag.FlagSet, args []string) error {
 	return flags.Parse(append([]string{"--"}, arguments...))
 }
 
+// When a command mentions a newer release after it ends.
+type updateNotice int
+
+const (
+	noNotice     updateNotice = iota // never
+	cachedNotice                     // the one an earlier check found
+	freshNotice                      // after looking for one, at most daily
+)
+
+// args is the number of positional arguments. It is -1 for guide and completions, which read their own, and for
+// version, which answers only when it stands alone.
+type commandSpec struct {
+	name   string
+	args   int
+	api    bool // talks to the API, so it takes --api
+	notice updateNotice
+}
+
+// commands lists every command once, in the order of the usage line. The usage line, the check for unknown commands,
+// --api, the argument counts and the update notice all read it.
+var commands = []commandSpec{
+	{"guide", -1, false, cachedNotice},
+	{"init", 1, false, cachedNotice},
+	{"check", 1, false, cachedNotice},
+	{"samples", 1, false, noNotice},
+	{"pull", 2, true, freshNotice},
+	{"push", 1, true, freshNotice},
+	{"login", 0, true, freshNotice},
+	{"logout", 0, true, cachedNotice},
+	{"version", -1, false, noNotice},
+	{"completions", -1, false, noNotice},
+}
+
+func findCommand(name string) (commandSpec, bool) {
+	for _, c := range commands {
+		if c.name == name {
+			return c, true
+		}
+	}
+	return commandSpec{}, false
+}
+
+// commandNames joins the names of the commands that keep accepts, in the order of the usage line.
+func commandNames(separator string, keep func(commandSpec) bool) string {
+	names := []string{}
+	for _, c := range commands {
+		if keep(c) {
+			names = append(names, c.name)
+		}
+	}
+	return strings.Join(names, separator)
+}
+
 func run(ctx context.Context, args []string, out io.Writer) error {
 	if len(args) == 1 && (args[0] == "version" || args[0] == "--version") {
 		fmt.Fprintln(out, "shareoj", version)
 		return nil
 	}
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprintln(out, "Usage: shareoj <guide|init|check|samples|pull|push|login|logout|version|completions> [options] [arguments]\nAuthoring with an AI agent? Start with: shareoj guide\nAutomatic discovery: shareoj guide --install-skill <codex|claude|all>\nShell completion: shareoj completions <bash|zsh|fish>\nUse shareoj <command> --help for options.")
+		fmt.Fprintln(out, "Usage: shareoj <"+commandNames("|", func(commandSpec) bool { return true })+"> [options] [arguments]\nAuthoring with an AI agent? Start with: shareoj guide\nAutomatic discovery: shareoj guide --install-skill <codex|claude|all>\nShell completion: shareoj completions <bash|zsh|fish>\nUse shareoj <command> --help for options.")
 		return nil
 	}
 	command := args[0]
@@ -385,7 +438,8 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	if command == "completions" {
 		return showCompletions(args[1:], out)
 	}
-	if command != "init" && command != "check" && command != "samples" && command != "pull" && command != "push" && command != "login" && command != "logout" {
+	spec, known := findCommand(command)
+	if !known || spec.args < 0 {
 		return fmt.Errorf("unknown command: %s", command)
 	}
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
@@ -395,7 +449,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	if value := os.Getenv("SHAREOJ_API_URL"); value != "" {
 		api = value
 	}
-	if command == "pull" || command == "push" || command == "login" || command == "logout" {
+	if spec.api {
 		flags.StringVar(&api, "api", api, "ShareOJ API URL")
 	}
 	if command == "pull" {
@@ -419,14 +473,15 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		}
 		return err
 	}
-	if command == "pull" && flags.NArg() != 2 {
-		return errors.New("expected pull <problem-id> <directory>")
-	}
-	if (command == "init" || command == "check" || command == "samples" || command == "push") && flags.NArg() != 1 {
-		return errors.New("expected one directory for init/check/samples/push")
-	}
-	if (command == "login" || command == "logout") && flags.NArg() != 0 {
-		return fmt.Errorf("%s takes no positional arguments", command)
+	if flags.NArg() != spec.args {
+		switch spec.args {
+		case 0:
+			return fmt.Errorf("%s takes no positional arguments", command)
+		case 1:
+			return errors.New("expected one directory for " + commandNames("/", func(c commandSpec) bool { return c.args == 1 }))
+		default:
+			return errors.New("expected pull <problem-id> <directory>")
+		}
 	}
 	if expected < -1 || expected > maxVersion {
 		return errors.New("invalid --expect-version")

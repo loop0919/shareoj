@@ -1,8 +1,8 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '../fixtures/cognito-logout'
 import { randomUUID } from 'node:crypto'
+import { origin } from './helpers'
 
-const origin = 'http://127.0.0.1:13002'
 async function login(page: Page, password: string) {
   await page.goto('/login')
   await page.getByLabel('メールアドレス').fill('leaver@example.test')

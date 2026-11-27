@@ -12,7 +12,7 @@ func (p contestHandler) clarifications(w http.ResponseWriter, r *http.Request, a
 		return
 	}
 	if r.Method == http.MethodGet {
-		offset, ok := contestOffset(w, r)
+		offset, ok := pageOffset(w, r)
 		if !ok {
 			return
 		}

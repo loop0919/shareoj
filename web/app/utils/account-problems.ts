@@ -1,7 +1,9 @@
+import type { ErrorCode } from './api-error'
+
 // The publication call refuses an incomplete draft with the same code as a save, but nothing was being saved then.
 export function accountError(error: unknown, action: 'save' | 'publish' = 'save') {
   const status = (error as { statusCode?: number, response?: { status?: number } }).statusCode ?? (error as { response?: { status?: number } }).response?.status
-  const detail = (error as { data?: { data?: { code?: string, retryAfter?: number } } }).data?.data
+  const detail = (error as { data?: { data?: { code?: ErrorCode, retryAfter?: number } } }).data?.data
   const code = detail?.code
   if (code === 'creation_quota_exceeded') return detail?.retryAfter
     ? `新規作成の枠を使い切りました。約${Math.ceil(detail.retryAfter / 60)}分後に1件分回復します。入力内容はこの画面に残っています。既存の内容は引き続き編集できます。`

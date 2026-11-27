@@ -1,13 +1,10 @@
 import { expect, test } from '@playwright/test'
 import { shortId } from '../../shared/utils/short-id'
+import { origin, signIn } from './helpers'
 
 test('test cases can be edited, restored, published and used for submission without public disclosure', async ({ page }, testInfo) => {
-  await page.goto('/login')
   // Keep the submission quota independent of the contest tests' Alice account.
-  await page.getByLabel('メールアドレス').fill('test_cases@example.test')
-  await page.getByLabel('パスワード', { exact: true }).fill('test-password')
-  await page.getByRole('button', { name: 'ログイン', exact: true }).click()
-  await expect(page).toHaveURL('/my')
+  await signIn(page, 'test_cases')
   page.on('dialog', dialog => dialog.accept())
   await page.goto('/problems/new')
   await page.getByLabel('問題のタイトル').fill('UIからのテスト登録')
@@ -53,7 +50,7 @@ test('test cases can be edited, restored, published and used for submission with
   const publicResponse = await page.request.get(`/api/problems/${id}`)
   expect(publicResponse.status()).toBe(200)
   expect(await publicResponse.json()).not.toHaveProperty('testCases')
-  const submission = await page.request.post('/api/my/submissions', { headers: { origin: 'http://127.0.0.1:13002' }, data: { problemId: id, runtime: 'cpp23-gcc-local', source: 'int main(){}' } })
+  const submission = await page.request.post('/api/my/submissions', { headers: { origin }, data: { problemId: id, runtime: 'cpp23-gcc-local', source: 'int main(){}' } })
   expect(submission.status()).toBe(202)
   await page.getByRole('button', { name: 'テストケース', exact: true }).click()
   await page.getByRole('button', { name: '最大値', exact: true }).click()
@@ -70,6 +67,6 @@ test('test cases can be edited, restored, published and used for submission with
   await expect(page.locator('.draft-status').getByRole('status')).toHaveText('保存に失敗しました')
   await expect(page.getByText('テストケース（1件以上）')).toBeVisible()
   expect((await (await page.request.get(`/api/my/problems/${id}`)).json()).draft.testCases).toHaveLength(1)
-  const accepted = await page.request.post('/api/my/submissions', { headers: { origin: 'http://127.0.0.1:13002' }, data: { problemId: id, runtime: 'cpp23-gcc-local', source: 'int main(){}' } })
+  const accepted = await page.request.post('/api/my/submissions', { headers: { origin }, data: { problemId: id, runtime: 'cpp23-gcc-local', source: 'int main(){}' } })
   expect(accepted.status()).toBe(202)
 })

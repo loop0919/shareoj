@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -19,14 +18,9 @@ func (p problemHandler) featured(w http.ResponseWriter, r *http.Request) {
 		authError(w, 503, "database_unavailable")
 		return
 	}
-	offset := 0
-	if raw := r.URL.Query().Get("offset"); raw != "" {
-		var err error
-		offset, err = strconv.Atoi(raw)
-		if err != nil || offset < 0 || offset > 1000000 {
-			authError(w, 400, "invalid_request")
-			return
-		}
+	offset, ok := pageOffset(w, r)
+	if !ok {
+		return
 	}
 	page, err := p.Store.FeaturedList(r.Context(), offset, submissions.RuntimeIDs(), p.Judging.ContentRuntimeIDs())
 	if err != nil {
@@ -138,13 +132,9 @@ func (p problemHandler) featuredStandings(w http.ResponseWriter, r *http.Request
 		authError(w, 400, "invalid_request")
 		return
 	}
-	offset := 0
-	if raw := r.URL.Query().Get("offset"); raw != "" {
-		offset, err = strconv.Atoi(raw)
-		if err != nil || offset < 0 || offset > 1000000 {
-			authError(w, 400, "invalid_request")
-			return
-		}
+	offset, ok := pageOffset(w, r)
+	if !ok {
+		return
 	}
 	if p.Store == nil {
 		authError(w, 503, "database_unavailable")

@@ -1,6 +1,6 @@
 import { z } from 'zod'
-// The API's limits: folders per person, levels, characters of a name after trimming, and items one move sends.
-export const maxFolders = 100, maxFolderDepth = 3, maxFolderName = 40, maxFolderItems = 100
+// The API's limits: levels, characters of a name after trimming, and items one move sends.
+export const maxFolderDepth = 3, maxFolderName = 40, maxFolderItems = 100
 export const folderSchema = z.object({ id: z.string().uuid(), parentId: z.string().uuid().nullable(), name: z.string() })
 // Own and tested problems are both a problem; a placement belongs to the person who made it.
 export const folderRefSchema = z.object({ kind: z.enum(['problem', 'post']), id: z.string().uuid() })

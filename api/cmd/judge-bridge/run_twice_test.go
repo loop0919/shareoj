@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strings"
 	"testing"
 
@@ -38,10 +36,7 @@ func TestRunTwiceResultsNeedTheWorkerMark(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var logs bytes.Buffer
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
-	defer slog.SetDefault(previous)
+	logs := captureLogs(t)
 	// Paused, so a finished result does not dispatch the other queued submissions.
 	b := bridge{db: db, runtime: digest, paused: true}
 	one, memory := 1.0, int64(1024)

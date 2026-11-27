@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures/account'
 import { shortId } from '../shared/utils/short-id'
+import { visit } from './fixtures/visit'
 
 const id = '88888888-8888-4888-8888-888888888888'
 const pa = '11111111-1111-4111-8111-111111111111'
@@ -52,10 +53,6 @@ async function fits(page: Page) {
     await expect(page.getByRole('navigation', { name: 'コンテストメニュー' }).getByRole('link', { name: '質問', exact: true })).toBeInViewport()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `width ${width}`).toBe(true)
   }
-}
-
-async function visit(page: Page, to: string) {
-  await page.evaluate(to => (window as unknown as { useNuxtApp: () => { $router: { push: (to: string) => Promise<unknown> } } }).useNuxtApp().$router.push(to), to)
 }
 
 test('a participant lists their own submissions to every problem while the whole list stays closed', async ({ page }) => {

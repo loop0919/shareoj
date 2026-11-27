@@ -6,19 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"log/slog"
-	"net/http"
-	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	"judge/api/internal/problems"
 	"judge/api/internal/submissions"
@@ -111,33 +103,25 @@ func TestPartialScoringJobsAndResults(t *testing.T) {
 		}
 	}
 
-	var payloads []map[string]json.RawMessage
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "PUT" {
-			data, _ := io.ReadAll(r.Body)
+	fake := newFakeAWS(t)
+	// payloads reads the jobs written since the fake's puts were last emptied.
+	payloads := func() []map[string]json.RawMessage {
+		var out []map[string]json.RawMessage
+		for _, data := range fake.puts {
 			var payload map[string]json.RawMessage
 			if json.Unmarshal(data, &payload) != nil {
 				t.Error("invalid job payload")
 			}
-			payloads = append(payloads, payload)
-			w.Header().Set("x-amz-version-id", "version")
-			return
+			out = append(out, payload)
 		}
-		w.Header().Set("Content-Type", "application/x-amz-json-1.0")
-		_, _ = fmt.Fprint(w, `{"MessageId":"test"}`)
-	}))
-	defer server.Close()
-	cfg := aws.Config{Region: "ap-northeast-1", Credentials: credentials.NewStaticCredentialsProvider("test", "test", "")}
-	b := bridge{
-		db: db, bucket: "bucket", queueURL: server.URL + "/queue", runtime: digest,
-		objects: s3.NewFromConfig(cfg, func(o *s3.Options) { o.BaseEndpoint = aws.String(server.URL); o.UsePathStyle = true }),
-		queue:   sqs.NewFromConfig(cfg, func(o *sqs.Options) { o.BaseEndpoint = aws.String(server.URL) }),
+		return out
 	}
+	b := fake.bridge(db, digest)
 	if err := b.dispatch(ctx); err != nil {
 		t.Fatal(err)
 	}
 	sent := map[string]map[string]json.RawMessage{}
-	for _, p := range payloads {
+	for _, p := range payloads() {
 		var id string
 		_ = json.Unmarshal(p["submissionId"], &id)
 		sent[id] = p
@@ -152,10 +136,7 @@ func TestPartialScoringJobsAndResults(t *testing.T) {
 		}
 	}
 
-	var logs bytes.Buffer
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
-	defer slog.SetDefault(previous)
+	logs := captureLogs(t)
 	one, memory := 1.0, int64(1024)
 	cases := func(verdicts ...string) []submissions.CaseResult {
 		var out []submissions.CaseResult
@@ -270,12 +251,12 @@ func TestPartialScoringJobsAndResults(t *testing.T) {
 	if j, keys := job("aggregate sample"); keys["scoring"] != nil || !j.AcceptPoints || len(j.Cases) != 1 {
 		t.Fatalf("aggregate sample check: %+v", keys)
 	}
-	payloads = nil
+	fake.puts = nil
 	if err := b.dispatch(ctx); err != nil {
 		t.Fatal(err)
 	}
 	sent = map[string]map[string]json.RawMessage{}
-	for _, p := range payloads {
+	for _, p := range payloads() {
 		var id string
 		_ = json.Unmarshal(p["submissionId"], &id)
 		sent[id] = p

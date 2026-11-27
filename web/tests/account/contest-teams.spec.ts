@@ -1,27 +1,12 @@
-import { expect, test, type Browser, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { fullId, shortId } from '../../shared/utils/short-id'
 import { moveContest } from './schedule'
+import { origin, seedProblem, user } from './helpers'
 
 // Teams and the onsite division against the real API (ADR 0024). carol sets the contests; bob, dave, erin and frank
 // take part.
-const origin = 'http://127.0.0.1:13002'
-async function user(browser: Browser, name: string) {
-  const context = await browser.newContext({ baseURL: origin })
-  const page = await context.newPage()
-  await page.goto('/login')
-  await page.getByLabel('メールアドレス', { exact: true }).fill(`${name}@example.test`)
-  await page.getByLabel('パスワード', { exact: true }).fill('test-password')
-  await page.getByRole('button', { name: 'ログイン', exact: true }).click()
-  await expect(page).toHaveURL('/my')
-  return page
-}
-async function seed(page: Page, title: string) {
-  const id = randomUUID()
-  const response = await page.request.put(`/api/my/problems/${id}`, { headers: { origin }, data: { version: 0, draft: { title, difficulty: 3, markdown: '## 本文\n整数を出力してください。', editorial: '## 解説\n答えは2です。', timeLimitMs: '1500', memoryLimitMb: '256', testCases: [{ input: '1', output: '2', isSample: true }] } } })
-  expect(response.status()).toBe(200)
-  return id
-}
+
 async function contest(setter: Page, settings: Record<string, unknown>) {
   const id = randomUUID()
   const response = await setter.request.put(`/api/my/contests/${id}`, { headers: { origin }, data: { description: '', version: 0, ...settings } })
@@ -37,7 +22,7 @@ test('a team forms by its join code, teammates see each other\'s submissions dur
   const erin = await user(browser, 'erin')
   const frank = await user(browser, 'frank')
   const guest = await (await browser.newContext({ baseURL: origin })).newPage()
-  const problem = await seed(carol, 'チーム戦の問題')
+  const problem = await seedProblem(carol, 'チーム戦の問題')
   const now = Date.now()
   const id = await contest(carol, {
     title: 'チーム戦コンテスト', teamMode: true, maxTeamSize: 3,
@@ -131,7 +116,7 @@ test('the venue passphrase makes participants onsite, a mistake registers nothin
   const dave = await user(browser, 'dave')
   const erin = await user(browser, 'erin')
   const guest = await (await browser.newContext({ baseURL: origin })).newPage()
-  const problem = await seed(carol, 'オンサイトの問題')
+  const problem = await seedProblem(carol, 'オンサイトの問題')
   // Only letters, digits and underscores make a passphrase.
   const refused = await carol.request.put(`/api/my/contests/${randomUUID()}`, { headers: { origin }, data: { title: '使えない合言葉', description: '', version: 0, onsiteDivision: true, onsitePassphrase: 'Venue-2026', startsAt: new Date(Date.now() + 3600000).toISOString(), endsAt: new Date(Date.now() + 7200000).toISOString(), problems: [{ id: problem, points: 100 }] } })
   expect(refused.status()).toBe(400)
@@ -218,7 +203,7 @@ test('team contests take individuals beside teams, who switch to a team on the t
   const erin = await user(browser, 'erin')
   const frank = await user(browser, 'frank')
   const guest = await (await browser.newContext({ baseURL: origin })).newPage()
-  const problem = await seed(carol, '個人参加の問題')
+  const problem = await seedProblem(carol, '個人参加の問題')
   const now = Date.now()
   const id = await contest(carol, {
     title: '個人参加のあるチーム戦', teamMode: true, onsiteDivision: true, onsitePassphrase: 'Venue_2026',
@@ -295,7 +280,7 @@ test('team contests take individuals beside teams, who switch to a team on the t
 test('someone who registered by mistake cancels before the start, leaves the standings and may then become a tester', async ({ browser }) => {
   const carol = await user(browser, 'carol')
   const frank = await user(browser, 'frank')
-  const problem = await seed(carol, '取り消しの問題')
+  const problem = await seedProblem(carol, '取り消しの問題')
   const now = Date.now()
   const id = await contest(carol, {
     title: '取り消しのコンテスト', startsAt: new Date(now + 3600000).toISOString(), endsAt: new Date(now + 7200000).toISOString(), problems: [{ id: problem, points: 100 }],

@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { createHash } from 'node:crypto'
 import { cliTicket, redeemCliTicket } from '../../server/utils/cli-oauth'
+import { origin } from './helpers'
 
 test('Google authorization uses PKCE and a private short-lived state cookie', async ({ page, context }) => {
   const providers = await context.request.get('/api/auth/providers')
@@ -13,7 +14,7 @@ test('Google authorization uses PKCE and a private short-lived state cookie', as
   expect(url.origin).toBe('https://example.auth.ap-northeast-1.amazoncognito.com')
   expect(url.pathname).toBe('/oauth2/authorize')
   expect(url.searchParams.get('identity_provider')).toBe('Google')
-  expect(url.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:13002/auth/google/callback')
+  expect(url.searchParams.get('redirect_uri')).toBe(`${origin}/auth/google/callback`)
   expect(url.searchParams.get('response_type')).toBe('code')
   expect(url.searchParams.get('code_challenge_method')).toBe('S256')
   const cookie = (await context.cookies()).find(c => c.name === 'openoj_google_flow')!
@@ -27,11 +28,11 @@ test('Google authorization uses PKCE and a private short-lived state cookie', as
 })
 
 test('logout also ends the Cognito session, so the next Google login can pick another account', async ({ context }) => {
-  const logout = await context.request.post('/api/auth/logout', { headers: { origin: 'http://127.0.0.1:13002' } })
+  const logout = await context.request.post('/api/auth/logout', { headers: { origin } })
   expect(logout.ok()).toBe(true)
   const url = new URL((await logout.json()).logoutUrl)
   expect(url.origin + url.pathname).toBe('https://example.auth.ap-northeast-1.amazoncognito.com/logout')
-  expect(Object.fromEntries(url.searchParams)).toEqual({ client_id: 'browser-client', logout_uri: 'http://127.0.0.1:13002/login' })
+  expect(Object.fromEntries(url.searchParams)).toEqual({ client_id: 'browser-client', logout_uri: `${origin}/login` })
 })
 
 test('unrequested, mismatched and cancelled callbacks cannot establish a session', async ({ context }) => {
@@ -65,7 +66,7 @@ test('Google login preserves a tester invitation and rejects external return pat
 test('Google login returns to a same-site path with non-ASCII characters, encoded', async ({ context }) => {
   // The token endpoint stub (tests/fixtures/cognito-token.mjs) hands the code back as the access token,
   // so a password login supplies a fixture token for alice, who has a profile.
-  const login = await context.request.post('/api/auth/login', { headers: { origin: 'http://127.0.0.1:13002' }, data: { username: 'alice@example.test', password: 'test-password' } })
+  const login = await context.request.post('/api/auth/login', { headers: { origin }, data: { username: 'alice@example.test', password: 'test-password' } })
   expect(login.status()).toBe(200)
   const token = (await context.cookies()).find(cookie => cookie.name === 'openoj_access')!.value
   await context.clearCookies()
@@ -87,7 +88,7 @@ test('CLI Google login uses the CLI PKCE challenge and returns only a signed cod
   expect(start.status()).toBe(302)
   const authorize = new URL(start.headers().location!)
   expect(authorize.searchParams.get('code_challenge')).toBe(challenge)
-  expect(authorize.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:13002/auth/google/callback')
+  expect(authorize.searchParams.get('redirect_uri')).toBe(`${origin}/auth/google/callback`)
   const callback = await context.request.get(`/auth/google/callback?${new URLSearchParams({ state: authorize.searchParams.get('state')!, code: 'fake-code' })}`, { maxRedirects: 0 })
   expect(callback.status()).toBe(303)
   expect(callback.headers()['referrer-policy']).toBe('no-referrer')

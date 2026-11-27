@@ -73,12 +73,8 @@ func (p imageHandler) contentImage(w http.ResponseWriter, r *http.Request, owner
 		return
 	}
 	if r.Method == http.MethodGet {
-		offset, err := strconv.Atoi(r.URL.Query().Get("offset"))
-		if r.URL.Query().Get("offset") == "" {
-			offset, err = 0, nil
-		}
-		if err != nil || offset < 0 || offset > 1000000 {
-			authError(w, 400, "invalid_request")
+		offset, ok := pageOffset(w, r)
+		if !ok {
 			return
 		}
 		items, used, err := p.Store.List(ctx, owner, offset)

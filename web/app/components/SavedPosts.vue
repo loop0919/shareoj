@@ -2,6 +2,7 @@
 import { postListSchema, type postSummarySchema } from '~~/shared/types/post'
 import type { z } from 'zod'
 import { shortId } from '~~/shared/utils/short-id'
+import { japanMinute } from '~/utils/japan-time'
 const posts = ref<z.infer<typeof postSummarySchema>[]>([])
 const cursor = ref('')
 const loading = ref(true)
@@ -37,7 +38,7 @@ onMounted(() => { void load() })
         <tbody><tr v-for="post in visible" :key="post.id">
           <th scope="row">{{ post.title.trim() || '無題の記事' }}</th>
           <td class="lead-cell">{{ post.publishedVersion ? '公開中' : '下書き' }}</td>
-          <td class="corner-cell"><time :datetime="post.updatedAt">{{ new Date(post.updatedAt).toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' }) }}</time></td>
+          <td class="corner-cell"><time :datetime="post.updatedAt">{{ japanMinute(post.updatedAt) }}</time></td>
           <td class="actions-cell"><ContentActions :title="post.title.trim() || '無題の記事'" :edit-to="{ path: '/blog/new', query: { post: post.id } }" :view-to="`/blog/${shortId(post.id)}`" :published="!!post.publishedVersion" /></td>
         </tr></tbody>
       </table>

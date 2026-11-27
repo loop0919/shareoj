@@ -1,7 +1,6 @@
 import { tagListSchema } from '~~/shared/types/tag'
 import { publicContent } from '../utils/public-content'
+import { upstream } from '../utils/upstream'
 export default defineEventHandler(async event => {
-  const result = tagListSchema.safeParse(await publicContent(event, '/tags'))
-  if (!result.success) throw createError({ statusCode: 502 })
-  return result.data
+  return upstream(tagListSchema, await publicContent(event, '/tags'))
 })

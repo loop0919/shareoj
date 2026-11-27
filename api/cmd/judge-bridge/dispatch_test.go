@@ -6,17 +6,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	"judge/api/internal/problems"
 	"judge/api/internal/submissions"
@@ -39,12 +31,11 @@ func queuedJob(file *problems.TestFile) []byte {
 }
 
 type dispatchFixture struct {
-	t    *testing.T
-	b    bridge
-	ids  []string // queued submissions, oldest first
-	sent []string // submission IDs that reached SQS
-	puts [][]byte // job bodies written to S3
-	logs *bytes.Buffer
+	t        *testing.T
+	b        bridge
+	ids      []string // queued submissions, oldest first
+	*fakeAWS          // sent holds the submission IDs that reached SQS, puts the job bodies written to S3
+	logs     *bytes.Buffer
 }
 
 // newDispatchFixture queues one submission per job on a fresh database. Its S3 and SQS are a local
@@ -66,43 +57,9 @@ func newDispatchFixture(t *testing.T, failMethod string, jobs ...[]byte) *dispat
 			t.Fatal(err)
 		}
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == failMethod {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		if r.Method == "PUT" {
-			body, _ := io.ReadAll(r.Body)
-			f.puts = append(f.puts, body)
-			w.Header().Set("x-amz-version-id", "version")
-			return
-		}
-		data, _ := io.ReadAll(r.Body)
-		var request struct{ MessageBody string }
-		var pointer struct {
-			ID string `json:"submissionId"`
-		}
-		if json.Unmarshal(data, &request) != nil || json.Unmarshal([]byte(request.MessageBody), &pointer) != nil {
-			t.Error("invalid queue request")
-		}
-		f.sent = append(f.sent, pointer.ID)
-		w.Header().Set("Content-Type", "application/x-amz-json-1.0")
-		_, _ = fmt.Fprint(w, `{"MessageId":"test"}`)
-	}))
-	t.Cleanup(server.Close)
-	cfg := aws.Config{Region: "ap-northeast-1", Credentials: credentials.NewStaticCredentialsProvider("test", "test", "")}
-	f.b = bridge{
-		db: db, bucket: "bucket", queueURL: server.URL + "/queue", runtime: testDigest,
-		objects: s3.NewFromConfig(cfg, func(o *s3.Options) {
-			o.BaseEndpoint = aws.String(server.URL)
-			o.UsePathStyle = true
-			o.RetryMaxAttempts = 1
-		}),
-		queue: sqs.NewFromConfig(cfg, func(o *sqs.Options) {
-			o.BaseEndpoint = aws.String(server.URL)
-			o.RetryMaxAttempts = 1
-		}),
-	}
+	f.fakeAWS = newFakeAWS(t)
+	f.failMethod, f.attempts = failMethod, 1
+	f.b = f.bridge(db, testDigest)
 	f.logs = captureLogs(t)
 	return f
 }

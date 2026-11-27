@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { origin } from './helpers'
 
 test('registers, resumes confirmation, resends code and logs in to save a problem', async ({ page }) => {
   const email = `signup-${Date.now()}@example.test`
@@ -17,7 +18,7 @@ test('registers, resumes confirmation, resends code and logs in to save a proble
   expect(await (await response).json()).toEqual({ confirmed: false })
   await expect(page.getByRole('heading', { name: 'メールアドレスを確認' })).toBeVisible()
   expect((await page.context().cookies()).some(c => c.name === 'openoj_access')).toBe(false)
-  expect((await page.request.post('/api/auth/login', { headers: { origin: 'http://127.0.0.1:13002' }, data: { username: email, password: 'ValidPassword123!' } })).status()).toBe(401)
+  expect((await page.request.post('/api/auth/login', { headers: { origin }, data: { username: email, password: 'ValidPassword123!' } })).status()).toBe(401)
   await page.getByLabel('確認コード', { exact: true }).fill('000000')
   await page.getByRole('button', { name: 'メールアドレスを確認', exact: true }).click()
   await expect(page.getByRole('alert')).toContainText('確認コードを確認')
@@ -52,7 +53,7 @@ test('registers, resumes confirmation, resends code and logs in to save a proble
 
 test('registration endpoints reject cross-origin requests and do not reveal duplicate emails', async ({ request }) => {
   const email = `duplicate-${Date.now()}@example.test`
-  const options = { headers: { origin: 'http://127.0.0.1:13002' }, data: { email, password: 'ValidPassword123!' } }
+  const options = { headers: { origin }, data: { email, password: 'ValidPassword123!' } }
   for (const action of ['signup', 'confirm-signup', 'resend-confirmation']) {
     expect((await request.post(`/api/auth/${action}`, { headers: { origin: 'https://attacker.example' }, data: {} })).status()).toBe(403)
   }

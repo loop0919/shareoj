@@ -1,10 +1,10 @@
 import { expect, test } from '../fixtures/cognito-logout'
+import { origin } from './helpers'
 
 test('new users must choose an ID, upload an icon, and can edit their persisted profile', async ({ page }, testInfo) => {
   await page.route('**/api/ratings/*?*', route => route.fulfill({ json: { rating: 1600, unavailable: false } }))
   await page.route('**/api/accounts/yukicoder?*', route => route.fulfill({ json: { name: 'ゆきユーザー' } }))
   const email = `profile-${Date.now()}@example.test`
-  const origin = 'http://127.0.0.1:13002'
   for (const [action, data] of [
     ['signup', { email, password: 'ValidPassword123!' }],
     ['confirm-signup', { email, code: '123456' }],

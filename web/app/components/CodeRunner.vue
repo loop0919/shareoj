@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import { codeRunInputLimit, type CodeRun } from '~~/shared/types/code-run'
+import type { ErrorCode } from '~/utils/api-error'
 import { usableRuntimes } from '~/utils/judge-catalog'
-import { hasSource } from '~/utils/has-source'
+import { hasSource, sourceLimit, sourceRefusal } from '~/utils/has-source'
 import { executionTime, memoryUsage } from '~/utils/submission-usage'
 
 const { user } = useAccount()
 const route = useRoute()
 const source = ref('')
 const stdin = ref('')
-// The largest source the API accepts, in UTF-8 bytes.
-const sourceLimit = 131072
 const stdinBytes = computed(() => new TextEncoder().encode(stdin.value).length)
 const runtime = ref('cpp23-gcc')
 const { data: catalog, error: catalogError, refresh: refreshCatalog } = await useJudgeCatalog()
@@ -88,8 +87,9 @@ async function restoreLatest() {
 
 async function execute() {
   if (sending.value || pending.value || !available.value.some(item => item.id === runtime.value)) return
-  if (!hasSource(runtime.value, source.value) || new TextEncoder().encode(source.value).length > sourceLimit) {
-    message.value = `ソースコードを1〜${sourceLimit.toLocaleString('en-US')}バイトで入力してください。`
+  const refusal = sourceRefusal(runtime.value, source.value)
+  if (refusal) {
+    message.value = refusal
     return
   }
   if (new TextEncoder().encode(stdin.value).length > codeRunInputLimit) {
@@ -105,7 +105,7 @@ async function execute() {
     sending.value = false
     await follow()
   } catch (error) {
-    const failure = error as { statusCode?: number, data?: { data?: { code?: string, retryAfter?: number } } }
+    const failure = error as { statusCode?: number, data?: { data?: { code?: ErrorCode, retryAfter?: number } } }
     const code = failure.data?.data?.code
     if (code === 'judge_maintenance') { message.value = judgeMaintenanceMessage; await refreshCatalog() }
     else if (failure.statusCode === 401) message.value = 'コードを実行するにはログインしてください。入力したコードはこの画面に残っています。'

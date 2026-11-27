@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -116,7 +117,7 @@ func exportDraft(ctx context.Context, root *os.Root, remote problem, c *apiClien
 	}
 	config.Generators = map[string]codeConfig{}
 	for role, p := range d.Generators {
-		if role != "input" && role != "output" && role != "validation" {
+		if !slices.Contains(generatorRoles, role) {
 			return fmt.Errorf("unknown generator: %s", role)
 		}
 		// Absent legacy generators can be returned as zero-valued structs.
@@ -152,7 +153,7 @@ func exportDraft(ctx context.Context, root *os.Root, remote problem, c *apiClien
 			config.ErrorJudge.MarginPercent = &d.ErrorJudge.MarginPercent
 		}
 	}
-	if len(d.TestCases) > 100 {
+	if len(d.TestCases) > maxCases {
 		return errors.New("too many test cases from server")
 	}
 	config.Tests = &testConfig{Directory: "tests", Suffix: ".out", Samples: []string{}, Names: map[string]string{}}
@@ -201,7 +202,7 @@ func exportDraft(ctx context.Context, root *os.Root, remote problem, c *apiClien
 				}
 				size = side.ref.Size
 			}
-			if size > 16<<20 || total+size > 512<<20 {
+			if size > maxCaseBytes || total+size > maxTestsBytes {
 				return errors.New("test data exceeds size limits")
 			}
 			total += size
@@ -232,7 +233,7 @@ func exportProgram(root *os.Root, role string, p program) (codeConfig, error) {
 
 func (c *apiClient) downloadTestFile(ctx context.Context, id string, ref testFile) ([]byte, error) {
 	digest, err := hex.DecodeString(ref.SHA256)
-	if !problemID.MatchString(ref.ID) || ref.Size <= 0 || ref.Size > 16<<20 || err != nil || len(digest) != sha256.Size {
+	if !problemID.MatchString(ref.ID) || ref.Size <= 0 || ref.Size > maxCaseBytes || err != nil || len(digest) != sha256.Size {
 		return nil, errors.New("invalid test file reference")
 	}
 	var download struct {
@@ -265,7 +266,7 @@ func (c *apiClient) downloadTestFile(ctx context.Context, id string, ref testFil
 	if err != nil {
 		return nil, errors.New("could not read test file")
 	}
-	if len(data) != ref.Size || fmt.Sprintf("%x", sha256.Sum256(data)) != ref.SHA256 || !validText(string(data), 16<<20) {
+	if len(data) != ref.Size || fmt.Sprintf("%x", sha256.Sum256(data)) != ref.SHA256 || !validText(string(data), maxCaseBytes) {
 		return nil, errors.New("downloaded test file integrity check failed")
 	}
 	return data, nil

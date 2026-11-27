@@ -1,7 +1,7 @@
 import type { H3Event } from 'h3'
 import { streamingCode, streamingCookie } from '../../shared/utils/streaming-mode'
 import { privateAPI } from './private-api'
-import { hasSession } from './private-session'
+import { hasSession, sessionRefused } from './private-session'
 
 export function streamingMode(event: H3Event): boolean {
   return getCookie(event, streamingCookie) === '1'
@@ -22,7 +22,7 @@ export async function streamingContestView(event: H3Event, id: string): Promise<
     const contest = await privateAPI<Record<string, unknown>>(event, `/my/contests/${id}`, { streaming: true })
     return staffFlags.some(flag => contest[flag] === true) ? 'public' : 'participant'
   } catch (error) {
-    if ([401, 403].includes((error as { statusCode?: number }).statusCode ?? 0)) return 'public'
+    if (sessionRefused(error)) return 'public'
     throw error
   }
 }

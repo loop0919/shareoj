@@ -1,17 +1,9 @@
 import { request as httpRequest } from 'node:http'
-import type { Page } from '@playwright/test'
 import { expect, test } from '../fixtures/cognito-logout'
-
-async function login(page: Page, username = 'alice@example.test') {
-  await page.goto('/login')
-  await page.getByLabel('メールアドレス').fill(username)
-  await page.getByLabel('パスワード', { exact: true }).fill('test-password')
-  await page.getByRole('button', { name: 'ログイン', exact: true }).click()
-  await expect(page).toHaveURL('/my')
-}
+import { origin, signIn } from './helpers'
 
 test('login, database save, another browser, ownership, conflict and logout', async ({ page, browser }) => {
-  await login(page)
+  await signIn(page)
   const cookie = (await page.context().cookies()).find(c => c.name === 'openoj_access')!
   expect(cookie.httpOnly).toBe(true)
   expect(cookie.sameSite).toBe('Lax')
@@ -30,9 +22,9 @@ test('login, database save, another browser, ownership, conflict and logout', as
   await expect(page).toHaveURL('/my')
   await expect(page.getByRole('link', { name: 'DBで保存した問題を編集', exact: true })).toBeVisible()
 
-  const secondContext = await browser.newContext({ baseURL: 'http://127.0.0.1:13002' })
+  const secondContext = await browser.newContext({ baseURL: origin })
   const second = await secondContext.newPage()
-  await login(second)
+  await signIn(second)
   await second.getByRole('link', { name: 'DBで保存した問題を編集', exact: true }).click()
   await expect(second.locator('#problem-source')).toHaveText('## 永続化した本文\n$A+B$', { useInnerText: true })
   await page.goto(editorURL)
@@ -48,10 +40,10 @@ test('login, database save, another browser, ownership, conflict and logout', as
   expect((await response.json()).draft.title).toBe('別のブラウザーから再編集')
   const csrf = await second.request.put(`/api/my/problems/${id}`, { headers: { origin: 'https://attacker.example' }, data: {} })
   expect(csrf.status()).toBe(403)
-  const unauthContext = await browser.newContext({ baseURL: 'http://127.0.0.1:13002' })
+  const unauthContext = await browser.newContext({ baseURL: origin })
   expect((await unauthContext.request.get(`/api/my/problems/${id}`)).status()).toBe(401)
   const bob = await unauthContext.newPage()
-  await login(bob, 'bob@example.test')
+  await signIn(bob, 'bob')
   await expect(bob.getByRole('link', { name: /別のブラウザーから再編集/ })).toHaveCount(0)
   expect((await bob.request.get(`/api/my/problems/${id}`)).status()).toBe(404)
   await bob.goto(`/problems/new?problem=${id}`)
@@ -64,7 +56,7 @@ test('login, database save, another browser, ownership, conflict and logout', as
   await expect(second.getByRole('alert')).toContainText('ログイン')
   await expect(second.locator('#problem-title')).toHaveValue('期限切れでも内容を残す')
   const reauth = await secondContext.newPage()
-  await login(reauth)
+  await signIn(reauth)
   await reauth.close()
   await second.bringToFront()
   await second.getByRole('button', { name: '保存', exact: true }).click()
@@ -76,7 +68,7 @@ test('login, database save, another browser, ownership, conflict and logout', as
 test('DB-only library ignores legacy drafts, refreshes cache and deletes the saved problem', async ({ page }) => {
   await page.goto('/problems/new')
   await expect(page).toHaveURL(/login/)
-  await login(page)
+  await signIn(page)
   await page.evaluate(() => localStorage.setItem('openoj.problem-drafts.v2.legacy', JSON.stringify({ title: '旧ローカル下書き' })))
   await page.reload()
   await expect(page.getByText('このブラウザーの下書き', { exact: true })).toHaveCount(0)
@@ -90,7 +82,7 @@ test('DB-only library ignores legacy drafts, refreshes cache and deletes the sav
   const id = new URL(url).searchParams.get('problem')!
   expect(await page.evaluate(() => Object.keys(sessionStorage).some(k => k.startsWith('openoj.problem-cache.v1.')))).toBe(true)
   const current = await (await page.request.get(`/api/my/problems/${id}`)).json()
-  const updated = await page.request.put(`/api/my/problems/${id}`, { headers: { origin: 'http://127.0.0.1:13002' }, data: { version: current.version, draft: { ...current.draft, title: 'DBが最新' } } })
+  const updated = await page.request.put(`/api/my/problems/${id}`, { headers: { origin }, data: { version: current.version, draft: { ...current.draft, title: 'DBが最新' } } })
   expect(updated.ok()).toBe(true)
   await page.reload()
   await expect(page.locator('#problem-title')).toHaveValue('DBが最新')
@@ -115,12 +107,12 @@ test('DB-only library ignores legacy drafts, refreshes cache and deletes the sav
 })
 
 test('rejects oversized chunked writes without saving a problem', async ({ page }) => {
-  await login(page)
+  await signIn(page)
   const cookies = (await page.context().cookies()).map(c => `${c.name}=${c.value}`).join('; ')
   const id = '55555555-5555-4555-8555-555555555555'
   const status = await new Promise<number | undefined>((resolve, reject) => {
-    const request = httpRequest(`http://127.0.0.1:13002/api/my/problems/${id}`, {
-      method: 'PUT', headers: { cookie: cookies, origin: 'http://127.0.0.1:13002', 'content-type': 'application/json' },
+    const request = httpRequest(`${origin}/api/my/problems/${id}`, {
+      method: 'PUT', headers: { cookie: cookies, origin, 'content-type': 'application/json' },
     }, response => { response.resume(); response.on('end', () => resolve(response.statusCode)) })
     request.on('error', reject)
     request.write(JSON.stringify({ version: 0, draft: { markdown: 'x'.repeat(4 * 1024 * 1024) } }))
