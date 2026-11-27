@@ -498,10 +498,11 @@ jobs:
         run: python3 -m unittest discover -s cost-report/tests -v
 
   test:
-    # Keep the existing required check; every API job must succeed before it passes.
+    # Keep the existing required check; every API job must succeed before it passes. The cost report's tests ride
+    # along: a job that no required check needs would let a pull request merge while it fails.
     name: Test and package API
     if: ${{ always() }}
-    needs: [api-test, api-checks, api-package, api-infra]
+    needs: [api-test, api-checks, api-package, api-infra, cost-report]
     runs-on: ubuntu-24.04
     timeout-minutes: 1
     steps:
