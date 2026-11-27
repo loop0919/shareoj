@@ -43,7 +43,7 @@ func TestUpdateNotice(t *testing.T) {
 		{name: "offline-init", args: []string{"init", "problem"}},
 		{name: "offline-check", args: []string{"check", "problem"}},
 		{name: "offline-logout", args: []string{"logout"}},
-		{name: "samples", args: []string{"samples", "problem"}, cached: "cli-v0.10.0"},
+		{name: "offline-samples", args: []string{"samples", "problem"}, cached: "cli-v0.10.0", want: "cli-v0.10.0"},
 		{name: "completions", args: []string{"completions", "bash"}, cached: "cli-v0.10.0"},
 		{name: "unknown", args: []string{"nope"}, cached: "cli-v0.10.0"},
 		{name: "help", args: []string{"push", "--help"}, cached: "cli-v0.10.0"},

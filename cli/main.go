@@ -393,12 +393,13 @@ var commands = []commandSpec{
 	{"guide", -1, false, cachedNotice},
 	{"init", 1, false, cachedNotice},
 	{"check", 1, false, cachedNotice},
-	{"samples", 1, false, noNotice},
+	{"samples", 1, false, cachedNotice},
 	{"pull", 2, true, freshNotice},
 	{"push", 1, true, freshNotice},
 	{"login", 0, true, freshNotice},
 	{"logout", 0, true, cachedNotice},
 	{"version", -1, false, noNotice},
+	// A shell loads the script each time it starts, so a notice here would repeat in every new terminal.
 	{"completions", -1, false, noNotice},
 }
 
