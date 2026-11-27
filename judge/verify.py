@@ -163,7 +163,8 @@ for _ in range(360):
     for line in log.splitlines():
         try: events.append(json.loads(line))
         except ValueError: pass
-    if any(e.get('event') == 'failure' for e in events): raise SystemExit('worker reported a failure')
+    # The worker takes live jobs at once; a problem author's failing checker is no worker fault.
+    if any(e.get('event') == 'failure' and e.get('category') != 'judge_code' for e in events): raise SystemExit('worker reported a failure')
     if any(e.get('event') == 'worker_started' for e in events):
         subprocess.run(['systemctl', 'is-active', '--quiet', 'judge-worker'], check=True)
         report['ready'] = True
