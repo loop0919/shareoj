@@ -1,34 +1,78 @@
-# ShareOJ
+<p align="center">
+  <a href="https://www.share-oj.net/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/readme/hero-dark.png">
+      <img src="docs/readme/hero-light.png" alt="考える楽しさを、次の一問へ。" width="880">
+    </picture>
+  </a>
+</p>
 
-[![Website](https://img.shields.io/badge/Website-share--oj.net-0f766e?style=flat-square)](https://www.share-oj.net/)
-[![CI](https://github.com/loop0919/shareoj/actions/workflows/ci.yml/badge.svg)](https://github.com/loop0919/shareoj/actions/workflows/ci.yml)
-[![Issues](https://img.shields.io/github/issues/loop0919/shareoj?style=flat-square&color=2563eb)](https://github.com/loop0919/shareoj/issues)
-[![Featured on BitsExplorer](https://bitsexplorer.com/badge/1103675.svg)](https://bitsexplorer.com/i/1103675/shareoj)
+<h1 align="center">ShareOJ</h1>
 
-**考える楽しさを、次の一問へ。**
+<p align="center">
+  プログラミング問題を解き、作り、共有できるオンラインジャッジ
+</p>
 
-ShareOJ（Share Online Judge）は、プログラミング問題を解き、作り、共有できるオンラインジャッジです。
-コードを提出して自動採点を受けるだけでなく、自作の問題や、解き方から学んだことを公開できます。
+<p align="center">
+  <a href="https://www.share-oj.net/"><img src="https://img.shields.io/badge/Website-share--oj.net-18794e" alt="Website"></a>
+  <a href="https://github.com/loop0919/shareoj/actions/workflows/ci.yml"><img src="https://github.com/loop0919/shareoj/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/loop0919/shareoj/releases"><img src="https://img.shields.io/github/v/release/loop0919/shareoj?filter=cli-v*&label=CLI&color=18794e" alt="CLI"></a>
+  <a href="https://github.com/loop0919/shareoj/issues"><img src="https://img.shields.io/github/issues/loop0919/shareoj?color=2563eb" alt="Issues"></a>
+</p>
 
-**[ShareOJを使う](https://www.share-oj.net/)** · [問題を見る](https://www.share-oj.net/problems) · [記事を読む](https://www.share-oj.net/blog) · [コンテストを見る](https://www.share-oj.net/contests)
+<p align="center">
+  <a href="https://www.share-oj.net/"><b>ShareOJを使う</b></a> ·
+  <a href="https://www.share-oj.net/problems">問題</a> ·
+  <a href="https://www.share-oj.net/contests">コンテスト</a> ·
+  <a href="https://www.share-oj.net/blog">記事</a> ·
+  <a href="https://www.share-oj.net/docs">ガイド</a>
+</p>
+
+ShareOJ（Share Online Judge）は、コードを提出して自動採点を受けるだけでなく、自作の問題や、解き方から学んだことを公開できるオンラインジャッジです。
 
 ## ShareOJでできること
 
-- **問題を解く**：公開されているプログラミング問題に挑戦し、コードを提出して採点結果を確認できます。
-- **問題を作る**：問題文とテストケースを用意して、自作の問題を公開できます。
-- **記事で共有する**：問題の解き方や学んだことを記事にして、ほかの人と共有できます。
-- **コンテストを楽しむ**：コンテストに参加するほか、自分で開催することもできます。
+| できること | 内容 |
+| --- | --- |
+| [問題を解く](https://www.share-oj.net/problems) | 公開されている問題に挑戦し、コードを提出して採点結果を確認できます。 |
+| [問題を作る](https://www.share-oj.net/problems/new) | 問題文とテストケースを用意して、自作の問題を公開できます。スペシャルジャッジやインタラクティブ問題も作れます。 |
+| [記事を書く](https://www.share-oj.net/blog) | 問題の解き方や学んだことを記事にして、ほかの人と共有できます。 |
+| [コンテストを楽しむ](https://www.share-oj.net/contests) | コンテストに参加するほか、自分で開催することもできます。 |
+| [定期便を解く](https://www.share-oj.net/docs/featured) | 毎週月曜と木曜の22:00 (JST)に、EasyとHardを1問ずつ出題します。 |
+
+提出には、C++、Python、Rust、Go、Java、C#、Haskell、TypeScript、Rubyなど30以上の言語を使えます（[言語とバージョンの一覧](https://www.share-oj.net/docs/languages)）。
 
 ## はじめるには
 
-[公開問題](https://www.share-oj.net/problems)から、気になる一問を探してみてください。
-アカウントは[新規登録](https://www.share-oj.net/signup)から作成できます。
-作問から始めたい方は、[問題作成](https://www.share-oj.net/problems/new)へどうぞ。
+- **解く**：[公開問題](https://www.share-oj.net/problems)から、気になる一問を探してみてください。
+- **登録する**：アカウントは[新規登録](https://www.share-oj.net/signup)から作成できます。
+- **作る**：作問から始めたい方は、[問題作成](https://www.share-oj.net/problems/new)へどうぞ。
+
 ローカルで問題文や生成コードを編集してアップロードする場合は、[Go 製の作問 CLI](cli/README.md)を利用できます。
 
 ```sh
 curl -fsSL https://www.share-oj.net/install.sh | bash
 ```
+
+## しくみ
+
+<p align="center">
+  <a href="docs/infrastructure/README.md"><img src="docs/infrastructure/shareoj-aws.drawio.png" alt="ShareOJのAWS構成図" width="100%"></a>
+</p>
+
+1. 提出をGo API（Lambda）が受け付け、bridge（Lambda）がジョブをS3に保存してSQSへ送ります。
+2. EC2の採点ワーカーがジョブを受け取り、isolateで隔離してコンパイルと実行を行います。
+3. 結果はSQSを通って戻り、bridgeがPostgreSQLへ反映します。
+
+| 領域 | 技術 | ディレクトリ |
+| --- | --- | --- |
+| フロントエンド | Nuxt 4、Bun、AWS Lambda | [web/](web/) |
+| API | Go、AWS Lambda、PostgreSQL 17 | [api/](api/) |
+| ジャッジ | Python、isolate、EC2、SQS、S3 | [judge/](judge/) |
+| 作問CLI | Go | [cli/](cli/) |
+| インフラ | Terraform、Nix | [infra/](infra/) |
+
+くわしくは[ジャッジの実行モデル](docs/judge/execution-model.md)、[インフラ構成](docs/infrastructure/README.md)、[Architecture Decision Records](docs/adr/README.md)をご覧ください。
 
 ## バグ報告・機能提案
 
