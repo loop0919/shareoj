@@ -224,6 +224,9 @@ test('a tested problem shows its author', async ({ page, browser }) => {
     await login(page, 'folders')
     await expect(page).toHaveURL(link)
     await page.getByRole('button', { name: '許可する', exact: true }).click()
+    // Joining opens the problem's page; the list is on マイページ.
+    await expect(page).toHaveURL(/\/problems\/[^/?]+$/)
+    await page.goto('/my?tab=testing')
     await expect(page).toHaveURL('/my?tab=testing')
     await expect(page.getByRole('button', { name: '問題と記事', exact: true })).toHaveAttribute('aria-pressed', 'true')
     await expect(kinds(page)).toHaveValue('testing')
