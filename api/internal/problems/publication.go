@@ -16,6 +16,12 @@ type PublicErrorJudge struct {
 	Epsilon string `json:"epsilon"`
 }
 
+// ProblemContest names the contest that published a problem at its end.
+type ProblemContest struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
 type PublicProblem struct {
 	EditorialHidden        bool       `json:"editorialHidden"`
 	EditorialRevealAt      *time.Time `json:"editorialRevealAt,omitempty"`
@@ -34,7 +40,9 @@ type PublicProblem struct {
 	// ErrorJudge shows the error condition to readers without the margin the author keeps.
 	ErrorJudge *PublicErrorJudge `json:"errorJudge,omitempty"`
 	// Scoring is set for a partially scored problem (ADR 0025) and left out of lists.
-	Scoring       *ScoringSummary `json:"scoring,omitempty"`
+	Scoring *ScoringSummary `json:"scoring,omitempty"`
+	// Contest is the contest that set the problem, and is left out of lists.
+	Contest       *ProblemContest `json:"contest,omitempty"`
 	ID            string          `json:"id"`
 	Title         string          `json:"title"`
 	Markdown      string          `json:"markdown,omitempty"`
@@ -119,12 +127,17 @@ const publicSolverCount = `(SELECT count(DISTINCT s.owner_id) FROM submissions s
 func (s *Store) PublicGet(ctx context.Context, id, viewer string) (PublicProblem, error) {
 	var p PublicProblem
 	var data []byte
-	err := s.pool.QueryRow(ctx, `SELECT d.id,CASE WHEN can_manage_problem(d.id,$2) THEN d.published_draft WHEN statement_timestamp()<featured_reveal_at(d.id) THEN d.published_draft-ARRAY['editorial','tags'] WHEN problem_tags_hidden(d.id) THEN d.published_draft-'tags' ELSE d.published_draft END,u.handle,d.published_at,featured_reveal_at(d.id),COALESCE(statement_timestamp()<featured_reveal_at(d.id),false),(SELECT count(*) FROM problem_favorites f WHERE f.problem_id=d.id),`+publicSolverCount+`,(SELECT avg(difficulty)::float8 FROM problem_difficulty_votes WHERE problem_id=d.id),(SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id),ARRAY(SELECT (SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id AND difficulty=level) FROM generate_series(1,10) level ORDER BY level) FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id WHERE d.id=$1 AND d.published_draft IS NOT NULL`, id, viewer).Scan(&p.ID, &data, &p.Author, &p.PublishedAt, &p.EditorialRevealAt, &p.EditorialHidden, &p.FavoriteCount, &p.SolverCount, &p.DifficultyAverage, &p.DifficultyVoteCount, &p.DifficultyDistribution)
+	// A problem belongs to at most one contest, and is public only once that contest has ended.
+	var contestID, contestTitle *string
+	err := s.pool.QueryRow(ctx, `SELECT d.id,CASE WHEN can_manage_problem(d.id,$2) THEN d.published_draft WHEN statement_timestamp()<featured_reveal_at(d.id) THEN d.published_draft-ARRAY['editorial','tags'] WHEN problem_tags_hidden(d.id) THEN d.published_draft-'tags' ELSE d.published_draft END,u.handle,d.published_at,featured_reveal_at(d.id),COALESCE(statement_timestamp()<featured_reveal_at(d.id),false),(SELECT count(*) FROM problem_favorites f WHERE f.problem_id=d.id),`+publicSolverCount+`,(SELECT avg(difficulty)::float8 FROM problem_difficulty_votes WHERE problem_id=d.id),(SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id),ARRAY(SELECT (SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id AND difficulty=level) FROM generate_series(1,10) level ORDER BY level),c.id,c.title FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id LEFT JOIN contest_problems cp ON cp.problem_id=d.id LEFT JOIN contests c ON c.id=cp.contest_id WHERE d.id=$1 AND d.published_draft IS NOT NULL`, id, viewer).Scan(&p.ID, &data, &p.Author, &p.PublishedAt, &p.EditorialRevealAt, &p.EditorialHidden, &p.FavoriteCount, &p.SolverCount, &p.DifficultyAverage, &p.DifficultyVoteCount, &p.DifficultyDistribution, &contestID, &contestTitle)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return p, ErrNotFound
 		}
 		return p, err
+	}
+	if contestID != nil && contestTitle != nil {
+		p.Contest = &ProblemContest{ID: *contestID, Title: *contestTitle}
 	}
 	var d Draft
 	if err = json.Unmarshal(data, &d); err != nil {

@@ -37,6 +37,7 @@ useSharePreview({ title: () => problem.value!.title, path: () => `/problems/${sh
       <div class="problem-summary">
         <div class="problem-meta muted">
           <p>作成者 <UserLink :handle="problem.author" /></p><p v-if="problem.testers?.length">テスター <template v-for="(tester, index) in problem.testers" :key="tester"><span v-if="index">、</span><UserLink :handle="tester" /></template></p>
+          <p v-if="problem.contest">出題コンテスト <NuxtLink :to="`/contests/${shortId(problem.contest.id)}`">{{ problem.contest.title }}</NuxtLink></p>
           <p>難易度（作成者設定） <DifficultyBadge :level="problem.difficulty" /></p>
           <p v-if="!problem.isPrivate">難易度（投票） <strong>{{ votes.average === null ? '未投票' : `Lv.${votes.average.toFixed(1)}` }}</strong> <span>（{{ votes.count }}票）</span></p>
           <div v-if="problem.tags.length" class="problem-tags">

@@ -25,6 +25,19 @@ test('initial HTTP response includes the problem and SEO metadata', async ({ req
   expect(html).not.toContain('127.0.0.1:18080')
 })
 
+test('a problem that a contest set links to the contest', async ({ page }, testInfo) => {
+  // The fixture API serves this problem as set by 部分点のコンテスト (issue #31).
+  await page.goto('/problems/abababab-abab-4bab-8bab-abababababab')
+  const origin = page.locator('.problem-meta p').filter({ hasText: /^出題コンテスト / })
+  await expect(origin.getByRole('link', { name: '部分点のコンテスト', exact: true })).toHaveAttribute('href', `/contests/${shortId('acacacac-acac-4cac-8cac-acacacacacac')}`)
+  await page.setViewportSize({ width: 375, height: 812 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('problem-contest-mobile.png') })
+  await page.goto('/problems/11111111-1111-4111-8111-111111111111')
+  await expect(page.locator('.problem-meta')).toContainText('作成者 alice')
+  await expect(page.locator('.problem-meta')).not.toContainText('出題コンテスト')
+})
+
 test('problem is readable with JavaScript disabled', async ({ browser }) => {
   const context = await browser.newContext({ javaScriptEnabled: false })
   const page = await context.newPage()

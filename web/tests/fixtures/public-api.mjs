@@ -292,7 +292,7 @@ createServer(async (req, res) => {
     res.end(JSON.stringify({ items: matches ? [problem] : [], nextCursor: '', total: matches ? 1 : 0 }))
   }
   else if (path === `/problems/${problem.id}`) res.end(JSON.stringify(problem))
-  else if (path === `/problems/${partialProblem.id}`) res.end(JSON.stringify(partialProblem))
+  else if (path === `/problems/${partialProblem.id}`) res.end(JSON.stringify({ ...partialProblem, contest: { id: partialContest.id, title: partialContest.title } }))
   else if (path === `/problems/${runTwiceProblem.id}`) res.end(JSON.stringify(runTwiceProblem))
   else if (path === `/contests/${runTwiceContest.id}`) res.end(JSON.stringify(runTwiceContest))
   else if (path === `/contests/${runTwiceContest.id}/problems/${runTwiceProblem.id}`) res.end(JSON.stringify(runTwiceProblem))

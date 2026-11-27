@@ -189,6 +189,20 @@ func TestTagsPostgres(t *testing.T) {
 		t.Fatal("contest filter total", counted.Total)
 	}
 	request("GET", "/problems?contest=yes", "", nil, 400)
+	// The problem page names the contest that set the problem (issue #31); the lists leave it out.
+	var origin struct{ Contest *struct{ ID, Title string } }
+	decode(request("GET", "/problems/"+featured, "", nil, 200), &origin)
+	if origin.Contest == nil || origin.Contest.ID != contest || origin.Contest.Title != "c" {
+		t.Fatal("contest of a contest problem", origin.Contest)
+	}
+	origin.Contest = nil
+	decode(request("GET", "/problems/"+public, "", nil, 200), &origin)
+	if origin.Contest != nil {
+		t.Fatal("contest of a problem no contest set", origin.Contest)
+	}
+	if body := request("GET", "/problems?contest=only", "", nil, 200); strings.Contains(body, `"contest"`) {
+		t.Fatal("the list must leave the contest out", body)
+	}
 	exec(`DELETE FROM contest_problems WHERE contest_id=$1`, contest)
 	exec(`DELETE FROM contests WHERE id=$1`, contest)
 	request("GET", "/posts?tag="+url.QueryEscape("ＤＰ"), "", nil, 400)
