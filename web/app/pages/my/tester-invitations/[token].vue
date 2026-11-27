@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { shortId } from '~~/shared/utils/short-id'
 import { accountError } from '~/utils/account-problems'
 useSeoMeta({ title: 'テスターへの招待 | ShareOJ', robots: 'noindex, nofollow', referrer: 'no-referrer' })
 useResponseHeader('Cache-Control').value = 'no-store'
@@ -20,12 +21,12 @@ async function load() {
 }
 watch(profile, () => { void load() })
 onMounted(() => { void load() })
-async function accept() {
+async function accept(problem: string) {
   if (busy.value) return
   busy.value = true; message.value = ''
   try {
     await $fetch(`/api/my/tester-invitations/${encodeURIComponent(String(route.params.token))}`, { method: 'POST' })
-    await navigateTo('/my?tab=testing')
+    await navigateTo(`/problems/${shortId(problem)}`)
   } catch (error) { message.value = accountError(error) }
   finally { busy.value = false }
 }
@@ -41,7 +42,7 @@ async function accept() {
       <template v-else>
         <p>テスターとして参加すると、非公開の問題文・解説・テストケースの閲覧や提出に加え、問題の編集・削除・リジャッジ・非公開に戻す操作、テスターリンクの発行、自分のコンテストへの登録ができます。公開と公開予約、定期便への応募は作者だけができます。</p>
         <p>参加した問題はマイページの「テスト中の問題」に表示されます。</p>
-        <button class="editor-button primary" :disabled="busy" @click="accept">{{ busy ? '参加しています…' : '許可する' }}</button>
+        <button class="editor-button primary" :disabled="busy" @click="accept(invitation.id)">{{ busy ? '参加しています…' : '許可する' }}</button>
       </template>
     </template>
     <p v-if="message" role="alert" class="editor-error">{{ message }}</p>

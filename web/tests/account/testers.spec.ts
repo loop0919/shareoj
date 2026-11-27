@@ -28,7 +28,10 @@ test('tester invitation requires consent, resumes after login, and grants shared
     const noOrigin = await context.request.post(`/api/my/tester-invitations/${link.split('/').pop()}`)
     expect(noOrigin.status()).toBe(403)
     await tester.getByRole('button', { name: '許可する', exact: true }).click()
-    await expect(tester).toHaveURL('/my?tab=testing')
+    // Joining opens the problem itself; the list on マイページ is one step away.
+    await expect(tester).toHaveURL(`/problems/${shortId(id)}`)
+    await expect(tester.getByRole('heading', { name: 'テスター招待の問題', level: 1 })).toBeVisible()
+    await tester.goto('/my?tab=testing')
     const tested = tester.getByRole('table', { name: 'テスト中の問題', exact: true })
     await expect(tested.getByRole('link', { name: 'テスター招待の問題を編集', exact: true })).toBeVisible()
     expect(await tester.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
@@ -90,6 +93,6 @@ test('tester invitation requires consent, resumes after login, and grants shared
     await expect(newcomer.getByRole('button', { name: '許可する', exact: true })).toBeVisible()
     expect((await newcomer.request.get(`/api/my/problems/${id}`)).status()).toBe(404)
     await newcomer.getByRole('button', { name: '許可する', exact: true }).click()
-    await expect(newcomer).toHaveURL('/my?tab=testing')
+    await expect(newcomer).toHaveURL(`/problems/${shortId(id)}`)
   } finally { await newcomerContext.close() }
 })

@@ -333,6 +333,16 @@ test('the tester invitation page explains why a registered participant cannot jo
   expect(accepted).toBe(1)
 })
 
+test('accepting a tester invitation opens the problem page', async ({ page }) => {
+  // The fixture API serves this problem, so the page the tester lands on renders.
+  const invited = '11111111-1111-4111-8111-111111111111'
+  await page.route(`**/api/my/tester-invitations/${token}`, route => route.fulfill({ json: { id: invited, title: 'A + B', author: 'alice', joined: false } }))
+  await page.goto(`/my/tester-invitations/${token}`)
+  await page.getByRole('button', { name: '許可する', exact: true }).click()
+  await expect(page).toHaveURL(`/problems/${shortId(invited)}`)
+  await expect(page.getByRole('heading', { name: 'A + B', level: 1 })).toBeVisible()
+})
+
 test('the tester invitation page leaves publishing and 定期便 applications to the author', async ({ page }) => {
   await page.route(`**/api/my/tester-invitations/${token}`, route => route.fulfill({ json: { id: own, title: 'コンテストの問題', author: 'alice', joined: false } }))
   await page.goto(`/my/tester-invitations/${token}`)
