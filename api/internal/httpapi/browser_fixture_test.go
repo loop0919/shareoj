@@ -246,6 +246,37 @@ func TestBrowserFixture(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+	// Browser tests record a public run with a chosen runtime, source, verdict and time, so the submission list's sort and
+	// filters have rows to tell apart without waiting for the judge. The fixture API runs without a judge runtime, so
+	// a stored runtime carries the "-local" suffix (Service.runtimeSuffix). The time is stored as one case's cpuTimeMs,
+	// which is where a list row reads it; without a verdict the run is still queued, as one that was just submitted.
+	handler.HandleFunc("POST /__test/problems/{id}/submissions", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Owner     string `json:"owner"`
+			Runtime   string `json:"runtime"`
+			Source    string `json:"source"`
+			Verdict   string `json:"verdict"`
+			CPUTimeMS int    `json:"cpuTimeMs"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Owner == "" || in.Runtime == "" {
+			http.Error(w, fmt.Sprint("owner and runtime required: ", err), http.StatusBadRequest)
+			return
+		}
+		status, result := "QUEUED", []byte(nil)
+		if in.Verdict != "" {
+			status = "DONE"
+			result, _ = json.Marshal(map[string]any{"verdict": in.Verdict, "cases": []map[string]any{{"cpuTimeMs": in.CPUTimeMS}}})
+		}
+		tag, err := store.Pool().Exec(r.Context(), `INSERT INTO submissions
+ (id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,result)
+ SELECT gen_random_uuid(),$2,d.id,1,'test',$3,$4,'{"privateDraft":false}',$5,$6
+ FROM problem_drafts d WHERE d.id=$1`, r.PathValue("id"), in.Owner+"@example.test", in.Runtime+"-local", in.Source, status, result)
+		if err != nil || tag.RowsAffected() != 1 {
+			http.Error(w, fmt.Sprint("run not recorded: ", err), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	server := &http.Server{Addr: address, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
