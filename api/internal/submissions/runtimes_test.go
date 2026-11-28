@@ -21,6 +21,23 @@ func TestPublishedRuntimes(t *testing.T) {
 	}
 }
 
+// TestCatalogueKeysMatchTheWebShape checks every language key and runtime ID against the shape the web accepts in a
+// list's query (keyShape, isLanguageKey and isRuntimeId in web/shared/utils/submission-conditions.ts), so that a key
+// or ID the web could not narrow a list to fails here. Change the two together.
+func TestCatalogueKeysMatchTheWebShape(t *testing.T) {
+	webShape := regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+	for _, language := range Languages() {
+		if !webShape.MatchString(language.Key) {
+			t.Errorf("language key %q does not match %s", language.Key, webShape)
+		}
+	}
+	for _, runtime := range Runtimes {
+		if !webShape.MatchString(runtime.ID) || strings.HasSuffix(runtime.ID, "-isolate") || strings.HasSuffix(runtime.ID, "-local") {
+			t.Errorf("runtime ID %q does not match %s, or ends in -isolate or -local", runtime.ID, webShape)
+		}
+	}
+}
+
 func TestLanguagesGroupRuntimes(t *testing.T) {
 	keyPattern := regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 	seen := map[string]string{}

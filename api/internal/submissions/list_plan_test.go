@@ -170,22 +170,57 @@ func TestSubmissionListsArePlannedPerCallPostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// The lists' statements, and only theirs, read contest_submission_public, which tells them apart below. Alice owns
+	// the contest and reads both halves of its list; Bob reads the contest's runs alone.
+	const marker = "contest_submission_public"
+	shortest := ListConditions{Sort: SortShortest}
+	problemPage, problemArgs := problemListQuery(problem, "", "alice", ScopeAll, false, 0, shortest)
+	staffList := contestListQueries(contest, "alice", ScopeAll, true, 0, 50, false, "", shortest)
+	plainList := contestListQueries(contest, "bob", ScopeAll, false, 0, 50, false, "", shortest)
+	for name, statement := range map[string]string{"problem page": problemPage, "staff's contest page": staffList.page, "staff's contest count": staffList.count,
+		"contest page": plainList.page, "contest count": plainList.count} {
+		if !strings.Contains(statement, marker) {
+			t.Fatalf("the %s does not read %s, so the check below cannot find it", name, marker)
+		}
+	}
 	store := &Store{Pool: pool}
 	for range 6 {
-		if _, err = store.ProblemList(ctx, problem, "", "alice", ScopeAll, false, 0, ListConditions{Sort: SortFastest}); err != nil {
+		if _, err = store.ProblemList(ctx, problem, "", "alice", ScopeAll, false, 0, shortest); err != nil {
 			t.Fatal(err)
 		}
-		if _, err = store.ContestList(ctx, contest, "alice", ScopeAll, 0, 50, false, "", ListConditions{Sort: SortShortest}); err != nil {
+		for _, viewer := range []string{"alice", "bob"} {
+			if _, err = store.ContestList(ctx, contest, viewer, ScopeAll, 0, 50, false, "", shortest); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	// The marker is an argument here, so that this statement, which pgx prepares, does not hold it.
+	prepared := func() int {
+		t.Helper()
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM pg_prepared_statements WHERE strpos(statement,$1)>0`, marker).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if n := prepared(); n != 0 {
+		t.Errorf("the lists left %d prepared statements on the connection; run them through plannedPerCall", n)
+	}
+	// The same statements run without plannedPerCall stay prepared, so the check above can find them.
+	for _, statement := range []struct {
+		query string
+		args  []any
+	}{{problemPage, problemArgs}, {plainList.page, plainList.pageArgs}, {plainList.count, plainList.countArgs}} {
+		rows, err := pool.Query(ctx, statement.query, statement.args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows.Close()
+		if err = rows.Err(); err != nil {
 			t.Fatal(err)
 		}
 	}
-	// The lists' statements, and only theirs, read contest_submission_public. The name is an argument here, so that
-	// this statement, which pgx prepares, does not hold it.
-	var prepared int
-	if err = pool.QueryRow(ctx, `SELECT count(*) FROM pg_prepared_statements WHERE strpos(statement,$1)>0`, "contest_submission_public").Scan(&prepared); err != nil {
-		t.Fatal(err)
-	}
-	if prepared != 0 {
-		t.Errorf("the lists left %d prepared statements on the connection; run them through plannedPerCall", prepared)
+	if n := prepared(); n < 3 {
+		t.Errorf("found %d of the 3 statements prepared without plannedPerCall", n)
 	}
 }

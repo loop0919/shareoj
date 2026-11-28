@@ -226,8 +226,15 @@ const (
 // reads it and under which conditions. By default pgx prepares a statement once per connection, and after five calls
 // PostgreSQL may keep a generic plan, costed for a problem or contest of average size, that for a large contest sorts
 // every run instead of reading a page of an index. This does not help if the database forces generic plans
-// (plan_cache_mode=force_generic_plan), so the database must not force generic plans. TestSubmissionListSpeedPostgres times the lists after many calls on
-// one connection, and TestSubmissionListsArePlannedPerCallPostgres checks that they leave no prepared statement.
+// (plan_cache_mode=force_generic_plan), so the database must not force generic plans. TestSubmissionListSpeedPostgres
+// times the lists after many calls on one connection, and TestSubmissionListsArePlannedPerCallPostgres checks that
+// they leave no prepared statement.
+// pgx still caches each statement's description on the connection: the types of its parameters, by which it encodes
+// the values, and of its columns, by which it asks for each result in text or binary. So a migration that changes the
+// type of a column these lists select needs the connections recycled after it runs, and the API is deployed before its
+// migrations, so that takes new instances or another deploy. Until then pgx decodes each result by the types the
+// server reports for that call; a call that fails to encode, run or scan drops the description, and the next call
+// describes the statement again.
 func plannedPerCall(args []any) []any {
 	return append([]any{pgx.QueryExecModeCacheDescribe}, args...)
 }
