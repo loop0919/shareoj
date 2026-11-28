@@ -35,44 +35,42 @@ export function useProblemConditions() {
     const next = listed(route.query)
     return previous && same(next, previous) ? previous : next
   })
-  // The conditions the latest change is moving to, until the route has them, like usePageQuery's pending page. The
-  // router takes a few ticks, and a change made in between builds on these: on the route's, it would undo the one before.
-  // The list and the panel still follow the route, so new conditions come with the first page in one move.
-  const pending = shallowRef<ProblemConditions>()
-  watch(conditions, () => { pending.value = undefined }, { flush: 'sync' })
+  // A change builds on the conditions the latest change is moving to (useConditionChanges).
   // The router itself, not navigateTo: while another move runs Nuxt's route middleware, navigateTo takes itself for a
-  // middleware's answer and does not move. A move that did not happen hands the conditions back to the route.
+  // middleware's answer and does not move.
   // A bare /problems is the viewer's own entry to the list and stands for what is remembered, so the first change made on
   // it takes its place, as restore does: going back to it would only bring the changed list again.
-  async function open(next: ProblemConditions) {
-    const query = conditionQuery(next)
-    const target = listed(query)
-    pending.value = target
-    let moved = false
-    const to = { path: '/problems', query }
-    try { moved = !await (Object.keys(route.query).length ? router.push(to) : router.replace(to)) }
-    finally { if (!moved && pending.value === target) pending.value = undefined }
-  }
+  const changes = useConditionChanges({
+    conditions,
+    equal: same,
+    navigate: async next => {
+      const to = { path: '/problems', query: conditionQuery(next) }
+      return !await (Object.keys(route.query).length ? router.push(to) : router.replace(to))
+    },
+  })
+  // The conditions on their way, as the list will show them: a change that leaves no query moves to a bare /problems,
+  // which lists the remembered conditions.
+  const base = () => changes.pending.value ? listed(conditionQuery(changes.pending.value)) : conditions.value
   // Nothing left to remember removes the cookie. A signed-out viewer's solved is kept, to apply once they sign in.
   function remember(query: Record<string, string>) {
     chosen.value = query
     saved.value = Object.keys(query).length ? query : null
   }
   // A bound moved past the other one carries it along, so the range stays one. Only a change to a remembered condition
-  // rewrites what is remembered; a change of tag alone leaves it.
+  // rewrites what is remembered; a change of tag alone leaves it. The change is worked out here, so it goes on whole.
   function change(patch: Partial<ProblemConditions>) {
-    const base = pending.value ?? conditions.value
-    const next = { ...base, ...patch }
+    const from = base()
+    const next = { ...from, ...patch }
     if (next.min > next.max) {
       if (patch.min === undefined) next.min = next.max
       else next.max = next.min
     }
-    if (rememberedKeys.some(key => next[key] !== base[key])) remember(rememberedQuery(next))
-    return open(next)
+    if (rememberedKeys.some(key => next[key] !== from[key])) remember(rememberedQuery(next))
+    return changes.change(next)
   }
   function clear() {
     remember({})
-    return open(defaultConditions)
+    return changes.change(defaultConditions)
   }
   // On a /problems without any query, replaces the URL with the remembered conditions. Resolves to nothing when there is
   // none. The server answers with a redirect; the browser replaces the history entry, so the back button skips it.
