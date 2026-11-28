@@ -108,6 +108,8 @@ func iconParameters() []*huma.Param {
 func problemParameters() []*huma.Param {
 	return append(catalogueParameters(),
 		&huma.Param{Name: "contest", In: "query", Description: "コンテストで出題された問題の扱い。onlyはその問題だけ、excludeはそれ以外だけを返します。省略するとすべて返します。", Schema: &huma.Schema{Type: "string", Enum: []any{"only", "exclude"}}},
+		&huma.Param{Name: "sort", In: "query", Description: "並び順。省略するとnewest（公開日時の新しい順）。同じ値の問題は、公開日時の新しい順に並べます。難易度で並べるとき、難易度が未設定の問題はどちら向きでも最後です。newest以外はcursorと同時には指定できません（offsetで読み進めます）。", Schema: &huma.Schema{Type: "string", Enum: []any{"newest", "oldest", "solvers-desc", "solvers-asc", "favorites-desc", "difficulty-desc", "difficulty-asc"}, Default: "newest"}, Example: "solvers-desc"},
+		&huma.Param{Name: "difficulty", In: "query", Description: "作成者が設定した難易度の範囲。下限-上限の形で、どちらも1〜10、下限は上限以下。指定すると難易度が未設定の問題は外れます。省略するとすべて返します。", Schema: &huma.Schema{Type: "string", Pattern: `^[0-9]{1,2}-[0-9]{1,2}$`}, Example: "3-6"},
 		&huma.Param{Name: "offset", In: "query", Description: "先頭からスキップする件数。cursorと同時には指定できません。", Schema: &huma.Schema{Type: "integer", Minimum: floatPointer(0), Maximum: floatPointer(1000000), Default: 0}},
 		limitParameter())
 }

@@ -59,12 +59,51 @@ type ListFilter struct {
 	Tag    string
 	// Contest is ContestOnly or ContestExclude; a problem belongs to at most one contest, which published it at its end.
 	Contest string
+	// Sort is one of the Sort* constants; "" reads as SortNewest.
+	Sort string
+	// DifficultyMin and DifficultyMax bound the author-set difficulty; both 0 means no range, and a range drops unset ones.
+	DifficultyMin int
+	DifficultyMax int
+	// Solved is SolvedOnly or UnsolvedOnly and needs Viewer.
+	Solved string
+	Viewer string
 }
 
 const (
 	ContestOnly    = "only"
 	ContestExclude = "exclude"
 )
+
+const (
+	SortNewest         = "newest"
+	SortOldest         = "oldest"
+	SortSolversDesc    = "solvers-desc"
+	SortSolversAsc     = "solvers-asc"
+	SortFavoritesDesc  = "favorites-desc"
+	SortDifficultyDesc = "difficulty-desc"
+	SortDifficultyAsc  = "difficulty-asc"
+
+	SolvedOnly   = "solved"
+	UnsolvedOnly = "unsolved"
+)
+
+// listOrders maps each sort to its ORDER BY. The numbers are the SELECT columns of PublicList: 3 difficulty, 8 favorites,
+// 9 solvers. Ties fall back to the newest first.
+var listOrders = map[string]string{
+	SortNewest:         `d.published_at DESC,d.id DESC`,
+	SortOldest:         `d.published_at ASC,d.id ASC`,
+	SortSolversDesc:    `9 DESC,d.published_at DESC,d.id DESC`,
+	SortSolversAsc:     `9 ASC,d.published_at DESC,d.id DESC`,
+	SortFavoritesDesc:  `8 DESC,d.published_at DESC,d.id DESC`,
+	SortDifficultyDesc: `3 DESC NULLS LAST,d.published_at DESC,d.id DESC`,
+	SortDifficultyAsc:  `3 ASC NULLS LAST,d.published_at DESC,d.id DESC`,
+}
+
+// ValidSort reports whether sort names an order; the empty string is the initial one.
+func ValidSort(sort string) bool {
+	_, ok := listOrders[sort]
+	return ok || sort == ""
+}
 
 func (s *Store) Publish(ctx context.Context, owner, id string, version int64, publish bool) (Problem, error) {
 	tx, err := s.pool.Begin(ctx)
@@ -181,6 +220,10 @@ func publicFilter(filter ListFilter) (string, []any) {
 		args = append(args, filter.Tag)
 		where += fmt.Sprintf(` AND d.published_draft->'tags' @> jsonb_build_array($%d::text) AND NOT problem_tags_hidden(d.id)`, len(args))
 	}
+	if filter.DifficultyMin > 0 {
+		args = append(args, filter.DifficultyMin, filter.DifficultyMax)
+		where += fmt.Sprintf(` AND (d.published_draft->>'difficulty')::integer BETWEEN $%d AND $%d`, len(args)-1, len(args))
+	}
 	switch filter.Contest {
 	case ContestOnly:
 		where += ` AND EXISTS (SELECT 1 FROM contest_problems cp WHERE cp.problem_id=d.id)`
@@ -198,7 +241,7 @@ func (s *Store) PublicCount(ctx context.Context, filter ListFilter) (int, error)
 	return n, err
 }
 
-// PublicList returns at most limit+1 problems, newest first, after the cursor or the first offset problems.
+// PublicList returns at most limit+1 problems, newest first unless the filter sorts otherwise, after the cursor or the first offset problems.
 func (s *Store) PublicList(ctx context.Context, cursor *Cursor, offset, limit int, filter ListFilter) ([]PublicProblem, error) {
 	where, args := publicFilter(filter)
 	query := `SELECT d.id,d.published_draft->>'title',(d.published_draft->>'difficulty')::integer,d.published_draft->>'timeLimitMs',d.published_draft->>'memoryLimitMb',u.handle,d.published_at,(SELECT count(*) FROM problem_favorites f WHERE f.problem_id=d.id),` + publicSolverCount + `,(SELECT avg(difficulty)::float8 FROM problem_difficulty_votes WHERE problem_id=d.id),(SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id),CASE WHEN problem_tags_hidden(d.id) THEN '[]' ELSE COALESCE(d.published_draft->'tags','[]') END FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id` + where
@@ -206,8 +249,12 @@ func (s *Store) PublicList(ctx context.Context, cursor *Cursor, offset, limit in
 		args = append(args, cursor.UpdatedAt, cursor.ID)
 		query += fmt.Sprintf(` AND (d.published_at,d.id)<($%d,$%d::uuid)`, len(args)-1, len(args))
 	}
+	order, ok := listOrders[filter.Sort]
+	if !ok {
+		order = listOrders[SortNewest]
+	}
 	args = append(args, limit+1, offset)
-	rows, err := s.pool.Query(ctx, query+fmt.Sprintf(` ORDER BY d.published_at DESC,d.id DESC LIMIT $%d OFFSET $%d`, len(args)-1, len(args)), args...)
+	rows, err := s.pool.Query(ctx, query+fmt.Sprintf(` ORDER BY `+order+` LIMIT $%d OFFSET $%d`, len(args)-1, len(args)), args...)
 	if err != nil {
 		return nil, err
 	}
