@@ -226,6 +226,26 @@ func TestBrowserFixture(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+	// Browser tests record a public accepted run for a fixture user instead of running the judge. The row has the
+	// shape of a finished top-level submission, so the solved filter reads it like one a person made.
+	handler.HandleFunc("POST /__test/problems/{id}/accepted", func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Owner string `json:"owner"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Owner == "" {
+			http.Error(w, fmt.Sprint("owner required: ", err), http.StatusBadRequest)
+			return
+		}
+		tag, err := store.Pool().Exec(r.Context(), `INSERT INTO submissions
+ (id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,result)
+ SELECT gen_random_uuid(),$2,d.id,1,'test','cpp17','','{"privateDraft":false}','DONE','{"verdict":"AC"}'
+ FROM problem_drafts d WHERE d.id=$1`, r.PathValue("id"), in.Owner+"@example.test")
+		if err != nil || tag.RowsAffected() != 1 {
+			http.Error(w, fmt.Sprint("run not recorded: ", err), http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	server := &http.Server{Addr: address, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
