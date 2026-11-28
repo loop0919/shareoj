@@ -31,6 +31,30 @@ const pagedProblems = Array.from({ length: 120 }, (_, i) => ({
   id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`, title: `問題 ${String(i + 1).padStart(3, '0')}`, author: 'alice', publishedAt: '2026-09-10T00:00:00Z',
   timeLimitMs: 2000, memoryLimitMb: 256, difficulty: 10, favoriteCount: 3, solverCount: 12, tags: ['pagination'],
 }))
+const sorts = ['newest', 'oldest', 'solvers-desc', 'solvers-asc', 'favorites-desc', 'difficulty-desc', 'difficulty-asc']
+// The list the API answers on /problems, and on /my/public-problems for the signed-in user, who solved the odd-numbered problems.
+function problemList(req, res, mine) {
+  const query = new URL(req.url, 'http://localhost').searchParams
+  const refuse = error => res.writeHead(400).end(JSON.stringify({ error }))
+  if (query.get('tag')?.includes(',')) return refuse('invalid_tag')
+  if (query.has('sort') && !sorts.includes(query.get('sort'))) return refuse('invalid_sort')
+  const range = query.get('difficulty')?.match(/^(\d+)-(\d+)$/)
+  if (query.has('difficulty') && !(range && Number(range[1]) >= 1 && Number(range[2]) <= 10 && Number(range[1]) <= Number(range[2]))) return refuse('invalid_difficulty')
+  const solved = mine ? query.get('solved') : null
+  if (mine && query.has('solved') && !['unsolved', 'solved'].includes(solved)) return refuse('invalid_solved')
+  const inRange = difficulty => !range || (difficulty !== undefined && difficulty >= Number(range[1]) && difficulty <= Number(range[2]))
+  if (query.get('tag') === 'pagination') {
+    const offset = Number(query.get('offset') ?? 0), limit = Number(query.get('limit') ?? 50)
+    // Like the real API, which answers an offset above a million with 400.
+    if (!(offset <= 1000000)) return refuse('invalid_offset')
+    const listed = pagedProblems.filter(item => inRange(item.difficulty) && (!solved || (Number(item.id.slice(-12)) % 2 === 1) === (solved === 'solved')))
+    if (query.get('sort') === 'oldest') listed.reverse()
+    return res.end(JSON.stringify({ items: listed.slice(offset, offset + limit), nextCursor: '', total: listed.length }))
+  }
+  // The fixture problem was set by no contest, has no difficulty and is not solved.
+  const matches = query.get('contest') !== 'only' && !range && solved !== 'solved' && (!query.get('author') || query.get('author') === 'alice') && (!query.get('tag') || problem.tags.includes(query.get('tag')))
+  res.end(JSON.stringify({ items: matches ? [problem] : [], nextCursor: '', total: matches ? 1 : 0 }))
+}
 // The API leaves out the tags of a problem in a 定期便 round.
 const featuredProblem = { ...problem, id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', title: '定期便の新作', difficulty: 9, editorial: '', tags: [], editorialHidden: true, editorialRevealAt: '2099-09-29T13:00:00Z' }
 const tags = [
@@ -177,6 +201,7 @@ createServer(async (req, res) => {
     if (req.headers.authorization !== 'Bearer valid-access') return res.writeHead(401).end('{}')
     if (path === '/auth/me') return res.end(JSON.stringify({ id: 'session-user' }))
     if (path.startsWith('/my/images/')) return res.setHeader('Content-Type', 'image/png').end(Buffer.concat([pngHeader, Buffer.from('private')]))
+    if (path === '/my/public-problems') return problemList(req, res, true)
     if (path === '/my/profile') return res.end(JSON.stringify({ profile: { handle: 'alice', avatar: '', version: 1, createdAt: '2026-09-10T00:00:00Z' } }))
     if (req.method === 'PUT' && /^\/my\/(problems|contests|posts)\/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa$/.test(path)) {
       res.setHeader('Retry-After', '7200')
@@ -278,19 +303,7 @@ createServer(async (req, res) => {
   else if (path === '/featured/schedule') res.end(JSON.stringify(featuredSchedule))
   else if (path === `/problems/${featuredProblem.id}`) res.end(JSON.stringify(featuredProblem))
   else if (path === '/tags') res.end(JSON.stringify({ items: tags }))
-  else if (path === '/problems') {
-    const query = new URL(req.url, 'http://localhost').searchParams
-    if (query.get('tag')?.includes(',')) return res.writeHead(400).end(JSON.stringify({ error: 'invalid_tag' }))
-    if (query.get('tag') === 'pagination') {
-      const offset = Number(query.get('offset') ?? 0), limit = Number(query.get('limit') ?? 50)
-      // Like the real API, which answers an offset above a million with 400.
-      if (!(offset <= 1000000)) return res.writeHead(400).end(JSON.stringify({ error: 'invalid_offset' }))
-      return res.end(JSON.stringify({ items: pagedProblems.slice(offset, offset + limit), nextCursor: '', total: pagedProblems.length }))
-    }
-    // The fixture problem was set by no contest.
-    const matches = query.get('contest') !== 'only' && (!query.get('author') || query.get('author') === 'alice') && (!query.get('tag') || problem.tags.includes(query.get('tag')))
-    res.end(JSON.stringify({ items: matches ? [problem] : [], nextCursor: '', total: matches ? 1 : 0 }))
-  }
+  else if (path === '/problems') problemList(req, res, false)
   else if (path === `/problems/${problem.id}`) res.end(JSON.stringify(problem))
   else if (path === `/problems/${partialProblem.id}`) res.end(JSON.stringify({ ...partialProblem, contest: { id: partialContest.id, title: partialContest.title } }))
   else if (path === `/problems/${runTwiceProblem.id}`) res.end(JSON.stringify(runTwiceProblem))
