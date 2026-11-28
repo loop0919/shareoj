@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { conditionChips, conditionQuery, problemSorts, withoutCondition, type ConditionKey, type ProblemConditions, type ProblemContest, type ProblemSolved, type ProblemSort } from '~/utils/problem-conditions'
+import { conditionChips, conditionQuery, conditionReset, problemSorts, type ConditionKey, type ProblemConditions, type ProblemContest, type ProblemSolved, type ProblemSort } from '~/utils/problem-conditions'
 
 // The sort and the filters of the problem list, folded into one panel under a button. While it is closed, the conditions
 // in force line up beside the button as chips, each with a way to take it off, so a list cut short never reads as
@@ -24,7 +24,8 @@ function pickLevel(bound: 'min' | 'max', event: Event) {
   const level = Number((event.target as HTMLSelectElement).value)
   emit('change', bound === 'min' ? { min: level } : { max: level })
 }
-const remove = (key: ConditionKey) => emit('change', withoutCondition(props.conditions, key))
+// Only the condition taken off goes up: a second chip taken off before the list catches up then keeps the first one off.
+const remove = (key: ConditionKey) => emit('change', conditionReset(key))
 // A new tag keeps the other conditions.
 const tagKeep = computed(() => conditionQuery({ ...props.conditions, tag: '' }))
 </script>

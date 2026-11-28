@@ -73,15 +73,12 @@ export function conditionChips(conditions: ProblemConditions, solvedApplied: boo
   return chips
 }
 
+// The change that puts one condition back at its initial value, and nothing else.
+export function conditionReset(key: ConditionKey): Partial<ProblemConditions> {
+  return key === 'difficulty' ? { min: defaultConditions.min, max: defaultConditions.max } : { [key]: defaultConditions[key] }
+}
+
 // The conditions with one of them back at its initial value.
 export function withoutCondition(conditions: ProblemConditions, key: ConditionKey): ProblemConditions {
-  const next = { ...conditions }
-  if (key === 'difficulty') {
-    next.min = defaultConditions.min
-    next.max = defaultConditions.max
-  }
-  else {
-    (next as Record<string, unknown>)[key] = defaultConditions[key]
-  }
-  return next
+  return { ...conditions, ...conditionReset(key) }
 }

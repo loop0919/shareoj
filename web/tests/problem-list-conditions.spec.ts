@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { expect, test } from './fixtures/account'
 
 const session = { cookie: 'openoj_access=valid-access' }
@@ -18,6 +18,27 @@ const conditionsButton = (page: Page) => page.getByRole('button', { name: /^絞�
 const encoded = (value: unknown) => encodeURIComponent(JSON.stringify(value))
 const remembered = async (page: Page) => JSON.parse(decodeURIComponent((await page.context().cookies()).find(c => c.name === 'openoj-problem-conditions')?.value ?? 'null'))
 const remember = (page: Page, value: string) => page.context().addCookies([{ name: 'openoj-problem-conditions', value, url: 'http://127.0.0.1:13000' }])
+// Picks an option in each select, or clicks each button, one right after another inside the page, so that each action
+// comes while the move of the one before is still on its way, however fast the machine is. In one task, the route has not
+// started to move; in the next task, the move is running Nuxt's route middleware.
+type QuickAction = { target: Locator, pick?: string }
+async function quickly(page: Page, actions: QuickAction[], { nextTask = false } = {}) {
+  const steps = await Promise.all(actions.map(async ({ target, pick }) => ({ element: await target.elementHandle(), pick })))
+  await page.evaluate(async ({ steps, nextTask }) => {
+    for (const [index, { element, pick }] of steps.entries()) {
+      if (!(element instanceof HTMLElement)) throw new Error('not an element')
+      if (nextTask && index) await new Promise(resolve => setTimeout(resolve))
+      if (pick === undefined) {
+        element.click()
+      }
+      else {
+        (element as HTMLSelectElement).value = pick
+        element.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    }
+  }, { steps, nextTask })
+}
+const quickModes = [['in one task', false], ['in the next task', true]] as const
 
 test('the list route passes the order and the difficulty range on', async ({ request }) => {
   const oldest = await (await request.get('/api/problems?tag=pagination&sort=oldest&limit=20')).json()
@@ -250,4 +271,60 @@ test('a signed-out viewer keeps a remembered solved filter without it taking eff
   await page.getByRole('combobox', { name: 'コンテスト' }).selectOption({ label: 'コンテストの問題のみ' })
   await expect(page).toHaveURL('/problems?sort=oldest&solved=unsolved&contest=only')
   await expect.poll(() => remembered(page)).toEqual({ sort: 'oldest', solved: 'unsolved', contest: 'only' })
+})
+
+for (const [mode, nextTask] of quickModes) {
+  test(`two changes ${mode} both take effect`, async ({ page }) => {
+    await signIn(page)
+    const requests = listRequests(page)
+    await page.goto('/problems?tag=pagination')
+    await conditionsButton(page).click()
+    const sort = page.getByRole('combobox', { name: '並び順' })
+    const contest = page.getByRole('combobox', { name: 'コンテスト' })
+    await quickly(page, [{ target: sort, pick: 'oldest' }, { target: contest, pick: 'exclude' }], { nextTask })
+    await expect(page).toHaveURL('/problems?sort=oldest&contest=exclude&tag=pagination')
+    await expect(sort).toHaveValue('oldest')
+    await expect(contest).toHaveValue('exclude')
+    // The list on screen is the one in the URL: the fixture lists the newest first, and oldest reverses it.
+    await expect(page.getByRole('table').locator('tbody tr').first().locator('th')).toHaveText('問題 120')
+    await expect.poll(() => requests.at(-1)).toEqual({ sort: 'oldest', contest: 'exclude', tag: 'pagination', offset: '0', limit: '50' })
+    expect(requests.length).toBeLessThanOrEqual(2)
+    await expect.poll(() => remembered(page)).toEqual({ sort: 'oldest', contest: 'exclude' })
+    // The back button returns to the list before both.
+    await page.goBack()
+    await expect(page).toHaveURL('/problems?tag=pagination')
+    await expect(sort).toHaveValue('newest')
+    await expect(contest).toHaveValue('')
+  })
+
+  test(`two chips taken off ${mode} are both gone`, async ({ page }) => {
+    const requests = listRequests(page)
+    await page.goto('/problems?sort=oldest&contest=exclude&difficulty=3-10&tag=pagination')
+    const chips = page.getByRole('list', { name: '効いている条件' })
+    await expect(chips.getByRole('listitem')).toHaveText([/公開日が古い順/, /コンテストの問題を除く/, /難易度 Lv\.3〜10/, /タグ: pagination/])
+    await quickly(page, [{ target: chips.getByRole('button', { name: 'コンテストの問題を除くを外す' }) }, { target: chips.getByRole('button', { name: '難易度 Lv.3〜10を外す' }) }], { nextTask })
+    await expect(page).toHaveURL('/problems?sort=oldest&tag=pagination')
+    await expect(chips.getByRole('listitem')).toHaveText([/公開日が古い順/, /タグ: pagination/])
+    await expect.poll(() => requests.at(-1)).toEqual({ sort: 'oldest', tag: 'pagination', offset: '0', limit: '50' })
+    expect(requests.length).toBeLessThanOrEqual(2)
+    await expect.poll(() => remembered(page)).toEqual({ sort: 'oldest' })
+  })
+}
+
+// The clear comes while the pick's move runs the route middleware. The select itself may still show the pick: the route
+// never had it, so its model never left 公開日が新しい順 and Vue has nothing to redraw.
+test('clearing while a change is on its way wins over it', async ({ page }) => {
+  await remember(page, encoded({ contest: 'only' }))
+  const requests = listRequests(page)
+  await page.goto('/problems?tag=pagination')
+  await conditionsButton(page).click()
+  const sort = page.getByRole('combobox', { name: '並び順' })
+  await quickly(page, [{ target: sort, pick: 'oldest' }, { target: page.getByRole('button', { name: '条件をすべて外す' }) }], { nextTask: true })
+  await expect(page).toHaveURL('/problems')
+  await expect.poll(() => remembered(page)).toBeNull()
+  await expect(conditionsButton(page)).not.toContainText(/\d/)
+  await expect.poll(() => requests.at(-1)).toEqual({ offset: '0', limit: '50' })
+  // Nothing remembered is left to bring back.
+  await expect(page.getByRole('table').getByRole('link', { name: 'A + B', exact: true })).toBeVisible()
+  await expect(page).toHaveURL('/problems')
 })
