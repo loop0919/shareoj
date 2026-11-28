@@ -62,8 +62,9 @@ type healthResponse struct {
 }
 
 type runtimesResponse struct {
-	Items       []submissions.Runtime `json:"items"`
-	Maintenance bool                  `json:"maintenance"`
+	Items       []submissions.Runtime  `json:"items"`
+	Maintenance bool                   `json:"maintenance"`
+	Languages   []submissions.Language `json:"languages" doc:"カタログの全言語。今は選べない処理系も含み、メンテナンス中も返す。"`
 }
 
 type publicProfileResponse struct {

@@ -441,6 +441,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 個別に適用する場合は `DATABASE_URL=... go run ./cmd/migrate` を実行してください。
 
 - `GET /problems`、`GET /problems/{id}`: 公開された問題の一覧と詳細（認証不要）。
+- `GET /runtimes`: 今選べる処理系を`items`に、メンテナンス中かを`maintenance`に返す。`languages`には、今は選べない処理系も含むカタログの全言語を、`{key, label, runtimes}`の形でカタログ順に返す（メンテナンス中も空にしない）。各処理系は`language`に言語のキーを持つ。
 - `GET /posts`、`GET /posts/{id}`: 公開された記事の一覧と詳細（認証不要）。
 - `GET /my/posts`、`GET|PUT|DELETE /my/posts/{id}`: 自分の記事の保存・取得・削除。一覧には作成日時を`createdAt`に付ける。
 - `PUT /my/problems/{id}/publication`、`PUT /my/posts/{id}/publication`: `{ "version": 1, "publish": true }` で現在の保存内容を公開。`false` で非公開に戻す。
