@@ -289,7 +289,7 @@ func TestProblemListSpeedPostgres(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-	// 200 users, 1000 published problems (difficulty 1-10, every 11th unset), 30000 accepted runs and about 5000
+	// 200 users, 1000 published problems (difficulty 1-10, every 11th unset), about 60000 runs and about 5000
 	// favorites. Owners and problems are drawn from independent hashes so that counts differ between problems.
 	exec(`INSERT INTO user_profiles(owner_id,handle) SELECT 'u'||i,'user'||i FROM generate_series(1,200) i`)
 	exec(`INSERT INTO problem_drafts(id,owner_id,draft,version,published_draft,published_version,published_at)
@@ -297,16 +297,68 @@ func TestProblemListSpeedPostgres(t *testing.T) {
 		FROM generate_series(1,1000) i,
 		LATERAL (SELECT jsonb_build_object('title','Problem '||i,'timeLimitMs','1000','memoryLimitMb','256')||CASE WHEN i%11=0 THEN '{}'::jsonb ELSE jsonb_build_object('difficulty',i%10+1) END AS d) x`)
 	exec(`CREATE TABLE speed_problems AS SELECT id,row_number() OVER (ORDER BY id) AS n FROM problem_drafts`)
+	// 20 contests set the last 200 problems, in each state the public count tells apart: ended without a freeze,
+	// ended with the freeze still on, revealed after a freeze, and the first one still running.
+	exec(`INSERT INTO contests(id,owner_id,title,description,starts_at,ends_at,released,freeze_minutes,revealed_at)
+		SELECT gen_random_uuid(),'u1','Contest '||k,'',s,s+interval '2 hours',k>1,CASE WHEN k%3<>0 THEN 60 END,CASE WHEN k%3=2 THEN s+interval '3 hours' END
+		FROM generate_series(1,20) k, LATERAL (SELECT CASE WHEN k=1 THEN now()-interval '1 hour' ELSE now()-make_interval(days=>k) END AS s) x`)
+	exec(`CREATE TABLE speed_contests AS SELECT id,starts_at,row_number() OVER (ORDER BY id) AS n FROM contests`)
+	exec(`INSERT INTO contest_problems(contest_id,problem_id,position,points,draft,problem_version)
+		SELECT c.id,p.id,(p.n-801)%10,100,'{}',1 FROM speed_contests c JOIN speed_problems p ON p.n>800 AND (p.n-801)/10+1=c.n`)
+	// Real runs carry their test cases in job and a result per case, a few KB each once compressed, so that both are
+	// TOASTed as in production. Of every 20 plain runs, 10 are accepted and count, 3 are wrong, 1 is still running,
+	// 4 are accepted but do not count (a private draft, an easy test, a generator and a validator run), 1 is accepted
+	// short of the full score and 1 has the full score beside a wrong verdict.
+	const cases = `(SELECT jsonb_agg(jsonb_build_object('input',md5(i||'i'||k)||md5(k||'i'||i),'output',md5((i*k)::text))) FROM generate_series(1,25) k)`
+	const results = `(SELECT jsonb_agg(jsonb_build_object('name',md5(k||'n'||i),'verdict','AC','timeMs',(i*k)%2000,'memoryKb',(i*k*7)%262144,'note',md5((i+k)::text))) FROM generate_series(1,25) k)`
 	exec(`INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,result)
-		SELECT gen_random_uuid(),'u'||((hashtext('o'||i)&2147483647)%200+1),p.id,1,'t','cpp17','','{"privateDraft":false}','DONE','{"verdict":"AC"}'
-		FROM generate_series(1,30000) i JOIN speed_problems p ON p.n=(hashtext('p'||i)&2147483647)%1000+1`)
+		SELECT gen_random_uuid(),'u'||((hashtext('o'||i)&2147483647)%200+1),p.id,1,'t','cpp17','',
+			jsonb_build_object('privateDraft',i%20=14,'easyTest',i%20=15,'image','x','timeLimitMs',2000,'memoryLimitMb',256,'cases',` + cases + `)
+				||CASE i%20 WHEN 16 THEN '{"generate":true}'::jsonb WHEN 17 THEN '{"validate":true}' ELSE '{}' END,
+			CASE WHEN i%20=13 THEN 'RUNNING' ELSE 'DONE' END,
+			CASE WHEN i%20<>13 THEN jsonb_build_object('verdict',CASE WHEN i%20 IN (10,11,12,19) THEN 'WA' ELSE 'AC' END,'cases',` + results + `)
+				||CASE i%20 WHEN 18 THEN '{"scoring":{"score":70,"maxScore":100}}'::jsonb WHEN 19 THEN '{"scoring":{"score":100,"maxScore":100}}' ELSE '{}' END END
+		FROM generate_series(1,54000) i JOIN speed_problems p ON p.n=(hashtext('p'||i)&2147483647)%1000+1`)
+	// Contest runs, half accepted, from before the start to the practice after the end, across the freeze.
+	exec(`INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,result,contest_id,created_at)
+		SELECT gen_random_uuid(),'u'||((hashtext('co'||i)&2147483647)%200+1),p.id,1,'t','cpp17','',
+			jsonb_build_object('privateDraft',false,'easyTest',false,'image','x','timeLimitMs',2000,'memoryLimitMb',256,'cases',` + cases + `),'DONE',
+			jsonb_build_object('verdict',CASE WHEN hashtext('cv'||i)&1=0 THEN 'AC' ELSE 'WA' END,'cases',` + results + `),
+			c.id,LEAST(c.starts_at+make_interval(mins=>(hashtext('ct'||i)&2147483647)%240-30),now())
+		FROM generate_series(1,6000) i JOIN speed_contests c ON c.n=i%20+1
+		JOIN speed_problems p ON p.n=800+(c.n-1)*10+(hashtext('cp'||i)&2147483647)%10+1`)
 	// The viewer u1 has solved 300 problems, so the unsolved filter removes a real share of the list.
 	exec(`INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,result)
-		SELECT gen_random_uuid(),'u1',p.id,1,'t','cpp17','','{"privateDraft":false}','DONE','{"verdict":"AC"}'
-		FROM speed_problems p WHERE p.n<=300`)
+		SELECT gen_random_uuid(),'u1',p.id,1,'t','cpp17','',
+			jsonb_build_object('privateDraft',false,'easyTest',false,'image','x','timeLimitMs',2000,'memoryLimitMb',256,'cases',` + cases + `),'DONE',
+			jsonb_build_object('verdict','AC','cases',` + results + `)
+		FROM speed_problems p, LATERAL (SELECT 100000+p.n AS i) x WHERE p.n<=300`)
 	exec(`INSERT INTO problem_favorites(problem_id,owner_id)
 		SELECT p.id,'u'||k FROM speed_problems p, generate_series(1,200) k WHERE (hashtext(p.id::text||'f'||k)&2147483647)%40=0`)
-	exec(`ANALYZE`)
+	// Index-only scans need the visibility map, which autovacuum keeps in production.
+	exec(`VACUUM (ANALYZE) user_profiles,problem_drafts,contests,contest_problems,submissions,problem_favorites`)
+	var runs, jobBytes, resultBytes int
+	var toastBytes int64
+	if err = store.Pool().QueryRow(ctx, `SELECT count(*),avg(pg_column_size(job))::int,avg(pg_column_size(result))::int,
+		(SELECT pg_relation_size(reltoastrelid) FROM pg_class WHERE oid='submissions'::regclass) FROM submissions`).Scan(&runs, &jobBytes, &resultBytes, &toastBytes); err != nil {
+		t.Fatal(err)
+	}
+	if runs < 60000 || jobBytes < 2000 || resultBytes < 1500 || toastBytes < 100<<20 {
+		t.Fatalf("seed too small: %d runs, %d bytes of job and %d of result stored per run, %d bytes TOASTed", runs, jobBytes, resultBytes, toastBytes)
+	}
+	t.Logf("seed: %d runs, %d bytes of job and %d of result stored per run, %d MB TOASTed", runs, jobBytes, resultBytes, toastBytes>>20)
+	indexes, err := store.Pool().Query(ctx, `SELECT indexrelid::regclass::text,pg_relation_size(indexrelid) FROM pg_index WHERE indrelid='submissions'::regclass ORDER BY 1`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var name string
+	var size int64
+	if _, err = pgx.ForEachRow(indexes, []any{&name, &size}, func() error {
+		t.Logf("index %s: %d kB", name, size>>10)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	// Guard against a seed that degenerates into tied sort keys.
 	var solverKinds, favoriteKinds, favoriteRows int
 	if err = store.Pool().QueryRow(ctx, `SELECT
