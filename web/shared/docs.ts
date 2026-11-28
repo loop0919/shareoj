@@ -37,7 +37,7 @@ export const docSections: { title: string, pages: DocPage[] }[] = [
   {
     title: '開発者向け',
     pages: [
-      { slug: 'api', title: '公開API', label: '公開API', description: 'ShareOJの公開APIで取得できるデータ、主なエンドポイント、ページ送りの方法を説明します。', lead: '公開されている問題やコンテストのデータを、認証なしで取得できます。' },
+      { slug: 'api', title: '公開API', label: '公開API', description: 'ShareOJの公開APIで取得できるデータ、主なエンドポイント、ページ送りの方法、ログインして提出する方法を説明します。', lead: '公開されている問題やコンテストのデータを取得できます。ログインすれば、提出もできます。' },
     ],
   },
 ]
