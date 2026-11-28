@@ -86,6 +86,14 @@ func listFilter(w http.ResponseWriter, r *http.Request, viewer string) (problems
 			return problems.ListFilter{}, false
 		}
 	}
+	// Only the signed-in route knows whose solved state to read; the public list ignores solved.
+	if solved := query.Get("solved"); viewer != "" && solved != "" {
+		if solved != problems.SolvedOnly && solved != problems.UnsolvedOnly {
+			authError(w, 400, "invalid_solved")
+			return problems.ListFilter{}, false
+		}
+		filter.Solved = solved
+	}
 	if query.Get("cursor") != "" && filter.Sort != problems.SortNewest {
 		authError(w, 400, "invalid_request")
 		return problems.ListFilter{}, false

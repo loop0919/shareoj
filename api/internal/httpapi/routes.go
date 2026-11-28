@@ -221,6 +221,7 @@ func registerRoutes(mux *http.ServeMux, d handlerDependencies) {
 	private("PUT /my/contests/{id}/teams/{team}/onsite", contests.setTeamOnsite, false)
 	private("PUT /my/contests/{id}/teams/{team}/name", contests.renameEntrantTeam, false)
 	private("GET /my/solved-problems", problems.solvedProblems, true)
+	private("GET /my/public-problems", problems.publishedProblems, true)
 	private("GET /my/difficulty-votes/{id}", problems.difficultyVote, true)
 	private("PUT /my/difficulty-votes/{id}", problems.difficultyVote, true)
 	private("DELETE /my/difficulty-votes/{id}", problems.difficultyVote, true)

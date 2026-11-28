@@ -66,35 +66,51 @@ func TestProblemListConditionsPostgres(t *testing.T) {
 
 	f := newSigningFixture(t)
 	h := newHandler(AuthConfig{}, handlerDependencies{Store: store, Posts: posts.New(store.Pool()), Profiles: profiles.New(store.Pool()), Tags: &tags.Store{Pool: store.Pool()}, Verifier: newCognitoVerifier(f.server.URL, "client")})
-	get := func(path string, want int) string {
+	// getAs signs in as actor; "" sends no session.
+	getAs := func(path, actor string, want int) string {
 		t.Helper()
+		r := httptest.NewRequest("GET", path, nil)
+		if actor != "" {
+			r.Header.Set("Authorization", "Bearer "+f.token(t, actor, nil))
+		}
 		w := httptest.NewRecorder()
-		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		h.ServeHTTP(w, r)
 		if w.Code != want {
 			t.Fatalf("GET %s: got %d want %d: %s", path, w.Code, want, w.Body.String())
 		}
 		return w.Body.String()
+	}
+	get := func(path string, want int) string {
+		t.Helper()
+		return getAs(path, "", want)
 	}
 	type page struct {
 		Items      []struct{ ID string }
 		NextCursor string
 		Total      int
 	}
-	fetch := func(path string) page {
+	fetchAs := func(path, actor string) page {
 		t.Helper()
 		var p page
-		if err := json.Unmarshal([]byte(get(path, 200)), &p); err != nil {
+		if err := json.Unmarshal([]byte(getAs(path, actor, 200)), &p); err != nil {
 			t.Fatal(err)
 		}
 		return p
 	}
-	listed := func(path string) []string {
+	fetch := func(path string) page {
 		t.Helper()
+		return fetchAs(path, "")
+	}
+	idsOf := func(p page) []string {
 		ids := []string{}
-		for _, item := range fetch(path).Items {
+		for _, item := range p.Items {
 			ids = append(ids, item.ID)
 		}
 		return ids
+	}
+	listed := func(path string) []string {
+		t.Helper()
+		return idsOf(fetch(path))
 	}
 
 	const (
@@ -185,4 +201,43 @@ func TestProblemListConditionsPostgres(t *testing.T) {
 	if body := get("/problems?sort=oldest&cursor="+first.NextCursor, 400); !strings.Contains(body, "invalid_request") {
 		t.Errorf("cursor with sort: %s", body)
 	}
+
+	// The signed-in route adds the viewer's solved state to the same list.
+	for _, tc := range []struct {
+		query, actor string
+		want         []string
+	}{
+		{"", "bob", []string{e, d, c, b, a}},
+		{"?solved=", "bob", []string{e, d, c, b, a}},
+		{"?solved=unsolved", "bob", []string{e, d, b}},
+		{"?solved=solved", "bob", []string{c, a}},
+		{"?solved=solved&sort=oldest&difficulty=3-7", "bob", []string{a, c}},
+		{"?solved=solved", "alice", []string{}},
+	} {
+		p := fetchAs("/my/public-problems"+tc.query, tc.actor)
+		if got := idsOf(p); !slices.Equal(got, tc.want) || p.Total != len(tc.want) {
+			t.Errorf("%q as %s: got %v total %d, want %v", tc.query, tc.actor, got, p.Total, tc.want)
+		}
+	}
+	// The solved filter agrees with the rows the list paints green.
+	var marks struct{ Items []string }
+	if err := json.Unmarshal([]byte(getAs("/my/solved-problems", "bob", 200)), &marks); err != nil {
+		t.Fatal(err)
+	}
+	filtered := idsOf(fetchAs("/my/public-problems?solved=solved", "bob"))
+	slices.Sort(marks.Items)
+	slices.Sort(filtered)
+	if !slices.Equal(marks.Items, filtered) {
+		t.Errorf("solved filter %v differs from /my/solved-problems %v", filtered, marks.Items)
+	}
+	// A run that /my/solved-problems does not count is not solved here either.
+	exec(`INSERT INTO submissions (id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,result)
+		VALUES (gen_random_uuid(),'alice',$1,1,'test','cpp17','','{"privateDraft":true}','DONE','{"verdict":"AC"}')`, e)
+	if got := idsOf(fetchAs("/my/public-problems?solved=solved", "alice")); len(got) != 0 {
+		t.Errorf("private draft run counted as solved: %v", got)
+	}
+	if body := getAs("/my/public-problems?solved=maybe", "bob", 400); !strings.Contains(body, "invalid_solved") {
+		t.Errorf("solved=maybe: %s", body)
+	}
+	getAs("/my/public-problems", "", 401)
 }

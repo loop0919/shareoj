@@ -479,6 +479,9 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 - `GET /tags`: 公開中の問題と記事のタグを、使われている数の多い順に最大1000件返す。`problemCount`と`postCount`を含む。
 - `GET /problems?tag=`、`GET /posts?tag=`: タグの完全一致で絞り込む。`author`と併用できる。不正なタグは`400 invalid_tag`。
 - `GET /problems?contest=only|exclude`: コンテストで出題された問題だけ、またはそれ以外だけに絞り込む。`author`、`tag`と併用できる。ほかの値は`400 invalid_contest`。
+- `GET /problems?sort=`: 並び順。`newest`（初期値）、`oldest`、`solvers-desc`、`solvers-asc`、`favorites-desc`、`difficulty-desc`、`difficulty-asc`。同じ値の問題は公開日が新しい順、次にIDの降順で並べ、難易度の未設定はどちら向きでも最後に置く。`cursor`は`newest`のときだけ使え、ほかの値と併用すると`400 invalid_request`。ほかの値は`400 invalid_sort`。
+- `GET /problems?difficulty=3-6`: 作成者が設定した難易度を`下限-上限`（どちらも1〜10で下限≦上限）で絞り込む。未設定の問題は外れる。`author`、`tag`、`contest`、`sort`と併用できる。ほかの形は`400 invalid_difficulty`。
+- `GET /my/public-problems`: `GET /problems`と同じ一覧を、ログイン中の利用者の解答状況で絞り込めるようにしたもの。`solved=solved|unsolved`で、AC済みだけ、または未ACだけを返す。AC済みの判定は`GET /my/solved-problems`と同じ。省略または空なら絞り込まない。ほかの値は`400 invalid_solved`。ほかのクエリと`cursor`の扱いは`GET /problems`と同じで、認証が要る。公開の`GET /problems`は`solved`を読まない。
 - `GET /problems/{id}`の`contest`: コンテストで出題された問題に、そのコンテストの`id`と`title`を付ける。一覧には付けない。
 - `GET /problems/{id}`、`GET /problems`、`GET /posts/{id}`、`GET /posts`の`tags`: 公開版のタグ。
 

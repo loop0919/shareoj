@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -223,6 +224,15 @@ func publicFilter(filter ListFilter) (string, []any) {
 	if filter.DifficultyMin > 0 {
 		args = append(args, filter.DifficultyMin, filter.DifficultyMax)
 		where += fmt.Sprintf(` AND (d.published_draft->>'difficulty')::integer BETWEEN $%d AND $%d`, len(args)-1, len(args))
+	}
+	if filter.Solved != "" {
+		args = append(args, filter.Viewer)
+		// The same runs as SolvedProblems, so the filter agrees with the rows the list marks as solved.
+		exists := `EXISTS (SELECT 1 FROM submissions s WHERE s.problem_id=d.id AND s.owner_id=$` + strconv.Itoa(len(args)) + ` AND ` + ownAcceptedSubmission + `)`
+		if filter.Solved == UnsolvedOnly {
+			exists = `NOT ` + exists
+		}
+		where += ` AND ` + exists
 	}
 	switch filter.Contest {
 	case ContestOnly:
