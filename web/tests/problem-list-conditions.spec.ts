@@ -39,6 +39,37 @@ async function quickly(page: Page, actions: QuickAction[], { nextTask = false } 
   }, { steps, nextTask })
 }
 const quickModes = [['in one task', false], ['in the next task', true]] as const
+// The browser reports each cookie write to the page later, through cookieStore change events, and Nuxt's useCookie copies
+// each report into its ref. The report of a write can arrive after the next write, handing the older value back until
+// the next report. This holds back the report of the remembered conditions' deletion until releaseCookieDeletion, and
+// counts the reports of its other writes, so a test can wait for the late one and look at the page in between.
+const holdCookieDeletion = (page: Page) => page.addInitScript(() => {
+  const name = 'openoj-problem-conditions'
+  const held: (() => void)[] = []
+  // Every useCookie has a listener of its own, so a report is counted once, not once a listener.
+  const counted = new WeakSet<Event>()
+  const reports = { written: 0, release: () => held.splice(0).forEach(deliver => deliver()) }
+  Object.assign(window, { cookieReports: reports })
+  const store = (globalThis as unknown as { CookieStore: { prototype: EventTarget } }).CookieStore.prototype
+  const add = store.addEventListener
+  store.addEventListener = function (this: EventTarget, type: string, listener: EventListenerOrEventListenerObject | null, options?: boolean | AddEventListenerOptions) {
+    if (type !== 'change' || typeof listener !== 'function') return add.call(this, type, listener, options)
+    return add.call(this, type, (event: Event) => {
+      const { changed, deleted } = event as Event & { changed: { name: string }[], deleted: { name: string }[] }
+      if (deleted.some(cookie => cookie.name === name)) {
+        held.push(() => listener.call(this, event))
+        return
+      }
+      if (changed.some(cookie => cookie.name === name) && !counted.has(event)) {
+        counted.add(event)
+        reports.written++
+      }
+      listener.call(this, event)
+    }, options)
+  }
+})
+const cookieReports = (page: Page) => page.evaluate(() => (window as unknown as { cookieReports: { written: number } }).cookieReports.written)
+const releaseCookieDeletion = (page: Page) => page.evaluate(() => (window as unknown as { cookieReports: { release: () => void } }).cookieReports.release())
 
 test('the list route passes the order and the difficulty range on', async ({ request }) => {
   const oldest = await (await request.get('/api/problems?tag=pagination&sort=oldest&limit=20')).json()
@@ -290,8 +321,11 @@ for (const [mode, nextTask] of quickModes) {
     await expect.poll(() => requests.at(-1)).toEqual({ sort: 'oldest', contest: 'exclude', tag: 'pagination', offset: '0', limit: '50' })
     expect(requests.length).toBeLessThanOrEqual(2)
     await expect.poll(() => remembered(page)).toEqual({ sort: 'oldest', contest: 'exclude' })
-    // The back button returns to the list before both.
+    // The back button returns to the list before both. In one task the first move never finishes, so both changes are
+    // one entry. In the next task, a busy machine may finish the first move before the second starts, which gives the
+    // first change an entry of its own on the way back.
     await page.goBack()
+    if (nextTask && page.url().endsWith('/problems?sort=oldest&tag=pagination')) await page.goBack()
     await expect(page).toHaveURL('/problems?tag=pagination')
     await expect(sort).toHaveValue('newest')
     await expect(contest).toHaveValue('')
@@ -313,18 +347,31 @@ for (const [mode, nextTask] of quickModes) {
 
 // The clear comes while the pick's move runs the route middleware. The select itself may still show the pick: the route
 // never had it, so its model never left 公開日が新しい順 and Vue has nothing to redraw.
-test('clearing while a change is on its way wins over it', async ({ page }) => {
-  await remember(page, encoded({ contest: 'only' }))
-  const requests = listRequests(page)
-  await page.goto('/problems?tag=pagination')
-  await conditionsButton(page).click()
-  const sort = page.getByRole('combobox', { name: '並び順' })
-  await quickly(page, [{ target: sort, pick: 'oldest' }, { target: page.getByRole('button', { name: '条件をすべて外す' }) }], { nextTask: true })
-  await expect(page).toHaveURL('/problems')
-  await expect.poll(() => remembered(page)).toBeNull()
-  await expect(conditionsButton(page)).not.toContainText(/\d/)
-  await expect.poll(() => requests.at(-1)).toEqual({ offset: '0', limit: '50' })
-  // Nothing remembered is left to bring back.
-  await expect(page.getByRole('table').getByRole('link', { name: 'A + B', exact: true })).toBeVisible()
-  await expect(page).toHaveURL('/problems')
-})
+// The pick's write is reported to the page after the clear. With the deletion's report held back, the report of the
+// pick is the last one the page has, whether it came before the list's move to /problems or after it: the move that once
+// failed under load came just between the two.
+for (const late of [false, true]) {
+  test(`clearing while a change is on its way wins over it${late ? ', with the deletion reported late' : ''}`, async ({ page }) => {
+    if (late) await holdCookieDeletion(page)
+    await remember(page, encoded({ contest: 'only' }))
+    const requests = listRequests(page)
+    await page.goto('/problems?tag=pagination')
+    await conditionsButton(page).click()
+    const sort = page.getByRole('combobox', { name: '並び順' })
+    await quickly(page, [{ target: sort, pick: 'oldest' }, { target: page.getByRole('button', { name: '条件をすべて外す' }) }], { nextTask: true })
+    if (late) await expect.poll(() => cookieReports(page)).toBe(1)
+    // Nothing is left in force, and nothing remembered comes back.
+    const cleared = async () => {
+      await expect(page.getByRole('table').getByRole('link', { name: 'A + B', exact: true })).toBeVisible()
+      await expect(conditionsButton(page)).not.toContainText(/\d/)
+      await expect(page).toHaveURL('/problems')
+      await expect.poll(() => requests.at(-1)).toEqual({ offset: '0', limit: '50' })
+      await expect.poll(() => remembered(page)).toBeNull()
+    }
+    await cleared()
+    if (late) {
+      await releaseCookieDeletion(page)
+      await cleared()
+    }
+  })
+}

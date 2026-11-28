@@ -20,7 +20,12 @@ export function useProblemConditions() {
     maxAge: 60 * 60 * 24 * 365, sameSite: 'lax', path: '/',
     decode: value => { try { return value && JSON.parse(decodeURIComponent(value)) } catch { return value } },
   })
-  const remembered = () => rememberedQuery(parseConditions(saved.value))
+  // What the list remembers: read from the cookie once, then kept here and written to the cookie from here. The cookie's
+  // own ref also takes in the browser's reports of each write, which come late: the report of a write can arrive after
+  // the next write and hand the older value back until the next report. A bare /problems reading it then would bring back
+  // conditions just cleared. Another tab's choice applies when the list is opened again.
+  const chosen = shallowRef(rememberedQuery(parseConditions(saved.value)))
+  const remembered = () => chosen.value
   // The conditions a list with this query shows. A bare /problems is on its way to the remembered conditions (restore),
   // so it lists them already: the list loads once.
   const listed = (query: Record<string, unknown>) => parseConditions(Object.keys(query).length ? query : remembered())
@@ -46,8 +51,8 @@ export function useProblemConditions() {
     finally { if (!moved && pending.value === target) pending.value = undefined }
   }
   // Nothing left to remember removes the cookie. A signed-out viewer's solved is kept, to apply once they sign in.
-  function remember(next: ProblemConditions) {
-    const query = rememberedQuery(next)
+  function remember(query: Record<string, string>) {
+    chosen.value = query
     saved.value = Object.keys(query).length ? query : null
   }
   // A bound moved past the other one carries it along, so the range stays one. Only a change to a remembered condition
@@ -59,11 +64,11 @@ export function useProblemConditions() {
       if (patch.min === undefined) next.min = next.max
       else next.max = next.min
     }
-    if (rememberedKeys.some(key => next[key] !== base[key])) remember(next)
+    if (rememberedKeys.some(key => next[key] !== base[key])) remember(rememberedQuery(next))
     return open(next)
   }
   function clear() {
-    saved.value = null
+    remember({})
     return open(defaultConditions)
   }
   // On a /problems without any query, replaces the URL with the remembered conditions. Resolves to nothing when there is
