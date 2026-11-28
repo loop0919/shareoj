@@ -344,7 +344,7 @@ func timeDeepPages(t *testing.T, ctx context.Context, store *submissions.Store) 
 	//     (slowest 246 ms).
 	//   - The problem list: 500 ms (slowest 227 ms, or 329 ms by time). Each run before the page goes through
 	//     problemSubmissionVisible, which reads the job's flags and the problem's roles: about 45 us a run.
-	//   - A contest's list by time: 800 ms (slowest 470 ms), and as staff read it 1000 ms (slowest 620 ms).
+	//   - A contest's list by time: 800 ms (slowest 473 ms), and as staff read it 1000 ms (slowest 620 ms).
 	//     submission_cpu_time_ms costs about 25 us a run. The index holds the times, but PostgreSQL computes the sort
 	//     key from result again for each run it reads, and past a few hundred runs the planner, which takes the
 	//     visibility check to keep a few percent of the runs, reads and sorts them all, so a deep page costs as much
