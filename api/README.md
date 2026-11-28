@@ -701,6 +701,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 - `user`: 提出した人のユーザーID。完全一致で、存在しないIDなら0件。
 - 空の値（`sort=`など）は指定なしと同じ。知らない値や形の合わない値、`language`と`runtime`の同時指定は400 `invalid_request`とする。
 - 条件は、見える提出の中だけで効く。凍結中の提出や開始前のスタッフ限定の提出は、提出者や結果を名指ししても出ず、コンテストの一覧の`total`にも数えない。`total`は条件を当てたあとの件数で、1ページの件数に左右されない。
+- コード長と実行時間の並びは、`052_submission_list_indexes.sql`の索引から1ページ分だけ読む。コンテストの一覧は、コンテストの提出と、その問題のコンテスト外の提出（スタッフにだけ見える）を分けて読み、`total`もコンテストの索引から数える。`internal/submissions/conditions.go`の並びの式や、`contestPublic`と`contestOwn`の最初の3つの条件を変えるときは、索引をそろえるマイグレーションを足す（ずれると`TestSubmissionListsUseTheirIndexesPostgres`が失敗する）。`submission_cpu_time_ms`を置き換えるときは`submissions_problem_fastest`と`submissions_contest_fastest`を作り直す。052は索引を作る間`submissions`への書き込みを待たせるので、コンテストの開催中を避けて配布する。
 
 チームの提出の共有、順位表、オンサイトの絞り込みは次のとおり。
 

@@ -28,6 +28,7 @@ func (c ListConditions) where(next int) (sql string, args []any) {
 		sql += " AND " + fmt.Sprintf(format, next+len(args)-1)
 	}
 	if c.Verdict != "" {
+		// result->>'verdict' is the expression of the submissions_verdict statistics in 052_submission_list_indexes.sql.
 		add("(status='DONE' AND result->>'verdict'=$%d)", c.Verdict)
 	}
 	if len(c.Runtimes) > 0 {
@@ -41,7 +42,9 @@ func (c ListConditions) where(next int) (sql string, args []any) {
 }
 
 // order gives the ORDER BY text; it comes from constants only. Every order ends in the newest run first, so that pages
-// of equal values neither repeat nor skip a row.
+// of equal values neither repeat nor skip a row. The code length and time orders are word for word the keys of the
+// indexes in 052_submission_list_indexes.sql after the problem or the contest, which let a page read only its own runs;
+// change them together.
 func (c ListConditions) order() string {
 	switch c.Sort {
 	case SortOldest:
