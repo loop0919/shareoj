@@ -322,4 +322,111 @@ func TestSubmissionListSpeedPostgres(t *testing.T) {
 			}
 		}
 	}
+	timeDeepPages(t, ctx, &submissions.Store{Pool: pool})
+}
+
+// deepPage is a page read at an offset: how many items it holds, and the list's total, or -1 for a list that counts
+// nothing.
+type deepPage struct{ items, total int }
+
+// timeDeepPages times pages far into the lists. The contest's page links lead to its last page in one click, and with
+// no sort by the longest time, the last page of the list sorted by time is where its slowest runs are. A page there
+// skips every run before it, so the lists sorted newest first, by code length and by time, as they are and narrowed to
+// accepted runs, are each timed at the first page, a middle page and the last, and the contest's also at offset 1000.
+func timeDeepPages(t *testing.T, ctx context.Context, store *submissions.Store) {
+	t.Helper()
+	const viewer, staff = "u2", "u1"
+	// Deep pages are held to the budgets of the first: 200 ms for a page and its count, and 400 ms for the contest list
+	// as staff read it.
+	const budget, staffBudget = 200 * time.Millisecond, 400 * time.Millisecond
+	contestPage := func(reader string) func(submissions.ListConditions, int) (deepPage, bool, error) {
+		return func(c submissions.ListConditions, offset int) (deepPage, bool, error) {
+			page, e := store.ContestList(ctx, speedContest, reader, submissions.ScopeAll, offset, 50, false, "", c)
+			return deepPage{len(page.Items), page.Total}, page.HasMore, e
+		}
+	}
+	lists := []struct {
+		name   string
+		budget time.Duration
+		page   func(submissions.ListConditions, int) (deepPage, bool, error)
+		// at1000 also times offset 1000, the 21st page.
+		at1000 bool
+	}{
+		{"problem", budget, func(c submissions.ListConditions, offset int) (deepPage, bool, error) {
+			page, e := store.ProblemList(ctx, speedProblem, "", viewer, submissions.ScopeAll, false, offset, c)
+			return deepPage{len(page.Items), -1}, page.HasMore, e
+		}, false},
+		{"contest", budget, contestPage(viewer), true},
+		{"contest as staff", staffBudget, contestPage(staff), true},
+	}
+	filters := []struct {
+		name  string
+		apply func(*submissions.ListConditions)
+	}{
+		{"none", func(*submissions.ListConditions) {}},
+		{"verdict=AC", func(c *submissions.ListConditions) { c.Verdict = "AC" }},
+	}
+	for _, l := range lists {
+		for _, filter := range filters {
+			for _, order := range []string{submissions.SortNewest, submissions.SortShortest, submissions.SortFastest} {
+				conditions := submissions.ListConditions{Sort: order}
+				filter.apply(&conditions)
+				first, _, err := l.page(conditions, 0)
+				if err != nil {
+					t.Fatalf("list=%s sort=%s filter=%s: %v", l.name, order, filter.name, err)
+				}
+				// The last page starts at the last multiple of 50 below the total. The problem list counts nothing, so its
+				// last page is found by halving the pages between one that holds items and one past the problem's 5000 runs.
+				last := (first.total - 1) / 50 * 50
+				if first.total < 0 {
+					low, high := 0, 5000/50+1
+					for high-low > 1 {
+						middle := (low + high) / 2
+						page, _, e := l.page(conditions, middle*50)
+						if e != nil {
+							t.Fatalf("list=%s sort=%s filter=%s offset=%d: %v", l.name, order, filter.name, middle*50, e)
+						}
+						if page.items > 0 {
+							low = middle
+						} else {
+							high = middle
+						}
+					}
+					last = low * 50
+				}
+				if last < 2000 {
+					t.Fatalf("list=%s sort=%s filter=%s: the last page starts at %d, too shallow to time", l.name, order, filter.name, last)
+				}
+				offsets := []int{0, last / 100 * 50, last}
+				if l.at1000 {
+					offsets = []int{0, 1000, last / 100 * 50, last}
+				}
+				for _, offset := range offsets {
+					best := time.Duration(1<<62 - 1)
+					for range 3 {
+						start := time.Now()
+						page, more, e := l.page(conditions, offset)
+						if e != nil {
+							t.Fatalf("list=%s sort=%s filter=%s offset=%d: %v", l.name, order, filter.name, offset, e)
+						}
+						if elapsed := time.Since(start); elapsed < best {
+							best = elapsed
+						}
+						// Every page but the last is full, and the last holds what the total leaves.
+						whole := page.items == 50 && more
+						if offset == last {
+							whole = page.items > 0 && !more && (page.total < 0 || page.items == page.total-offset)
+						}
+						if !whole {
+							t.Fatalf("list=%s sort=%s filter=%s offset=%d of last %d: got %+v, more %v", l.name, order, filter.name, offset, last, page, more)
+						}
+					}
+					t.Logf("deep list=%s sort=%s filter=%s offset=%d last=%d best=%dms", l.name, order, filter.name, offset, last, best.Milliseconds())
+					if best > l.budget {
+						t.Errorf("deep list=%s sort=%s filter=%s offset=%d took %v, want at most %v", l.name, order, filter.name, offset, best, l.budget)
+					}
+				}
+			}
+		}
+	}
 }
