@@ -1,7 +1,8 @@
 -- Solver counts and solved marks read only the accepted runs that count, so they need neither job nor result, which
 -- are a few KB each and TOASTed. Each index holds one kind of those runs; its predicate is word for word a condition
 -- of internal/problems/publication.go (plainAcceptedRun and contestAcceptedRun), which lets the planner answer from
--- the index alone. Change both together, or the planner silently stops using the index.
+-- the index alone. Change both together, or the planner silently stops using the index. A migration that replaces
+-- submission_full_score must also REINDEX both, since they hold the runs the old function chose.
 CREATE INDEX submissions_plain_solvers ON submissions(problem_id, owner_id)
     WHERE status='DONE' AND submission_full_score(result)
     AND NOT COALESCE((job->>'easyTest')::boolean,false)
