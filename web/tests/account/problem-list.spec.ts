@@ -17,6 +17,8 @@ test('a solved problem leaves the unsolved list and shows in the solved one', as
   }
   const page = await user(browser, 'bob')
   await recordAccepted(page.request, ids[1], 'bob')
+  // The first accepted run notifies the author. Read it here so the specs that count alice's unread notifications still see theirs alone.
+  expect((await alice.request.post('/api/my/notifications/read', { headers: { origin } })).status()).toBe(200)
 
   await page.goto('/problems')
   await page.getByRole('button', { name: /^絞り込み・並び替え/ }).click()
