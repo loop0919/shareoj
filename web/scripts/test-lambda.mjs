@@ -31,7 +31,9 @@ Date.now = () => realNow() + clockAhead
 const api = createServer(async (req, res) => {
   res.setHeader('content-type', 'application/json')
   if (req.url === '/runtimes') {
-    res.end(JSON.stringify(judgeMaintenance ? { items: [], maintenance: true } : { items: [{ id: 'cpp17', label: 'C++17 (GCC)' }] })); return
+    // Like the API, languages lists every runtime, in maintenance too, and each runtime names its language.
+    const languages = [{ key: 'cpp', label: 'C++', runtimes: [{ id: 'cpp17', label: 'C++17 (GCC)', language: 'cpp' }] }]
+    res.end(JSON.stringify(judgeMaintenance ? { items: [], languages, maintenance: true } : { items: [{ id: 'cpp17', label: 'C++17 (GCC)', language: 'cpp' }], languages })); return
   }
   if (['/auth/signup', '/auth/confirm-signup', '/auth/resend-confirmation'].includes(req.url)) {
     const chunks = []
@@ -170,15 +172,17 @@ try {
   assert.deepEqual(Buffer.from(jpeg.body, jpeg.isBase64Encoded ? 'base64' : 'utf8'), uploadedJPEG)
   assert.equal((await invoke('/api/images/55555555-5555-4555-8555-555555555555')).statusCode, 502)
   assert.equal((await invoke('/api/images/77777777-7777-4777-8777-777777777777')).statusCode, 502)
+  // The route passes the languages on without the fields the pages do not use.
+  const catalogLanguages = [{ key: 'cpp', label: 'C++', runtimes: [{ id: 'cpp17', label: 'C++17 (GCC)' }] }]
   const runtimes = await invoke('/api/runtimes')
   assert.equal(runtimes.statusCode, 200)
-  assert.deepEqual(JSON.parse(runtimes.body), { items: [{ id: 'cpp17', label: 'C++17 (GCC)' }], maintenance: false })
+  assert.deepEqual(JSON.parse(runtimes.body), { items: [{ id: 'cpp17', label: 'C++17 (GCC)' }], languages: catalogLanguages, maintenance: false })
   assert.equal(runtimes.headers['cache-control'], 'no-store')
   judgeMaintenance = true
   // The catalog read a moment ago is still answered; maintenance shows once the 15 seconds have passed.
-  assert.deepEqual(JSON.parse((await invoke('/api/runtimes')).body), { items: [{ id: 'cpp17', label: 'C++17 (GCC)' }], maintenance: false })
+  assert.deepEqual(JSON.parse((await invoke('/api/runtimes')).body), { items: [{ id: 'cpp17', label: 'C++17 (GCC)' }], languages: catalogLanguages, maintenance: false })
   clockAhead += 15_000
-  assert.deepEqual(JSON.parse((await invoke('/api/runtimes')).body), { items: [], maintenance: true })
+  assert.deepEqual(JSON.parse((await invoke('/api/runtimes')).body), { items: [], languages: catalogLanguages, maintenance: true })
   const maintenancePage = await invoke('/problems/new')
   assert.equal(maintenancePage.statusCode, 200)
   assert.match(maintenancePage.body, /ジャッジ機能のメンテナンスを行っています。この期間中は提出等ができません。/)
