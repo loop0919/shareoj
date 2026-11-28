@@ -339,7 +339,8 @@ test('scheduled problems open for submission, then publish with editorial and so
   // The contest's own list gathers frank's submissions, without the setter's, while the whole list stays closed.
   const bobContestMenu = frank.getByRole('navigation', { name: 'コンテストメニュー' })
   await bobContestMenu.getByRole('link', { name: '自分の提出', exact: true }).click()
-  await expect(frank).toHaveURL(`/contests/${shortId(id)}?view=my-submissions`)
+  // Switching between the lists keeps the conditions, here the problem.
+  await expect(frank).toHaveURL(`/contests/${shortId(id)}?view=my-submissions&problem=A`)
   const ownList = frank.locator('#my-submissions')
   await expect(ownList.getByRole('link', { name: 'A - 時間で公開する問題', exact: true })).toHaveAttribute('href', `/contests/${shortId(id)}/A`)
   await expect(ownList.getByRole('link', { name: '詳細', exact: true })).toHaveAttribute('href', `/contests/${shortId(id)}/my-submissions/${shortId(sid)}?from=contest`)
