@@ -31,6 +31,7 @@ const messages: Record<string, string> = {
   featured_applied: '定期便に応募中のため、応募を取り下げるまで登録できません',
   // Warnings: shown, never blocking.
   test_cases_only_samples: 'テストケースがサンプルだけです。サンプル以外のケースの追加忘れがないか確認してください',
+  sample_not_in_statement: '問題文に入出力が見当たらないサンプルケースがあります。テストケースの「サンプルを問題文に追加」で書き足せます',
 }
 // The same state reads differently per destination.
 const destinationMessages: Partial<Record<Destination, Record<string, string>>> = {
@@ -43,7 +44,7 @@ export const issueMessage = (code: string, destination?: Destination) =>
 
 const sections: Record<string, EditorSection> = {
   title_missing: 'statement', statement_missing: 'statement', difficulty_missing: 'statement',
-  test_cases_missing: 'tests', test_cases_only_samples: 'tests', scoring_group_empty: 'tests', test_case_ungrouped: 'tests',
+  test_cases_missing: 'tests', test_cases_only_samples: 'tests', sample_not_in_statement: 'tests', scoring_group_empty: 'tests', test_case_ungrouped: 'tests',
   scoring_groups_missing: 'scoring', aggregator_source_missing: 'scoring', aggregator_runtime_unavailable: 'scoring',
   checker_source_missing: 'checker', checker_runtime_unavailable: 'checker', interactor_source_missing: 'checker', interactor_runtime_unavailable: 'checker', run_twice_source_missing: 'checker', run_twice_runtime_unavailable: 'checker',
   editorial_missing: 'editorial',

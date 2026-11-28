@@ -360,11 +360,22 @@ func buildDraft(root *os.Root, c problemConfig) (built, error) {
 		}
 		d.set("testCases", cases)
 		notes = append(notes, caseNotes...)
-		// Only a statement that already uses the markers has asked to be kept in step.
-		if sampleStart.MatchString(statement) {
-			samples, _ := markedSamples(cases)
-			if synced, _, _ := syncSamples(statement, samples); synced != statement {
-				notes = append(notes, c.Statement+": the marked samples differ from the sample test cases; run shareoj samples <directory>")
+		// A sample between markers has asked to be kept in step.
+		samples, _ := markedSamples(cases)
+		if _, updated, _ := syncSamples(statement, samples); updated > 0 {
+			notes = append(notes, c.Statement+": the marked samples differ from the sample test cases; run shareoj samples <directory>")
+		}
+		// A solver fails the sample run on a case the statement never showed (issue #29). With an interactor or a
+		// run-twice judge the input goes to the judge code and not to the submission, so the statement need not show it.
+		if c.Interactor == nil && c.RunTwice == nil {
+			var missing []string
+			for _, s := range cases {
+				if s.IsSample && !sampleInStatement(statement, s) {
+					missing = append(missing, strconv.Quote(s.Name))
+				}
+			}
+			if len(missing) > 0 {
+				notes = append(notes, c.Statement+": the statement does not show the sample(s) "+strings.Join(missing, ", ")+"; write them in or run shareoj samples <directory>")
 			}
 		}
 	}

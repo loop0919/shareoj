@@ -1,6 +1,7 @@
 package problems
 
 import (
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -35,7 +36,8 @@ const (
 	IssueFeaturedLimit     Issue = "featured_limit"
 	IssueFeaturedApplied   Issue = "featured_applied"
 	// Warnings: worth a second look, but nothing waits for them.
-	IssueOnlySampleTestCases Issue = "test_cases_only_samples"
+	IssueOnlySampleTestCases  Issue = "test_cases_only_samples"
+	IssueSampleNotInStatement Issue = "sample_not_in_statement"
 )
 
 const featuredApplicationsPerAuthor = 3
@@ -61,11 +63,54 @@ type Readiness struct {
 
 // ContentWarnings lists what looks like an oversight in a draft that still passes every check.
 func ContentWarnings(d Draft) []Issue {
+	var warnings []Issue
 	// Samples are public, so a problem judged on them alone accepts any answer that hard-codes them.
 	if len(d.TestCases) > 0 && !slices.ContainsFunc(d.TestCases, func(c TestCase) bool { return !c.IsSample }) {
-		return []Issue{IssueOnlySampleTestCases}
+		warnings = append(warnings, IssueOnlySampleTestCases)
 	}
-	return nil
+	// A solver fails the sample run on a case the statement never showed. Marking a case as a sample does not write
+	// it into the statement, and authors take it that it does. With an interactor or a run-twice judge the input
+	// goes to the judge code and not to the submission, so there the statement has no reason to show it.
+	if d.Interactor == nil && d.RunTwice == nil && slices.ContainsFunc(d.TestCases, func(c TestCase) bool { return c.IsSample && !sampleInStatement(d.Markdown, c) }) {
+		warnings = append(warnings, IssueSampleNotInStatement)
+	}
+	return warnings
+}
+
+var codeFence = regexp.MustCompile("^ {0,3}(`{3,}|~{3,})")
+
+// sampleInStatement tells whether a statement shows a sample: between the markers that the sample sync writes
+// (web/app/utils/sample-sync.ts), or, written by hand, with its input and its output each as a fenced code block.
+// Data stored as a file is not at hand to compare, so only the markers count for it. cli/samples.go follows the
+// same rules.
+func sampleInStatement(markdown string, c TestCase) bool {
+	if c.Name != "" {
+		if _, rest, found := strings.Cut(markdown, "<!-- sample-begin: "+c.Name+" -->"); found && strings.Contains(rest, "<!-- sample-end: "+c.Name+" -->") {
+			return true
+		}
+	}
+	var blocks []string
+	lines := strings.Split(strings.ReplaceAll(markdown, "\r\n", "\n"), "\n")
+	for i := 0; i < len(lines); i++ {
+		fence := codeFence.FindStringSubmatch(lines[i])
+		if fence == nil {
+			continue
+		}
+		start := i + 1
+		// The closing fence is at least as long, of the same character, and alone on its line.
+		for i++; i < len(lines); i++ {
+			if line := strings.TrimSpace(lines[i]); strings.HasPrefix(line, fence[1]) && strings.Trim(line, fence[1][:1]) == "" {
+				break
+			}
+		}
+		blocks = append(blocks, strings.TrimSpace(strings.Join(lines[start:min(i, len(lines))], "\n")))
+	}
+	shown := func(text string, file *TestFile) bool {
+		text = strings.TrimSpace(strings.ReplaceAll(text, "\r\n", "\n"))
+		// Nothing to show is shown.
+		return file == nil && (text == "" || slices.Contains(blocks, text))
+	}
+	return shown(c.Input, c.InputFile) && shown(c.Output, c.OutputFile)
 }
 
 // ContentIssues lists what the draft misses for any destination: publication, a contest and 定期便 share one bar.

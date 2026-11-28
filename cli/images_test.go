@@ -63,7 +63,9 @@ func TestPushUploadsLocalImages(t *testing.T) {
 	figure := pngBytes(t, 4, 4)
 	write(t, filepath.Join(dir, "images", "fig.png"), string(figure))
 	write(t, filepath.Join(dir, "images", "copy.png"), string(figure))
-	const statement = "## 問題文\n\n![図](images/fig.png)\n![同じ図](images/copy.png)\n![なし](images/missing.png)\n![外](https://example.com/x.png)\n"
+	// The sample of the example stays in the statement, so that check has nothing else to say about the file.
+	const sample = "\n```\n3 5\n```\n\n```\n8\n```\n"
+	const statement = "## 問題文\n\n![図](images/fig.png)\n![同じ図](images/copy.png)\n![なし](images/missing.png)\n![外](https://example.com/x.png)\n" + sample
 	write(t, filepath.Join(dir, "statement.md"), statement)
 
 	// check names the image without a file and accepts the rest.
@@ -123,7 +125,7 @@ func TestPushUploadsLocalImages(t *testing.T) {
 		}
 		return markdown
 	}
-	want := "## 問題文\n\n![図](" + url + ")\n![同じ図](" + url + ")\n![なし](images/missing.png)\n![外](https://example.com/x.png)\n"
+	want := "## 問題文\n\n![図](" + url + ")\n![同じ図](" + url + ")\n![なし](images/missing.png)\n![外](https://example.com/x.png)\n" + sample
 	// Two files with the same bytes are one upload.
 	if got := pushed(); got != want || uploads != 1 {
 		t.Fatalf("uploads=%d\n%s", uploads, got)

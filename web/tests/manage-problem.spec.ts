@@ -60,7 +60,7 @@ test('management shows the saved status and opens the section that needs work', 
 test('a samples-only problem gets a warning that does not block', async ({ page }) => {
   const id = '77777777-7777-4777-8777-777777777771'
   const draft = { title: 'サンプルだけ', markdown: '本文', editorial: '解説', difficulty: 3, timeLimitMs: '2000', memoryLimitMb: '512', testCases: [{ name: 'sample1', input: '1', output: '1', isSample: true }] }
-  const readiness = { publish: [], contest: [], featured: [], warnings: ['test_cases_only_samples'] }
+  const readiness = { publish: [], contest: [], featured: [], warnings: ['test_cases_only_samples', 'sample_not_in_statement'] }
   await page.route(`**/api/my/problems/${id}`, route => route.fulfill({ json: { id, version: 1, updatedAt: '2026-09-10T00:00:00Z', draft, readiness } }))
   await page.goto(`/problems/new?problem=${id}`)
   await page.getByRole('button', { name: '問題管理', exact: true }).click()
@@ -68,8 +68,8 @@ test('a samples-only problem gets a warning that does not block', async ({ page 
   await expect(status).toContainText('公開・コンテスト・定期便のどれにも出せます。')
   await expect(status.getByRole('list', { name: '足りない項目' })).toHaveCount(0)
   const warnings = status.getByRole('list', { name: '注意' })
-  await expect(warnings.getByRole('listitem')).toHaveText([/テストケースがサンプルだけです/])
-  await warnings.getByRole('button', { name: 'テストケースを開く' }).click()
+  await expect(warnings.getByRole('listitem')).toHaveText([/テストケースがサンプルだけです/, /問題文に入出力が見当たらないサンプルケースがあります/])
+  await warnings.getByRole('button', { name: 'テストケースを開く' }).first().click()
   await expect(page.getByRole('button', { name: 'テストケース', exact: true })).toHaveAttribute('aria-current', 'page')
 })
 

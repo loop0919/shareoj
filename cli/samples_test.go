@@ -52,10 +52,24 @@ func TestSamplesCommand(t *testing.T) {
 		}
 		return string(data)
 	}
-	// A statement without markers has not asked for syncing, so check stays quiet about it.
-	if out := command("check"); strings.Contains(out, "marked samples") {
+	// Issue #29: check names the samples the statement does not show. Nothing is marked yet, so nothing has drifted.
+	if out := command("check"); strings.Contains(out, "marked samples") || !strings.Contains(out, `warning: statement.md: the statement does not show the sample(s) "sample1"; write them in or run shareoj samples <directory>`) {
 		t.Fatal(out)
 	}
+	// A sample written by hand counts, and so does any sample of a problem whose input goes to the judge code.
+	write(t, statement, "## 問題文\n\n```\n3 5\n```\n\n```\n8\n```\n")
+	if out := command("check"); strings.Contains(out, "does not show") {
+		t.Fatal(out)
+	}
+	write(t, statement, "## 問題文\n")
+	write(t, filepath.Join(dir, "judge.py"), "print(1)\n")
+	for _, judge := range []string{"[interactor]\nsource = \"judge.py\"\nruntime = \"python3\"\nprotocol = \"legacy\"\n", "[run_twice]\nsource = \"judge.py\"\nruntime = \"python3\"\n"} {
+		write(t, filepath.Join(dir, "problem.toml"), template+"\n"+judge)
+		if out := command("check"); strings.Contains(out, "does not show") {
+			t.Fatal(judge, out)
+		}
+	}
+	write(t, filepath.Join(dir, "problem.toml"), template)
 	input, _ := os.ReadFile(filepath.Join(dir, "tests", "sample1.in"))
 	output, _ := os.ReadFile(filepath.Join(dir, "tests", "sample1.out"))
 	block := func(in, out string) string {
@@ -90,5 +104,31 @@ func TestSamplesCommand(t *testing.T) {
 	before := read()
 	if err := run(context.Background(), []string{"samples", dir}, &strings.Builder{}); err == nil || read() != before {
 		t.Fatal("rewrote the statement of an invalid problem", err)
+	}
+}
+
+// The same cases as TestSampleInStatement in api/internal/problems, which must answer the same.
+func TestSampleInStatement(t *testing.T) {
+	sample := testCase{Name: "sample1", IsSample: true, Input: "1 2\n", Output: "3\n"}
+	for _, tc := range []struct {
+		name, statement string
+		c               testCase
+		want            bool
+	}{
+		{"nothing", "## 問題文\n1 2 を足すと 3 です。", sample, false},
+		{"between the markers", "<!-- sample-begin: sample1 -->\n古い内容\n<!-- sample-end: sample1 -->\n", sample, true},
+		{"the markers of another sample", "<!-- sample-begin: sample2 -->\n<!-- sample-end: sample2 -->\n", sample, false},
+		{"a start marker alone", "<!-- sample-begin: sample1 -->\n", sample, false},
+		{"written by hand", "### 入力\n```\n1 2\n```\n### 出力\n```text\n3\n```\n", sample, true},
+		{"tilde fences and CRLF", "~~~\r\n1 2\r\n~~~\r\n\r\n~~~~text\r\n3\r\n~~~~\r\n", sample, true},
+		{"the input alone", "```\n1 2\n```\n", sample, false},
+		{"another output", "```\n1 2\n```\n```\n4\n```\n", sample, false},
+		{"outside a code block", "入力は\n1 2\nで、出力は\n3\nです。", sample, false},
+		{"a longer fence holds a shorter one", "````\n```\n1 2\n```\n````\n```\n3\n```\n", sample, false},
+		{"an empty input needs no block", "```\n3\n```\n", testCase{Name: "s", IsSample: true, Output: "3\n"}, true},
+	} {
+		if got := sampleInStatement(tc.statement, tc.c); got != tc.want {
+			t.Errorf("%s: got %v", tc.name, got)
+		}
 	}
 }
