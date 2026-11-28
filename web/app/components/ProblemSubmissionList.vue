@@ -11,14 +11,35 @@ const data = ref<{ items: Submission[], hasMore: boolean } | null>(null)
 const offset = ref(0)
 const { loading, run, invalidate } = useLatestRequest()
 const message = ref('')
+// The sort and filters are in the URL, beside the page's view. A viewer's own list has no submitter to choose.
+const { conditions: routeConditions, change, clear, query: conditionQuery } = useSubmissionConditions({ keep: ['view'], withUser: () => !props.mine })
+// A problem's list has no 問題 condition: one in the URL is neither shown nor sent.
+const conditions = computed(() => ({ ...routeConditions.value, problem: '' }))
+const listQuery = computed(() => {
+  const { problem: _problem, ...query } = conditionQuery.value
+  return query
+})
+const { data: catalog } = useJudgeCatalog()
+const languages = computed(() => catalog.value?.languages ?? [])
+// Whether a condition may be what emptied the list.
+const narrowed = computed(() => Object.keys(listQuery.value).length > 0)
+// The panel stays as the viewer left it through refreshes and changes of conditions, and starts closed on each visit.
+const conditionsOpen = ref(false)
+const conditionsPanel = ref<{ focus: () => void }>()
+// Requests are numbered as they go out, and the rows on screen are known by the request that read them.
+let asked = 0
+let shown = 0
 function load() {
   if (props.mine && !user.value) { invalidate(); data.value = null; return Promise.resolve() }
   const base = `/api/problems/${props.problemId}`
-  const query = { mine: props.mine ? '1' : '0', offset: offset.value }
+  const query = { mine: props.mine ? '1' : '0', offset: offset.value, ...listQuery.value }
   message.value = ''
   return run(JSON.stringify([base, query, user.value?.id]),
-    () => $fetch<{ items: Submission[], hasMore: boolean }>(`${base}/submissions`, { query }),
-    result => { data.value = result },
+    () => {
+      const number = ++asked
+      return $fetch<{ items: Submission[], hasMore: boolean }>(`${base}/submissions`, { query }).then(result => ({ number, result }))
+    },
+    ({ number, result }) => { data.value = result; shown = number },
     () => { message.value = '提出一覧を取得できませんでした。閲覧権限を確認し、再取得してください。' })
 }
 function detail(item: Submission) {
@@ -27,16 +48,38 @@ function detail(item: Submission) {
 watch(() => [user.value?.id, props.problemId, props.mine], () => {
   invalidate(); data.value = null; offset.value = 0
 }, { flush: 'sync' })
-watch([offset, () => user.value?.id, () => props.problemId, () => props.mine], load)
+// New conditions list from the first page, in one request with them. The rows on screen stay until it answers.
+watch(listQuery, () => { offset.value = 0 }, { flush: 'sync' })
+watch([offset, () => user.value?.id, () => props.problemId, () => props.mine, listQuery], load)
 onMounted(load)
 usePolling(load, 15000)
+// The empty list's button goes with the empty list, so the focus goes to the panel's button.
+function clearEmpty() {
+  void clear()
+  conditionsPanel.value?.focus()
+}
 
 // Results judged before the problem became partially scored carry no score and show 「—」.
 const showScore = computed(() => props.scored || !!data.value?.items.some(item => item.result?.scoring))
 const { allowed: canRejudge, busy: rejudging, message: rejudgeMessage, rejudge } = useRejudge(() => props.problemId)
-const { selected, selectable, rejudgeSelected } = useRejudgeSelection(() => data.value?.items, rejudge, load)
+// A list narrowed by conditions loses rejudged rows while they are judged, and may not get them back, so after a rejudge
+// asked for here it follows them for up to a minute, until rows read after the rejudge show each of them judged.
+// Without conditions the rows stay in view, and the judging rows alone keep the pace.
+let followed: { ids: string[], after: number, until: number } | undefined
+async function rejudgeFollowed(submissionIds: string[]) {
+  const queued = await rejudge(submissionIds)
+  if (queued && narrowed.value) followed = { ids: submissionIds, after: asked, until: Date.now() + 60_000 }
+  return queued
+}
+function following() {
+  const items = data.value?.items ?? []
+  const judged = (id: string) => items.some(item => item.id === id && item.status === 'DONE')
+  if (followed && (Date.now() >= followed.until || (shown > followed.after && followed.ids.every(judged)))) followed = undefined
+  return !!followed
+}
+const { selected, selectable, rejudgeSelected } = useRejudgeSelection(() => data.value?.items, rejudgeFollowed, load)
 // Follow rejudged rows more closely than the regular refresh.
-usePolling(load, 3000, { enabled: () => canRejudge.value && !!data.value?.items.some(item => item.status !== 'DONE') })
+usePolling(load, 3000, { enabled: () => canRejudge.value && (!!data.value?.items.some(item => item.status !== 'DONE') || following()) })
 </script>
 <template>
   <section class="problem-submissions" :aria-label="title">
@@ -51,10 +94,17 @@ usePolling(load, 3000, { enabled: () => canRejudge.value && !!data.value?.items.
     <p v-if="rejudgeMessage" class="rejudge-message" role="status">{{ rejudgeMessage }}</p>
     <p v-if="mine && !user" class="notice"><NuxtLink :to="{ path: '/login', query: { next: route.fullPath } }">ログイン</NuxtLink>すると、この問題への自分の提出を確認できます。</p>
     <template v-else>
+      <SubmissionConditions ref="conditionsPanel" v-model:open="conditionsOpen" class="submission-conditions" :conditions="conditions" :languages="languages" :with-user="!mine" @change="change" @clear="clear" />
       <p v-if="message" class="notice notice-error" role="alert">{{ message }}</p>
       <LoadingSpinner v-if="loading && !data" label="提出一覧を読み込み中" />
       <template v-if="data">
-        <p v-if="!data.items.length" class="muted">提出はまだありません。</p>
+        <template v-if="!data.items.length">
+          <div v-if="narrowed" class="submission-empty">
+            <p class="muted">条件に合う提出はありません。</p>
+            <button type="button" class="editor-button" @click="clearEmpty">条件をすべて外す</button>
+          </div>
+          <p v-else class="muted">提出はまだありません。</p>
+        </template>
         <SubmissionTable v-if="data.items.length" v-model:selected="selected" :items="data.items" :detail="detail" :show-score="showScore" :select="canRejudge" :selectable="selectable" :aria-busy="loading" />
         <ContentPagination :index="offset / 50" :has-next="data.hasMore" :loading="loading" @move="direction => offset += direction * 50" />
       </template>
@@ -68,4 +118,7 @@ usePolling(load, 3000, { enabled: () => canRejudge.value && !!data.value?.items.
 .submission-heading button { min-height: 40px; padding-inline: 16px; }
 .heading-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .rejudge-message { margin: 0 0 16px; color: var(--color-muted); font-size: .8125rem; }
+.submission-conditions { margin-bottom: 20px; }
+.submission-empty { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.submission-empty p { margin: 0; }
 </style>

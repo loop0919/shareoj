@@ -1,5 +1,6 @@
-import type { APIResponse, Locator, Page } from '@playwright/test'
+import type { APIResponse, Page } from '@playwright/test'
 import { expect, test } from './fixtures/account'
+import { quickModes, quickly } from './fixtures/quickly'
 
 const session = { cookie: 'openoj_access=valid-access' }
 // The browser is signed in through the fixture; the cookie lets the server see the session too.
@@ -18,27 +19,6 @@ const conditionsButton = (page: Page) => page.getByRole('button', { name: /^çµžã
 const encoded = (value: unknown) => encodeURIComponent(JSON.stringify(value))
 const remembered = async (page: Page) => JSON.parse(decodeURIComponent((await page.context().cookies()).find(c => c.name === 'openoj-problem-conditions')?.value ?? 'null'))
 const remember = (page: Page, value: string) => page.context().addCookies([{ name: 'openoj-problem-conditions', value, url: 'http://127.0.0.1:13000' }])
-// Picks an option in each select, or clicks each button, one right after another inside the page, so that each action
-// comes while the move of the one before is still on its way, however fast the machine is. In one task, the route has not
-// started to move; in the next task, the move is running Nuxt's route middleware.
-type QuickAction = { target: Locator, pick?: string }
-async function quickly(page: Page, actions: QuickAction[], { nextTask = false } = {}) {
-  const steps = await Promise.all(actions.map(async ({ target, pick }) => ({ element: await target.elementHandle(), pick })))
-  await page.evaluate(async ({ steps, nextTask }) => {
-    for (const [index, { element, pick }] of steps.entries()) {
-      if (!(element instanceof HTMLElement)) throw new Error('not an element')
-      if (nextTask && index) await new Promise(resolve => setTimeout(resolve))
-      if (pick === undefined) {
-        element.click()
-      }
-      else {
-        (element as HTMLSelectElement).value = pick
-        element.dispatchEvent(new Event('change', { bubbles: true }))
-      }
-    }
-  }, { steps, nextTask })
-}
-const quickModes = [['in one task', false], ['in the next task', true]] as const
 // The browser reports each cookie write to the page later, through cookieStore change events, and Nuxt's useCookie copies
 // each report into its ref. The report of a write can arrive after the next write, handing the older value back until
 // the next report. This holds back the report of the remembered conditions' deletion until releaseCookieDeletion, and

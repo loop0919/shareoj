@@ -1,5 +1,5 @@
-import { isLanguageKey, isRuntimeId, isSubmissionUser, submissionSortKeys, submissionVerdicts } from '../../shared/utils/submission-conditions'
-import type { SubmissionSort } from '../../shared/utils/submission-conditions'
+import { isLanguageKey, isRuntimeId, isSubmissionUser, submissionSortKeys, submissionVerdicts } from '~~/shared/utils/submission-conditions'
+import type { SubmissionSort } from '~~/shared/utils/submission-conditions'
 
 export { submissionVerdicts }
 export type { SubmissionSort }
