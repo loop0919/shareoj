@@ -204,7 +204,7 @@ const (
 // reads it and under which conditions. By default pgx prepares a statement once per connection, and after five calls
 // PostgreSQL may keep a generic plan, costed for a problem or contest of average size, that for a large contest sorts
 // every run instead of reading a page of an index. This does not help if the database forces generic plans
-// (plan_cache_mode=force_generic_plan), so it must not. TestSubmissionListSpeedPostgres times the lists after many calls on
+// (plan_cache_mode=force_generic_plan), so the database must not force generic plans. TestSubmissionListSpeedPostgres times the lists after many calls on
 // one connection, and TestSubmissionListsArePlannedPerCallPostgres checks that they leave no prepared statement.
 func plannedPerCall(args []any) []any {
 	return append([]any{pgx.QueryExecModeCacheDescribe}, args...)
