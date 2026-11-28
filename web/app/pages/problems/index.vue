@@ -41,6 +41,12 @@ await restoring
 const redirected = import.meta.server && restoring !== undefined
 watch(() => route.fullPath, () => { void restore() })
 const conditionsOpen = ref(false)
+const conditionsPanel = ref<{ focus: () => void }>()
+// The empty list's button goes with the empty list, so the focus goes to the panel's button.
+function clearEmpty() {
+  void clear()
+  conditionsPanel.value?.focus()
+}
 const tag = computed(() => conditions.value.tag)
 const contest = computed(() => conditions.value.contest)
 // Problem tags can give away the solution, so each visit starts with them hidden until the viewer turns them on. The
@@ -90,7 +96,7 @@ useSharePreview({ type: 'website', title: heading, path, description })
   <div class="catalogue">
     <header class="catalogue-heading"><h1>問題</h1><NuxtLink class="editor-button primary" to="/problems/post">問題投稿</NuxtLink></header>
     <!-- The tag switch stays outside the panel, at the end of the button's row. -->
-    <ProblemConditions v-model:open="conditionsOpen" class="catalogue-conditions" :conditions="conditions" :chips="chips" :tag-keep="tagKeep" :signed-in="Boolean(user)" :show-tags="showTags" @change="change" @clear="clear">
+    <ProblemConditions ref="conditionsPanel" v-model:open="conditionsOpen" class="catalogue-conditions" :conditions="conditions" :chips="chips" :tag-keep="tagKeep" :signed-in="Boolean(user)" :show-tags="showTags" @change="change" @clear="clear">
       <span class="catalogue-tags">
         <InlineSwitch v-model="showTags" class="tags-switch" :describedby="showTags ? undefined : 'problem-tags-hint'">タグを表示</InlineSwitch>
         <span v-if="!showTags" id="problem-tags-hint" class="tags-hint">解法のヒントになることがあります。</span>
@@ -99,7 +105,7 @@ useSharePreview({ type: 'website', title: heading, path, description })
     <!-- A page that fails after the first one hides the rows it would replace. -->
     <p v-if="error" role="alert">一覧を取得できませんでした。もう一度お試しください。 <button type="button" class="editor-button" @click="refresh()">再試行</button></p>
     <EmptyState v-else-if="!data?.total" kind="problem" :title="emptyTitle">
-      <template v-if="narrowed" #default><button type="button" class="editor-button" @click="clear">条件をすべて外す</button></template>
+      <template v-if="narrowed" #default><button type="button" class="editor-button" @click="clearEmpty">条件をすべて外す</button></template>
     </EmptyState>
     <template v-else>
     <ListToolbar :total="data.total" :page="page" :size="size" unit="問" :link="link" @update:size="resizeProblems" />

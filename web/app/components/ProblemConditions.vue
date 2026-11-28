@@ -7,11 +7,15 @@ import { conditionReset, problemContestFilters, problemSolvedFilters, problemSor
 // The page works out the chips (conditionChips) and what a new tag keeps, since it shows them too. The chips list solved
 // only when the list really applied it, which it does not for a signed-out viewer, and the panel follows them.
 // The default slot ends the button's row, for the page's own controls.
+// focus moves the focus to the button, for a control of the page's that leaves the page when it takes effect.
 const props = defineProps<{ conditions: ProblemConditions, chips: ConditionChip[], tagKeep: Record<string, string>, signedIn: boolean, showTags: boolean }>()
 const emit = defineEmits<{ change: [patch: Partial<ProblemConditions>], clear: [] }>()
 const open = defineModel<boolean>('open', { required: true })
 const route = useRoute()
 const id = useId()
+const toggle = ref<HTMLButtonElement>()
+const focus = () => toggle.value?.focus()
+defineExpose({ focus })
 const levels = Array.from({ length: 10 }, (_, index) => index + 1)
 // The fields show the conditions and send each pick up; the options are the only values they can send.
 const sort = computed({ get: () => props.conditions.sort, set: (value: string) => emit('change', { sort: value as ProblemSort }) })
@@ -22,12 +26,16 @@ function pickLevel(bound: 'min' | 'max', event: Event) {
   emit('change', bound === 'min' ? { min: level } : { max: level })
 }
 // Only the condition taken off goes up: a second chip taken off before the list catches up then keeps the first one off.
-const remove = (key: ConditionKey) => emit('change', conditionReset(key))
+// The chip goes with it, so the focus goes to the button.
+function remove(key: ConditionKey) {
+  emit('change', conditionReset(key))
+  focus()
+}
 </script>
 <template>
   <div class="problem-conditions">
     <div class="conditions-bar">
-      <button type="button" class="editor-button conditions-toggle" :aria-expanded="open" :aria-controls="`${id}-panel`" @click="open = !open">
+      <button ref="toggle" type="button" class="editor-button conditions-toggle" :aria-expanded="open" :aria-controls="open ? `${id}-panel` : undefined" @click="open = !open">
         絞り込み・並び替え<span v-if="chips.length" class="conditions-count"><span class="visually-hidden">（効いている条件</span>{{ chips.length }}<span class="visually-hidden">件）</span></span>
         <svg class="editor-icon conditions-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
       </button>
@@ -41,8 +49,8 @@ const remove = (key: ConditionKey) => emit('change', conditionReset(key))
         <FilterSelect v-model="sort" label="並び順" :options="problemSorts" />
         <div class="conditions-field">
           <span class="conditions-label" aria-hidden="true">解答状況</span>
-          <StatusFilter v-model="solved" label="解答状況" :options="problemSolvedFilters" :disabled="!signedIn" />
-          <p v-if="!signedIn" class="conditions-note"><NuxtLink :to="{ path: '/login', query: { next: route.fullPath } }">ログイン</NuxtLink>すると使えます</p>
+          <StatusFilter v-model="solved" label="解答状況" :options="problemSolvedFilters" :disabled="!signedIn" :describedby="signedIn ? undefined : `${id}-solved-note`" />
+          <p v-if="!signedIn" :id="`${id}-solved-note`" class="conditions-note"><NuxtLink :to="{ path: '/login', query: { next: route.fullPath } }">ログイン</NuxtLink>すると使えます</p>
         </div>
         <FilterSelect v-model="contest" label="コンテスト" :options="problemContestFilters" />
         <div class="conditions-field" role="group" :aria-labelledby="`${id}-difficulty`">

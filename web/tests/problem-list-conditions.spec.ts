@@ -129,7 +129,11 @@ test('the panel changes the conditions, the URL and the list', async ({ page }) 
   const toggle = conditionsButton(page)
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   await expect(page.getByRole('combobox', { name: '並び順' })).toHaveCount(0)
+  // The button names the panel only while there is one.
+  await expect(toggle).not.toHaveAttribute('aria-controls')
   await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-controls', /./)
+  await expect(page.locator(`[id="${await toggle.getAttribute('aria-controls')}"]`)).toContainText('並び順')
   await page.getByRole('combobox', { name: '並び順' }).selectOption({ label: '正解者数が多い順' })
   await expect(page).toHaveURL('/problems?sort=solvers-desc')
   // The panel stays open.
@@ -237,6 +241,7 @@ test('a signed-out viewer cannot filter by solved', async ({ page }) => {
   const solved = page.getByRole('group', { name: '解答状況' })
   await expect(solved.getByRole('button', { name: '未ACのみ' })).toBeDisabled()
   await expect(solved.getByRole('button', { name: 'すべて' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(solved).toHaveAccessibleDescription('ログインすると使えます')
   const login = page.getByRole('link', { name: 'ログイン' }).last()
   await expect(login).toHaveAttribute('href', /^\/login\?next=/)
   expect(new URL(await login.getAttribute('href') ?? '', 'https://judge.example').searchParams.get('next')).toBe('/problems?solved=unsolved&contest=exclude')
@@ -255,6 +260,20 @@ test('an empty result offers to clear the conditions, and rows keep them on a ta
   await page.getByRole('table').getByRole('link', { name: 'DP', exact: true }).click()
   await expect(page).toHaveURL('/problems?sort=oldest&tag=DP')
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://judge.example/problems?tag=DP')
+})
+
+// The × and the empty list's button leave the page when they take effect, so the focus goes to the panel's button.
+test('taking conditions off leaves the focus on the panel button', async ({ page }) => {
+  // The fixture problem is no contest's.
+  await page.goto('/problems?sort=oldest&contest=only')
+  const toggle = conditionsButton(page)
+  await page.getByRole('list', { name: '効いている条件' }).getByRole('button', { name: '公開日が古い順を外す' }).click()
+  await expect(page).toHaveURL('/problems?contest=only')
+  await expect(toggle).toBeFocused()
+  await page.getByRole('button', { name: '条件をすべて外す' }).click()
+  await expect(page).toHaveURL('/problems')
+  await expect(page.getByRole('table').getByRole('link', { name: 'A + B', exact: true })).toBeVisible()
+  await expect(toggle).toBeFocused()
 })
 
 // The API refuses such a tag, so the list would only fail; the box says why instead, as the tag editor does.
