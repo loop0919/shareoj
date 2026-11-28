@@ -7,6 +7,8 @@ import { canonicalTag } from '~/utils/tag-search'
 const props = defineProps<{ kind: 'problem' | 'post', tag: string, to: '/problems' | '/blog', keep?: Record<string, string> }>()
 const known = ref<Tag[]>([])
 const text = ref(props.tag)
+// A list that stays on screen when its tag changes shows the tag in use, not what was typed.
+watch(() => props.tag, tag => { text.value = tag })
 onMounted(async () => {
   try { known.value = tagListSchema.parse(await $fetch('/api/tags')).items } catch {}
 })

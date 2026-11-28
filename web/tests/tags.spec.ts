@@ -6,6 +6,8 @@ const tagsLoaded = (page: import('@playwright/test').Page) => page.waitForRespon
 
 // Problem tags are hidden on every visit; these tests turn them on for the page in view.
 const showProblemTags = (page: import('@playwright/test').Page) => page.getByRole('switch', { name: 'タグを表示' }).check()
+// The problem list keeps its tag search in the panel of conditions, which every visit opens closed.
+const openConditions = (page: import('@playwright/test').Page) => page.getByRole('button', { name: /^絞り込み・並び替え/ }).click()
 
 test('problem tags link to the problems that carry them', async ({ page }, testInfo) => {
   await page.goto(`/problems/${problemId}`)
@@ -16,6 +18,7 @@ test('problem tags link to the problems that carry them', async ({ page }, testI
   await expect(page).toHaveURL('/problems?tag=DP')
   await expect(page).toHaveTitle('タグ「DP」の問題 | ShareOJ')
   // The search box shows the tag in use, with a button beside it to clear the filter.
+  await openConditions(page)
   const search = page.getByRole('combobox', { name: 'タグで絞り込む' })
   await expect(search).toHaveValue('DP')
   // The filtered list is another page, so its tags start hidden again.
@@ -81,6 +84,7 @@ test('signed-out viewers can show problem tags from the problem list', async ({ 
   await toggle.click()
   const row = page.getByRole('row').filter({ has: page.getByRole('link', { name: 'A + B', exact: true }) })
   await expect(row.getByRole('list', { name: 'タグ' }).getByRole('link')).toHaveText(['DP', 'グラフ'])
+  await openConditions(page)
   await expect(page.getByRole('search', { name: '問題をタグで絞り込む' })).toBeVisible()
   await expect(page.getByText('解法のヒントになることがあります。')).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('problems-tags-on.png') })
@@ -126,6 +130,7 @@ test('the tag filter reuses the spelling in use', async ({ page }, testInfo) => 
   await page.goto('/problems')
   const loaded = tagsLoaded(page)
   await showProblemTags(page)
+  await openConditions(page)
   await loaded
   await expect(page.locator('#problem-tag-filter-options option')).toHaveCount(3)
   const search = page.getByRole('combobox', { name: 'タグで絞り込む' })
@@ -147,9 +152,12 @@ test('the tag filter reuses the spelling in use', async ({ page }, testInfo) => 
 test('viewers who hide problem tags get no problem tag search', async ({ page }) => {
   await page.goto('/problems')
   await expect(page.getByRole('table').getByRole('link', { name: 'A + B', exact: true })).toBeVisible()
+  await openConditions(page)
+  await expect(page.getByRole('combobox', { name: '並び順' })).toBeVisible()
   await expect(page.getByRole('search')).toHaveCount(0)
   // A link to a filtered list still shows the tag and a way to clear it.
   await page.goto('/problems?tag=DP')
+  await openConditions(page)
   await expect(page.getByRole('combobox', { name: 'タグで絞り込む' })).toHaveValue('DP')
   await page.getByRole('link', { name: '絞り込みを解除' }).click()
   await expect(page).toHaveURL('/problems')
