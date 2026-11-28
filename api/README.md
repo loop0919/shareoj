@@ -513,6 +513,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 - 開始したコンテストに入っている問題は、方式、グループの名前、配点、順番を変える保存（部分点の有無の切り替えを含む）を409 `problem_scoring_locked`で拒む。ケースの所属、テストケース、集計コードは直せ、既存の提出にはリジャッジで反映する。
 - 部分点の問題のコンテストの配点は満点とし、開始前は問題を保存するたびに`contest_problems.points`をそろえる。問題の保存は、コンテストの行をロックしてから開始したかを一度だけ判定し、固定とそろえに同じ判定を使う。コンテストの保存では部分点の問題の`points`を読まない（0か省略でよい）。一括方式の問題の`points`が0なら400 `invalid_contest`とし、下書きの`points_invalid`も一括方式の問題だけで判定する。下書きの応答の`problems[]`は、部分点の問題に`partial`と`fullScore`を付ける。
 - 「解いた」は満点の提出で決める（SQL関数`submission_full_score(result)`。`scoring`のない結果はACを満点とする）。解いた人数、`GET /my/solved-problems`、初AC通知、定期便の順位が対象で、定期便では満点に届かない判定済みの提出を誤答に数え、得点は出さない。提出をまたいでグループの得点を合計しないので、コンテストで小課題ごとに別の提出で満点に届いても、これらには数えない。
+- 解いた人数（問題の一覧と詳細）と解いた印（`GET /my/solved-problems`と一覧の解答状況の絞り込み）は、`submissions`の部分索引2つ（`050_solver_indexes.sql`）だけで答える。`internal/problems/publication.go`の数える条件を変えるときは索引の条件をそろえるマイグレーションを足し、`submission_full_score`を置き換えるときは両方の索引を作り直す（[ADR 0045](../docs/adr/0045-sort-and-filter-problem-list.md)）。050は索引を作る間`submissions`への書き込みを待たせるので、コンテストの開催中を避けて配布する。
 - 問題詳細とコンテストの問題は、部分点の問題に`scoring`（`fullScore`と`groups`の`name`、`points`）を返す。方式と集計コードは返さない。
 - コンテスト詳細は`partialScoring`（部分点の問題があるか。開始前も返す）と`problems[].partial`を返す。`problems[].solved`は、グループごとの最高点の合計が満点に達した問題に付く（チーム戦ではチームの提出から求める）。
 - 配布時は`040_submission_full_score.sql`だけのコミットを先に配布して適用し、その後にAPIを配布する。部分点の保存を有効にするAPIは、[配布と検証の手順](../docs/judge/deployment-checks.md)の「部分点を有効にする前の配布」が終わってから配布する。
