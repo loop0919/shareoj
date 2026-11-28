@@ -1,4 +1,4 @@
-import type { Locator, Page } from '@playwright/test'
+import type { APIResponse, Locator, Page } from '@playwright/test'
 import { expect, test } from './fixtures/account'
 
 const session = { cookie: 'openoj_access=valid-access' }
@@ -98,6 +98,21 @@ test('the solved filter needs a session and says whether it was applied', async 
 
 test('a refused order stays a 400 on the signed-in path', async ({ request }) => {
   expect((await request.get('/api/problems?sort=popular&solved=unsolved', { headers: session })).status()).toBe(400)
+})
+
+// The list holds the viewer's own solved filter, and a bare /problems redirects by a cookie, so no cache keeps either.
+test('the list and its route are not stored, and vary with the cookie', async ({ request }) => {
+  const headers = (response: APIResponse) => [response.headers()['cache-control'], response.headers().vary]
+  const cookieVaries = expect.stringMatching(/\bcookie\b/i)
+  expect(headers(await request.get('/problems'))).toEqual(['no-store', cookieVaries])
+  const mine = await request.get('/problems?solved=unsolved', { headers: session })
+  expect([mine.status(), ...headers(mine)]).toEqual([200, 'no-store', cookieVaries])
+  const redirect = await request.get('/problems', { headers: { cookie: `openoj-problem-conditions=${encoded({ sort: 'oldest' })}` }, maxRedirects: 0 })
+  expect([redirect.status(), ...headers(redirect)]).toEqual([302, 'no-store', cookieVaries])
+  expect(headers(await request.get('/api/problems?solved=unsolved', { headers: session }))).toEqual(['no-store', cookieVaries])
+  // The fallbacks to the public list.
+  expect((await request.get('/api/problems?solved=unsolved', { headers: { cookie: 'openoj_access=expired' } })).headers()['cache-control']).toBe('no-store')
+  expect((await request.get('/api/problems?solved=unsolved')).headers()['cache-control']).toBe('no-store')
 })
 
 test('the untagged problem has no difficulty and is not solved', async ({ request }) => {

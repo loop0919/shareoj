@@ -27,7 +27,9 @@ const route = useRoute()
 // Older links opened the posting modal here; posting now has its own page.
 if (route.query.post === '1') await navigateTo({ path: '/problems/post', query: typeof route.query.problem === 'string' ? { problem: route.query.problem } : {} }, { replace: true, redirectCode: 301 })
 const config = useRuntimeConfig()
-// Rendering depends on the page size cookie, and a bare /problems on the remembered conditions.
+// Rendering depends on the page size cookie, a bare /problems on the remembered conditions, and the solved filter on
+// the session, so no cache keeps it.
+useResponseHeader('Cache-Control').value = 'no-store'
 useResponseHeader('Vary').value = 'Cookie'
 // The sort and the filters are in the URL too. The page stays mounted when they change, so the panel stays as it is.
 const { conditions, change, clear, restore } = useProblemConditions()
