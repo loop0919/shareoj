@@ -135,7 +135,7 @@ func (s *Store) ContestList(ctx context.Context, contestID, viewer string, scope
 		return CountedSubmissionList{}, pgx.ErrNoRows
 	}
 	q := contestListQueries(contestID, viewer, scope, offset, limit, onsite, problemID, conditions)
-	rows, err := s.Pool.Query(ctx, q.page, q.pageArgs...)
+	rows, err := s.Pool.Query(ctx, q.page, plannedPerCall(q.pageArgs)...)
 	if err != nil {
 		return CountedSubmissionList{}, err
 	}
@@ -144,7 +144,7 @@ func (s *Store) ContestList(ctx context.Context, contestID, viewer string, scope
 		return CountedSubmissionList{}, err
 	}
 	result := CountedSubmissionList{ContestSubmissionList: page}
-	err = s.Pool.QueryRow(ctx, q.count, q.countArgs...).Scan(&result.Total)
+	err = s.Pool.QueryRow(ctx, q.count, plannedPerCall(q.countArgs)...).Scan(&result.Total)
 	return result, err
 }
 
@@ -198,6 +198,16 @@ const (
 	contestRuns      = `contest_id=$1::uuid`
 	contestPlainRuns = `contest_id IS NULL AND (SELECT contest_staff($1::uuid,$3)) AND problem_id=ANY(ARRAY(SELECT cp.problem_id FROM contest_problems cp WHERE cp.contest_id=$1::uuid))`
 )
+
+// plannedPerCall makes pgx run a list's statement as the unnamed statement, which PostgreSQL plans with the call's
+// values every time. The best plan of a list depends on them: which problem or contest, how many runs it holds, who
+// reads it and under which conditions. By default pgx prepares a statement once per connection, and after five calls
+// PostgreSQL may keep a generic plan, costed for a problem or contest of average size, that for a large contest sorts
+// every run instead of reading a page of an index. TestSubmissionListSpeedPostgres times the lists after many calls on
+// one connection, and TestSubmissionListsArePlannedPerCallPostgres checks that they leave no prepared statement.
+func plannedPerCall(args []any) []any {
+	return append([]any{pgx.QueryExecModeCacheDescribe}, args...)
+}
 
 func submissionList(rows pgx.Rows, limit int) (ContestSubmissionList, error) {
 	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Submission, error) {

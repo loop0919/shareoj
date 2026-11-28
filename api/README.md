@@ -703,6 +703,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 - 条件は、見える提出の中だけで効く。凍結中の提出や開始前のスタッフ限定の提出は、提出者や結果を名指ししても出ず、コンテストの一覧の`total`にも数えない。`total`は条件を当てたあとの件数で、1ページの件数に左右されない。
 - コード長と実行時間の並びは、`052_submission_list_indexes.sql`の索引から1ページ分だけ読む。コンテストの一覧は、コンテストの提出と、その問題のコンテスト外の提出（スタッフにだけ見える）を分けて読み、`total`もコンテストの索引から数える。`internal/submissions/conditions.go`の並びの式や、`contestPublic`と`contestOwn`の最初の3つの条件を変えるときは、索引をそろえるマイグレーションを足す（ずれると`TestSubmissionListsUseTheirIndexesPostgres`が失敗する）。`submission_cpu_time_ms`を置き換えるときは`submissions_problem_fastest`と`submissions_contest_fastest`を作り直す。
   052は、結果と3つのフラグの統計を足したあと、索引を作る前に`ANALYZE submissions`を行う（統計は`ANALYZE`までは使われない）。`ANALYZE`の間は書き込みを止めないが、索引を作る間は`submissions`への書き込みを待たせるので、コンテストの開催中を避けて配布する。
+  3つの一覧の問い合わせは、呼ぶたびに値に合わせて計画させる（`plannedPerCall`）。pgxの既定のように準備した文を使い回すと、5回目のあとに平均の大きさのコンテストに合わせた計画に切り替わることがあり、大きなコンテストの一覧が全件を読んで並べ替える。
 
 チームの提出の共有、順位表、オンサイトの絞り込みは次のとおり。
 

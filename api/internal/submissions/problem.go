@@ -66,7 +66,7 @@ func (s *Store) ProblemList(ctx context.Context, problemID, contestID, viewer st
 		return ContestSubmissionList{}, err
 	}
 	query, args := problemListQuery(problemID, contestID, viewer, scope, onsite, offset, conditions)
-	rows, err := s.Pool.Query(ctx, query, args...)
+	rows, err := s.Pool.Query(ctx, query, plannedPerCall(args)...)
 	if err != nil {
 		return ContestSubmissionList{}, err
 	}

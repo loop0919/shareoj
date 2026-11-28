@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // planNode is the part of an EXPLAIN (FORMAT JSON) node that the test reads.
@@ -138,5 +139,49 @@ func TestSubmissionListsUseTheirIndexesPostgres(t *testing.T) {
 			t.Errorf("%s reads job for every run it reads through %s (filter %s). Its WHERE no longer implies the index's predicate word for word.",
 				statement.name, statement.index, filter)
 		}
+	}
+}
+
+// TestSubmissionListsArePlannedPerCallPostgres checks that the lists leave no prepared statement on the connection. A
+// statement that pgx prepares may get a generic plan from PostgreSQL after five calls, costed for a problem or contest
+// of average size, which sorts every run of a large contest (see plannedPerCall).
+func TestSubmissionListsArePlannedPerCallPostgres(t *testing.T) {
+	ctx, shared := newListTestPool(t, "submission_list_per_call")
+	// One connection, so that the check below sees the statements the lists ran.
+	config := shared.Config()
+	config.MaxConns = 1
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	const problem, contest = "a1000000-0000-4000-8000-000000000001", "a2000000-0000-4000-8000-000000000001"
+	for _, statement := range []string{
+		`INSERT INTO user_profiles(owner_id,handle) VALUES ('alice','alice')`,
+		`INSERT INTO problem_drafts(id,owner_id,draft,version,published_draft,published_version,published_at)
+		VALUES ('` + problem + `','alice','{"title":"p","timeLimitMs":"1000","memoryLimitMb":"256"}',1,'{"title":"p","timeLimitMs":"1000","memoryLimitMb":"256"}',1,now())`,
+		`INSERT INTO contests(id,owner_id,title,description,starts_at,ends_at,released) VALUES ('` + contest + `','alice','c','',now()-interval '3 hours',now()-interval '1 hour',true)`,
+	} {
+		if _, err = pool.Exec(ctx, statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := &Store{Pool: pool}
+	for range 6 {
+		if _, err = store.ProblemList(ctx, problem, "", "alice", ScopeAll, false, 0, ListConditions{Sort: SortFastest}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = store.ContestList(ctx, contest, "alice", ScopeAll, 0, 50, false, "", ListConditions{Sort: SortShortest}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The lists' statements, and only theirs, read contest_submission_public. The name is an argument here, so that
+	// this statement, which pgx prepares, does not hold it.
+	var prepared int
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM pg_prepared_statements WHERE strpos(statement,$1)>0`, "contest_submission_public").Scan(&prepared); err != nil {
+		t.Fatal(err)
+	}
+	if prepared != 0 {
+		t.Errorf("the lists left %d prepared statements on the connection; run them through plannedPerCall", prepared)
 	}
 }
