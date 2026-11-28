@@ -56,6 +56,8 @@ function problemList(req, res, mine) {
   res.end(JSON.stringify({ items: matches ? [problem] : [], nextCursor: '', total: matches ? 1 : 0 }))
 }
 // The API leaves out the tags of a problem in a 定期便 round.
+// The submission list of this problem echoes the query the web server forwarded.
+const echoProblemId = 'd8d8d8d8-d8d8-4d8d-8d8d-d8d8d8d8d8d8'
 const featuredProblem = { ...problem, id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', title: '定期便の新作', difficulty: 9, editorial: '', tags: [], editorialHidden: true, editorialRevealAt: '2099-09-29T13:00:00Z' }
 const tags = [
   { name: 'DP', problemCount: 3, postCount: 1 }, { name: 'セグメント木', problemCount: 2, postCount: 0 },
@@ -231,6 +233,8 @@ createServer(async (req, res) => {
       for await (const chunk of req) body += chunk
       return res.end(JSON.stringify({ path, url: req.url, method: req.method, type: req.headers['content-type'] ?? '', body }))
     }
+    // The submission list of this problem echoes the query the web server forwarded.
+    if (path === `/my/problems/${echoProblemId}/submissions`) return res.end(JSON.stringify({ route: 'private', path, query: new URL(req.url, 'http://localhost').search }))
     if (path.startsWith('/my/problems/')) return res.writeHead(404).end('{}')
     // This contest echoes what the web server forwarded, so tests can check the query it built (ADR 0024).
     if (/^\/my\/contests\/66666666-6666-4666-8666-666666666666(\/|$)/.test(path)) {
@@ -285,7 +289,11 @@ createServer(async (req, res) => {
   else if (path === '/health') res.end('{}')
   else if (path === '/fixture/hits') res.end(JSON.stringify({ hits: busyHits.get(new URL(req.url, 'http://localhost').searchParams.get('key')) ?? 0 }))
   else if (path === '/fixture/runtime-reads') res.end(JSON.stringify({ reads: runtimeReads }))
-  else if (path === '/runtimes') { runtimeReads++; res.end(JSON.stringify({ items: [{ id: 'cpp23-gcc', label: 'C++23 (GCC)' }, { id: 'cpp17', label: 'C++17 (GCC)' }, { id: 'python314', label: 'Python 3.14' }, { id: 'whitespace13', label: 'Whitespace (whitespacers 1.3)' }, { id: 'text', label: 'Text (cat 9.4)' }] })) }
+  else if (path === '/runtimes') { runtimeReads++; res.end(JSON.stringify({ items: [{ id: 'cpp23-gcc', label: 'C++23 (GCC)' }, { id: 'cpp17', label: 'C++17 (GCC)' }, { id: 'python314', label: 'Python 3.14' }, { id: 'whitespace13', label: 'Whitespace (whitespacers 1.3)' }, { id: 'text', label: 'Text (cat 9.4)' }], languages: [
+    { key: 'cpp', label: 'C++', runtimes: [{ id: 'cpp17', label: 'C++17 (GCC)', language: 'cpp' }, { id: 'cpp23-gcc', label: 'C++23 (GCC)', language: 'cpp' }] },
+    { key: 'rust', label: 'Rust', runtimes: [{ id: 'rust2024', label: 'Rust (Edition 2024)', language: 'rust' }] },
+    { key: 'python', label: 'Python', runtimes: [{ id: 'python314', label: 'Python (CPython 3.14)', language: 'python' }, { id: 'pypy311', label: 'Python (PyPy 3.11)', language: 'python' }] },
+  ] })) }
   else if (path === '/featured/standings') {
     const at = new URL(req.url, 'http://localhost').searchParams.get('at')
     if (at === partialFeaturedStandings.round.scheduledAt) return res.end(JSON.stringify(partialFeaturedStandings))
@@ -322,6 +330,7 @@ createServer(async (req, res) => {
     { name: 'empty', input: '', output: '' },
     { name: 'large', input: '', output: 'ok\n', inputFile: { url: 'https://download.example/input', size: 100000, sha256: 'a'.repeat(64) } },
   ] }))
+  else if (path === `/problems/${echoProblemId}/submissions`) res.end(JSON.stringify({ route: 'public', path, query: new URL(req.url, 'http://localhost').search }))
   else if (path === `/problems/${problem.id}/submissions`) res.end(JSON.stringify({ items: [submission], hasMore: false }))
   else if (path === `/problems/${problem.id}/submissions/${submission.id}`) res.end(JSON.stringify(submission))
   else if (path === `/contests/88888888-8888-4888-8888-888888888888/submissions/${submission.id}`) res.end(JSON.stringify({ ...submission, contestId: '88888888-8888-4888-8888-888888888888', problemIndex: 0, rejudgedAt: '2026-09-10T03:00:00Z' }))

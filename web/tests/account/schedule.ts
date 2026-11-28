@@ -17,3 +17,11 @@ export async function recordAccepted(request: APIRequestContext, problemId: stri
   const response = await request.post(`${fixtureAPI}/__test/problems/${problemId}/accepted`, { data: { owner } })
   expect(response.status(), await response.text()).toBe(204)
 }
+
+// Records a public run of a fixture user on a problem with the given runtime (a catalogue ID such as 'cpp23-gcc'), source,
+// verdict and execution time. Without a verdict the run is still judging. Runs are recorded one after another, so the
+// first one recorded is the oldest.
+export async function recordSubmission(request: APIRequestContext, problemId: string, run: { owner: string, runtime: string, source: string, verdict?: string, cpuTimeMs?: number }) {
+  const response = await request.post(`${fixtureAPI}/__test/problems/${problemId}/submissions`, { data: run })
+  expect(response.status(), await response.text()).toBe(204)
+}

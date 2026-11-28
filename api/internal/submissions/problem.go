@@ -21,6 +21,8 @@ const (
 // The author and testers also review a featured problem's submissions before they unlock.
 // Roles in the requested contest are subqueries so that they are checked once, not for every row.
 // $4 is the Scope, and $6 keeps only the contest submissions of participants who are onsite now.
+// The three conditions on job are the expressions of the submissions_job_flags statistics in
+// 052_submission_list_indexes.sql, from which the planner tells how many runs they leave; change them together.
 var problemSubmissionVisible = `problem_id=$1 AND ($2='' OR contest_id=NULLIF($2,'')::uuid OR
  (contest_id IS NULL AND (SELECT contest_staff(NULLIF($2,'')::uuid,$3))))
  AND NOT COALESCE((job->>'easyTest')::boolean,false)
@@ -58,16 +60,25 @@ func (s *Store) problemSubmissionsAccess(ctx context.Context, problemID, contest
 }
 
 // ProblemList lists a problem's submissions, in the contest when contestID is set. onsite keeps the contest submissions
-// of participants who are onsite now.
-func (s *Store) ProblemList(ctx context.Context, problemID, contestID, viewer string, scope Scope, onsite bool, offset int) (ContestSubmissionList, error) {
+// of participants who are onsite now. The conditions narrow and order the list inside what the viewer may see.
+func (s *Store) ProblemList(ctx context.Context, problemID, contestID, viewer string, scope Scope, onsite bool, offset int, conditions ListConditions) (ContestSubmissionList, error) {
 	if err := s.problemSubmissionsAccess(ctx, problemID, contestID, viewer, scope); err != nil {
 		return ContestSubmissionList{}, err
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT `+columns+` FROM submissions WHERE `+problemSubmissionVisible+` ORDER BY created_at DESC,id DESC LIMIT 51 OFFSET $5`, problemID, contestID, viewer, string(scope), offset, onsite)
+	query, args := problemListQuery(problemID, contestID, viewer, scope, onsite, offset, conditions)
+	rows, err := s.Pool.Query(ctx, query, plannedPerCall(args)...)
 	if err != nil {
 		return ContestSubmissionList{}, err
 	}
 	return submissionList(rows, 50)
+}
+
+// problemListQuery gives ProblemList's page query and its arguments. The page is cut from the runs' id (listPage).
+func problemListQuery(problemID, contestID, viewer string, scope Scope, onsite bool, offset int, conditions ListConditions) (string, []any) {
+	// The visibility filter takes $1 to $6; the conditions follow it.
+	narrow, extra := conditions.where(7)
+	return listPage(`SELECT id FROM submissions WHERE `+problemSubmissionVisible+narrow+` ORDER BY `+conditions.order()+` LIMIT 51 OFFSET $5`, conditions),
+		append([]any{problemID, contestID, viewer, string(scope), offset, onsite}, extra...)
 }
 
 func (s *Store) ProblemGet(ctx context.Context, problemID, id, viewer string) (Submission, error) {

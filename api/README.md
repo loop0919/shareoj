@@ -441,6 +441,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 個別に適用する場合は `DATABASE_URL=... go run ./cmd/migrate` を実行してください。
 
 - `GET /problems`、`GET /problems/{id}`: 公開された問題の一覧と詳細（認証不要）。
+- `GET /runtimes`: 今選べる処理系を`items`に、メンテナンス中かを`maintenance`に返す。`languages`には、今は選べない処理系も含むカタログの全言語を、`{key, label, runtimes}`の形でカタログ順に返す（メンテナンス中も空にしない）。各処理系は`language`に言語のキーを持つ。
 - `GET /posts`、`GET /posts/{id}`: 公開された記事の一覧と詳細（認証不要）。
 - `GET /my/posts`、`GET|PUT|DELETE /my/posts/{id}`: 自分の記事の保存・取得・削除。一覧には作成日時を`createdAt`に付ける。
 - `PUT /my/problems/{id}/publication`、`PUT /my/posts/{id}/publication`: `{ "version": 1, "publish": true }` で現在の保存内容を公開。`false` で非公開に戻す。
@@ -691,6 +692,18 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 - 開始前の退会では、そのコンテストの参加登録とチームの所属を外し、空になったチームを消し、残ったチームの参加コードを作り直す。
 - 配布時は`035_contest_teams.sql`だけのコミットを先に配布して適用し、その後にAPIを配布する。`037_contest_onsite_kept_open.sql`と`038_contest_team_individuals.sql`も同じく先に適用する。
   `039_contest_onsite_drop_kept_open.sql`は`kept_open`の列を消すので、列を読まないAPIを配布した後に適用する。
+
+提出一覧の並び替えと絞り込みは次のとおり。公開問題の一覧（`GET /problems/{id}/submissions`）、コンテストの一覧（`GET /contests/{id}/submissions`）、コンテストの問題の一覧（`GET /contests/{id}/problems/{problem}/submissions`）と、それぞれの`/my/`の入口が同じクエリを受ける。
+
+- `sort`: `newest`（初期値）、`oldest`、`shortest`、`fastest`。`shortest`はコードのバイト数、`fastest`は一覧の「実行時間」の値（ケースごとの`cpuTimeMs`の最大）が小さい順で、値のない提出は最後に置く。どの並びも、同じ値は提出日時が新しい順、次にIDの降順で並べる。`oldest`だけは提出日時が古い順、次にIDの昇順。
+- `verdict`: `AC`、`WA`、`TLE`、`MLE`、`OLE`、`RE`、`CE`、`JE`。採点が終わった提出（`status='DONE'`）の`result.verdict`で絞る。採点中の提出は、`verdict`を付けた一覧には出ない。部分点の問題でも得点ではなく`result.verdict`で絞る。
+- `language`: 言語のキー（`cpp`、`python`など）。その言語のどの処理系の提出も含み、今は提出に選べない処理系も含む。`runtime`: 処理系のID（`cpp23-gcc`など）。`-isolate`と`-local`は付けない。保存されているIDに接尾辞が付いていても同じ処理系として数える。`language`と`runtime`は同時に指定できない。
+- `user`: 提出した人のユーザーID。完全一致で、存在しないIDなら0件。
+- 空の値（`sort=`など）は指定なしと同じ。知らない値や形の合わない値、`language`と`runtime`の同時指定は400 `invalid_request`とする。
+- 条件は、見える提出の中だけで効く。凍結中の提出や開始前のスタッフ限定の提出は、提出者や結果を名指ししても出ず、コンテストの一覧の`total`にも数えない。`total`は条件を当てたあとの件数で、1ページの件数に左右されない。
+- コード長と実行時間の並びは、`052_submission_list_indexes.sql`の索引から1ページ分だけ読む。ページは提出のIDと並びの値だけで切り出し、表示する列はそのページの提出についてだけ読む（`listPage`）。コンテストの一覧は、スタッフには、コンテストの提出と、その問題のコンテスト外の提出（スタッフにだけ見える）を分けて読み、ほかの利用者にはコンテストの提出だけを読む。`total`もコンテストの索引から数える。書き直す前の1回で読む文と同じページと件数になることを、`TestContestListMatchesReferencePostgres`と`TestProblemListMatchesReferencePostgres`が確かめる。`internal/submissions/conditions.go`の並びの式や、`contestPublic`と`contestOwn`の最初の3つの条件を変えるときは、索引をそろえるマイグレーションを足す（ずれると`TestSubmissionListsUseTheirIndexesPostgres`が失敗する）。`submission_cpu_time_ms`を置き換えるときは`submissions_problem_fastest`と`submissions_contest_fastest`を作り直す。
+  052は、結果と3つのフラグの統計を足したあと、索引を作る前に`ANALYZE submissions`を行う（統計は`ANALYZE`までは使われない）。`ANALYZE`の間は書き込みを止めないが、索引を作る間は`submissions`への書き込みを待たせるので、コンテストの開催中を避けて配布する。
+  3つの一覧の問い合わせは、呼ぶたびに値に合わせて計画させる（`plannedPerCall`）。pgxの既定のように準備した文を使い回すと、5回目のあとに平均の大きさのコンテストに合わせた計画に切り替わることがあり、大きなコンテストの一覧が全件を読んで並べ替える。データベースの`plan_cache_mode`を`force_generic_plan`にすると、この方法は効かない。
 
 チームの提出の共有、順位表、オンサイトの絞り込みは次のとおり。
 

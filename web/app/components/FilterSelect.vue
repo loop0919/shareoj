@@ -3,7 +3,9 @@
 // width twice over. '' shows everything, and each choice says how many rows it would show.
 // Without counts it is a plain choice among the options, such as an order: nothing is hidden, so there is no すべて
 // and no mark that rows are held back.
-const props = defineProps<{ label: string, options: readonly { key: string, label: string }[], counts?: Record<string, number> }>()
+// groups follow the options under headings of their own, for choices that fall into kinds.
+type Option = { key: string, label: string }
+const props = defineProps<{ label: string, options: readonly Option[], groups?: readonly { label: string, options: readonly Option[] }[], counts?: Record<string, number> }>()
 const selected = defineModel<string>({ required: true })
 const id = useId()
 const total = computed(() => Object.values(props.counts ?? {}).reduce((sum, count) => sum + count, 0))
@@ -14,6 +16,9 @@ const total = computed(() => Object.values(props.counts ?? {}).reduce((sum, coun
     <select :id="id" v-model="selected" :class="{ 'filter-select-on': counts && selected }">
       <option v-if="counts" value="">すべて（{{ total }}）</option>
       <option v-for="option in options" :key="option.key" :value="option.key">{{ option.label }}<template v-if="counts">（{{ counts[option.key] ?? 0 }}）</template></option>
+      <optgroup v-for="group in groups" :key="group.label" :label="group.label">
+        <option v-for="option in group.options" :key="option.key" :value="option.key">{{ option.label }}<template v-if="counts">（{{ counts[option.key] ?? 0 }}）</template></option>
+      </optgroup>
     </select>
   </div>
 </template>
@@ -25,6 +30,7 @@ const total = computed(() => Object.values(props.counts ?? {}).reduce((sum, coun
 /* A filter that hides rows stands out, since the closed list shows no other sign of it. */
 .filter-select select.filter-select-on { border-color: var(--color-accent); background-color: var(--color-accent-soft); font-weight: 600; }
 .filter-select option { background-color: var(--color-paper); font-weight: 400; }
+.filter-select optgroup { background-color: var(--color-paper); }
 @media (hover: hover) { .filter-select select:hover { border-color: var(--color-muted); } .filter-select select.filter-select-on:hover { border-color: var(--color-accent); } }
 /* 1rem keeps a phone from zooming into the list when it opens. */
 @media (max-width: 39.999rem) { .filter-select select { min-height: 44px; font-size: 1rem; } }

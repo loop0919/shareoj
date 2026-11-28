@@ -2,6 +2,7 @@ import { privateAPI } from './private-api'
 import { hasSession, sessionRefused } from './private-session'
 import { privateHeaders } from './private-request'
 import { publicContent } from './public-content'
+import { setSubmissionConditions } from './submission-conditions'
 import { streamingMode } from './streaming-mode'
 import { uuidPattern } from './route-param'
 
@@ -13,6 +14,7 @@ export default defineEventHandler(async event => {
   const query = getQuery(event)
   if (query.mine === '1' && !hasSession(event)) throw createError({ statusCode: 401 })
   const search = new URLSearchParams({ offset: typeof query.offset === 'string' ? query.offset : '0', mine: typeof query.mine === 'string' ? query.mine : '0' })
+  if (!submission) setSubmissionConditions(event, search)
   const path = `/problems/${id}/submissions${submission ? `/${submission}` : ''}?${search}`
   // Streaming mode keeps only the reader's own list private; the whole list and a detail are public.
   const streaming = streamingMode(event)

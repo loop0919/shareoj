@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { contestDate } from '~~/shared/types/contest'
 import { fullId, shortId } from '~~/shared/utils/short-id'
+import { submissionConditionQuery } from '~/utils/submission-conditions'
 definePageMeta({ key: route => String(route.params.id) })
 const route = useRoute()
 const config = useRuntimeConfig()
@@ -22,6 +23,18 @@ function updateVote(average: number | null, count: number) {
 }
 const showingEditorial = computed(() => route.query.view === 'editorial')
 const submissionView = computed(() => route.query.view === 'my-submissions' || route.query.view === 'submissions')
+// The submission lists' tabs keep the conditions of the list on screen; the viewer's own list has no submitter. The
+// statement and the editorial start without them.
+const { conditions: routeConditions } = useRouteSubmissionConditions()
+const listConditions = computed(() => {
+  if (!submissionView.value) return {}
+  const conditions = routeConditions.value
+  return submissionConditionQuery({ ...conditions, user: route.query.view === 'submissions' ? conditions.user : '', problem: '' })
+})
+const ownConditions = computed(() => {
+  const { user: _user, ...query } = listConditions.value
+  return query
+})
 useSeoMeta({ robots: () => problem.value?.isPrivate ? 'noindex, nofollow' : undefined })
 const canonical = computed(() => new URL(`/problems/${shortId(problem.value!.id)}`, config.public.siteUrl).href)
 useSeoMeta({ title: () => `${showingEditorial.value ? '解説 | ' : ''}${problem.value?.title} | ShareOJ`, description: () => (showingEditorial.value ? problem.value?.editorial : problem.value?.markdown)?.slice(0, 160), ogTitle: () => `${problem.value?.title} | ShareOJ`, ogUrl: () => canonical.value, ogType: 'article' })
@@ -57,8 +70,8 @@ useSharePreview({ title: () => problem.value!.title, path: () => `/problems/${sh
     <nav class="problem-menu" aria-label="問題メニュー">
       <NuxtLink :to="`/problems/${shortId(problem.id)}`" :aria-current="showingEditorial || submissionView ? undefined : 'page'">問題文</NuxtLink>
       <NuxtLink :to="{ path: `/problems/${shortId(problem.id)}`, query: { view: 'editorial' } }" :aria-current="showingEditorial ? 'page' : undefined">解説</NuxtLink>
-      <NuxtLink :to="{ path: `/problems/${shortId(problem.id)}`, query: { view: 'my-submissions' } }" :aria-current="route.query.view === 'my-submissions' ? 'page' : undefined">自分の提出</NuxtLink>
-      <NuxtLink :to="{ path: `/problems/${shortId(problem.id)}`, query: { view: 'submissions' } }" :aria-current="route.query.view === 'submissions' ? 'page' : undefined">すべての提出</NuxtLink>
+      <NuxtLink :to="{ path: `/problems/${shortId(problem.id)}`, query: { view: 'my-submissions', ...ownConditions } }" :aria-current="route.query.view === 'my-submissions' ? 'page' : undefined">自分の提出</NuxtLink>
+      <NuxtLink :to="{ path: `/problems/${shortId(problem.id)}`, query: { view: 'submissions', ...listConditions } }" :aria-current="route.query.view === 'submissions' ? 'page' : undefined">すべての提出</NuxtLink>
       <NuxtLink v-if="canEdit" :to="{ path: '/problems/new', query: { problem: problem.id } }">作問画面へ</NuxtLink>
     </nav>
     <p v-if="problem.editorialHidden" class="notice">定期便の新作です。解説と他者の提出は{{ problem.editorialRevealAt ? contestDate(problem.editorialRevealAt) : '翌22:00' }} (JST)に公開します。<template v-if="canEdit">作成者とテスターは公開前から閲覧できます。</template></p>

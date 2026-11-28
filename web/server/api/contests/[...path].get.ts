@@ -2,6 +2,7 @@ import { publicContent } from '../../utils/public-content'
 import { privateAPI } from '../../utils/private-api'
 import { hasSession, sessionRefused } from '../../utils/private-session'
 import { privateHeaders } from '../../utils/private-request'
+import { setSubmissionConditions } from '../../utils/submission-conditions'
 import { refuseStreaming, streamingContestView, streamingMode } from '../../utils/streaming-mode'
 export default defineEventHandler(async event => {
   privateHeaders(event)
@@ -17,6 +18,8 @@ export default defineEventHandler(async event => {
   const onsite = query.scope === 'onsite' ? '&scope=onsite' : ''
   if (onsite) search.set('scope', 'onsite')
   if (typeof query.problem === 'string' && new RegExp(`^${uuid}$`).test(query.problem)) search.set('problem', query.problem)
+  // The lists, the contest's and a problem's, take the sort and filter conditions; a detail does not.
+  if (path.endsWith('/submissions')) setSubmissionConditions(event, search)
   const mine = query.mine === '1' || query.mine === 'team'
   const sessionRoute = !path.includes('/') || path.includes('/problems/') || path.includes('/submissions')
   // Streaming mode never shows the unfrozen table; the standings and the editorials answer from the public route for

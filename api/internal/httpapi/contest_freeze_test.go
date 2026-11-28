@@ -318,6 +318,51 @@ func TestContestFreezePostgres(t *testing.T) {
 			t.Fatalf("%s: got %v want %v", path, got, want)
 		}
 	}
+	// Conditions narrow the problem list inside what the viewer sees: a hidden run does not appear by naming its
+	// submitter or its verdict, and the contest lists do not count it.
+	counted := func(path, owner string) int {
+		t.Helper()
+		var page submissions.CountedSubmissionList
+		decode(request("GET", path, owner, nil, 200), &page)
+		return page.Total
+	}
+	for query, want := range map[string][]string{
+		"user=carol":              {carolSlow},
+		"user=carol&verdict=AC":   {carolSlow},
+		"user=bob&verdict=CE":     {},
+		"user=bob&verdict=WA":     sorted(bobWrong, bobAfter),
+		"verdict=AC&sort=fastest": sorted(bobAC, carolSlow, samEnd),
+		"user=sam&verdict=AC":     {samEnd},
+	} {
+		if got := ids("/contests/"+cid+"/submissions?"+query, ""); !slices.Equal(got, want) {
+			t.Fatalf("contest ?%s: got %v want %v", query, got, want)
+		}
+		if n := counted("/contests/"+cid+"/submissions?"+query, ""); n != len(want) {
+			t.Fatalf("contest ?%s: total %d want %d", query, n, len(want))
+		}
+	}
+	if got := ids("/contests/"+cid+"/problems/"+p1+"/submissions?user=carol&verdict=AC", ""); len(got) != 0 {
+		t.Fatalf("contest problem conditions: %v", got)
+	}
+	if got := ids("/my/contests/"+cid+"/submissions?user=carol&verdict=AC", "carol"); !slices.Equal(got, sorted(carolAC, carolSlow)) || counted("/my/contests/"+cid+"/submissions?user=carol&verdict=AC", "carol") != 2 {
+		t.Fatalf("submitter conditions: %v", got)
+	}
+	for query, want := range map[string][]string{
+		"user=carol":              {},
+		"user=carol&verdict=AC":   {},
+		"user=bob&verdict=WA":     {bobWrong},
+		"verdict=AC&sort=fastest": sorted(bobAC, samEnd),
+	} {
+		if got := ids("/problems/"+p1+"/submissions?"+query, ""); !slices.Equal(got, want) {
+			t.Fatalf("?%s: got %v want %v", query, got, want)
+		}
+	}
+	if got := ids("/my/problems/"+p1+"/submissions?user=carol&verdict=AC", "tess"); !slices.Equal(got, []string{carolAC}) {
+		t.Fatalf("staff conditions: %v", got)
+	}
+	if got := ids("/my/problems/"+p1+"/submissions?user=carol&verdict=AC", "bob"); len(got) != 0 {
+		t.Fatalf("stranger conditions: %v", got)
+	}
 	if got := ids("/my/contests/"+cid+"/submissions", "sam"); !slices.Equal(got, public) {
 		t.Fatalf("stranger list: %v", got)
 	}

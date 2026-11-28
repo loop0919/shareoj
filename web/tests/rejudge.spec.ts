@@ -90,6 +90,7 @@ test('a contest list narrowed to one problem lets its authors rejudge chosen sub
   await expect(list.locator('tbody tr')).toHaveCount(3)
   // The whole contest's list spans problems, so it offers no selection.
   await expect(list.getByRole('checkbox')).toHaveCount(0)
+  await page.getByRole('button', { name: /^絞り込み・並び替え/ }).click()
   await page.getByLabel('問題', { exact: true }).selectOption({ label: 'A - A + B' })
   const rows = list.getByRole('checkbox', { name: /の提出を選択$/ })
   await expect(rows).toHaveCount(3)

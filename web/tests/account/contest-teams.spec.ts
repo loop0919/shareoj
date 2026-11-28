@@ -98,8 +98,9 @@ test('a team forms by its join code, teammates see each other\'s submissions dur
   // erin's team sees none of it, and nobody outside the team opens it.
   await erin.goto(`/contests/${shortId(id)}?view=my-submissions`)
   await expect(erin.locator('#my-submissions').getByText('提出はまだありません。')).toBeVisible()
+  // With a condition in force, the empty list says no run matches, and offers to clear it.
   await erin.goto(`/contests/${shortId(id)}?view=my-submissions&problem=A`)
-  await expect(erin.locator('#my-submissions').getByText('提出はまだありません。')).toBeVisible()
+  await expect(erin.locator('#my-submissions').getByText('条件に合う提出はありません。')).toBeVisible()
   for (const page of [erin, frank, guest]) expect((await page.request.get(`/api/contests/${id}/submissions/${fullId(submission)}`)).status()).toBe(404)
   // After the start the team is fixed.
   await bob.goto(`/contests/${shortId(id)}/team`)

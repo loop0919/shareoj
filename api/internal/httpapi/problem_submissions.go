@@ -3,6 +3,7 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 
@@ -44,6 +45,31 @@ func onsiteScope(w http.ResponseWriter, r *http.Request) (bool, bool) {
 	return false, false
 }
 
+// listConditions reads sort, verdict, language, runtime and user. language and runtime are exclusive; a runtime is named
+// without its -isolate or -local suffix and stands for the forms stored submissions carry. A bad value answers 400
+// invalid_request.
+func listConditions(w http.ResponseWriter, r *http.Request) (submissions.ListConditions, bool) {
+	q := r.URL.Query()
+	c := submissions.ListConditions{Sort: q.Get("sort"), Verdict: q.Get("verdict"), User: q.Get("user")}
+	language, runtime := q.Get("language"), q.Get("runtime")
+	valid := (c.Sort == "" || slices.Contains([]string{submissions.SortNewest, submissions.SortOldest, submissions.SortShortest, submissions.SortFastest}, c.Sort)) &&
+		(c.Verdict == "" || slices.Contains(submissions.Verdicts, c.Verdict)) &&
+		(c.User == "" || userHandle.MatchString(c.User)) &&
+		(language == "" || runtime == "")
+	if valid && language != "" {
+		ids, known := submissions.LanguageRuntimeIDs(language)
+		c.Runtimes, valid = submissions.StoredRuntimeIDs(ids), known
+	}
+	if valid && runtime != "" {
+		c.Runtimes, valid = submissions.StoredRuntimeIDs([]string{runtime}), submissions.KnownRuntime(runtime)
+	}
+	if !valid {
+		authError(w, 400, "invalid_request")
+		return submissions.ListConditions{}, false
+	}
+	return c, true
+}
+
 func (p submissionHandler) publicProblemSubmissions(w http.ResponseWriter, r *http.Request) {
 	p.problemSubmissions(w, r, "")
 }
@@ -74,7 +100,11 @@ func (p submissionHandler) problemSubmissions(w http.ResponseWriter, r *http.Req
 		if !ok {
 			return
 		}
-		result, err = p.Submissions.ProblemList(r.Context(), pid, "", owner, scope, false, offset)
+		conditions, ok := listConditions(w, r)
+		if !ok {
+			return
+		}
+		result, err = p.Submissions.ProblemList(r.Context(), pid, "", owner, scope, false, offset, conditions)
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		authError(w, 404, "submission_not_found")

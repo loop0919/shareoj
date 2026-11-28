@@ -73,7 +73,8 @@ test('a participant lists their own submissions to every problem while the whole
   await expect(rows.first().getByRole('link', { name: 'B - A × B' })).toHaveAttribute('href', `${path}/B`)
   await expect(rows.first().getByRole('link', { name: '詳細', exact: true })).toHaveAttribute('href', `${path}/my-submissions/${shortId(ownB.id)}?from=contest`)
   expect(requested).not.toContain('0')
-  // The list narrows to one problem, named as the contest names it (ADR 0034).
+  // The list narrows to one problem, named as the contest names it (ADR 0034), in the panel of its conditions.
+  await page.getByRole('button', { name: /^絞り込み・並び替え/ }).click()
   const choice = page.getByLabel('問題', { exact: true })
   await expect(choice.locator('option')).toHaveText(['すべて', 'A - A + B', 'B - A × B'])
   await choice.selectOption({ label: 'B - A × B' })

@@ -62,8 +62,9 @@ type healthResponse struct {
 }
 
 type runtimesResponse struct {
-	Items       []submissions.Runtime `json:"items"`
-	Maintenance bool                  `json:"maintenance"`
+	Items       []submissions.Runtime  `json:"items"`
+	Maintenance bool                   `json:"maintenance"`
+	Languages   []submissions.Language `json:"languages" doc:"カタログの全言語。今は選べない処理系も含み、メンテナンス中も返す。"`
 }
 
 type publicProfileResponse struct {
@@ -130,6 +131,17 @@ func onsiteParameter(description string) *huma.Param {
 // onsiteSubmissionParameters are the parameters of a contest's submission lists.
 func onsiteSubmissionParameters(offset *huma.Param) []*huma.Param {
 	return append([]*huma.Param{offset}, onsiteParameter("onsiteを指定すると、表示した時点でオンサイト区分の参加者（チーム戦では、オンサイトのチームのメンバーと、個人で参加したオンサイトの参加者）がこのコンテストに出した提出だけを返します。スタッフの提出と、参加登録していない人の練習の提出は含みません。"))
+}
+
+// listConditionParameters declares the sort order and the filters of a problem's submission list.
+func listConditionParameters() []*huma.Param {
+	return []*huma.Param{
+		{Name: "sort", In: "query", Description: "並び順。newestは提出日時が新しい順（既定）、oldestは古い順、shortestはコード長（バイト数）が短い順、fastestは実行時間（ケースごとのCPU時間の最大）が短い順で、実行時間のない提出は最後です。同じ値は提出日時が新しい順に並びます。", Schema: &huma.Schema{Type: "string", Enum: []any{"newest", "oldest", "shortest", "fastest"}, Default: "newest"}},
+		{Name: "verdict", In: "query", Description: "採点が終わった提出のうち、この結果のものだけを返します。採点中の提出は含みません。", Schema: &huma.Schema{Type: "string", Enum: []any{"AC", "WA", "TLE", "MLE", "OLE", "RE", "CE", "JE"}}},
+		{Name: "language", In: "query", Description: "言語のキー（cpp、pythonなど）。その言語のどの処理系の提出も、今は選べない処理系も含めて返します。runtimeとは同時に指定できません。", Schema: &huma.Schema{Type: "string"}},
+		{Name: "runtime", In: "query", Description: "処理系のID（cpp23-gccなど。-isolateや-localは付けません）。languageとは同時に指定できません。", Schema: &huma.Schema{Type: "string"}},
+		{Name: "user", In: "query", Description: "提出した人のユーザーID。存在しないユーザーIDなら0件です。空にすると指定なしと同じです。", Schema: &huma.Schema{Type: "string", Pattern: userHandle.String()}},
+	}
 }
 
 // limitParameter declares the page size of a list.

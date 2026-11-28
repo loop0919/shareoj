@@ -1040,7 +1040,8 @@ test('the problem\'s lists are the contest\'s narrowed to it: the team\'s with t
   // The problem page has no tabs; its older link to the team's list opens the contest's, narrowed to it (ADR 0034).
   await visit(page, `/contests/${shortId(id)}/A?view=my-submissions`)
   await expect(page).toHaveURL(`/contests/${shortId(id)}?view=my-submissions&problem=A`)
-  await expect(page.getByLabel('問題', { exact: true })).toHaveValue('0')
+  await page.getByRole('button', { name: /^絞り込み・並び替え/ }).click()
+  await expect(page.getByLabel('問題', { exact: true })).toHaveValue('A')
   await expect(page.getByText('この問題への、チームの提出です。練習提出も掲載します。')).toBeVisible()
   await expect.poll(() => state.lists.at(-1)!.query.get('problem')).toBe(problemId)
   expect(state.lists.at(-1)!.query.get('mine')).toBe('team')

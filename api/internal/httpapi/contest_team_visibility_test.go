@@ -159,6 +159,12 @@ func TestContestTeamVisibilityPostgres(t *testing.T) {
 	expect(list, "bob", carolWA, bobAC, carolCE, carolFrozen)
 	expect(list, "dan", danAC, danFrozen)
 	expect(list, "frank")
+	// Conditions narrow what the viewer sees: another team's runs stay out when named, and the team's frozen run stays in.
+	expect(list+"?user=carol&verdict=WA", "bob", carolWA, carolFrozen)
+	expect(list+"?user=carol&verdict=WA", "dan")
+	expect(list+"?user=dan&verdict=AC&sort=shortest", "bob")
+	expect(list+"?user=dan&verdict=AC&sort=shortest", "dan", danAC, danFrozen)
+	expect(list+"?user=carol&verdict=WA", "alice", carolWA, carolFrozen)
 	expect(list, "alice", carolWA, bobAC, tessRun, carolCE, danAC, carolFrozen, danFrozen)
 	missing(list, "sam")
 	missing("/contests/"+tc+"/submissions", "")
