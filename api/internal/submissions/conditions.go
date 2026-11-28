@@ -44,7 +44,8 @@ func (c ListConditions) where(next int) (sql string, args []any) {
 // order gives the ORDER BY text; it comes from constants only. Every order ends in the newest run first, so that pages
 // of equal values neither repeat nor skip a row. The code length and time orders are word for word the keys of the
 // indexes in 052_submission_list_indexes.sql after the problem or the contest, which let a page read only its own runs;
-// change them together.
+// change them together. A migration that replaces submission_cpu_time_ms must also REINDEX submissions_problem_fastest
+// and submissions_contest_fastest, which hold the times the old function computed.
 func (c ListConditions) order() string {
 	switch c.Sort {
 	case SortOldest:
