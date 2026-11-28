@@ -235,6 +235,10 @@ func TestFeaturedReleaseAndEmbargoPostgres(t *testing.T) {
 		if body := f.request("GET", path, viewer, nil, 200); strings.Contains(body, sid) != visible {
 			t.Fatal("wrong submission list access", viewer, body)
 		}
+		// Naming the submitter and the verdict of a hidden run does not show it.
+		if body := f.request("GET", path+"?user=bob&verdict=AC&sort=fastest", viewer, nil, 200); strings.Contains(body, sid) != visible {
+			t.Fatal("wrong conditioned submission list access", viewer, body)
+		}
 		f.request("GET", path+"/"+sid, viewer, nil, map[bool]int{true: 200, false: 404}[visible])
 		shared := "/submissions/" + sid
 		if viewer != "" {

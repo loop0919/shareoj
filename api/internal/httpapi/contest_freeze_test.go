@@ -318,6 +318,24 @@ func TestContestFreezePostgres(t *testing.T) {
 			t.Fatalf("%s: got %v want %v", path, got, want)
 		}
 	}
+	// Conditions narrow the problem list inside what the viewer sees: a hidden run does not appear by naming its
+	// submitter or its verdict. The contest lists take conditions in a later change.
+	for query, want := range map[string][]string{
+		"user=carol":              {},
+		"user=carol&verdict=AC":   {},
+		"user=bob&verdict=WA":     {bobWrong},
+		"verdict=AC&sort=fastest": sorted(bobAC, samEnd),
+	} {
+		if got := ids("/problems/"+p1+"/submissions?"+query, ""); !slices.Equal(got, want) {
+			t.Fatalf("?%s: got %v want %v", query, got, want)
+		}
+	}
+	if got := ids("/my/problems/"+p1+"/submissions?user=carol&verdict=AC", "tess"); !slices.Equal(got, []string{carolAC}) {
+		t.Fatalf("staff conditions: %v", got)
+	}
+	if got := ids("/my/problems/"+p1+"/submissions?user=carol&verdict=AC", "bob"); len(got) != 0 {
+		t.Fatalf("stranger conditions: %v", got)
+	}
 	if got := ids("/my/contests/"+cid+"/submissions", "sam"); !slices.Equal(got, public) {
 		t.Fatalf("stranger list: %v", got)
 	}

@@ -252,7 +252,7 @@ func (p contestHandler) contestProblemSubmissions(w http.ResponseWriter, r *http
 		return
 	}
 	// The viewer's own or team's list ignores the onsite filter.
-	result, err := p.Submissions.ProblemList(r.Context(), pid, id, owner, scope, onsite && scope == submissions.ScopeAll, offset)
+	result, err := p.Submissions.ProblemList(r.Context(), pid, id, owner, scope, onsite && scope == submissions.ScopeAll, offset, submissions.ListConditions{})
 	if err != nil {
 		contestError(w, err)
 		return

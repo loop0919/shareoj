@@ -340,6 +340,29 @@ func TestSubmissionsPostgres(t *testing.T) {
 			t.Fatalf("list must expose UTF-8 byte size without source: %s", raw)
 		}
 	}
+	// Conditions work inside what the viewer sees: a draft run stays out of the guest's list when its submitter or its
+	// verdict is named, and shows to its submitter. A judged copy of the run makes the verdict condition meaningful.
+	judged := newSubmissionID()
+	if _, err := store.Pool().Exec(ctx, `INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,result)
+ SELECT $1,owner_id,problem_id,problem_version,problem_title,runtime,source,job||'{"privateDraft":true}','DONE','{"verdict":"AC","passed":1,"total":1}' FROM submissions WHERE id=$2`, judged, item.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		path, owner, query string
+		visible            bool
+	}{
+		{"/problems/" + id + "/submissions", "", "user=alice", false},
+		{"/problems/" + id + "/submissions", "", "verdict=AC", false},
+		{"/my/problems/" + id + "/submissions", "bob", "user=alice&verdict=AC", false},
+		{"/my/problems/" + id + "/submissions", "alice", "user=alice&verdict=AC", true},
+	} {
+		if got := request("GET", c.path+"?"+c.query, c.owner, "", 200); strings.Contains(got, judged) != c.visible {
+			t.Fatalf("%s?%s as %q: %s", c.path, c.query, c.owner, got)
+		}
+	}
+	if _, err := store.Pool().Exec(ctx, `DELETE FROM submissions WHERE id=$1`, judged); err != nil {
+		t.Fatal(err)
+	}
 	// The same UI language selects a pinned cloud runtime, never the local worker.
 	localHandler := h
 	dispatches := 0

@@ -58,12 +58,15 @@ func (s *Store) problemSubmissionsAccess(ctx context.Context, problemID, contest
 }
 
 // ProblemList lists a problem's submissions, in the contest when contestID is set. onsite keeps the contest submissions
-// of participants who are onsite now.
-func (s *Store) ProblemList(ctx context.Context, problemID, contestID, viewer string, scope Scope, onsite bool, offset int) (ContestSubmissionList, error) {
+// of participants who are onsite now. The conditions narrow and order the list inside what the viewer may see.
+func (s *Store) ProblemList(ctx context.Context, problemID, contestID, viewer string, scope Scope, onsite bool, offset int, conditions ListConditions) (ContestSubmissionList, error) {
 	if err := s.problemSubmissionsAccess(ctx, problemID, contestID, viewer, scope); err != nil {
 		return ContestSubmissionList{}, err
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT `+columns+` FROM submissions WHERE `+problemSubmissionVisible+` ORDER BY created_at DESC,id DESC LIMIT 51 OFFSET $5`, problemID, contestID, viewer, string(scope), offset, onsite)
+	// The visibility filter takes $1 to $6; the conditions follow it.
+	narrow, extra := conditions.where(7)
+	rows, err := s.Pool.Query(ctx, `SELECT `+columns+` FROM submissions WHERE `+problemSubmissionVisible+narrow+` ORDER BY `+conditions.order()+` LIMIT 51 OFFSET $5`,
+		append([]any{problemID, contestID, viewer, string(scope), offset, onsite}, extra...)...)
 	if err != nil {
 		return ContestSubmissionList{}, err
 	}
