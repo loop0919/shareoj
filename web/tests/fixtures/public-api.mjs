@@ -285,7 +285,11 @@ createServer(async (req, res) => {
   else if (path === '/health') res.end('{}')
   else if (path === '/fixture/hits') res.end(JSON.stringify({ hits: busyHits.get(new URL(req.url, 'http://localhost').searchParams.get('key')) ?? 0 }))
   else if (path === '/fixture/runtime-reads') res.end(JSON.stringify({ reads: runtimeReads }))
-  else if (path === '/runtimes') { runtimeReads++; res.end(JSON.stringify({ items: [{ id: 'cpp23-gcc', label: 'C++23 (GCC)' }, { id: 'cpp17', label: 'C++17 (GCC)' }, { id: 'python314', label: 'Python 3.14' }, { id: 'whitespace13', label: 'Whitespace (whitespacers 1.3)' }, { id: 'text', label: 'Text (cat 9.4)' }] })) }
+  else if (path === '/runtimes') { runtimeReads++; res.end(JSON.stringify({ items: [{ id: 'cpp23-gcc', label: 'C++23 (GCC)' }, { id: 'cpp17', label: 'C++17 (GCC)' }, { id: 'python314', label: 'Python 3.14' }, { id: 'whitespace13', label: 'Whitespace (whitespacers 1.3)' }, { id: 'text', label: 'Text (cat 9.4)' }], languages: [
+    { key: 'cpp', label: 'C++', runtimes: [{ id: 'cpp17', label: 'C++17 (GCC)', language: 'cpp' }, { id: 'cpp23-gcc', label: 'C++23 (GCC)', language: 'cpp' }] },
+    { key: 'rust', label: 'Rust', runtimes: [{ id: 'rust2024', label: 'Rust (Edition 2024)', language: 'rust' }] },
+    { key: 'python', label: 'Python', runtimes: [{ id: 'python314', label: 'Python (CPython 3.14)', language: 'python' }, { id: 'pypy311', label: 'Python (PyPy 3.11)', language: 'python' }] },
+  ] })) }
   else if (path === '/featured/standings') {
     const at = new URL(req.url, 'http://localhost').searchParams.get('at')
     if (at === partialFeaturedStandings.round.scheduledAt) return res.end(JSON.stringify(partialFeaturedStandings))

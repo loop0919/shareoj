@@ -3,7 +3,9 @@ import { publicContent } from '../utils/public-content'
 import { cachedRead } from '../utils/cached-read'
 import { upstream } from '../utils/upstream'
 
-const catalog = z.object({ items: z.array(z.object({ id: z.string(), label: z.string() })), maintenance: z.boolean().default(false) })
+const languageSchema = z.object({ key: z.string(), label: z.string(), runtimes: z.array(z.object({ id: z.string(), label: z.string() })) })
+// languages lists every runtime, retired ones too, and is kept in maintenance; an older API does not send it.
+const catalog = z.object({ items: z.array(z.object({ id: z.string(), label: z.string() })), languages: z.array(languageSchema).default([]), maintenance: z.boolean().default(false) })
 // Every page reads the catalog, on each render, each move to another page and every 30 seconds, and it changes only
 // when the judge is deployed or goes into maintenance. Each server process reads it from the API at most once in 15
 // seconds. A read the API refuses under load answers the catalog of the last 5 minutes, because a missing catalog
