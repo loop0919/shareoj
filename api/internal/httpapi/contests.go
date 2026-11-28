@@ -251,8 +251,12 @@ func (p contestHandler) contestProblemSubmissions(w http.ResponseWriter, r *http
 	if !ok {
 		return
 	}
+	conditions, ok := listConditions(w, r)
+	if !ok {
+		return
+	}
 	// The viewer's own or team's list ignores the onsite filter.
-	result, err := p.Submissions.ProblemList(r.Context(), pid, id, owner, scope, onsite && scope == submissions.ScopeAll, offset, submissions.ListConditions{})
+	result, err := p.Submissions.ProblemList(r.Context(), pid, id, owner, scope, onsite && scope == submissions.ScopeAll, offset, conditions)
 	if err != nil {
 		contestError(w, err)
 		return
@@ -304,7 +308,11 @@ func (p contestHandler) contestSubmissions(w http.ResponseWriter, r *http.Reques
 		authError(w, 400, "invalid_request")
 		return
 	}
-	result, err := p.Submissions.ContestList(r.Context(), id, owner, scope, offset, limit, onsite, problem)
+	conditions, ok := listConditions(w, r)
+	if !ok {
+		return
+	}
+	result, err := p.Submissions.ContestList(r.Context(), id, owner, scope, offset, limit, onsite, problem, conditions)
 	if err != nil {
 		contestError(w, err)
 		return

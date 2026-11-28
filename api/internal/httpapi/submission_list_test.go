@@ -90,6 +90,7 @@ func TestSubmissionListConditionsPostgres(t *testing.T) {
 		{"user=bob", []string{s7, s3, s2}},
 		{"user=bob&verdict=AC&language=cpp", []string{s2}},
 		{"user=nobody", []string{}},
+		{"user=", []string{s7, s6, s5, s4, s3, s2, s1}}, // an empty value reads as absent, as for sort, verdict, language and runtime
 		{"user=alice&sort=shortest", []string{s1, s6}},
 		{"verdict=CE", []string{s5}},
 	} {
@@ -97,7 +98,7 @@ func TestSubmissionListConditionsPostgres(t *testing.T) {
 			t.Errorf("?%s: got %v want %v", c.query, got, c.want)
 		}
 	}
-	for _, bad := range []string{"sort=longest", "verdict=OK", "verdict=ac", "language=cobol", "runtime=cpp23-gcc-isolate", "runtime=nope", "language=cpp&runtime=cpp17", "user=a%20b", "user=", "user=" + strings.Repeat("a", 100)} {
+	for _, bad := range []string{"sort=longest", "verdict=OK", "verdict=ac", "language=cobol", "runtime=cpp23-gcc-isolate", "runtime=nope", "language=cpp&runtime=cpp17", "user=a%20b", "user=" + strings.Repeat("a", 100)} {
 		f.fail("GET", "/problems/"+pid+"/submissions?"+bad, "", nil, 400, "invalid_request")
 		f.fail("GET", "/my/problems/"+pid+"/submissions?"+bad, "alice", nil, 400, "invalid_request")
 	}
@@ -183,4 +184,156 @@ func TestSubmissionListConditionsPostgres(t *testing.T) {
 	if err := f.store.Pool().QueryRow(f.ctx, `SELECT submission_cpu_time_ms(NULL)`).Scan(&got); err != nil || got != nil {
 		t.Errorf("submission_cpu_time_ms(NULL) = %v, %v", got, err)
 	}
+}
+
+func TestContestSubmissionListConditionsPostgres(t *testing.T) {
+	f := newTeamTest(t, "alice", "bob", "carol", "dan")
+	const (
+		cid = "f4000000-0000-4000-8000-000000000001" // ended, with an onsite division
+		fz  = "f4000000-0000-4000-8000-000000000002" // ended, with a freeze
+		tm  = "f4000000-0000-4000-8000-000000000003" // running team contest
+		pa  = "f4000000-0000-4000-8000-0000000000a1"
+		pb  = "f4000000-0000-4000-8000-0000000000a2"
+		pc  = "f4000000-0000-4000-8000-0000000000a3" // a problem sits in one contest at a time
+		pd  = "f4000000-0000-4000-8000-0000000000a4"
+		pe  = "f4000000-0000-4000-8000-0000000000a5"
+	)
+	for _, p := range []string{pa, pb, pc, pd, pe} {
+		f.problem(p)
+	}
+	two := []map[string]any{{"id": pa, "points": 100}, {"id": pb, "points": 100}}
+	f.create(cid, pa, map[string]any{"problems": two, "onsiteDivision": true, "onsitePassphrase": "open_sesame"})
+	f.create(fz, pc, map[string]any{"problems": []map[string]any{{"id": pc, "points": 100}, {"id": pd, "points": 100}}, "freezeMinutes": 30})
+	f.create(tm, pe, map[string]any{"teamMode": true})
+	// bob competes onsite and carol does not; the teams of the team contest are formed before it starts.
+	f.join(cid, "bob", map[string]any{"onsitePassphrase": "open_sesame"})
+	f.join(cid, "carol", nil)
+	f.join(tm, "bob", create("Alpha"))
+	f.join(tm, "carol", joinCode(f.team(tm, "bob").Code))
+	f.join(tm, "dan", create("Beta"))
+	f.schedule(cid, "ended")
+	f.schedule(fz, "ended")
+	f.schedule(tm, "running")
+
+	now := time.Now().Truncate(time.Second)
+	run := func(contest, owner, problem, runtime string, size int, status, result string, at time.Time) string {
+		f.t.Helper()
+		id := f.listedRun(owner, problem, runtime, size, status, result, false, at)
+		f.exec(`UPDATE submissions SET contest_id=$1 WHERE id=$2`, contest, id)
+		return id
+	}
+	// The rows of the problem list's table, split over two problems, made while the contest ran.
+	at := func(i int) time.Time { return now.Add(-115*time.Minute + time.Duration(i)*time.Minute) }
+	c1 := run(cid, "alice", pa, "cpp17", 40, "DONE", casesResult("AC", 12, 30), at(1))
+	c2 := run(cid, "bob", pa, "cpp23-gcc-isolate", 25, "DONE", casesResult("AC", 5, 8), at(2))
+	c3 := run(cid, "bob", pb, "python314-isolate", 25, "DONE", casesResult("WA", 100), at(3))
+	c4 := run(cid, "carol", pb, "pypy311-local", 300, "DONE", casesResult("TLE", 2000), at(4))
+	c5 := run(cid, "carol", pa, "cpp23-clang-isolate", 10, "DONE", `{"verdict":"CE","passed":0,"total":1}`, at(5))
+	c6 := run(cid, "alice", pb, "python314-isolate", 60, "DONE", `{"verdict":"AC","passed":1,"total":1,"cases":[{"name":"01","verdict":"AC"}]}`, at(6))
+	c7 := run(cid, "bob", pa, "rust2024-isolate", 70, "QUEUED", "", at(7))
+
+	// check lists path as viewer and expects the rows in order and, for the lists that count, the total.
+	check := func(path, viewer string, wantTotal int, want ...string) {
+		f.t.Helper()
+		var list submissions.CountedSubmissionList
+		f.decode(f.request("GET", path, viewer, nil, 200), &list)
+		got := []string{}
+		for _, item := range list.Items {
+			got = append(got, item.ID)
+		}
+		counted := !strings.Contains(path, "/problems/")
+		if !slices.Equal(got, want) || (counted && list.Total != wantTotal) {
+			f.t.Errorf("%s (%q): got %v total %d, want %v total %d", path, viewer, got, list.Total, want, wantTotal)
+		}
+	}
+	all := "/contests/" + cid + "/submissions"
+	for _, c := range []struct {
+		query string
+		want  []string
+	}{
+		{"", []string{c7, c6, c5, c4, c3, c2, c1}},
+		{"sort=newest", []string{c7, c6, c5, c4, c3, c2, c1}},
+		{"sort=oldest", []string{c1, c2, c3, c4, c5, c6, c7}},
+		{"sort=shortest", []string{c5, c3, c2, c1, c6, c7, c4}},
+		{"sort=fastest", []string{c2, c1, c3, c4, c7, c6, c5}},
+		{"verdict=AC", []string{c6, c2, c1}},
+		{"verdict=AC&sort=fastest", []string{c2, c1, c6}},
+		{"verdict=AC&sort=shortest", []string{c2, c1, c6}},
+		{"verdict=CE", []string{c5}},
+		{"language=python&problem=" + pb, []string{c6, c4, c3}},
+		{"language=cpp&problem=" + pb, []string{}},
+		{"language=cpp", []string{c5, c2, c1}},
+		{"runtime=python314", []string{c6, c3}},
+		{"user=bob", []string{c7, c3, c2}},
+		{"user=bob&verdict=AC&language=cpp", []string{c2}},
+		{"user=nobody", []string{}},
+		{"user=", []string{c7, c6, c5, c4, c3, c2, c1}}, // an empty value reads as absent
+		{"scope=onsite", []string{c7, c3, c2}},
+		{"scope=onsite&verdict=AC", []string{c2}},
+		{"scope=onsite&sort=shortest", []string{c3, c2, c7}},
+		{"scope=onsite&user=carol", []string{}},
+	} {
+		check(all+"?"+c.query, "", len(c.want), c.want...)
+	}
+	// The page size does not change the total: the second of bob's three rows, with hasMore.
+	var page submissions.CountedSubmissionList
+	f.decode(f.request("GET", all+"?user=bob&limit=1&offset=1", "", nil, 200), &page)
+	if len(page.Items) != 1 || page.Items[0].ID != c3 || page.Total != 3 || !page.HasMore {
+		t.Errorf("user=bob&limit=1&offset=1: %+v", page)
+	}
+	f.decode(f.request("GET", all+"?user=bob&limit=1&offset=2", "", nil, 200), &page)
+	if len(page.Items) != 1 || page.Items[0].ID != c2 || page.Total != 3 || page.HasMore {
+		t.Errorf("user=bob&limit=1&offset=2: %+v", page)
+	}
+	// The signed-in routes take the same conditions; mine keeps working beside them.
+	check("/my"+all+"?sort=shortest&verdict=AC", "carol", 3, c2, c1, c6)
+	check("/my"+all+"?mine=1&verdict=WA", "bob", 1, c3)
+	check("/my"+all+"?mine=1&sort=fastest", "bob", 3, c2, c3, c7)
+	check("/my"+all+"?mine=1&user=carol", "bob", 0)
+	// A contest problem lists that problem's rows with the same conditions.
+	byProblem := func(problem string) string { return "/contests/" + cid + "/problems/" + problem + "/submissions" }
+	check(byProblem(pa)+"?verdict=AC&sort=shortest", "", 0, c2, c1)
+	check("/my"+byProblem(pa)+"?sort=fastest&language=cpp", "alice", 0, c2, c1, c5)
+	check("/my"+byProblem(pa)+"?mine=1&verdict=AC", "bob", 0, c2)
+	check(byProblem(pa)+"?scope=onsite&user=bob&sort=oldest", "", 0, c2, c7)
+	check(byProblem(pb)+"?user=carol&sort=oldest", "", 0, c4)
+
+	for _, bad := range []string{"sort=longest", "verdict=OK", "verdict=ac", "language=cobol", "runtime=cpp23-gcc-isolate", "runtime=nope", "language=cpp&runtime=cpp17", "user=a%20b", "user=" + strings.Repeat("a", 100)} {
+		for _, path := range []string{all, byProblem(pa)} {
+			f.fail("GET", path+"?"+bad, "", nil, 400, "invalid_request")
+			f.fail("GET", "/my"+path+"?"+bad, "alice", nil, 400, "invalid_request")
+		}
+	}
+
+	// A frozen run stays hidden when its submitter or its verdict is named, and is not counted.
+	f1 := run(fz, "carol", pc, "cpp17", 20, "DONE", casesResult("WA", 7), now.Add(-100*time.Minute))
+	f2 := run(fz, "carol", pc, "cpp17", 30, "DONE", casesResult("AC", 7), now.Add(-70*time.Minute))
+	f3 := run(fz, "dan", pd, "cpp17", 10, "DONE", casesResult("AC", 9), now.Add(-65*time.Minute))
+	frozen := "/contests/" + fz + "/submissions"
+	check(frozen, "", 1, f1)
+	check(frozen+"?user=carol", "", 1, f1)
+	check(frozen+"?user=carol&verdict=AC", "", 0)
+	check(frozen+"?user=dan", "", 0)
+	check(frozen+"?verdict=AC&sort=fastest", "", 0)
+	check(frozen+"?sort=shortest&language=cpp", "", 1, f1)
+	check("/contests/"+fz+"/problems/"+pc+"/submissions?user=carol&verdict=AC", "", 0)
+	check("/my"+frozen+"?user=carol&verdict=AC", "bob", 0)
+	// The submitter sees their own frozen run with the same conditions, and staff see every run.
+	check("/my"+frozen+"?user=carol&verdict=AC", "carol", 1, f2)
+	check("/my"+frozen+"?user=carol&sort=shortest", "carol", 2, f1, f2)
+	check("/my"+frozen+"?user=dan&verdict=AC", "carol", 0)
+	check("/my"+frozen+"?verdict=AC&sort=shortest", "alice", 2, f3, f2)
+	check("/my"+frozen+"?user=dan", "alice", 1, f3)
+
+	// In a team contest, the team's list keeps working with the conditions.
+	b := run(tm, "bob", pe, "cpp17", 30, "DONE", casesResult("AC", 4), now.Add(-30*time.Minute))
+	cw := run(tm, "carol", pe, "cpp17", 20, "DONE", casesResult("WA", 4), now.Add(-20*time.Minute))
+	d := run(tm, "dan", pe, "cpp17", 10, "DONE", casesResult("AC", 4), now.Add(-10*time.Minute))
+	team := "/my/contests/" + tm + "/submissions?mine=team"
+	check(team+"&sort=shortest", "bob", 2, cw, b)
+	check(team+"&sort=shortest&verdict=WA", "bob", 1, cw)
+	check(team+"&sort=oldest&user=carol", "bob", 1, cw)
+	check(team+"&user=dan", "bob", 0)
+	check(team+"&sort=shortest", "dan", 1, d)
+	check("/my/contests/"+tm+"/problems/"+pe+"/submissions?mine=team&sort=shortest&verdict=AC", "bob", 0, b)
 }

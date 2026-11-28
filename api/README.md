@@ -693,6 +693,15 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 - 配布時は`035_contest_teams.sql`だけのコミットを先に配布して適用し、その後にAPIを配布する。`037_contest_onsite_kept_open.sql`と`038_contest_team_individuals.sql`も同じく先に適用する。
   `039_contest_onsite_drop_kept_open.sql`は`kept_open`の列を消すので、列を読まないAPIを配布した後に適用する。
 
+提出一覧の並び替えと絞り込みは次のとおり。公開問題の一覧（`GET /problems/{id}/submissions`）、コンテストの一覧（`GET /contests/{id}/submissions`）、コンテストの問題の一覧（`GET /contests/{id}/problems/{problem}/submissions`）と、それぞれの`/my/`の入口が同じクエリを受ける。
+
+- `sort`: `newest`（初期値）、`oldest`、`shortest`、`fastest`。`shortest`はコードのバイト数、`fastest`は一覧の「実行時間」の値（ケースごとの`cpuTimeMs`の最大）が小さい順で、値のない提出は最後に置く。どの並びも、同じ値は提出日時が新しい順、次にIDの降順で並べる。`oldest`だけは提出日時が古い順、次にIDの昇順。
+- `verdict`: `AC`、`WA`、`TLE`、`MLE`、`OLE`、`RE`、`CE`、`JE`。採点が終わった提出（`status='DONE'`）の`result.verdict`で絞る。採点中の提出は、`verdict`を付けた一覧には出ない。部分点の問題でも得点ではなく`result.verdict`で絞る。
+- `language`: 言語のキー（`cpp`、`python`など）。その言語のどの処理系の提出も含み、今は提出に選べない処理系も含む。`runtime`: 処理系のID（`cpp23-gcc`など）。`-isolate`と`-local`は付けない。保存されているIDに接尾辞が付いていても同じ処理系として数える。`language`と`runtime`は同時に指定できない。
+- `user`: 提出した人のユーザーID。完全一致で、存在しないIDなら0件。
+- 空の値（`sort=`など）は指定なしと同じ。知らない値や形の合わない値、`language`と`runtime`の同時指定は400 `invalid_request`とする。
+- 条件は、見える提出の中だけで効く。凍結中の提出や開始前のスタッフ限定の提出は、提出者や結果を名指ししても出ず、コンテストの一覧の`total`にも数えない。`total`は条件を当てたあとの件数で、1ページの件数に左右されない。
+
 チームの提出の共有、順位表、オンサイトの絞り込みは次のとおり。
 
 - チームのメンバーは、開始後いつでも、今のメンバーがこのコンテストに出した提出を、凍結後の提出も含めて見られる（`contest_teammates`）。

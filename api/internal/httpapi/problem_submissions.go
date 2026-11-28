@@ -54,7 +54,7 @@ func listConditions(w http.ResponseWriter, r *http.Request) (submissions.ListCon
 	language, runtime := q.Get("language"), q.Get("runtime")
 	valid := (c.Sort == "" || slices.Contains([]string{submissions.SortNewest, submissions.SortOldest, submissions.SortShortest, submissions.SortFastest}, c.Sort)) &&
 		(c.Verdict == "" || slices.Contains(submissions.Verdicts, c.Verdict)) &&
-		(!q.Has("user") || userHandle.MatchString(c.User)) &&
+		(c.User == "" || userHandle.MatchString(c.User)) &&
 		(language == "" || runtime == "")
 	if valid && language != "" {
 		ids, known := submissions.LanguageRuntimeIDs(language)

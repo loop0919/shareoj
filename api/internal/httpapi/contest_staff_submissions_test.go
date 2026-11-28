@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,7 +48,7 @@ func TestContestStaffSubmissionsBeforeStartPostgres(t *testing.T) {
 		for _, item := range page.Items {
 			ids = append(ids, item.ID)
 		}
-		if path == "/my/contests/"+cid+"/submissions" && page.Total != len(ids) {
+		if strings.HasPrefix(path, "/my/contests/"+cid+"/submissions") && page.Total != len(ids) {
 			t.Fatalf("%s counts %d of %v for %s", path, page.Total, ids, viewer)
 		}
 		slices.Sort(ids)
@@ -68,6 +69,10 @@ func TestContestStaffSubmissionsBeforeStartPostgres(t *testing.T) {
 	}
 	if got := listed("tess", byProblem(pa)); !slices.Equal(got, sorted(own...)) {
 		t.Fatalf("tester's own problem before the start: %v", got)
+	}
+	// Naming the setter and the verdict does not open the problem the tester cannot open.
+	if got := listed("tess", all+"?user=alice&verdict=AC&sort=shortest"); !slices.Equal(got, sorted(own...)) {
+		t.Fatalf("tester's conditions before the start: %v", got)
 	}
 	f.request("GET", byProblem(pb), "tess", nil, 404)
 	for _, id := range own {

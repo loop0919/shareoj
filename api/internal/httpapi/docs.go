@@ -140,7 +140,7 @@ func listConditionParameters() []*huma.Param {
 		{Name: "verdict", In: "query", Description: "採点が終わった提出のうち、この結果のものだけを返します。採点中の提出は含みません。", Schema: &huma.Schema{Type: "string", Enum: []any{"AC", "WA", "TLE", "MLE", "OLE", "RE", "CE", "JE"}}},
 		{Name: "language", In: "query", Description: "言語のキー（cpp、pythonなど）。その言語のどの処理系の提出も、今は選べない処理系も含めて返します。runtimeとは同時に指定できません。", Schema: &huma.Schema{Type: "string"}},
 		{Name: "runtime", In: "query", Description: "処理系のID（cpp23-gccなど。-isolateや-localは付けません）。languageとは同時に指定できません。", Schema: &huma.Schema{Type: "string"}},
-		{Name: "user", In: "query", Description: "提出した人のユーザーID。存在しないユーザーIDなら0件です。", Schema: &huma.Schema{Type: "string", Pattern: userHandle.String()}},
+		{Name: "user", In: "query", Description: "提出した人のユーザーID。存在しないユーザーIDなら0件です。空にすると指定なしと同じです。", Schema: &huma.Schema{Type: "string", Pattern: userHandle.String()}},
 	}
 }
 
