@@ -12,15 +12,13 @@ const offset = ref(0)
 const { loading, run, invalidate } = useLatestRequest()
 const message = ref('')
 // The sort and filters are in the URL, beside the page's view. A viewer's own list has no submitter to choose.
-const { conditions: routeConditions, change, clear, query: conditionQuery } = useSubmissionConditions({ keep: ['view'], withUser: () => !props.mine })
+const { conditions: routeConditions, change, clear, query: conditionQuery, languages } = useSubmissionConditions({ keep: ['view'], withUser: () => !props.mine })
 // A problem's list has no 問題 condition: one in the URL is neither shown nor sent.
 const conditions = computed(() => ({ ...routeConditions.value, problem: '' }))
 const listQuery = computed(() => {
   const { problem: _problem, ...query } = conditionQuery.value
   return query
 })
-const { data: catalog } = useJudgeCatalog()
-const languages = computed(() => catalog.value?.languages ?? [])
 // Whether a condition may be what emptied the list.
 const narrowed = computed(() => Object.keys(listQuery.value).length > 0)
 // The panel stays as the viewer left it through refreshes and changes of conditions, and starts closed on each visit.

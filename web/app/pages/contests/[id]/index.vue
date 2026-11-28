@@ -86,7 +86,7 @@ const filterSubmissions = computed(() => onsiteOnly.value && submissionList.valu
 // Either list is sorted and filtered by the panel's conditions, kept in the URL beside the view and the onsite switch,
 // which stay; a change drops the page number, so the list starts over at the first page. Only the whole list has a
 // submitter to choose.
-const { conditions: routeConditions, change: changeConditions, clear: clearConditions, query: conditionQuery } = useSubmissionConditions({ keep: ['view', 'scope', 'live'], withUser: () => submissionList.value === 'all' })
+const { conditions: routeConditions, change: changeConditions, clear: clearConditions, query: conditionQuery, languages } = useSubmissionConditions({ keep: ['view', 'scope', 'live'], withUser: () => submissionList.value === 'all' })
 // The panel's 問題 narrows either list to one problem, kept in ?problem= by its letter so a shared link keeps it (ADR
 // 0034); the list asks for it by its ID. A letter the contest does not name narrows nothing, so it is neither shown nor
 // sent.
@@ -100,8 +100,6 @@ const listConditions = computed(() => {
 })
 // Whether a condition may be what emptied the list. The onsite switch says for itself that it is on.
 const narrowed = computed(() => !!chosenProblem.value || Object.keys(listConditions.value).length > 0)
-const { data: catalog } = useJudgeCatalog()
-const languages = computed(() => catalog.value?.languages ?? [])
 // The panel stays as the viewer left it through refreshes and changes of conditions, and starts closed on each list.
 const conditionsOpen = ref(false)
 const conditionsPanel = ref<{ focus: () => void }>()

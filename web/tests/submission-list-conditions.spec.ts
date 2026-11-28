@@ -64,7 +64,7 @@ test('the problem list route passes the conditions on', async ({ request }) => {
 })
 
 // The problem page's list, in the browser. The mocked API filters and sorts a few runs by the query it gets, as the real
-// one does, and keeps each query it got.
+// one does, refuses what the real one refuses, and keeps each query it got.
 type Run = { id: string, author: string, runtime: string, sourceBytes: number, cpuTimeMs: number, verdict: string, status: string, createdAt: string }
 const pagePath = `/problems/${shortId(problem)}`
 const run = (n: number, author: string, runtime: string, sourceBytes: number, cpuTimeMs: number, verdict: string): Run => ({
@@ -82,7 +82,13 @@ const someRuns = () => [
   run(7, 'ui_test', 'cpp23-gcc', 200, 8, 'AC'),
   run(8, 'ui_test', 'python314', 60, 100, 'WA'),
 ]
+// The fixture's catalogue.
 const languageRuntimes: Record<string, string[]> = { cpp: ['cpp17', 'cpp23-gcc'], python: ['python314', 'pypy311'], rust: ['rust2024'] }
+// The API answers 400 to a language or a runtime its catalogue does not list, and to both at once.
+const refused = (query: Record<string, string>) => (query.language !== undefined && !Object.hasOwn(languageRuntimes, query.language))
+  || (query.runtime !== undefined && !Object.values(languageRuntimes).flat().includes(query.runtime))
+  || (query.language !== undefined && query.runtime !== undefined)
+const invalidRequest = { status: 400, json: { code: 'invalid_request' } }
 const newestFirst = (a: Run, b: Run) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)
 const orders: Record<string, (a: Run, b: Run) => number> = {
   newest: newestFirst,
@@ -106,6 +112,7 @@ async function mockList(page: Page, runs: Run[]) {
   await page.route('**/api/problems/*/submissions?*', route => {
     const query = Object.fromEntries(new URL(route.request().url()).searchParams)
     requests.push(query)
+    if (refused(query)) return route.fulfill(invalidRequest)
     const matching = runs.filter(item => (query.mine !== '1' || item.author === 'ui_test') && matches(item, query)).sort(orders[query.sort ?? 'newest'])
     const offset = Number(query.offset)
     return route.fulfill({ json: { items: matching.slice(offset, offset + 50).map(listed), hasMore: offset + 50 < matching.length } })
@@ -393,9 +400,134 @@ test('the panel fits a phone', async ({ page }) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 })
 
+// The URL may name a language or a runtime the catalogue does not list: a hand-edited link, a runtime's ID given as a
+// language, a language given as a runtime, or a runtime dropped since the link was made. The lists read it as すべて, as
+// they read any unknown value: it is neither shown, nor counted, nor sent, the tabs and the menu leave it out, and so
+// does a change in the panel.
+const unknownLanguages = ['language=zzz', 'language=cpp23-gcc', 'runtime=cpp', 'runtime=cobol85']
+const chipList = (page: Page) => page.getByRole('list', { name: '効いている条件' })
+// A signed-in viewer's list is read again once the browser has the viewer; a viewer who is not signed in has no such
+// second read, so the requests of a load can be counted.
+const signedOut = (page: Page) => page.route('**/api/auth/me', route => route.fulfill({ json: { user: null } }))
+for (const unknown of unknownLanguages) {
+  test(`the problem page reads ${unknown} as every language`, async ({ page }) => {
+    await signedOut(page)
+    const requests = await mockList(page, someRuns())
+    await page.clock.install()
+    const opened = `${pagePath}?view=submissions&verdict=AC&${unknown}`
+    await page.goto(opened)
+    const list = allList(page)
+    // The accepted runs, newest first, in one request without the language.
+    await expect(sizes(list)).toHaveText(['200 bytes', '400 bytes', '80 bytes', '120 bytes', '300 bytes'])
+    await expect(list.getByText(/提出一覧を取得できませんでした/)).toHaveCount(0)
+    expect(requests).toEqual([{ mine: '0', offset: '0', verdict: 'AC' }])
+    await expect(chipList(page).getByRole('listitem')).toHaveText([/結果: AC/])
+    const toggle = conditionsButton(page)
+    await expect(toggle).toContainText('1')
+    await toggle.click()
+    const language = page.getByRole('combobox', { name: '言語' })
+    await expect(language).toHaveValue('')
+    await expect(language.locator('option:checked')).toHaveText('すべて')
+    // The tabs keep the other conditions alone.
+    const menu = page.getByRole('navigation', { name: '問題メニュー' })
+    await expect(menu.getByRole('link', { name: '自分の提出' })).toHaveAttribute('href', `${pagePath}?view=my-submissions&verdict=AC`)
+    await expect(menu.getByRole('link', { name: 'すべての提出' })).toHaveAttribute('href', `${pagePath}?view=submissions&verdict=AC`)
+    // The regular refresh asks with the same conditions, also after the catalogue has been read again (every 30
+    // seconds).
+    await page.clock.pauseAt(new Date(Date.now() + 1000))
+    for (let i = 0; i < 2; i++) expect(await step(page, requests, 15)).toBe(1)
+    expect(requests).toEqual(Array(3).fill({ mine: '0', offset: '0', verdict: 'AC' }))
+    // The URL keeps the value until the conditions change; a change in the panel leaves it out.
+    await expect(page).toHaveURL(opened)
+    await page.clock.resume()
+    await page.getByRole('combobox', { name: '並び順' }).selectOption({ label: 'コード長が短い順' })
+    await expect(page).toHaveURL(`${pagePath}?view=submissions&sort=shortest&verdict=AC`)
+    await expect(sizes(list)).toHaveText(['80 bytes', '120 bytes', '200 bytes', '300 bytes', '400 bytes'])
+    expect(requests.at(-1)).toEqual({ mine: '0', offset: '0', sort: 'shortest', verdict: 'AC' })
+    expect(requests.filter(refused)).toEqual([])
+  })
+}
+
+test('the own list and the empty list read an unknown language as every language', async ({ page }) => {
+  const runs = someRuns()
+  const requests = await mockList(page, runs)
+  await page.goto(`${pagePath}?view=my-submissions&verdict=AC&runtime=cpp`)
+  // ui_test's accepted run.
+  await expect(sizes(page.getByRole('region', { name: '自分の提出' }))).toHaveText(['200 bytes'])
+  await expect.poll(() => requests.at(-1)).toEqual({ mine: '1', offset: '0', verdict: 'AC' })
+  await expect(chipList(page).getByRole('listitem')).toHaveText([/結果: AC/])
+  await expect(page.getByRole('navigation', { name: '問題メニュー' }).getByRole('link', { name: 'すべての提出' })).toHaveAttribute('href', `${pagePath}?view=submissions&verdict=AC`)
+  // Without a run the list says it has none: the value is no condition that could have emptied it.
+  runs.length = 0
+  await page.goto(`${pagePath}?view=submissions&language=zzz`)
+  await expect(allList(page).getByText('提出はまだありません。')).toBeVisible()
+  await expect(page.getByText('条件に合う提出はありません。')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '条件をすべて外す' })).toHaveCount(0)
+  await expect(conditionsButton(page)).not.toContainText(/\d/)
+  expect(requests.filter(refused)).toEqual([])
+})
+
+// The page is rendered with the catalogue, so a load asks for the list once, with a language as without one, and the
+// browser's own read of the catalogue right after does not ask again.
+for (const [query, sent] of [['language=cpp', { language: 'cpp' }], ['runtime=cpp23-gcc', { runtime: 'cpp23-gcc' }], ['language=zzz', {}], ['', {}]] as const) {
+  test(`a load of the problem page asks for the list once ${query ? `with ${query}` : 'without a language'}`, async ({ page }) => {
+    await signedOut(page)
+    const requests = await mockList(page, someRuns())
+    await page.clock.install()
+    await Promise.all([page.waitForResponse('**/api/runtimes'), page.goto(`${pagePath}?view=submissions${query ? `&${query}` : ''}`)])
+    await expect(allList(page).locator('tbody tr').first()).toBeVisible()
+    const asked = { mine: '0', offset: '0', ...sent }
+    await page.clock.pauseAt(new Date(Date.now() + 1000))
+    expect(await step(page, requests, 15)).toBe(1)
+    expect(requests).toEqual([asked, asked])
+  })
+}
+
+// Until the catalogue is read the list cannot tell a language the API takes from one it refuses, so it asks without
+// any, and once more when the catalogue comes and lists it. The second server's API has the problem but no catalogue,
+// so the page is rendered without one; the browser's own read of it is let through when the test says so.
+test('before the catalogue is read the list asks without the language', async ({ page }) => {
+  await signedOut(page)
+  const requests = await mockList(page, someRuns())
+  let release = () => {}
+  const released = new Promise<void>(resolve => { release = resolve })
+  const catalogue = { items: [], languages: [{ key: 'cpp', label: 'C++', runtimes: [{ id: 'cpp17', label: 'C++17 (GCC)' }, { id: 'cpp23-gcc', label: 'C++23 (GCC)' }] }] }
+  await page.route('**/api/runtimes', async route => { await released; await route.fulfill({ json: catalogue }) })
+  const path = `/problems/${shortId('22222222-2222-4222-8222-222222222222')}`
+  await page.goto(`http://127.0.0.1:13001${path}?view=submissions&verdict=AC&language=cpp`)
+  await expect(page.getByText(/ジャッジ機能の状態を確認できません/)).toBeVisible()
+  const list = allList(page)
+  const menu = page.getByRole('navigation', { name: '問題メニュー' })
+  await expect(sizes(list)).toHaveText(['200 bytes', '400 bytes', '80 bytes', '120 bytes', '300 bytes'])
+  expect(requests).toEqual([{ mine: '0', offset: '0', verdict: 'AC' }])
+  await expect(chipList(page).getByRole('listitem')).toHaveText([/結果: AC/])
+  await expect(menu.getByRole('link', { name: '自分の提出' })).toHaveAttribute('href', `${path}?view=my-submissions&verdict=AC`)
+  // The catalogue comes and lists C++.
+  release()
+  await expect(chipList(page).getByRole('listitem')).toHaveText([/結果: AC/, /言語: C\+\+/])
+  await expect(sizes(list)).toHaveText(['200 bytes', '120 bytes', '300 bytes'])
+  expect(requests).toEqual([{ mine: '0', offset: '0', verdict: 'AC' }, { mine: '0', offset: '0', verdict: 'AC', language: 'cpp' }])
+  await expect(menu.getByRole('link', { name: '自分の提出' })).toHaveAttribute('href', `${path}?view=my-submissions&verdict=AC&language=cpp`)
+})
+
+// A read of the catalogue that fails once the list has it changes nothing: the languages last read still hold.
+test('a failed read of the catalogue keeps the languages last read', async ({ page }) => {
+  await signedOut(page)
+  const requests = await mockList(page, someRuns())
+  await page.route('**/api/runtimes', route => route.fulfill({ status: 502, json: {} }))
+  await page.clock.install()
+  await Promise.all([page.waitForResponse('**/api/runtimes'), page.goto(`${pagePath}?view=submissions&language=cpp`)])
+  await expect(page.getByText(/ジャッジ機能の状態を確認できません/)).toBeVisible()
+  await expect(chipList(page).getByRole('listitem')).toHaveText([/言語: C\+\+/])
+  await page.clock.pauseAt(new Date(Date.now() + 1000))
+  expect(await step(page, requests, 15)).toBe(1)
+  expect(requests).toEqual(Array(2).fill({ mine: '0', offset: '0', language: 'cpp' }))
+  await expect(chipList(page).getByRole('listitem')).toHaveText([/言語: C\+\+/])
+})
+
 // A contest's lists, in the browser. The mocked API filters, sorts and pages the runs by the query it gets, as the real
-// one does, counts what the conditions leave, and keeps each query it got. ui_test is on the contest's staff, so the
-// whole list is open while the contest runs.
+// one does, counts what the conditions leave, refuses what the real one refuses, and keeps each query it got. ui_test
+// is on the contest's staff, so the whole list is open while the contest runs.
 type ContestRun = Run & { problemId: string, onsite: boolean }
 type Team = { id: string, name: string, members: string[], onsite: boolean }
 const contestId = '88888888-8888-4888-8888-888888888888'
@@ -415,6 +547,7 @@ async function mockContest(page: Page, runs: ContestRun[]) {
     if (!url.pathname.endsWith('/submissions')) return route.fulfill({ json: state.contest })
     const query = Object.fromEntries(url.searchParams)
     state.requests.push(query)
+    if (refused(query)) return route.fulfill(invalidRequest)
     const team = state.contest.team?.members ?? []
     const own = (item: ContestRun) => query.mine === 'team' ? team.includes(item.author) : item.author === 'ui_test'
     const matching = runs.filter(item => (!query.mine || own(item)) && (query.scope !== 'onsite' || item.onsite) && (!query.problem || item.problemId === query.problem) && matches(item, query))
@@ -782,3 +915,86 @@ test('the conditions fit a phone', async ({ page }) => {
   await expect(page.getByRole('textbox', { name: '提出者' })).toBeVisible()
   expect(await noOverflow(page)).toBe(true)
 })
+
+// As on the problem page, a language or a runtime the catalogue does not list reads as すべて.
+for (const unknown of unknownLanguages) {
+  test(`the contest page reads ${unknown} as every language`, async ({ page }) => {
+    const { requests } = await mockContest(page, contestRuns())
+    await page.clock.install()
+    const opened = `view=submissions&verdict=AC&${unknown}`
+    await openContest(page, opened)
+    const list = contestList(page)
+    // The accepted runs, newest first, asked for without the language.
+    await expect(sizes(list)).toHaveText(['200 bytes', '400 bytes', '80 bytes', '120 bytes', '300 bytes'])
+    await expect(list.getByText('提出一覧を取得できませんでした。')).toHaveCount(0)
+    await expect(conditionChips(page).getByRole('listitem')).toHaveText(['結果: AC'])
+    const toggle = conditionsButton(page)
+    await expect(toggle).toContainText('1')
+    // The menu's two lists keep the other conditions alone.
+    const menu = page.getByRole('navigation', { name: 'コンテストメニュー' })
+    await menu.getByText('提出', { exact: true }).click()
+    await expect(menu.getByRole('link', { name: '自分の提出', exact: true })).toHaveAttribute('href', `${contestPath}?view=my-submissions&verdict=AC`)
+    await expect(menu.getByRole('link', { name: 'すべての提出', exact: true })).toHaveAttribute('href', `${contestPath}?view=submissions&verdict=AC`)
+    await toggle.click()
+    const language = page.getByRole('combobox', { name: '言語' })
+    await expect(language).toHaveValue('')
+    await expect(language.locator('option:checked')).toHaveText('すべて')
+    // The regular refresh asks with the same conditions, also after the catalogue has been read again (every 30
+    // seconds).
+    await page.clock.pauseAt(new Date(Date.now() + 1000))
+    for (let i = 0; i < 2; i++) expect(await contestStep(page, requests, 15)).toBe(1)
+    expect(requests).toEqual(Array(requests.length).fill({ offset: '0', limit: '50', verdict: 'AC' }))
+    // The URL keeps the value until the conditions change; a change in the panel leaves it out.
+    await expect(page).toHaveURL(`${contestPath}?${opened}`)
+    await page.clock.resume()
+    await page.getByRole('combobox', { name: '並び順' }).selectOption({ label: 'コード長が短い順' })
+    await expect(page).toHaveURL(`${contestPath}?view=submissions&sort=shortest&verdict=AC`)
+    await expect(sizes(list)).toHaveText(['80 bytes', '120 bytes', '200 bytes', '300 bytes', '400 bytes'])
+    expect(requests.at(-1)).toEqual({ offset: '0', limit: '50', sort: 'shortest', verdict: 'AC' })
+    expect(requests.filter(refused)).toEqual([])
+  })
+}
+
+test('the contest own and team lists and the empty list read an unknown language as every language', async ({ page }) => {
+  const runs = contestRuns()
+  const state = await mockContest(page, runs)
+  await openContest(page, 'view=my-submissions&verdict=AC&language=zzz')
+  // ui_test's accepted run.
+  await expect(sizes(ownList(page))).toHaveText(['200 bytes'])
+  await expect.poll(() => state.requests.at(-1)).toEqual({ offset: '0', limit: '50', mine: '1', verdict: 'AC' })
+  await expect(conditionChips(page).getByRole('listitem')).toHaveText(['結果: AC'])
+  const menu = page.getByRole('navigation', { name: 'コンテストメニュー' })
+  await menu.getByText('提出', { exact: true }).click()
+  await expect(menu.getByRole('link', { name: 'すべての提出', exact: true })).toHaveAttribute('href', `${contestPath}?view=submissions&verdict=AC`)
+  // While a team contest runs, a member's own list is the team's.
+  state.contest = { ...staffContest, title: 'チーム戦の絞り込みテスト', staff: false, participating: true, teamMode: true, team: { id: 'aaaaaaaa-1111-4111-8111-000000000001', name: 'Alpha', members: ['ui_test', 'bob'], onsite: false } }
+  await openContest(page, 'view=my-submissions&verdict=WA&runtime=cpp', state.contest.title)
+  // The team's wrong answers, newest first.
+  await expect(sizes(ownList(page))).toHaveText(['60 bytes', '90 bytes'])
+  await expect.poll(() => state.requests.at(-1)).toEqual({ offset: '0', limit: '50', mine: 'team', verdict: 'WA' })
+  await expect(conditionChips(page).getByRole('listitem')).toHaveText(['結果: WA'])
+  await expect(menu.getByRole('link', { name: 'チームの提出', exact: true })).toHaveAttribute('href', `${contestPath}?view=my-submissions&verdict=WA`)
+  // Without a run the list says it has none: the value is no condition that could have emptied it.
+  runs.length = 0
+  state.contest = staffContest
+  await openContest(page, 'view=submissions&runtime=cobol85')
+  await expect(contestList(page).getByText('提出はまだありません。')).toBeVisible()
+  await expect(contestList(page).getByText('条件に合う提出はありません。')).toHaveCount(0)
+  await expect(conditionsButton(page)).not.toContainText(/\d/)
+  expect(state.requests.filter(refused)).toEqual([])
+})
+
+// The page is rendered with the catalogue, so its first request for the list already has the language it lists, or
+// leaves out one it does not, and the browser's own read of the catalogue right after does not ask again.
+for (const [query, sent] of [['runtime=cpp17', { runtime: 'cpp17' }], ['language=zzz', {}], ['', {}]] as const) {
+  test(`a load of the contest page asks for the list one way ${query ? `with ${query}` : 'without a language'}`, async ({ page }) => {
+    const { requests } = await mockContest(page, contestRuns())
+    await page.clock.install()
+    await Promise.all([page.waitForResponse('**/api/runtimes'), openContest(page, `view=submissions${query ? `&${query}` : ''}`)])
+    await expect(sizes(contestList(page))).toHaveCount(query === 'runtime=cpp17' ? 2 : 8)
+    await page.clock.pauseAt(new Date(Date.now() + 1000))
+    const loaded = requests.length
+    expect(await contestStep(page, requests, 15)).toBe(1)
+    expect(requests).toEqual(Array(loaded + 1).fill({ offset: '0', limit: '50', ...sent }))
+  })
+}

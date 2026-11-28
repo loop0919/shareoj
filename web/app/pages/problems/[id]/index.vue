@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { contestDate } from '~~/shared/types/contest'
 import { fullId, shortId } from '~~/shared/utils/short-id'
-import { parseSubmissionConditions, submissionConditionQuery } from '~/utils/submission-conditions'
+import { submissionConditionQuery } from '~/utils/submission-conditions'
 definePageMeta({ key: route => String(route.params.id) })
 const route = useRoute()
 const config = useRuntimeConfig()
@@ -25,9 +25,10 @@ const showingEditorial = computed(() => route.query.view === 'editorial')
 const submissionView = computed(() => route.query.view === 'my-submissions' || route.query.view === 'submissions')
 // The submission lists' tabs keep the conditions of the list on screen; the viewer's own list has no submitter. The
 // statement and the editorial start without them.
+const { conditions: routeConditions } = useRouteSubmissionConditions()
 const listConditions = computed(() => {
   if (!submissionView.value) return {}
-  const conditions = parseSubmissionConditions(route.query)
+  const conditions = routeConditions.value
   return submissionConditionQuery({ ...conditions, user: route.query.view === 'submissions' ? conditions.user : '', problem: '' })
 })
 const ownConditions = computed(() => {

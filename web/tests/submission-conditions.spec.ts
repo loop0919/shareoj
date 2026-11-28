@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import {
-  defaultSubmissionConditions, languageOptions, languagePatch, languageValue, parseSubmissionConditions,
+  defaultSubmissionConditions, languageOptions, languagePatch, languageValue, listedLanguage, parseSubmissionConditions,
   submissionConditionChips, submissionConditionQuery, submissionConditionReset,
 } from '../app/utils/submission-conditions'
 
@@ -27,6 +27,24 @@ test('unknown values read as the initial ones', () => {
   expect(parseSubmissionConditions({ language: 'cpp', runtime: 'cpp17-isolate' })).toMatchObject({ language: 'cpp', runtime: '' })
 })
 
+test('a language or a runtime the catalogue does not list reads as every language', () => {
+  // What the catalogue lists stays as it is, in the same object.
+  for (const query of [{ verdict: 'AC', language: 'cpp' }, { verdict: 'AC', language: 'rust' }, { verdict: 'AC', runtime: 'cpp23-gcc' }, { verdict: 'AC', runtime: 'rust2024' }]) {
+    const conditions = parseSubmissionConditions(query)
+    expect(listedLanguage(conditions, languages)).toBe(conditions)
+  }
+  // An unknown key, a runtime's ID as a language, a language as a runtime, and a runtime the catalogue does not list.
+  const accepted = { ...defaultSubmissionConditions, verdict: 'AC' }
+  for (const query of [{ language: 'zzz' }, { language: 'cpp23-gcc' }, { runtime: 'cpp' }, { runtime: 'cobol85' }, { language: 'cpp', runtime: 'cobol85' }])
+    expect(listedLanguage(parseSubmissionConditions({ ...query, verdict: 'AC' }), languages)).toEqual(accepted)
+  // Before the catalogue is read nothing is listed, nor by an older API's catalogue without languages.
+  expect(listedLanguage(parseSubmissionConditions({ verdict: 'AC', language: 'cpp' }), undefined)).toEqual(accepted)
+  expect(listedLanguage(parseSubmissionConditions({ verdict: 'AC', runtime: 'cpp17' }), [])).toEqual(accepted)
+  // Without a language there is nothing to look up.
+  const plain = parseSubmissionConditions({ sort: 'oldest' })
+  expect(listedLanguage(plain, undefined)).toBe(plain)
+})
+
 test('the language select groups runtimes and offers the whole language', () => {
   expect(languageOptions(languages)).toEqual([
     { label: 'C++', options: [{ value: 'language:cpp', label: 'C++（すべて）' }, { value: 'runtime:cpp17', label: 'C++17 (GCC)' }, { value: 'runtime:cpp23-gcc', label: 'C++23 (GCC)' }] },
@@ -48,7 +66,7 @@ test('chips name the conditions in force', () => {
   expect(submissionConditionChips(all, languages).map(chip => chip.label)).toEqual(['コード長が短い順', '結果: AC', '言語: C++23 (GCC)', '提出者: alice', '問題: A'])
   expect(submissionConditionChips(all, languages).map(chip => chip.key)).toEqual(['sort', 'verdict', 'language', 'user', 'problem'])
   expect(submissionConditionChips(parseSubmissionConditions({ language: 'cpp' }), languages)[0].label).toBe('言語: C++')
-  // A language the catalogue does not know yet (the list has not loaded) still shows a chip, by its key.
+  // Without a label from the catalogue, a chip names the language by its key.
   expect(submissionConditionChips(parseSubmissionConditions({ language: 'cpp' }), [])[0].label).toBe('言語: cpp')
   expect(submissionConditionChips(defaultSubmissionConditions, languages)).toEqual([])
   expect(submissionConditionReset('language')).toEqual({ language: '', runtime: '' })

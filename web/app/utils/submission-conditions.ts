@@ -46,6 +46,16 @@ export function parseSubmissionConditions(query: unknown): SubmissionConditions 
   }
 }
 
+// The API refuses a language or a runtime its catalogue does not list, which the shape alone cannot tell. So one that
+// languages (the judge's catalogue) does not list reads as すべて, as does any while the catalogue is not known
+// (undefined).
+export function listedLanguage(conditions: SubmissionConditions, languages: RuntimeLanguage[] | undefined): SubmissionConditions {
+  const { language: key, runtime: id } = conditions
+  if (!key && !id) return conditions
+  const listed = languages?.some(language => id ? language.runtimes.some(runtime => runtime.id === id) : language.key === key)
+  return listed ? conditions : { ...conditions, language: '', runtime: '' }
+}
+
 // The query of a list with these conditions; initial values are left out.
 export function submissionConditionQuery(conditions: SubmissionConditions): Record<string, string> {
   const query: Record<string, string> = {}

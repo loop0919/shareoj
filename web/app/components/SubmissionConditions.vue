@@ -3,9 +3,9 @@ import { languageOptions, languagePatch, languageValue, submissionConditionChips
 
 // The sort and the filters of a submission list, in the panel that ConditionsPanel folds under a button. Each change
 // goes up at once; there is no apply button.
-// languages come from the judge's catalogue; before it has loaded, or from an older API, the 言語 select offers only
-// すべて and a language's chip names it by its key. The 提出者 box comes only withUser, and the 問題 select only with
-// problems (a contest's, value and label for each).
+// languages come from the judge's catalogue, and the conditions name only a language or a runtime it lists
+// (useSubmissionConditions); before it has loaded, or from an older API, the 言語 select offers only すべて. The 提出者
+// box comes only withUser, and the 問題 select only with problems (a contest's, value and label for each).
 // The bar slot ends the button's row, for the page's own controls. focus moves the focus to the button, for a control
 // of the page's that leaves the page when it takes effect.
 const props = defineProps<{ conditions: SubmissionConditions, languages: RuntimeLanguage[], withUser: boolean, problems?: { value: string, label: string }[] }>()
