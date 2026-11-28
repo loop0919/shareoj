@@ -276,7 +276,7 @@ func (s *Store) PublicList(ctx context.Context, cursor *Cursor, offset, limit in
 		order = listOrders[SortNewest]
 	}
 	args = append(args, limit+1, offset)
-	rows, err := s.pool.Query(ctx, query+fmt.Sprintf(` ORDER BY `+order+` LIMIT $%d OFFSET $%d`, len(args)-1, len(args)), args...)
+	rows, err := s.pool.Query(ctx, query+fmt.Sprintf(` ORDER BY %s LIMIT $%d OFFSET $%d`, order, len(args)-1, len(args)), args...)
 	if err != nil {
 		return nil, err
 	}
