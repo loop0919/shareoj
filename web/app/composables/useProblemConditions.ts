@@ -5,7 +5,8 @@ const rememberedKeys = ['sort', 'solved', 'contest', 'min', 'max'] as const
 const same = (a: ProblemConditions, b: ProblemConditions) => (Object.keys(a) as (keyof ProblemConditions)[]).every(key => a[key] === b[key])
 
 // The sort and filters of the problem list, kept in the URL so a reload, the back button or a shared link opens the same
-// list. A change opens the list as a new history entry, on its first page: the page number belongs to the old list.
+// list. A change opens the list as a new history entry, on its first page: the page number belongs to the old list. On a
+// bare /problems, the first change replaces the entry instead (open).
 // The conditions the viewer last chose are also kept per browser in a cookie, like the page size, and a /problems without
 // any query opens with them, the server's first render included. A URL with a query, a page number alone too, opens as
 // it is.
@@ -42,12 +43,15 @@ export function useProblemConditions() {
   watch(conditions, () => { pending.value = undefined }, { flush: 'sync' })
   // The router itself, not navigateTo: while another move runs Nuxt's route middleware, navigateTo takes itself for a
   // middleware's answer and does not move. A move that did not happen hands the conditions back to the route.
+  // A bare /problems is the viewer's own entry to the list and stands for what is remembered, so the first change made on
+  // it takes its place, as restore does: going back to it would only bring the changed list again.
   async function open(next: ProblemConditions) {
     const query = conditionQuery(next)
     const target = listed(query)
     pending.value = target
     let moved = false
-    try { moved = !await router.push({ path: '/problems', query }) }
+    const to = { path: '/problems', query }
+    try { moved = !await (Object.keys(route.query).length ? router.push(to) : router.replace(to)) }
     finally { if (!moved && pending.value === target) pending.value = undefined }
   }
   // Nothing left to remember removes the cookie. A signed-out viewer's solved is kept, to apply once they sign in.

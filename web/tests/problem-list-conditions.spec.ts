@@ -196,6 +196,37 @@ test('the back button returns to the earlier conditions', async ({ page }) => {
   await expect.poll(() => requests.at(-1)?.sort).toBe('oldest')
 })
 
+// A bare /problems opens the remembered conditions, so once a change is remembered, going back to it would show the same
+// list again. The first change made on it takes its place in the history instead.
+test('the first change on a bare /problems takes its place in the history', async ({ page }) => {
+  const sort = page.getByRole('combobox', { name: '並び順' })
+  const contest = page.getByRole('combobox', { name: 'コンテスト' })
+  const openList = async () => {
+    await page.goto('/contests')
+    await page.getByRole('navigation', { name: 'メインナビゲーション' }).getByRole('link', { name: '問題', exact: true }).click()
+    await expect(page).toHaveURL('/problems')
+    await conditionsButton(page).click()
+  }
+  await openList()
+  await sort.selectOption({ label: '公開日が古い順' })
+  await expect(page).toHaveURL('/problems?sort=oldest')
+  await page.goBack()
+  await expect(page).toHaveURL('/contests')
+  // With one more change, Back returns to the first change, and then leaves the list.
+  await page.context().clearCookies({ name: 'openoj-problem-conditions' })
+  await openList()
+  await sort.selectOption({ label: '公開日が古い順' })
+  await expect(page).toHaveURL('/problems?sort=oldest')
+  await contest.selectOption({ label: 'コンテストの問題を除く' })
+  await expect(page).toHaveURL('/problems?sort=oldest&contest=exclude')
+  await page.goBack()
+  await expect(page).toHaveURL('/problems?sort=oldest')
+  await expect(sort).toHaveValue('oldest')
+  await expect(contest).toHaveValue('')
+  await page.goBack()
+  await expect(page).toHaveURL('/contests')
+})
+
 test('a signed-out viewer cannot filter by solved', async ({ page }) => {
   await page.route('**/api/auth/me', route => route.fulfill({ json: { user: null } }))
   // No session: the route answers solved: ''.
