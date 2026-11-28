@@ -222,6 +222,7 @@ const streamingCalls: Record<string, number> = {
   'api/my/solved-problems.get.ts': 1,
   'api/my/submissions/[id].get.ts': 1,
   'api/my/submissions/index.ts': 1,
+  'api/problems/index.get.ts': 1,
   'utils/problem-submissions.ts': 1,
   'utils/streaming-mode.ts': 1,
 }

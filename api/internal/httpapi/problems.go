@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"regexp"
+	"strconv"
 	"time"
 
 	"judge/api/internal/problems"
@@ -48,6 +50,57 @@ func catalogueFilter(w http.ResponseWriter, r *http.Request) (author, tag string
 	return author, tag, true
 }
 
+var difficultyRange = regexp.MustCompile(`^([0-9]{1,2})-([0-9]{1,2})$`)
+
+// listFilter reads sort and difficulty on top of catalogueFilter and contest. A cursor continues only the initial order.
+func listFilter(w http.ResponseWriter, r *http.Request, viewer string) (problems.ListFilter, bool) {
+	author, tag, ok := catalogueFilter(w, r)
+	if !ok {
+		return problems.ListFilter{}, false
+	}
+	query := r.URL.Query()
+	// Problems a contest set aim at ranking rather than at a pleasant solve, so a viewer may want only one kind.
+	contest := query.Get("contest")
+	if contest != "" && contest != problems.ContestOnly && contest != problems.ContestExclude {
+		authError(w, 400, "invalid_contest")
+		return problems.ListFilter{}, false
+	}
+	filter := problems.ListFilter{Author: author, Tag: tag, Contest: contest, Sort: query.Get("sort"), Viewer: viewer}
+	if !problems.ValidSort(filter.Sort) {
+		authError(w, 400, "invalid_sort")
+		return problems.ListFilter{}, false
+	}
+	if filter.Sort == "" {
+		filter.Sort = problems.SortNewest
+	}
+	if raw := query.Get("difficulty"); raw != "" {
+		m := difficultyRange.FindStringSubmatch(raw)
+		if m == nil {
+			authError(w, 400, "invalid_difficulty")
+			return problems.ListFilter{}, false
+		}
+		filter.DifficultyMin, _ = strconv.Atoi(m[1])
+		filter.DifficultyMax, _ = strconv.Atoi(m[2])
+		if filter.DifficultyMin < 1 || filter.DifficultyMax > 10 || filter.DifficultyMin > filter.DifficultyMax {
+			authError(w, 400, "invalid_difficulty")
+			return problems.ListFilter{}, false
+		}
+	}
+	// Only the signed-in route knows whose solved state to read; the public list ignores solved.
+	if solved := query.Get("solved"); viewer != "" && solved != "" {
+		if solved != problems.SolvedOnly && solved != problems.UnsolvedOnly {
+			authError(w, 400, "invalid_solved")
+			return problems.ListFilter{}, false
+		}
+		filter.Solved = solved
+	}
+	if query.Get("cursor") != "" && filter.Sort != problems.SortNewest {
+		authError(w, 400, "invalid_request")
+		return problems.ListFilter{}, false
+	}
+	return filter, true
+}
+
 func nextContentCursor(id string, date time.Time) string {
 	data, _ := json.Marshal(problems.Cursor{ID: id, UpdatedAt: date})
 	return base64.RawURLEncoding.EncodeToString(data)
@@ -62,8 +115,8 @@ func (p problemHandler) publishedProblems(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	id := r.PathValue("id")
-	author, tag, ok := catalogueFilter(w, r)
-	if !ok {
+	// Bad author and tag answer 400 even where the list conditions are not read; listFilter checks them again.
+	if _, _, ok := catalogueFilter(w, r); !ok {
 		return
 	}
 	if id != "" && !problemID.MatchString(id) {
@@ -101,13 +154,10 @@ func (p problemHandler) publishedProblems(w http.ResponseWriter, r *http.Request
 		authError(w, 400, "invalid_request")
 		return
 	}
-	// Problems a contest set aim at ranking rather than at a pleasant solve, so a viewer may want only one kind.
-	contest := r.URL.Query().Get("contest")
-	if contest != "" && contest != problems.ContestOnly && contest != problems.ContestExclude {
-		authError(w, 400, "invalid_contest")
+	filter, ok := listFilter(w, r, viewer)
+	if !ok {
 		return
 	}
-	filter := problems.ListFilter{Author: author, Tag: tag, Contest: contest}
 	list, err := p.Store.PublicList(ctx, cursor, offset, limit, filter)
 	if err != nil {
 		problemError(w, err)

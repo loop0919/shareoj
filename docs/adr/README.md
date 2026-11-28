@@ -53,3 +53,4 @@ Architecture Decision Record（ADR）は、採用した設計だけでなく、�
 | [0042](0042-close-staff-views-in-streaming-mode.md) | Accepted（2026-11-26に公開） | 配信モードで、スタッフ向けの画面を既定で閉じる |
 | [0043](0043-withhold-case-results-while-ongoing.md) | Accepted | コンテストと定期便の開催中は、テストケースごとの結果を件数だけにする |
 | [0044](0044-sort-own-content-into-folders.md) | Accepted（FirefoxとSafariでのドラッグと、実機のスマホでの操作は未確認） | マイページの問題と記事を、自分で作るフォルダに分けられるようにする |
+| [0045](0045-sort-and-filter-problem-list.md) | Accepted（Chromium以外のブラウザーと、公開後の本番での応答時間は未確認） | 問題一覧に、並び替えと絞り込みのパネルを足し、選んだ条件を覚える |

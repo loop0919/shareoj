@@ -82,6 +82,7 @@ func TestProblemRoutesWithoutDatabase(t *testing.T) {
 		{"GET", "/users?handles=" + strings.Repeat("alice,", 20) + "alice", 400, "invalid_request"},
 		{"GET", "/users?handles=alice,bob", 503, "database_unavailable"},
 		{"GET", "/my/solved-problems", 503, "database_unavailable"},
+		{"GET", "/my/public-problems", 503, "database_unavailable"},
 		{"GET", "/my/favorites/bad", 404, "not_found"},
 		{"PUT", "/my/favorites/" + id, 503, "database_unavailable"},
 		{"PUT", "/my/difficulty-votes/bad", 404, "problem_not_found"},

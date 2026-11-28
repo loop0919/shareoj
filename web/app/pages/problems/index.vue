@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { clampPage, lastPage, pageOffset } from '~/utils/pagination'
 import type { PageSize } from '~/composables/usePageSize'
+import { conditionChips, conditionQuery } from '~/utils/problem-conditions'
 import { shortId } from '~~/shared/utils/short-id'
 import { japanDate } from '~/utils/japan-time'
-// Each tag and each contest filter gets a fresh list and pagination.
-definePageMeta({ key: route => `problems:${typeof route.query.tag === 'string' ? route.query.tag : ''}:${typeof route.query.contest === 'string' ? route.query.contest : ''}` })
 const { user } = useAccount()
 const solved = ref(new Set<string>())
 const solvedMessage = ref('')
@@ -28,29 +27,50 @@ const route = useRoute()
 // Older links opened the posting modal here; posting now has its own page.
 if (route.query.post === '1') await navigateTo({ path: '/problems/post', query: typeof route.query.problem === 'string' ? { problem: route.query.problem } : {} }, { replace: true, redirectCode: 301 })
 const config = useRuntimeConfig()
-// Rendering depends on the page size cookie.
+// Rendering depends on the page size cookie, a bare /problems on the remembered conditions, and the solved filter on
+// the session, so no cache keeps it.
+useResponseHeader('Cache-Control').value = 'no-store'
 useResponseHeader('Vary').value = 'Cookie'
-// Problem tags can give away the solution, so each visit starts with them hidden until the viewer turns them on.
-const showTags = ref(false)
-const tag = typeof route.query.tag === 'string' ? route.query.tag : ''
-// Contest problems aim at ranking, the others at the solve itself; a viewer may want only one kind (issue #21).
-const contestChoices = { '': 'すべての問題', only: 'コンテストの問題のみ', exclude: 'コンテストの問題を除く' }
-const contest = route.query.contest === 'only' || route.query.contest === 'exclude' ? route.query.contest : ''
-const filters = { ...tag ? { tag } : {}, ...contest ? { contest } : {} }
-const pickContest = (event: Event) => {
-  const value = (event.target as HTMLSelectElement).value
-  return navigateTo({ path: '/problems', query: { ...tag ? { tag } : {}, ...value ? { contest: value } : {} } })
+// The sort and the filters are in the URL too. The page stays mounted when they change, so the panel stays as it is.
+const { conditions, change, clear, restore } = useProblemConditions()
+// A bare /problems opens the remembered conditions before the list loads. The server answers it with a redirect and
+// renders the page only to throw it away, so it fetches no list for it. A move that keeps the page mounted comes back to
+// a bare /problems too, such as taking the last condition off or 「絞り込みを解除」 of the tag.
+const restoring = restore()
+await restoring
+const redirected = import.meta.server && restoring !== undefined
+watch(() => route.fullPath, () => { void restore() })
+const conditionsOpen = ref(false)
+const conditionsPanel = ref<{ focus: () => void }>()
+// The empty list's button goes with the empty list, so the focus goes to the panel's button.
+function clearEmpty() {
+  void clear()
+  conditionsPanel.value?.focus()
 }
+const tag = computed(() => conditions.value.tag)
+const contest = computed(() => conditions.value.contest)
+// Problem tags can give away the solution, so each visit starts with them hidden until the viewer turns them on. The
+// list of another tag is another visit.
+const showTags = ref(false)
+watch(tag, () => { showTags.value = false })
 // The page is in the URL and the page size in a cookie, so the server renders the rows the viewer sees (ADR 0028).
 const { requested, link, resize } = usePageQuery()
 const size = usePageSize('problems')
 const offset = computed(() => pageOffset(requested.value, size.value))
 // A fixed key, so useFetch reloads once a move has set both the offset and the size: a key made of them is watched
 // synchronously and would load the old page at the new size in between. The route catching up with a page already
-// requested leaves the offset, and so the list, as it is.
-const { data, error, status, refresh } = await useFetch('/api/problems', { key: `problem-list:${tag}:${contest}`, query: computed(() => ({ ...filters, offset: offset.value, limit: size.value })) })
+// requested leaves the offset, and so the list, as it is. New conditions come with the first page in one route, so they
+// load once too. The server applies solved only for a session.
+const { data, error, status, refresh } = await useFetch('/api/problems', { key: 'problem-list', immediate: !redirected, query: computed(() => ({ ...conditionQuery(conditions.value), offset: offset.value, limit: size.value })) })
 if (error.value?.statusCode === 400) throw createError({ statusCode: 404, statusMessage: 'Tag not found', fatal: true })
-if (error.value || !data.value) throw createError({ statusCode: 502, statusMessage: 'Problem service unavailable', fatal: true })
+if (!redirected && (error.value || !data.value)) throw createError({ statusCode: 502, statusMessage: 'Problem service unavailable', fatal: true })
+// The chips and the panel show the solved filter the list really applied, never one a signed-out viewer has in the URL.
+const chips = computed(() => conditionChips(conditions.value, Boolean(data.value?.solved)))
+// Row tags and the panel's tag search keep the other conditions.
+const tagKeep = computed(() => conditionQuery({ ...conditions.value, tag: '' }))
+// A tag alone, or nothing, keeps its own message; anything else may be what emptied the list, so it offers a way out.
+const narrowed = computed(() => chips.value.some(chip => chip.key !== 'tag'))
+const emptyTitle = computed(() => narrowed.value ? '条件に合う問題はありません。' : tag.value ? `「${tag.value}」のタグが付いた問題はまだありません。` : '公開された問題はまだありません。')
 const last = computed(() => lastPage(data.value?.total ?? 0, size.value))
 const page = computed(() => clampPage(requested.value, last.value))
 // A page past the end is replaced by the last page, whether the server renders it or the browser moves to it.
@@ -58,31 +78,35 @@ const toLastPage = () => data.value && requested.value > last.value ? navigateTo
 await toLastPage()
 watch(data, () => { void toLastPage() })
 const resizeProblems = (to: PageSize) => resize(size, page.value, to)
-// The canonical is the page on screen; the first page leaves out page.
+// The canonical is the page on screen, by tag and contest only: the order and the other filters are the viewer's own.
+// The first page leaves out page.
 const path = computed(() => {
-  const query = new URLSearchParams({ ...filters, ...page.value > 1 ? { page: String(page.value) } : {} })
+  const query = new URLSearchParams({ ...tag.value ? { tag: tag.value } : {}, ...contest.value ? { contest: contest.value } : {}, ...page.value > 1 ? { page: String(page.value) } : {} })
   return query.size ? `/problems?${query}` : '/problems'
 })
 const canonical = computed(() => new URL(path.value, config.public.siteUrl).href)
-const heading = tag ? `タグ「${tag}」の問題` : '問題'
-const description = tag ? `ShareOJ で「${tag}」のタグが付いたプログラミング問題の一覧。` : 'ShareOJ のプログラミング問題一覧。ユーザーが作成・公開した問題に挑戦し、コードを提出して自動採点できます。'
-useSeoMeta({ title: `${heading} | ShareOJ`, description, ogDescription: description, ogTitle: `${heading} | ShareOJ`, ogUrl: canonical, ogType: 'website' })
+const heading = computed(() => tag.value ? `タグ「${tag.value}」の問題` : '問題')
+const description = computed(() => tag.value ? `ShareOJ で「${tag.value}」のタグが付いたプログラミング問題の一覧。` : 'ShareOJ のプログラミング問題一覧。ユーザーが作成・公開した問題に挑戦し、コードを提出して自動採点できます。')
+const title = computed(() => `${heading.value} | ShareOJ`)
+useSeoMeta({ title, description, ogDescription: description, ogTitle: title, ogUrl: canonical, ogType: 'website' })
 useHead({ link: [{ rel: 'canonical', href: canonical }] })
 useSharePreview({ type: 'website', title: heading, path, description })
 </script>
 <template>
   <div class="catalogue">
     <header class="catalogue-heading"><h1>問題</h1><NuxtLink class="editor-button primary" to="/problems/post">問題投稿</NuxtLink></header>
-    <!-- Viewers who hide problem tags get no tag search, unless a link opened a filtered list. The switch comes first so it stays put when the search appears. -->
-    <div class="catalogue-tools">
-      <InlineSwitch v-model="showTags" class="tags-switch" :describedby="showTags ? undefined : 'problem-tags-hint'">タグを表示</InlineSwitch>
-      <span v-if="!showTags" id="problem-tags-hint" class="tags-hint">解法のヒントになることがあります。</span>
-      <TagFilter v-if="showTags || tag" kind="problem" :tag="tag" to="/problems" :keep="contest ? { contest } : undefined" />
-      <select class="contest-filter" aria-label="コンテストの問題で絞り込む" :value="contest" @change="pickContest"><option v-for="(label, value) in contestChoices" :key="value" :value="value">{{ label }}</option></select>
-    </div>
+    <!-- The tag switch stays outside the panel, at the end of the button's row. -->
+    <ProblemConditions ref="conditionsPanel" v-model:open="conditionsOpen" class="catalogue-conditions" :conditions="conditions" :chips="chips" :tag-keep="tagKeep" :signed-in="Boolean(user)" :show-tags="showTags" @change="change" @clear="clear">
+      <span class="catalogue-tags">
+        <InlineSwitch v-model="showTags" class="tags-switch" :describedby="showTags ? undefined : 'problem-tags-hint'">タグを表示</InlineSwitch>
+        <span v-if="!showTags" id="problem-tags-hint" class="tags-hint">解法のヒントになることがあります。</span>
+      </span>
+    </ProblemConditions>
     <!-- A page that fails after the first one hides the rows it would replace. -->
     <p v-if="error" role="alert">一覧を取得できませんでした。もう一度お試しください。 <button type="button" class="editor-button" @click="refresh()">再試行</button></p>
-    <EmptyState v-else-if="!data?.total" kind="problem" :title="contest ? '条件に合う問題はまだありません。' : tag ? `「${tag}」のタグが付いた問題はまだありません。` : '公開された問題はまだありません。'" />
+    <EmptyState v-else-if="!data?.total" kind="problem" :title="emptyTitle">
+      <template v-if="narrowed" #default><button type="button" class="editor-button" @click="clearEmpty">条件をすべて外す</button></template>
+    </EmptyState>
     <template v-else>
     <ListToolbar :total="data.total" :page="page" :size="size" unit="問" :link="link" @update:size="resizeProblems" />
     <div class="content-table-scroll" tabindex="0" role="region" aria-label="問題一覧" :aria-busy="status === 'pending'">
@@ -90,7 +114,7 @@ useSharePreview({ type: 'website', title: heading, path, description })
         <thead><tr><th scope="col">公開日</th><th scope="col">タイトル</th><th scope="col">作成者</th><th scope="col"><abbr title="実行時間制限 / メモリ制限">TL / ML</abbr></th><th scope="col">正解者数</th><th scope="col"><abbr title="お気に入り数">Fav</abbr></th><th scope="col">難易度</th></tr></thead>
         <tbody><tr v-for="problem in data.items" :key="problem.id" :class="{ solved: solved.has(problem.id) }">
           <td class="corner-cell"><time :datetime="problem.publishedAt">{{ japanDate(problem.publishedAt) }}</time></td>
-          <th scope="row"><NuxtLink :to="`/problems/${shortId(problem.id)}`" :aria-label="solved.has(problem.id) ? `${problem.title}（AC 済み）` : undefined">{{ problem.title }}</NuxtLink><TagLinks v-if="showTags && problem.tags.length" class="problem-row-tags" :tags="problem.tags" to="/problems" /></th>
+          <th scope="row"><NuxtLink :to="`/problems/${shortId(problem.id)}`" :aria-label="solved.has(problem.id) ? `${problem.title}（AC 済み）` : undefined">{{ problem.title }}</NuxtLink><TagLinks v-if="showTags && problem.tags.length" class="problem-row-tags" :tags="problem.tags" to="/problems" :keep="tagKeep" /></th>
           <td class="line-cell" data-label="作成者"><UserLink :handle="problem.author" /></td><td class="stat-cell wide-cell" data-label="TL / ML">{{ problem.timeLimitMs == null ? '—' : `${problem.timeLimitMs / 1000} 秒` }}・{{ problem.memoryLimitMb == null ? '—' : `${problem.memoryLimitMb} MiB` }}</td>
           <td class="stat-cell" data-label="正解者数">{{ problem.solverCount }}</td><td class="stat-cell" data-label="Fav">{{ problem.favoriteCount }}</td><td class="lead-cell"><DifficultyBadge :level="problem.difficulty" /></td>
         </tr></tbody>
@@ -103,13 +127,10 @@ useSharePreview({ type: 'website', title: heading, path, description })
 </template>
 
 <style scoped>
-.catalogue-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 20px; }
-.catalogue-tools > .tag-filter { margin-bottom: 0; }
+.catalogue-conditions { margin-bottom: 20px; }
+.catalogue-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 0 12px; margin-left: auto; }
+@media (max-width: 39.999rem) { .catalogue-tags { margin-left: 0; } }
 .tags-switch { font-size: .875rem; }
-.contest-filter { min-height: 36px; margin-left: auto; padding: 2px 8px; border: 1px solid var(--color-line); border-radius: 4px; font: inherit; font-size: .875rem; cursor: pointer; }
-.contest-filter:hover { border-color: var(--color-muted); }
-.contest-filter:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
-@media (max-width: 39.999rem) { .contest-filter { margin-left: 0; font-size: 1rem; } }
 .tags-hint { color: var(--color-muted); font-size: .8125rem; }
 .content-table tr.solved { background: var(--color-accent-soft); }
 .problem-row-tags { margin-top: 6px; }

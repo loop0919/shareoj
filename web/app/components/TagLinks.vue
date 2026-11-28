@@ -1,10 +1,10 @@
 <script setup lang="ts">
-// Each tag opens the list of problems or posts that carry it.
-defineProps<{ tags: string[], to: '/problems' | '/blog' }>()
+// Each tag opens the list of problems or posts that carry it. keep carries the list's other conditions across a tag link.
+defineProps<{ tags: string[], to: '/problems' | '/blog', keep?: Record<string, string> }>()
 </script>
 <template>
   <ul class="tag-links" aria-label="タグ">
-    <li v-for="tag in tags" :key="tag"><NuxtLink :to="{ path: to, query: { tag } }">{{ tag }}</NuxtLink></li>
+    <li v-for="tag in tags" :key="tag"><NuxtLink :to="{ path: to, query: { ...keep, tag } }">{{ tag }}</NuxtLink></li>
   </ul>
 </template>
 <style scoped>

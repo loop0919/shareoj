@@ -10,3 +10,10 @@ export async function moveContest(request: APIRequestContext, id: string, schedu
   const response = await request.post(`${fixtureAPI}/__test/contests/${id}/schedule`, { data: schedule })
   expect(response.status(), await response.text()).toBe(204)
 }
+
+// Records a public accepted run of a fixture user (such as 'bob') on a problem through the browser fixture API, so the
+// solved filter has something to read without waiting for the judge.
+export async function recordAccepted(request: APIRequestContext, problemId: string, owner: string) {
+  const response = await request.post(`${fixtureAPI}/__test/problems/${problemId}/accepted`, { data: { owner } })
+  expect(response.status(), await response.text()).toBe(204)
+}

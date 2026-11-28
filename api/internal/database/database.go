@@ -173,6 +173,9 @@ var contentFoldersSchema string
 //go:embed 049_post_created_at.sql
 var postCreatedAtSchema string
 
+//go:embed 050_solver_indexes.sql
+var solverIndexesSchema string
+
 // migrations lists the schemas in version order: version N is the Nth entry, from NNN_*.sql.
 // Add a migration at the end under the next number. Deployed databases record the versions they applied, so never
 // remove or reorder an entry; a reverted migration keeps its number reserved, like 019_reserved.sql.
@@ -227,6 +230,7 @@ func migrations() []string {
 		featuredStartsAt22Schema,
 		contentFoldersSchema,
 		postCreatedAtSchema,
+		solverIndexesSchema,
 	}
 }
 
