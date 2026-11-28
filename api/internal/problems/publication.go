@@ -150,17 +150,29 @@ const acceptedRun = `s.status='DONE' AND submission_full_score(s.result)
  AND NOT COALESCE((s.job->>'generate')::boolean,false)
  AND NOT COALESCE((s.job->>'validate')::boolean,false)`
 
-// Accepted submissions visible on the public problem page.
-const publicAcceptedSubmission = acceptedRun + `
- AND ((s.contest_id IS NULL AND NOT COALESCE((s.job->>'privateDraft')::boolean,true))
-  OR EXISTS(SELECT 1 FROM contests c WHERE c.id=s.contest_id AND contest_submission_public(c,s.created_at)))`
+// An accepted run counts outside a contest unless it ran a private draft, and in a contest when the contest makes it
+// count. The queries below keep the two apart instead of joining them with OR, so that each is read from its partial
+// index in 050_solver_indexes.sql without the job and the result. Those predicates repeat these conditions word for
+// word: change both together, or the planner silently goes back to reading every run.
+const (
+	plainAcceptedRun = acceptedRun + `
+ AND s.contest_id IS NULL AND NOT COALESCE((s.job->>'privateDraft')::boolean,true)`
+	contestAcceptedRun = acceptedRun + `
+ AND s.contest_id IS NOT NULL`
+)
 
-// The viewer's own solved marks ignore the freeze (ADR 0023), so contest runs count from the end.
-const ownAcceptedSubmission = acceptedRun + `
- AND ((s.contest_id IS NULL AND NOT COALESCE((s.job->>'privateDraft')::boolean,true))
-  OR EXISTS(SELECT 1 FROM contests c WHERE c.id=s.contest_id AND s.created_at>=c.starts_at AND c.ends_at<=statement_timestamp()))`
+// The solvers of problem d are the owners of accepted runs visible on the public problem page.
+const publicSolverCount = `(SELECT count(*) FROM (SELECT s.owner_id FROM submissions s WHERE s.problem_id=d.id AND ` + plainAcceptedRun + `
+ UNION SELECT s.owner_id FROM submissions s WHERE s.problem_id=d.id AND ` + contestAcceptedRun + `
+  AND EXISTS(SELECT 1 FROM contests c WHERE c.id=s.contest_id AND contest_submission_public(c,s.created_at))) solvers)`
 
-const publicSolverCount = `(SELECT count(DISTINCT s.owner_id) FROM submissions s WHERE s.problem_id=d.id AND ` + publicAcceptedSubmission + `)`
+// ownSolved reports whether owner, a placeholder, solved problem d. The viewer's own solved marks ignore the freeze
+// (ADR 0023), so contest runs count from the end.
+func ownSolved(owner string) string {
+	return `(EXISTS (SELECT 1 FROM submissions s WHERE s.problem_id=d.id AND s.owner_id=` + owner + ` AND ` + plainAcceptedRun + `)
+ OR EXISTS (SELECT 1 FROM submissions s WHERE s.problem_id=d.id AND s.owner_id=` + owner + ` AND ` + contestAcceptedRun + `
+  AND EXISTS(SELECT 1 FROM contests c WHERE c.id=s.contest_id AND s.created_at>=c.starts_at AND c.ends_at<=statement_timestamp())))`
+}
 
 // PublicGet keeps editorialHidden as the public embargo, but the author and testers still receive the editorial.
 // Tags hint at the solution, so they are also hidden while a 定期便 round features the problem.
@@ -228,11 +240,11 @@ func publicFilter(filter ListFilter) (string, []any) {
 	if filter.Solved != "" {
 		args = append(args, filter.Viewer)
 		// The same runs as SolvedProblems, so the filter agrees with the rows the list marks as solved.
-		exists := `EXISTS (SELECT 1 FROM submissions s WHERE s.problem_id=d.id AND s.owner_id=$` + strconv.Itoa(len(args)) + ` AND ` + ownAcceptedSubmission + `)`
+		solved := ownSolved(`$` + strconv.Itoa(len(args)))
 		if filter.Solved == UnsolvedOnly {
-			exists = `NOT ` + exists
+			solved = `NOT ` + solved
 		}
-		where += ` AND ` + exists
+		where += ` AND ` + solved
 	}
 	switch filter.Contest {
 	case ContestOnly:
@@ -277,9 +289,7 @@ func (s *Store) PublicList(ctx context.Context, cursor *Cursor, offset, limit in
 
 // SolvedProblems returns all publicly solved problem IDs, beyond the recent submission history.
 func (s *Store) SolvedProblems(ctx context.Context, owner string) ([]string, error) {
-	rows, err := s.pool.Query(ctx, `SELECT DISTINCT s.problem_id::text FROM submissions s
- JOIN problem_drafts d ON d.id=s.problem_id
- WHERE s.owner_id=$1 AND d.published_draft IS NOT NULL AND `+ownAcceptedSubmission, owner)
+	rows, err := s.pool.Query(ctx, `SELECT d.id::text FROM problem_drafts d WHERE d.published_draft IS NOT NULL AND `+ownSolved(`$1`), owner)
 	if err != nil {
 		return nil, err
 	}
