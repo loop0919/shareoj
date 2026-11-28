@@ -73,11 +73,11 @@ func (s *Store) ProblemList(ctx context.Context, problemID, contestID, viewer st
 	return submissionList(rows, 50)
 }
 
-// problemListQuery gives ProblemList's page query and its arguments.
+// problemListQuery gives ProblemList's page query and its arguments. The page is cut from the runs' id (listPage).
 func problemListQuery(problemID, contestID, viewer string, scope Scope, onsite bool, offset int, conditions ListConditions) (string, []any) {
 	// The visibility filter takes $1 to $6; the conditions follow it.
 	narrow, extra := conditions.where(7)
-	return `SELECT ` + columns + ` FROM submissions WHERE ` + problemSubmissionVisible + narrow + ` ORDER BY ` + conditions.order() + ` LIMIT 51 OFFSET $5`,
+	return listPage(`SELECT id FROM submissions WHERE `+problemSubmissionVisible+narrow+` ORDER BY `+conditions.order()+` LIMIT 51 OFFSET $5`, conditions),
 		append([]any{problemID, contestID, viewer, string(scope), offset, onsite}, extra...)
 }
 

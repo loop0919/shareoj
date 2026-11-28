@@ -47,13 +47,29 @@ func (c ListConditions) where(next int) (sql string, args []any) {
 // change them together. A migration that replaces submission_cpu_time_ms must also REINDEX submissions_problem_fastest
 // and submissions_contest_fastest, which hold the times the old function computed.
 func (c ListConditions) order() string {
+	return c.orderBy(c.key())
+}
+
+// key gives the value that order sorts by before the time of the run, or "" when it sorts by the time alone.
+func (c ListConditions) key() string {
+	switch c.Sort {
+	case SortShortest:
+		return "octet_length(source)"
+	case SortFastest:
+		return "submission_cpu_time_ms(result)"
+	}
+	return ""
+}
+
+// orderBy is order with key in place of the value key gives, such as the name of a column that holds it.
+func (c ListConditions) orderBy(key string) string {
 	switch c.Sort {
 	case SortOldest:
 		return "created_at ASC,id ASC"
 	case SortShortest:
-		return "octet_length(source) ASC,created_at DESC,id DESC"
+		return key + " ASC,created_at DESC,id DESC"
 	case SortFastest:
-		return "submission_cpu_time_ms(result) ASC NULLS LAST,created_at DESC,id DESC"
+		return key + " ASC NULLS LAST,created_at DESC,id DESC"
 	}
 	return "created_at DESC,id DESC"
 }

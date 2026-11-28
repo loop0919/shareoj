@@ -124,17 +124,14 @@ type CountedSubmissionList struct {
 // A problemID keeps the submissions to that problem; empty keeps every problem's. The conditions narrow and order the
 // list inside what the viewer may see, and Total counts the submissions left after them.
 func (s *Store) ContestList(ctx context.Context, contestID, viewer string, scope Scope, offset, limit int, onsite bool, problemID string, conditions ListConditions) (CountedSubmissionList, error) {
-	var allowed bool
-	// Members of a team may list from the start; contestPublic keeps only their team's submissions until the end.
-	err := s.Pool.QueryRow(ctx, `SELECT $3 OR c.ends_at<=statement_timestamp() OR contest_staff(c.id,$2)
- OR (c.starts_at<=statement_timestamp() AND cardinality(contest_teammates(c.id,$2))>0) FROM contests c WHERE c.id=$1`, contestID, viewer, scope != ScopeAll).Scan(&allowed)
+	allowed, staff, err := s.contestListAccess(ctx, contestID, viewer, scope)
 	if err != nil {
 		return CountedSubmissionList{}, err
 	}
 	if !allowed || (scope != ScopeAll && viewer == "") {
 		return CountedSubmissionList{}, pgx.ErrNoRows
 	}
-	q := contestListQueries(contestID, viewer, scope, offset, limit, onsite, problemID, conditions)
+	q := contestListQueries(contestID, viewer, scope, staff, offset, limit, onsite, problemID, conditions)
 	rows, err := s.Pool.Query(ctx, q.page, plannedPerCall(q.pageArgs)...)
 	if err != nil {
 		return CountedSubmissionList{}, err
@@ -148,17 +145,28 @@ func (s *Store) ContestList(ctx context.Context, contestID, viewer string, scope
 	return result, err
 }
 
+// contestListAccess tells whether the viewer may list the contest's submissions in scope, and whether they are its
+// staff, who alone see the plain runs of its problems in its list.
+func (s *Store) contestListAccess(ctx context.Context, contestID, viewer string, scope Scope) (allowed, staff bool, err error) {
+	// Members of a team may list from the start; contestPublic keeps only their team's submissions until the end.
+	err = s.Pool.QueryRow(ctx, `SELECT $3 OR c.ends_at<=statement_timestamp() OR contest_staff(c.id,$2)
+ OR (c.starts_at<=statement_timestamp() AND cardinality(contest_teammates(c.id,$2))>0),contest_staff(c.id,$2) FROM contests c WHERE c.id=$1`, contestID, viewer, scope != ScopeAll).Scan(&allowed, &staff)
+	return allowed, staff, err
+}
+
 // contestListStatements are ContestList's page and count queries with their arguments.
 type contestListStatements struct {
 	page, count         string
 	pageArgs, countArgs []any
 }
 
-// contestListQueries builds ContestList's statements. Both read the list as its two halves, contestRuns and
+// contestListQueries builds ContestList's statements. For staff, both read the list as its two halves, contestRuns and
 // contestPlainRuns, each under the whole filter. A page takes from each half its first offset+limit+1 runs in the
 // list's order, through the index for that order, and cuts the page from the two; no run further down either half can
-// reach the page.
-func contestListQueries(contestID, viewer string, scope Scope, offset, limit int, onsite bool, problemID string, conditions ListConditions) contestListStatements {
+// reach the page. For anyone else, the plain half holds nothing (see contestPlainRuns), so the statements read
+// contestRuns alone and a page is cut straight from its index. Either way, the page is cut from the runs' id and
+// sort keys, and listPage reads the columns of its runs alone.
+func contestListQueries(contestID, viewer string, scope Scope, staff bool, offset, limit int, onsite bool, problemID string, conditions ListConditions) contestListStatements {
 	filter, narrow := contestPublic, any(onsite)
 	if scope != ScopeAll {
 		filter, narrow = contestOwn, string(scope)
@@ -171,18 +179,31 @@ func contestListQueries(contestID, viewer string, scope Scope, offset, limit int
 	// The page query takes $1 to $6 before the conditions; the count query has no $6, so its conditions start at $6.
 	pageNarrow, pageArgs := conditions.where(7)
 	countNarrow, countArgs := conditions.where(6)
-	halves := func(selected, narrow, tail string) string {
+	listed := func(selected, narrow, tail string) string {
 		half := func(bound string) string {
-			return `(SELECT ` + selected + ` FROM submissions WHERE ` + bound + ` AND ` + filter + narrow + tail + `)`
+			return `SELECT ` + selected + ` FROM submissions WHERE ` + bound + ` AND ` + filter + narrow + tail
 		}
-		return half(contestRuns) + ` UNION ALL ` + half(contestPlainRuns)
+		if !staff {
+			return half(contestRuns)
+		}
+		return `(` + half(contestRuns) + `) UNION ALL (` + half(contestPlainRuns) + `)`
 	}
 	order := ` ORDER BY ` + conditions.order()
+	ids := listed(`id`, pageNarrow, order+` LIMIT $6 OFFSET $2`)
+	if staff {
+		// Each half hands on the sort keys of its runs, so that the two are merged by them without computing them again.
+		keys := `id,created_at`
+		if key := conditions.key(); key != "" {
+			keys += `,` + key + ` AS sort_key`
+		}
+		ids = `SELECT id FROM (` + listed(keys, pageNarrow, order+` LIMIT $2::bigint+$6::bigint`) + `) listed ORDER BY ` +
+			conditions.orderBy(`sort_key`) + ` LIMIT $6 OFFSET $2`
+	}
 	// The filter leaves $2 unused in the count, so PostgreSQL cannot type it unless the query refers to it.
 	return contestListStatements{
-		page:      `SELECT * FROM (` + halves(columns, pageNarrow, order+` LIMIT $2::bigint+$6::bigint`) + `) listed` + order + ` LIMIT $6 OFFSET $2`,
+		page:      listPage(ids, conditions),
 		pageArgs:  append([]any{contestID, offset, viewer, narrow, problem, limit + 1}, pageArgs...),
-		count:     `SELECT count(*) FROM (` + halves(`1`, countNarrow+` AND $2::integer>=0`, "") + `) listed`,
+		count:     `SELECT count(*) FROM (` + listed(`1`, countNarrow+` AND $2::integer>=0`, "") + `) listed`,
 		countArgs: append([]any{contestID, offset, viewer, narrow, problem}, countArgs...),
 	}
 }
@@ -193,7 +214,8 @@ func contestListQueries(contestID, viewer string, scope Scope, offset, limit int
 // its scan by what an index finds, instead of a scan of every run of the table: contestRuns by contest_id, the key of
 // submissions_contest_order and of the indexes of 052_submission_list_indexes.sql, and contestPlainRuns by the
 // contest's problems. Only staff see plain runs in a contest's list (contestStaffSees and contestOwn both ask
-// contest_staff), so that half asks it first, once, and reads nothing for anyone else.
+// contest_staff), so that half asks it first, once, and reads nothing for anyone else. ContestList leaves that half
+// out for a viewer whom contestListAccess finds not to be staff; for staff it keeps the half with its own check.
 const (
 	contestRuns      = `contest_id=$1::uuid`
 	contestPlainRuns = `contest_id IS NULL AND (SELECT contest_staff($1::uuid,$3)) AND problem_id=ANY(ARRAY(SELECT cp.problem_id FROM contest_problems cp WHERE cp.contest_id=$1::uuid))`
@@ -208,6 +230,14 @@ const (
 // one connection, and TestSubmissionListsArePlannedPerCallPostgres checks that they leave no prepared statement.
 func plannedPerCall(args []any) []any {
 	return append([]any{pgx.QueryExecModeCacheDescribe}, args...)
+}
+
+// listPage selects the columns of the runs that ids picks, in the list's order. ids is a query of their id that orders
+// the list and cuts the page from it, and it reads nothing else: a run before the page costs its read through the
+// index, the visibility check and its sort key, and the columns, with the job and the subqueries they read, are read
+// for the runs of the page alone.
+func listPage(ids string, conditions ListConditions) string {
+	return `SELECT ` + columns + ` FROM (` + ids + `) page JOIN submissions USING (id) ORDER BY ` + conditions.order()
 }
 
 func submissionList(rows pgx.Rows, limit int) (ContestSubmissionList, error) {

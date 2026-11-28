@@ -57,8 +57,8 @@ func newListTestPool(t *testing.T, name string) (context.Context, *pgxpool.Pool)
 }
 
 // referenceContestListQueries builds ContestList's statements as they were before the list was split into
-// contestRuns and contestPlainRuns: one scan of submissions under the filter. They are the reference the split must
-// agree with.
+// contestRuns and contestPlainRuns and its page cut by id: one scan of submissions under the filter, which selects the
+// columns of every run it reads. They are the reference the split must agree with.
 func referenceContestListQueries(contestID, viewer string, scope Scope, offset, limit int, onsite bool, problemID string, conditions ListConditions) contestListStatements {
 	filter, narrow := contestPublic, any(onsite)
 	if scope != ScopeAll {
@@ -79,20 +79,22 @@ func referenceContestListQueries(contestID, viewer string, scope Scope, offset, 
 	}
 }
 
-// TestContestListMatchesReferencePostgres compares ContestList's page and count with the reference, contest by
-// contest, viewer by viewer and scope by scope, for every sort with each kind of condition and pages that cut through
-// the list. The runs are of every kind: contest runs from before the start, inside the window, in the freeze and after
-// the end, plain runs of the contest's problems, a contest's runs of a problem it does not set, queued and running runs,
-// results with and without times, and the jobs that the lists leave out.
-func TestContestListMatchesReferencePostgres(t *testing.T) {
-	ctx, pool := newListTestPool(t, "contest_list_reference")
+// referenceUsers are the viewers seedListReference creates.
+var referenceUsers = []string{"alice", "setter", "author", "tester", "part1", "part2", "mate1", "mate2", "outsider"}
+
+// seedListReference fills the schema with the runs the reference tests list, of every kind: contest runs from before
+// the start, inside the window, in the freeze and after the end, plain runs of the contest's problems, a contest's runs
+// of a problem it does not set, queued and running runs, results with and without times, and the jobs that the lists
+// leave out. Contest k is c0000000-0000-4000-8000-00000000000k and sets problems 2k-1 and 2k, problem n being
+// a0000000-0000-4000-8000-00000000000n; problem 9 belongs to no contest.
+func seedListReference(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
+	t.Helper()
 	exec := func(query string) {
 		t.Helper()
 		if _, err := pool.Exec(ctx, query); err != nil {
 			t.Fatal(err)
 		}
 	}
-	users := []string{"alice", "setter", "author", "tester", "part1", "part2", "mate1", "mate2", "outsider"}
 	exec(`INSERT INTO user_profiles(owner_id,handle) SELECT u,u FROM unnest(ARRAY['alice','setter','author','tester','part1','part2','mate1','mate2','outsider']) u`)
 	// Four contests: ended with an onsite division, ended with the freeze still on, a running team contest with an onsite
 	// division, and one not started yet. Each sets two problems; a ninth problem belongs to no contest.
@@ -139,9 +141,49 @@ func TestContestListMatchesReferencePostgres(t *testing.T) {
 			LEAST(c.starts_at+make_interval(mins=>(ARRAY[-30,10,100,150])[h[9]%4+1]),now())
 		FROM generate_series(1,900) i, LATERAL (SELECT array_agg(hashtext(i||'-'||j)&2147483647 ORDER BY j) AS h FROM generate_series(1,11) j) x
 		JOIN ref_problems p ON p.n=h[10]%9+1 JOIN ref_contests c ON c.k=COALESCE(p.contest,h[11]%4+1)`)
+}
+
+// listedIDs runs a page statement and gives each item's id and contest; the contest tells the halves of a contest's
+// list apart.
+func listedIDs(t *testing.T, ctx context.Context, pool *pgxpool.Pool, statement string, args []any) []string {
+	t.Helper()
+	rows, err := pool.Query(ctx, statement, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (string, error) {
+		s, e := scan(row)
+		return s.ID + "/" + s.ContestID, e
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return items
+}
+
+// countedRuns runs a count statement.
+func countedRuns(t *testing.T, ctx context.Context, pool *pgxpool.Pool, statement string, args []any) int {
+	t.Helper()
+	var n int
+	if err := pool.QueryRow(ctx, statement, args...).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// TestContestListMatchesReferencePostgres compares ContestList's page and count with the reference, contest by
+// contest, viewer by viewer and scope by scope, for every sort with each kind of condition, on pages that cut through
+// the list, pages deep into it, its last page and past its end. ContestList reads the plain half only for staff, as
+// contestListAccess tells; for anyone else the statements with both halves are compared too, which shows that the
+// plain half's own check keeps its runs from them.
+func TestContestListMatchesReferencePostgres(t *testing.T) {
+	ctx, pool := newListTestPool(t, "contest_list_reference")
+	seedListReference(t, ctx, pool)
+	store := &Store{Pool: pool}
 
 	cpp, _ := LanguageRuntimeIDs("cpp")
 	languages := StoredRuntimeIDs(cpp)
+	sorts := []string{SortNewest, SortOldest, SortShortest, SortFastest}
 	type view struct {
 		scope  Scope
 		onsite bool
@@ -154,7 +196,7 @@ func TestContestListMatchesReferencePostgres(t *testing.T) {
 	}
 	// Every sort with each kind of condition, on pages that start inside the list and end before it does.
 	var pages []page
-	for _, sort := range []string{SortNewest, SortOldest, SortShortest, SortFastest} {
+	for _, sort := range sorts {
 		pages = append(pages,
 			page{conditions: ListConditions{Sort: sort}, offset: 4, limit: 5},
 			page{conditions: ListConditions{Sort: sort, Verdict: "AC"}, offset: 2, limit: 3},
@@ -163,47 +205,47 @@ func TestContestListMatchesReferencePostgres(t *testing.T) {
 			page{conditions: ListConditions{Sort: sort, Verdict: "AC", Runtimes: languages}, limit: 5},
 		)
 	}
-	listed := func(statement string, args []any) []string {
-		t.Helper()
-		rows, err := pool.Query(ctx, statement, args...)
-		if err != nil {
-			t.Fatal(err)
+	// staffOf tells, as ContestList does, whether the viewer reads the contest's plain half.
+	staffOf := map[string]bool{}
+	for k := 1; k <= 4; k++ {
+		for _, viewer := range append(referenceUsers, "") {
+			_, staff, err := store.contestListAccess(ctx, fmt.Sprintf("c0000000-0000-4000-8000-00000000000%d", k), viewer, ScopeAll)
+			if err != nil {
+				t.Fatal(err)
+			}
+			staffOf[fmt.Sprint(k, viewer)] = staff
 		}
-		items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (string, error) {
-			s, e := scan(row)
-			// The contest of each item tells the halves apart in the checks below.
-			return s.ID + "/" + s.ContestID, e
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return items
 	}
-	counted := func(statement string, args []any) int {
-		t.Helper()
-		var n int
-		if err := pool.QueryRow(ctx, statement, args...).Scan(&n); err != nil {
-			t.Fatal(err)
-		}
-		return n
-	}
-	var compared, mixed, plainOnly, empty int
-	compare := func(k int, viewer string, v view, p page) {
+	var compared, mixed, plainOnly, empty, deep, gated int
+	// compare reads the page and the total as ContestList does and as the reference does, and gives the reference's
+	// total. With both, it also reads them with both halves for a viewer who is not staff.
+	compare := func(k int, viewer string, v view, p page, both bool) int {
 		t.Helper()
 		contest := fmt.Sprintf("c0000000-0000-4000-8000-00000000000%d", k)
 		problemID := ""
 		if p.problem {
 			problemID = fmt.Sprintf("a0000000-0000-4000-8000-00000000000%d", 2*k-1)
 		}
-		got := contestListQueries(contest, viewer, v.scope, p.offset, p.limit, v.onsite, problemID, p.conditions)
+		staff := staffOf[fmt.Sprint(k, viewer)]
 		want := referenceContestListQueries(contest, viewer, v.scope, p.offset, p.limit, v.onsite, problemID, p.conditions)
-		gotItems, wantItems := listed(got.page, got.pageArgs), listed(want.page, want.pageArgs)
-		gotTotal, wantTotal := counted(got.count, got.countArgs), counted(want.count, want.countArgs)
-		if !slices.Equal(gotItems, wantItems) || gotTotal != wantTotal {
-			t.Errorf("contest %d, viewer %q, scope %q onsite %v, %+v problem %v offset %d limit %d: got %v total %d, want %v total %d",
-				k, viewer, v.scope, v.onsite, p.conditions, p.problem, p.offset, p.limit, gotItems, gotTotal, wantItems, wantTotal)
+		wantItems, wantTotal := listedIDs(t, ctx, pool, want.page, want.pageArgs), countedRuns(t, ctx, pool, want.count, want.countArgs)
+		forms := []bool{staff}
+		if !staff && both {
+			forms = append(forms, true)
+			gated++
+		}
+		for _, halves := range forms {
+			got := contestListQueries(contest, viewer, v.scope, halves, p.offset, p.limit, v.onsite, problemID, p.conditions)
+			gotItems, gotTotal := listedIDs(t, ctx, pool, got.page, got.pageArgs), countedRuns(t, ctx, pool, got.count, got.countArgs)
+			if !slices.Equal(gotItems, wantItems) || gotTotal != wantTotal {
+				t.Errorf("contest %d, viewer %q (staff %v, both halves %v), scope %q onsite %v, %+v problem %v offset %d limit %d: got %v total %d, want %v total %d",
+					k, viewer, staff, halves, v.scope, v.onsite, p.conditions, p.problem, p.offset, p.limit, gotItems, gotTotal, wantItems, wantTotal)
+			}
 		}
 		compared++
+		if p.offset >= 20 && len(wantItems) > 0 {
+			deep++
+		}
 		plain := slices.ContainsFunc(wantItems, func(item string) bool { return item[len(item)-1] == '/' })
 		switch {
 		case len(wantItems) == 0:
@@ -213,18 +255,19 @@ func TestContestListMatchesReferencePostgres(t *testing.T) {
 		case plain:
 			plainOnly++
 		}
+		return wantTotal
 	}
 	// Each contest, viewer and scope gets the first page with no condition and the next of the pages above in turn, so
 	// that every page above is read in some contest by some viewer, and each contest and viewer read several of them.
 	turn := 0
 	for k := 1; k <= 4; k++ {
-		for _, viewer := range append(users, "") {
+		for _, viewer := range append(referenceUsers, "") {
 			for _, v := range views {
 				if v.scope != ScopeAll && viewer == "" {
 					continue
 				}
-				compare(k, viewer, v, page{conditions: ListConditions{}, limit: 50})
-				compare(k, viewer, v, pages[turn%len(pages)])
+				compare(k, viewer, v, page{conditions: ListConditions{}, limit: 50}, true)
+				compare(k, viewer, v, pages[turn%len(pages)], true)
 				turn++
 			}
 		}
@@ -233,18 +276,36 @@ func TestContestListMatchesReferencePostgres(t *testing.T) {
 	// in steps of five.
 	for k := 1; k <= 4; k++ {
 		for _, p := range pages {
-			compare(k, "alice", views[0], p)
+			compare(k, "alice", views[0], p, true)
 		}
-		for _, sort := range []string{SortNewest, SortOldest, SortShortest, SortFastest} {
+		for _, sort := range sorts {
 			for offset := 0; offset < 30; offset += 5 {
-				compare(k, "setter", views[0], page{conditions: ListConditions{Sort: sort}, offset: offset, limit: 5})
+				compare(k, "setter", views[0], page{conditions: ListConditions{Sort: sort}, offset: offset, limit: 5}, true)
 			}
 		}
 	}
-	// The comparisons are not vacuous: pages mix the contest's runs with plain runs, some hold plain runs only, and
-	// some viewers see nothing.
-	if mixed == 0 || plainOnly == 0 || empty == 0 || empty == compared {
-		t.Fatalf("seed too uniform: of %d pages, %d mix both halves, %d hold plain runs only, %d are empty", compared, mixed, plainOnly, empty)
+	// A page skips every run before it, so each sort, as it is and narrowed, is also read deep into the list: at its
+	// middle, on its last page and past its end, by a setter (staff of every contest but the second) and an outsider.
+	// The page size of 7 makes the last page a short one.
+	for k := 1; k <= 4; k++ {
+		for _, viewer := range []string{"setter", "outsider"} {
+			for _, sort := range sorts {
+				for _, conditions := range []ListConditions{{Sort: sort}, {Sort: sort, Verdict: "AC"}} {
+					total := compare(k, viewer, views[0], page{conditions: conditions, limit: 7}, false)
+					for _, offset := range []int{total / 2, max(total-1, 0) / 7 * 7, total} {
+						compare(k, viewer, views[0], page{conditions: conditions, offset: offset, limit: 7}, false)
+					}
+				}
+			}
+		}
 	}
-	t.Logf("compared %d pages: %d mix both halves, %d hold plain runs only, %d are empty", compared, mixed, plainOnly, empty)
+	// The comparisons are not vacuous: pages mix the contest's runs with plain runs, some hold plain runs only, some
+	// viewers see nothing, pages deep into a list hold runs, and viewers who are not staff are also compared with both
+	// halves read.
+	if mixed == 0 || plainOnly == 0 || empty == 0 || empty == compared || deep == 0 || gated == 0 {
+		t.Fatalf("seed too uniform: of %d pages, %d mix both halves, %d hold plain runs only, %d are empty, %d start at run 20 or later and hold runs, %d were also read with both halves",
+			compared, mixed, plainOnly, empty, deep, gated)
+	}
+	t.Logf("compared %d pages: %d mix both halves, %d hold plain runs only, %d are empty, %d start at run 20 or later and hold runs, %d were also read with both halves",
+		compared, mixed, plainOnly, empty, deep, gated)
 }

@@ -19,8 +19,9 @@ type planNode struct {
 }
 
 // indexScan finds the scan of submissions on index and tells whether a sort lies between it and the nearest limit
-// above it, and what the scan filters on. A contest's page sorts again the two short pages of its halves, which is
-// cheap; a sort under the limit would read every run of the list.
+// above it, and what the scan filters on. A page sorts again the runs it has cut once it has read their columns, and a
+// contest's page as staff read it sorts again the two short pages of its halves; both are cheap. A sort under the
+// limit would read every run of the list.
 func indexScan(n planNode, index string, sorted bool) (found, sortedAbove bool, filter string) {
 	if n.RelationName == "submissions" && n.IndexName == index {
 		return true, sorted, n.Filter
@@ -63,10 +64,12 @@ func TestSubmissionListsUseTheirIndexesPostgres(t *testing.T) {
 	narrowed := ListConditions{Sort: SortFastest, Verdict: "AC", Runtimes: StoredRuntimeIDs(cpp), User: "bob"}
 	shortestProblem, shortestProblemArgs := problemListQuery(problem, "", "bob", ScopeAll, false, 0, ListConditions{Sort: SortShortest})
 	fastestProblem, fastestProblemArgs := problemListQuery(problem, contest, "bob", ScopeAll, false, 0, ListConditions{Sort: SortFastest})
-	newest := contestListQueries(contest, "bob", ScopeAll, 0, 50, false, "", ListConditions{})
-	shortest := contestListQueries(contest, "bob", ScopeAll, 0, 50, false, "", ListConditions{Sort: SortShortest})
-	fastest := contestListQueries(contest, "alice", ScopeAll, 50, 50, true, problem, narrowed)
-	own := contestListQueries(contest, "bob", ScopeTeam, 0, 50, false, "", ListConditions{Sort: SortFastest})
+	// Alice owns the contest, so she reads both halves of its list; Bob reads the contest's runs alone.
+	newest := contestListQueries(contest, "bob", ScopeAll, false, 0, 50, false, "", ListConditions{})
+	newestStaff := contestListQueries(contest, "alice", ScopeAll, true, 50, 50, false, "", ListConditions{})
+	shortest := contestListQueries(contest, "bob", ScopeAll, false, 0, 50, false, "", ListConditions{Sort: SortShortest})
+	fastest := contestListQueries(contest, "alice", ScopeAll, true, 50, 50, true, problem, narrowed)
+	own := contestListQueries(contest, "bob", ScopeTeam, false, 0, 50, false, "", ListConditions{Sort: SortFastest})
 	for _, statement := range []struct {
 		name  string
 		query string
@@ -78,6 +81,7 @@ func TestSubmissionListsUseTheirIndexesPostgres(t *testing.T) {
 		{"the problem's list sorted by code length", shortestProblem, shortestProblemArgs, "submissions_problem_shortest", false, true},
 		{"a contest problem's list sorted by time", fastestProblem, fastestProblemArgs, "submissions_problem_fastest", false, true},
 		{"the contest's newest runs", newest.page, newest.pageArgs, "submissions_contest_order", false, true},
+		{"the contest's newest runs as staff read them", newestStaff.page, newestStaff.pageArgs, "submissions_contest_order", false, true},
 		{"the contest's list sorted by code length", shortest.page, shortest.pageArgs, "submissions_contest_shortest", true, true},
 		{"the contest's list sorted by time under every condition", fastest.page, fastest.pageArgs, "submissions_contest_fastest", true, true},
 		{"the contest's own runs sorted by time", own.page, own.pageArgs, "submissions_contest_fastest", true, true},
