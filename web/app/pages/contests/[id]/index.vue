@@ -13,7 +13,6 @@ definePageMeta({ key: route => route.path })
 useResponseHeader('Cache-Control').value = 'no-store'
 useResponseHeader('Vary').value = 'Cookie'
 const route = useRoute()
-const router = useRouter()
 // The layout header shows the contest menu that switches these views.
 const activeView = computed(() => contestView(route.query.view))
 const { user, profile } = useAccount()
@@ -84,14 +83,34 @@ const submissionList = computed(() => {
   return ''
 })
 const filterSubmissions = computed(() => onsiteOnly.value && submissionList.value === 'all')
-// Either list narrows to one problem, kept in ?problem= by its letter so a shared link keeps it (ADR 0034). Like the
-// onsite switch, choosing one starts over at the first page.
+// Either list is sorted and filtered by the panel's conditions, kept in the URL beside the view and the onsite switch,
+// which stay; a change drops the page number, so the list starts over at the first page. Only the whole list has a
+// submitter to choose.
+const { conditions: routeConditions, change: changeConditions, clear: clearConditions, query: conditionQuery } = useSubmissionConditions({ keep: ['view', 'scope', 'live'], withUser: () => submissionList.value === 'all' })
+// The panel's 問題 narrows either list to one problem, kept in ?problem= by its letter so a shared link keeps it (ADR
+// 0034); the list asks for it by its ID. A letter the contest does not name narrows nothing, so it is neither shown nor
+// sent.
 const problemChoices = computed(() => contest.value?.problems.flatMap((p, index) => p.id ? [{ index, id: p.id, title: contestProblemTitle(index, p.title) }] : []) ?? [])
-const chosenProblem = computed(() => submissionList.value ? problemChoices.value.find(choice => choice.index === labelIndex(route.query.problem)) : undefined)
-const problemFilter = computed({
-  get: () => chosenProblem.value?.index ?? -1,
-  set: (index: number) => { void router.replace({ query: { ...route.query, problem: index < 0 ? undefined : problemLabel(index), page: undefined } }) },
+const chosenProblem = computed(() => submissionList.value ? problemChoices.value.find(choice => choice.index === labelIndex(routeConditions.value.problem)) : undefined)
+const conditions = computed(() => ({ ...routeConditions.value, problem: chosenProblem.value ? problemLabel(chosenProblem.value.index) : '' }))
+const problemOptions = computed(() => problemChoices.value.length ? problemChoices.value.map(choice => ({ value: problemLabel(choice.index), label: choice.title })) : undefined)
+const listConditions = computed(() => {
+  const { problem: _problem, ...query } = conditionQuery.value
+  return query
 })
+// Whether a condition may be what emptied the list. The onsite switch says for itself that it is on.
+const narrowed = computed(() => !!chosenProblem.value || Object.keys(listConditions.value).length > 0)
+const { data: catalog } = useJudgeCatalog()
+const languages = computed(() => catalog.value?.languages ?? [])
+// The panel stays as the viewer left it through refreshes and changes of conditions, and starts closed on each list.
+const conditionsOpen = ref(false)
+const conditionsPanel = ref<{ focus: () => void }>()
+watch(activeView, () => { conditionsOpen.value = false })
+// The empty list's button goes with the empty list, so the focus goes to the panel's button.
+function clearEmpty() {
+  void clearConditions()
+  conditionsPanel.value?.focus()
+}
 // A row names its problem as the contest does, 「A - タイトル」, and links to it; 「詳細」 opens the submission. A staff
 // test of a problem no longer listed keeps the plain title.
 const problemIndex = (item: Submission) => contest.value?.problems.findIndex(p => p.id === item.problemId) ?? -1
@@ -105,15 +124,23 @@ const submissionsLast = computed(() => lastPage(submissions.value?.total ?? 0, s
 const submissionsPage = computed(() => clampPage(requestedPage.value, submissionsLast.value))
 const showSubmissionPages = computed(() => !!submissions.value?.items.length || submissionsPage.value > 1)
 const resizeSubmissions = (size: PageSize) => resizePage(submissionsSize, submissionsPage.value, size)
-const { run: requestSubmissions, invalidate: invalidateSubmissions } = useLatestRequest()
+// The table is busy while the list is read again, alone or with the rest of the page.
+const { loading: submissionsLoading, run: requestSubmissions, invalidate: invalidateSubmissions } = useLatestRequest()
+// Requests are numbered as they go out, and the rows on screen are known by the request that read them.
+let asked = 0
+let shown = 0
 function loadSubmissions() {
   const list = submissionList.value
   if (!list) { invalidateSubmissions(); submissions.value = null; return Promise.resolve() }
-  const query = { offset: submissionsOffset.value, limit: submissionsSize.value, ...list === 'all' ? {} : { mine: list === 'team' ? 'team' : '1' }, ...filterSubmissions.value ? { scope: 'onsite' } : {}, ...chosenProblem.value ? { problem: chosenProblem.value.id } : {} }
+  const query = { offset: submissionsOffset.value, limit: submissionsSize.value, ...list === 'all' ? {} : { mine: list === 'team' ? 'team' : '1' }, ...filterSubmissions.value ? { scope: 'onsite' } : {}, ...chosenProblem.value ? { problem: chosenProblem.value.id } : {}, ...listConditions.value }
   return requestSubmissions(JSON.stringify([query, user.value?.id]),
-    () => $fetch<{ items: Submission[], hasMore: boolean, total: number }>(`${base}/submissions`, { query }),
-    result => {
+    () => {
+      const number = ++asked
+      return $fetch<{ items: Submission[], hasMore: boolean, total: number }>(`${base}/submissions`, { query }).then(result => ({ number, result }))
+    },
+    ({ number, result }) => {
       submissions.value = result
+      shown = number
       submissionsError.value = ''
       submissionsClosed.value = false
       // Rows dropped since the page was opened, so it is past the end: the last page shows instead.
@@ -159,10 +186,11 @@ async function update() {
   finally { updating.value = false }
 }
 watch(() => user.value?.id, () => { invalidateSubmissions(); submissions.value = null; void update() })
-// Keyed on plain values, so the route catching up with a page that is already requested does not load it again.
+// Keyed on plain values, so the route catching up with a page that is already requested does not load it again; the
+// conditions keep their object while they stay the same. A change of conditions comes with the first page in one move.
 // Rows of one list never show under the other's heading.
 watch(submissionList, () => { invalidateSubmissions(); submissions.value = null }, { flush: 'sync' })
-watch([submissionsOffset, submissionsSize, filterSubmissions, submissionList, () => chosenProblem.value?.id], () => { void loadSubmissions() })
+watch([submissionsOffset, submissionsSize, filterSubmissions, submissionList, () => chosenProblem.value?.id, listConditions], () => { void loadSubmissions() })
 watch([activeView, () => contest.value?.status], () => { void loadEditorials() })
 onMounted(() => { void loadSubmissions(); void loadEditorials() })
 // People watch the countdown and the standings without touching the page, so only an ended contest slows down.
@@ -211,10 +239,25 @@ const showSubmissionScore = computed(() => contest.value?.partialScoring === tru
 // page's list did before ADR 0034. Only finished judgements can be rejudged, and the selection belongs to the visible page.
 const { allowed: rejudgeAllowed, busy: rejudging, message: rejudgeMessage, rejudge } = useRejudge(() => chosenProblem.value?.id ?? '')
 const canRejudge = computed(() => rejudgeAllowed.value && !!chosenProblem.value)
+// A list narrowed by conditions loses rejudged rows while they are judged, and may not get them back, so after a rejudge
+// asked for here it follows them for up to a minute, until rows read after the rejudge show each of them judged, as the
+// problem page's list does.
+let followed: { ids: string[], after: number, until: number } | undefined
+async function rejudgeFollowed(submissionIds: string[]) {
+  const queued = await rejudge(submissionIds)
+  if (queued && narrowed.value) followed = { ids: submissionIds, after: asked, until: Date.now() + 60_000 }
+  return queued
+}
+function following() {
+  const items = submissions.value?.items ?? []
+  const judged = (id: string) => items.some(item => item.id === id && item.status === 'DONE')
+  if (followed && (Date.now() >= followed.until || (shown > followed.after && followed.ids.every(judged)))) followed = undefined
+  return !!followed
+}
 // Without the rejudge no row can be chosen, so leaving the problem drops the selection.
-const { selected, selectable, rejudgeSelected } = useRejudgeSelection(() => canRejudge.value ? submissions.value?.items : undefined, rejudge, loadSubmissions)
+const { selected, selectable, rejudgeSelected } = useRejudgeSelection(() => canRejudge.value ? submissions.value?.items : undefined, rejudgeFollowed, loadSubmissions)
 // Follow rejudged rows more closely than the regular refresh.
-usePolling(loadSubmissions, 3000, { enabled: () => canRejudge.value && !!submissions.value?.items.some(item => item.status !== 'DONE') })
+usePolling(loadSubmissions, 3000, { enabled: () => canRejudge.value && (!!submissions.value?.items.some(item => item.status !== 'DONE') || following()) })
 function elapsed(acceptedAt: string) { return duration(new Date(acceptedAt).getTime() - new Date(contest.value!.startsAt).getTime()) }
 const problemStats = computed(() => contest.value!.problems.map(problem => {
   let submitted = 0
@@ -325,12 +368,15 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
       <p v-if="activeView === 'submissions' && !canViewAll" class="notice">提出はコンテスト終了後に公開されます。終了前はスタッフ（作成者・作問者・テスター）が閲覧できます。<template v-if="contest.team">開催中のチームの提出は「チームの提出」で確認できます。</template>{{ frozenNote }}</p>
       <p v-else-if="!submissionList" class="notice"><NuxtLink :to="{ path: '/login', query: { next: route.fullPath } }">ログイン</NuxtLink>すると、このコンテストへの自分の提出を確認できます。</p>
       <template v-else><p class="muted">{{ submissionList === 'all' ? `提出コードを閲覧できます。練習提出も掲載します。${frozenNote}` : `${chosenProblem ? 'この問題' : 'このコンテストの全問題'}への、${submissionList === 'team' ? 'チーム' : '自分'}の提出です。練習提出も掲載します。` }}</p>
-      <div v-if="problemChoices.length || (contest.onsiteDivision && submissionList === 'all')" class="submissions-filters"><div v-if="problemChoices.length" class="submissions-problem"><label for="submissions-problem">問題</label><select id="submissions-problem" v-model.number="problemFilter"><option :value="-1">すべて</option><option v-for="choice in problemChoices" :key="choice.id" :value="choice.index">{{ choice.title }}</option></select></div><InlineSwitch v-if="contest.onsiteDivision && submissionList === 'all'" v-model="onsiteOnly">オンサイトのみ表示</InlineSwitch><RejudgeButton v-if="canRejudge && selected.length" :busy="rejudging" :disabled="rejudging" :aria-label="`選択した${selected.length}件の提出をリジャッジ`" @click="rejudgeSelected" /></div>
+      <!-- The onsite switch is shared with the standings, so it stays beside the panel's button rather than in it. -->
+      <SubmissionConditions ref="conditionsPanel" v-model:open="conditionsOpen" class="submission-conditions" :conditions="conditions" :languages="languages" :with-user="submissionList === 'all'" :problems="problemOptions" @change="changeConditions" @clear="clearConditions">
+        <template #bar><InlineSwitch v-if="contest.onsiteDivision && submissionList === 'all'" v-model="onsiteOnly">オンサイトのみ表示</InlineSwitch><RejudgeButton v-if="canRejudge && selected.length" :busy="rejudging" :disabled="rejudging" :aria-label="`選択した${selected.length}件の提出をリジャッジ`" @click="rejudgeSelected" /></template>
+      </SubmissionConditions>
       <p v-if="rejudgeMessage" class="rejudge-message" role="status">{{ rejudgeMessage }}</p>
       <p v-if="submissionsClosed" class="notice">配信モード中は表示できません。</p>
       <p v-if="submissionsError" class="notice notice-error" role="alert">{{ submissionsError }}</p>
       <LoadingSpinner v-if="!submissions && !submissionsError && !submissionsClosed" label="提出一覧を読み込み中" />
-      <template v-if="submissions"><ListToolbar v-if="showSubmissionPages" :total="submissions.total" :page="submissionsPage" :size="submissionsSize" unit="件" :link="pageLink" @update:size="resizeSubmissions" /><p v-if="!submissions.items.length" class="contest-empty muted">提出はまだありません。</p><SubmissionTable v-else v-model:selected="selected" :items="submissions.items" :detail="submissionLink" :show-score="showSubmissionScore" :select="canRejudge" :selectable="selectable"><template #after-time="{ item }"><span v-if="new Date(item.createdAt) >= new Date(contest.endsAt)" class="practice-badge">練習</span></template><template #problem="{ item }"><NuxtLink v-if="problemIndex(item) >= 0" :to="contestProblemPath(contest.id, problemIndex(item))"><ContestProblemTitle :index="problemIndex(item)" :title="item.problemTitle" /></NuxtLink><template v-else>{{ item.problemTitle }}</template></template></SubmissionTable><PageNav v-if="showSubmissionPages" class="submissions-pages" :page="submissionsPage" :last="submissionsLast" :link="pageLink" /></template>
+      <template v-if="submissions"><ListToolbar v-if="showSubmissionPages" :total="submissions.total" :page="submissionsPage" :size="submissionsSize" unit="件" :link="pageLink" @update:size="resizeSubmissions" /><div v-if="!submissions.items.length && narrowed" class="contest-empty submissions-unmatched"><p class="muted">条件に合う提出はありません。</p><button type="button" class="editor-button" @click="clearEmpty">条件をすべて外す</button></div><p v-else-if="!submissions.items.length" class="contest-empty muted">提出はまだありません。</p><SubmissionTable v-else v-model:selected="selected" :items="submissions.items" :detail="submissionLink" :show-score="showSubmissionScore" :select="canRejudge" :selectable="selectable" :aria-busy="updating || submissionsLoading"><template #after-time="{ item }"><span v-if="new Date(item.createdAt) >= new Date(contest.endsAt)" class="practice-badge">練習</span></template><template #problem="{ item }"><NuxtLink v-if="problemIndex(item) >= 0" :to="contestProblemPath(contest.id, problemIndex(item))"><ContestProblemTitle :index="problemIndex(item)" :title="item.problemTitle" /></NuxtLink><template v-else>{{ item.problemTitle }}</template></template></SubmissionTable><PageNav v-if="showSubmissionPages" class="submissions-pages" :page="submissionsPage" :last="submissionsLast" :link="pageLink" /></template>
       </template>
     </section>
     <section v-if="activeView === 'editorials'" id="editorials" class="contest-section" aria-labelledby="editorials-title">
@@ -401,11 +447,9 @@ useSharePreview({ enabled: () => !!contest.value, type: 'website', title: () => 
 .standing-wrong { color: var(--color-error); }
 .standings-filters { display: flex; flex-wrap: wrap; gap: 0 24px; margin-bottom: 8px; }
 .standings-pages, .submissions-pages { margin-top: 16px; }
-.submissions-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; margin-block: 8px 16px; }
-.submissions-problem { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: .8125rem; color: var(--color-muted); }
-.submissions-problem select { min-width: 0; max-width: 100%; min-height: var(--editor-control-size); padding: 2px 8px; border: 1px solid var(--color-line); border-radius: 4px; font: inherit; color: var(--color-ink); cursor: pointer; }
-.submissions-problem select:hover { border-color: var(--color-muted); }
-.submissions-problem select:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
+.submission-conditions { margin-block: 8px 16px; }
+.submissions-unmatched { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.submissions-unmatched p { margin: 0; }
 .rejudge-message { margin: 8px 0 0; color: var(--color-muted); font-size: .8125rem; }
 .standings-scope-note { margin: 0 0 16px; font-size: .8125rem; }
 .standing-team { display: block; font-weight: 600; overflow-wrap: anywhere; }

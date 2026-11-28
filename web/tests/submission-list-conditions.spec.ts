@@ -1,12 +1,15 @@
 import type { APIRequestContext, Locator, Page } from '@playwright/test'
 import { expect, test } from './fixtures/account'
 import { quickModes, quickly } from './fixtures/quickly'
+import { visit } from './fixtures/visit'
 import { shortId } from '../shared/utils/short-id'
 
 // The fixture API echoes the requests for this contest and this problem.
 const contest = '66666666-6666-4666-8666-666666666666'
 const echoProblem = 'd8d8d8d8-d8d8-4d8d-8d8d-d8d8d8d8d8d8'
 const problem = '11111111-1111-4111-8111-111111111111'
+// The contest's second problem, B.
+const problemB = '44444444-4444-4444-8444-444444444444'
 const session = { Cookie: 'openoj_access=valid-access' }
 
 const echoed = async (request: APIRequestContext, path: string, headers?: Record<string, string>) => {
@@ -88,22 +91,24 @@ const orders: Record<string, (a: Run, b: Run) => number> = {
   // A run being judged has no time yet and goes last.
   fastest: (a, b) => (a.status === 'DONE' ? a.cpuTimeMs : Infinity) - (b.status === 'DONE' ? b.cpuTimeMs : Infinity) || newestFirst(a, b),
 }
+// The sort's and the filters' part of the API: verdict, language, runtime and user.
+const matches = (item: Run, query: Record<string, string>) => (!query.verdict || (item.status === 'DONE' && item.verdict === query.verdict))
+  && (!query.language || languageRuntimes[query.language]?.includes(item.runtime))
+  && (!query.runtime || item.runtime === query.runtime)
+  && (!query.user || item.author === query.user)
+// A run as the API lists it; a contest's run names its problem.
+const listed = (item: Run & { problemId?: string }) => ({
+  id: item.id, problemId: item.problemId ?? problem, problemTitle: item.problemId === problemB ? 'A × B' : 'A + B', problemVersion: 1, author: item.author, runtime: item.runtime, sourceBytes: item.sourceBytes,
+  status: item.status, createdAt: item.createdAt, result: item.status === 'DONE' ? { verdict: item.verdict, passed: 1, total: 1, cpuTimeMs: item.cpuTimeMs, memoryBytes: 1048576 } : null,
+})
 async function mockList(page: Page, runs: Run[]) {
   const requests: Record<string, string>[] = []
   await page.route('**/api/problems/*/submissions?*', route => {
     const query = Object.fromEntries(new URL(route.request().url()).searchParams)
     requests.push(query)
-    const matching = runs.filter(item => (query.mine !== '1' || item.author === 'ui_test')
-      && (!query.verdict || (item.status === 'DONE' && item.verdict === query.verdict))
-      && (!query.language || languageRuntimes[query.language]?.includes(item.runtime))
-      && (!query.runtime || item.runtime === query.runtime)
-      && (!query.user || item.author === query.user)).sort(orders[query.sort ?? 'newest'])
+    const matching = runs.filter(item => (query.mine !== '1' || item.author === 'ui_test') && matches(item, query)).sort(orders[query.sort ?? 'newest'])
     const offset = Number(query.offset)
-    const items = matching.slice(offset, offset + 50).map(item => ({
-      id: item.id, problemId: problem, problemTitle: 'A + B', problemVersion: 1, author: item.author, runtime: item.runtime, sourceBytes: item.sourceBytes,
-      status: item.status, createdAt: item.createdAt, result: item.status === 'DONE' ? { verdict: item.verdict, passed: 1, total: 1, cpuTimeMs: item.cpuTimeMs, memoryBytes: 1048576 } : null,
-    }))
-    return route.fulfill({ json: { items, hasMore: offset + 50 < matching.length } })
+    return route.fulfill({ json: { items: matching.slice(offset, offset + 50).map(listed), hasMore: offset + 50 < matching.length } })
   })
   return requests
 }
@@ -386,4 +391,394 @@ test('the panel fits a phone', async ({ page }) => {
   await conditionsButton(page).click()
   await expect(page.getByRole('textbox', { name: '提出者' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
+
+// A contest's lists, in the browser. The mocked API filters, sorts and pages the runs by the query it gets, as the real
+// one does, counts what the conditions leave, and keeps each query it got. ui_test is on the contest's staff, so the
+// whole list is open while the contest runs.
+type ContestRun = Run & { problemId: string, onsite: boolean }
+type Team = { id: string, name: string, members: string[], onsite: boolean }
+const contestId = '88888888-8888-4888-8888-888888888888'
+const contestPath = `/contests/${shortId(contestId)}`
+const staffContest = {
+  id: contestId, title: '提出の絞り込みテスト', author: 'alice', authors: ['alice'], description: '', status: 'running', startsAt: '2026-09-10T00:00:00Z', endsAt: '2099-09-10T02:00:00Z',
+  penaltyMinutes: 5, version: 1, official: false, staff: true, canEdit: false, participating: false, canViewSubmissions: true, onsiteDivision: true, teamMode: false, team: null as Team | null,
+  problems: [{ id: problem, title: 'A + B', points: 100 }, { id: problemB, title: 'A × B', points: 200 }],
+}
+// someRuns over the contest's two problems, A's from the first one on and B's in between; bob takes part on site.
+const contestRuns = (): ContestRun[] => someRuns().map((item, index) => ({ ...item, problemId: index % 2 ? problemB : problem, onsite: item.author === 'bob' }))
+async function mockContest(page: Page, runs: ContestRun[]) {
+  const state = { contest: staffContest, requests: [] as Record<string, string>[] }
+  await page.route(`**/api/contests/${contestId}**`, route => {
+    const url = new URL(route.request().url())
+    if (url.pathname.endsWith('/standings')) return route.fulfill({ json: [] })
+    if (!url.pathname.endsWith('/submissions')) return route.fulfill({ json: state.contest })
+    const query = Object.fromEntries(url.searchParams)
+    state.requests.push(query)
+    const team = state.contest.team?.members ?? []
+    const own = (item: ContestRun) => query.mine === 'team' ? team.includes(item.author) : item.author === 'ui_test'
+    const matching = runs.filter(item => (!query.mine || own(item)) && (query.scope !== 'onsite' || item.onsite) && (!query.problem || item.problemId === query.problem) && matches(item, query))
+      .sort(orders[query.sort ?? 'newest'])
+    const offset = Number(query.offset), limit = Number(query.limit)
+    const items = matching.slice(offset, offset + limit).map(item => ({ ...listed(item), contestId }))
+    return route.fulfill({ json: { items, hasMore: offset + limit < matching.length, total: matching.length } })
+  })
+  return state
+}
+// The server renders the page from the fixture API. Once the browser has the viewer, the page reads the contest again,
+// and the mocked one comes in.
+async function openContest(page: Page, query: string, title = staffContest.title) {
+  await page.goto(`${contestPath}?${query}`)
+  await expect(page.locator('.site-header')).toContainText(title)
+}
+const contestList = (page: Page) => page.locator('#submissions')
+const ownList = (page: Page) => page.locator('#my-submissions')
+const conditionChips = (page: Page) => page.getByRole('list', { name: '効いている条件' })
+const listCount = (list: Locator) => list.locator('.list-count')
+const pageLink = (list: Locator, number: number) => list.getByRole('navigation', { name: 'ページ' }).last().getByRole('link', { name: String(number), exact: true })
+const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)
+
+test('the contest list narrows and orders by the panel', async ({ page }) => {
+  // 130 runs, each of its own length: one in three is B's, and every other one WA.
+  const runs: ContestRun[] = Array.from({ length: 130 }, (_, i) => ({ ...run(i, `user${i % 7}`, 'cpp17', 100 + i, (i * 37) % 101, i % 2 ? 'WA' : 'AC'), problemId: i % 3 ? problem : problemB, onsite: false }))
+  const { requests } = await mockContest(page, runs)
+  await openContest(page, 'view=submissions&page=3')
+  const list = contestList(page)
+  await expect(listCount(list)).toHaveText('全 130 件中 101〜130 件目')
+  const toggle = conditionsButton(page)
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await toggle.click()
+  const problemField = page.getByRole('combobox', { name: '問題', exact: true })
+  // The problems are named as the contest names them.
+  await expect(problemField.locator('option')).toHaveText(['すべて', 'A - A + B', 'B - A × B'])
+  requests.length = 0
+  await problemField.selectOption({ label: 'A - A + B' })
+  // Chosen on the third page, a condition lists from the first, in one request that asks for the problem by its ID. The
+  // count and the page numbers follow what the conditions leave.
+  await expect(page).toHaveURL(`${contestPath}?view=submissions&problem=A`)
+  await expect(listCount(list)).toHaveText('全 86 件中 1〜50 件目')
+  expect(requests).toEqual([{ offset: '0', limit: '50', problem }])
+  await expect(pageLink(list, 2)).toBeVisible()
+  await expect(pageLink(list, 3)).toHaveCount(0)
+  await pageLink(list, 2).click()
+  await expect(page).toHaveURL(`${contestPath}?view=submissions&problem=A&page=2`)
+  await expect(listCount(list)).toHaveText('全 86 件中 51〜86 件目')
+  requests.length = 0
+  await page.getByRole('combobox', { name: '結果' }).selectOption({ label: 'WA' })
+  await expect(page).toHaveURL(`${contestPath}?view=submissions&verdict=WA&problem=A`)
+  await expect(listCount(list)).toHaveText('全 43 件中 1〜43 件目')
+  expect(requests).toEqual([{ offset: '0', limit: '50', problem, verdict: 'WA' }])
+  // One page holds what is left, so there are no page numbers.
+  await expect(list.getByRole('navigation', { name: 'ページ' })).toHaveCount(0)
+  await page.getByRole('combobox', { name: '並び順' }).selectOption({ label: '実行時間が短い順' })
+  await expect(page).toHaveURL(`${contestPath}?view=submissions&sort=fastest&verdict=WA&problem=A`)
+  await expect.poll(() => requests.at(-1)).toEqual({ offset: '0', limit: '50', problem, verdict: 'WA', sort: 'fastest' })
+  const left = runs.filter(item => item.problemId === problem && item.verdict === 'WA').sort(orders.fastest)
+  await expect(sizes(list)).toHaveText(left.map(item => `${item.sourceBytes} bytes`))
+  await expect(list.locator('tbody .submission-problem')).toHaveText(left.map(() => 'A - A + B'))
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  // Closed, the panel names the conditions beside its button; the problem goes by its letter.
+  await toggle.click()
+  await expect(conditionChips(page).getByRole('listitem')).toHaveText(['実行時間が短い順', '結果: WA', '問題: A'])
+  await expect(toggle).toContainText('3')
+  // The changes replaced the list's entry in the history; only the page number added one.
+  await page.goBack()
+  await expect(page).toHaveURL(`${contestPath}?view=submissions&problem=A`)
+})
+
+test('an old link with a problem still opens narrowed', async ({ page }) => {
+  const { requests } = await mockContest(page, contestRuns())
+  await openContest(page, 'view=submissions&problem=A')
+  const list = contestList(page)
+  // A's runs, newest first.
+  await expect(sizes(list)).toHaveText(['200 bytes', '400 bytes', '80 bytes', '300 bytes'])
+  expect(requests.at(-1)).toEqual({ offset: '0', limit: '50', problem })
+  await expect(conditionChips(page).getByRole('listitem')).toHaveText(['問題: A'])
+  const toggle = conditionsButton(page)
+  await expect(toggle).toContainText('1')
+  await toggle.click()
+  const problemField = page.getByRole('combobox', { name: '問題', exact: true })
+  await expect(problemField).toHaveValue('A')
+  await expect(problemField.locator('option:checked')).toHaveText('A - A + B')
+  await page.getByRole('button', { name: '条件をすべて外す' }).click()
+  await expect(page).toHaveURL(`${contestPath}?view=submissions`)
+  await expect(sizes(list)).toHaveCount(8)
+  expect(requests.at(-1)).toEqual({ offset: '0', limit: '50' })
+  await expect(problemField).toHaveValue('')
+  // The older link of the problem's own list lands on the same list (ADR 0034).
+  await visit(page, `${contestPath}/A?view=submissions`)
+  await expect(page).toHaveURL(`${contestPath}?view=submissions&problem=A`)
+  await expect(sizes(list)).toHaveCount(4)
+  expect(requests.at(-1)).toEqual({ offset: '0', limit: '50', problem })
+  await expect(problemField).toHaveValue('A')
+  // A letter the contest does not name narrows nothing, so it is neither shown nor sent.
+  await toggle.click()
+  for (const letter of ['C', 'a']) {
+    await visit(page, `${contestPath}?view=submissions&problem=${letter}`)
+    await expect(conditionChips(page)).toHaveCount(0)
+    await expect(sizes(list)).toHaveCount(8)
+    expect(requests.at(-1)).toEqual({ offset: '0', limit: '50' })
+    await expect(toggle).not.toContainText(/\d/)
+  }
+})
+
+test('the onsite switch stays outside the panel', async ({ page }) => {
+  const runs = contestRuns()
+  const { requests } = await mockContest(page, runs)
+  await openContest(page, 'view=submissions')
+  const list = contestList(page)
+  await expect(sizes(list)).toHaveCount(8)
+  const toggle = conditionsButton(page)
+  const onsite = page.getByRole('switch', { name: 'オンサイトのみ表示' })
+  // The switch sits beside the closed panel's button. On, it is no chip and adds nothing to the count.
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(onsite).toBeVisible()
+  await onsite.check()
+  await expect(page).toHaveURL(`${contestPath}?view=submissions&scope=onsite`)
+  // Bob's runs, newest first.
+  await expect(sizes(list)).toHaveText(['400 bytes', '90 bytes'])
+  expect(requests.at(-1)).toEqual({ offset: '0', limit: '50', scope: 'onsite' })
+  await expect(conditionChips(page)).toHaveCount(0)
+  await expect(toggle).not.toContainText(/\d/)
+  await toggle.click()
+  await page.getByRole('combobox', { name: '結果' }).selectOption({ label: 'WA' })
+  await expect(page).toHaveURL(`${contestPath}?view=submissions&scope=onsite&verdict=WA`)
+  await expect(sizes(list)).toHaveText(['90 bytes'])
+  expect(requests.at(-1)).toEqual({ offset: '0', limit: '50', scope: 'onsite', verdict: 'WA' })
+  await expect(toggle).toContainText('1')
+  // Taking every condition off leaves the switch on.
+  await page.getByRole('button', { name: '条件をすべて外す' }).click()
+  await expect(page).toHaveURL(`${contestPath}?view=submissions&scope=onsite`)
+  await expect(sizes(list)).toHaveText(['400 bytes', '90 bytes'])
+  expect(requests.at(-1)).toEqual({ offset: '0', limit: '50', scope: 'onsite' })
+  await expect(onsite).toBeChecked()
+  // No run matches the condition: the list says so and offers a way out, which leaves the switch on too and puts the
+  // focus on the panel's button.
+  await page.getByRole('combobox', { name: '結果' }).selectOption({ label: 'TLE' })
+  await toggle.click()
+  await expect(list.getByText('条件に合う提出はありません。')).toBeVisible()
+  await expect(list.getByText('提出はまだありません。')).toHaveCount(0)
+  await list.getByRole('button', { name: '条件をすべて外す' }).click()
+  await expect(page).toHaveURL(`${contestPath}?view=submissions&scope=onsite`)
+  await expect(toggle).toBeFocused()
+  await expect(sizes(list)).toHaveCount(2)
+  expect(requests.at(-1)).toEqual({ offset: '0', limit: '50', scope: 'onsite' })
+  // Nobody on site has submitted: with the switch alone, the list says what it always has.
+  for (const item of runs) item.onsite = false
+  await onsite.uncheck()
+  await expect(sizes(list)).toHaveCount(8)
+  await onsite.check()
+  await expect(list.getByText('提出はまだありません。')).toBeVisible()
+  await expect(list.getByText('条件に合う提出はありません。')).toHaveCount(0)
+  await expect(list.getByRole('button', { name: '条件をすべて外す' })).toHaveCount(0)
+})
+
+test('own and team lists have no user field', async ({ page }) => {
+  const state = await mockContest(page, contestRuns())
+  const { requests } = state
+  await openContest(page, 'view=my-submissions&user=alice&verdict=AC')
+  // ui_test's accepted run; the submitter in the URL is neither shown nor sent.
+  await expect(sizes(ownList(page))).toHaveText(['200 bytes'])
+  expect(requests.at(-1)).toEqual({ offset: '0', limit: '50', mine: '1', verdict: 'AC' })
+  await expect(conditionChips(page).getByRole('listitem')).toHaveText(['結果: AC'])
+  const toggle = conditionsButton(page)
+  await expect(toggle).toContainText('1')
+  await toggle.click()
+  await expect(page.getByRole('combobox', { name: '結果' })).toHaveValue('AC')
+  await expect(page.getByRole('textbox', { name: '提出者' })).toHaveCount(0)
+  // A change there leaves it out of the URL.
+  await page.getByRole('combobox', { name: '並び順' }).selectOption({ label: 'コード長が短い順' })
+  await expect(page).toHaveURL(`${contestPath}?view=my-submissions&sort=shortest&verdict=AC`)
+  // The menu's two lists keep the conditions, the submitter only on the whole list; the other views start without them.
+  const kept = 'sort=shortest&verdict=AC&runtime=cpp23-gcc'
+  await visit(page, `${contestPath}?view=submissions&${kept}&user=alice&problem=A`)
+  await expect(sizes(contestList(page))).toHaveText(['300 bytes'])
+  expect(requests.at(-1)).toEqual({ offset: '0', limit: '50', problem, sort: 'shortest', verdict: 'AC', runtime: 'cpp23-gcc', user: 'alice' })
+  const menu = page.getByRole('navigation', { name: 'コンテストメニュー' })
+  await menu.getByText('提出', { exact: true }).click()
+  await expect(menu.getByRole('link', { name: '自分の提出', exact: true })).toHaveAttribute('href', `${contestPath}?view=my-submissions&${kept}&problem=A`)
+  await expect(menu.getByRole('link', { name: 'すべての提出', exact: true })).toHaveAttribute('href', `${contestPath}?view=submissions&${kept}&user=alice&problem=A`)
+  for (const [name, href] of [['概要', contestPath], ['問題', `${contestPath}?view=problems`], ['順位表', `${contestPath}?view=standings`], ['解説', `${contestPath}?view=editorials`], ['質問', `${contestPath}?view=clarifications`], ['コード実行', `${contestPath}?view=run`]] as const) {
+    await expect(menu.getByRole('link', { name, exact: true })).toHaveAttribute('href', href)
+  }
+  await menu.getByRole('link', { name: '自分の提出', exact: true }).click()
+  await expect(page).toHaveURL(`${contestPath}?view=my-submissions&${kept}&problem=A`)
+  await expect(sizes(ownList(page))).toHaveText(['200 bytes'])
+  expect(requests.at(-1)).toEqual({ offset: '0', limit: '50', mine: '1', problem, sort: 'shortest', verdict: 'AC', runtime: 'cpp23-gcc' })
+  // Another list starts with the panel closed.
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(conditionChips(page).getByRole('listitem')).toHaveText(['コード長が短い順', '結果: AC', '言語: C++23 (GCC)', '問題: A'])
+  // From the own list the whole list has no submitter to keep.
+  await menu.getByText('提出', { exact: true }).click()
+  await expect(menu.getByRole('link', { name: 'すべての提出', exact: true })).toHaveAttribute('href', `${contestPath}?view=submissions&${kept}&problem=A`)
+  await menu.getByRole('link', { name: 'すべての提出', exact: true }).click()
+  await expect(page).toHaveURL(`${contestPath}?view=submissions&${kept}&problem=A`)
+  await expect(sizes(contestList(page))).toHaveText(['200 bytes', '300 bytes'])
+  expect(requests.at(-1)).toEqual({ offset: '0', limit: '50', problem, sort: 'shortest', verdict: 'AC', runtime: 'cpp23-gcc' })
+  // A whole language is kept as well.
+  await visit(page, `${contestPath}?view=submissions&language=cpp`)
+  await menu.getByText('提出', { exact: true }).click()
+  await expect(menu.getByRole('link', { name: '自分の提出', exact: true })).toHaveAttribute('href', `${contestPath}?view=my-submissions&language=cpp`)
+  // While a team contest runs, a member's own list is the team's, and it has no submitter to choose either.
+  state.contest = { ...staffContest, title: 'チーム戦の絞り込みテスト', staff: false, participating: true, teamMode: true, team: { id: 'aaaaaaaa-1111-4111-8111-000000000001', name: 'Alpha', members: ['ui_test', 'bob'], onsite: false } }
+  await openContest(page, 'view=my-submissions&user=alice&verdict=WA&language=cpp', state.contest.title)
+  await expect(sizes(ownList(page))).toHaveText(['90 bytes'])
+  expect(requests.at(-1)).toEqual({ offset: '0', limit: '50', mine: 'team', verdict: 'WA', language: 'cpp' })
+  await expect(conditionChips(page).getByRole('listitem')).toHaveText(['結果: WA', '言語: C++'])
+  await toggle.click()
+  await expect(page.getByRole('combobox', { name: '言語' })).toHaveValue('language:cpp')
+  await expect(page.getByRole('textbox', { name: '提出者' })).toHaveCount(0)
+  // The menu offers the team's list alone, with the conditions and without the submitter.
+  await expect(menu.getByRole('link', { name: 'チームの提出', exact: true })).toHaveAttribute('href', `${contestPath}?view=my-submissions&verdict=WA&language=cpp`)
+})
+
+// The table is busy while the page reads the contest or the list again. The clock stands still between steps, and a poll
+// sets its next turn only once it is answered, so each step waits for the table to settle and counts the list's requests
+// it brought.
+async function contestStep(page: Page, requests: unknown[], seconds = 3) {
+  const table = contestList(page).getByRole('region', { name: '提出一覧のスクロール領域' })
+  await expect(table).toHaveAttribute('aria-busy', 'false')
+  const before = requests.length
+  await page.clock.runFor(seconds * 1000)
+  await expect(table).toHaveAttribute('aria-busy', 'false')
+  return requests.length - before
+}
+
+test('refreshing keeps the panel, the page and the selection', async ({ page }) => {
+  // 60 of A's runs are WA, two pages of them; B's runs and A's accepted ones are left out.
+  const runs: ContestRun[] = Array.from({ length: 120 }, (_, i) => ({ ...run(i, `user${i % 5}`, 'cpp17', 100 + i, i, i < 90 ? 'WA' : 'AC'), problemId: i < 60 || i >= 90 ? problem : problemB, onsite: false }))
+  // ui_test may rejudge; a rejudged run is judged until the test says otherwise.
+  await page.route('**/api/my/problems/*/rejudge', route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: { pending: 0 } })
+    const { submissionIds } = route.request().postDataJSON() as { submissionIds: string[] }
+    for (const item of runs) if (submissionIds.includes(item.id)) item.status = 'RUNNING'
+    return route.fulfill({ status: 202, json: { queued: submissionIds.length } })
+  })
+  const { requests } = await mockContest(page, runs)
+  await page.clock.install()
+  await openContest(page, 'view=submissions')
+  const list = contestList(page)
+  const toggle = conditionsButton(page)
+  await toggle.click()
+  await page.getByRole('combobox', { name: '結果' }).selectOption({ label: 'WA' })
+  await page.getByRole('combobox', { name: '問題', exact: true }).selectOption({ label: 'A - A + B' })
+  await expect(page).toHaveURL(`${contestPath}?view=submissions&verdict=WA&problem=A`)
+  await pageLink(list, 2).click()
+  const second = `${contestPath}?view=submissions&verdict=WA&problem=A&page=2`
+  await expect(page).toHaveURL(second)
+  // With a problem chosen, the rows can be chosen for a rejudge.
+  const rows = list.getByRole('checkbox', { name: /の提出を選択$/ })
+  await expect(rows).toHaveCount(10)
+  await rows.nth(1).check()
+  await rows.nth(2).check()
+  await page.clock.pauseAt(new Date(Date.now() + 1000))
+  // The regular refresh reads the list with its conditions and its page, and leaves the panel, the page and the chosen
+  // rows as they are.
+  expect(await contestStep(page, requests, 15)).toBe(1)
+  expect(requests.at(-1)).toEqual({ offset: '50', limit: '50', problem, verdict: 'WA' })
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByRole('combobox', { name: '結果' })).toHaveValue('WA')
+  await expect(page).toHaveURL(second)
+  await expect(listCount(list)).toHaveText('全 60 件中 51〜60 件目')
+  await expect(rows).toHaveCount(10)
+  await expect(rows.nth(1)).toBeChecked()
+  await expect(rows.nth(2)).toBeChecked()
+  page.once('dialog', dialog => void dialog.accept())
+  await list.getByRole('button', { name: '選択した2件の提出をリジャッジ', exact: true }).click()
+  // The rejudged runs are being judged, so the list of WA no longer holds them, and the message still shows.
+  await expect(list.getByRole('status').filter({ hasText: '2件の提出をリジャッジしています。' })).toBeVisible()
+  await expect(rows).toHaveCount(8)
+  // The list follows them every 3 seconds though none is in view...
+  for (let i = 0; i < 3; i++) expect(await contestStep(page, requests)).toBeGreaterThanOrEqual(1)
+  expect(requests.at(-1)).toEqual({ offset: '50', limit: '50', problem, verdict: 'WA' })
+  // ...until they are back and judged. Then only the regular refresh is left, at most once in 9 seconds.
+  for (const item of runs) if (item.status === 'RUNNING') item.status = 'DONE'
+  expect(await contestStep(page, requests)).toBeGreaterThanOrEqual(1)
+  await expect(rows).toHaveCount(10)
+  let later = 0
+  for (let i = 0; i < 3; i++) later += await contestStep(page, requests)
+  expect(later).toBeLessThanOrEqual(1)
+  // Runs that never come back are followed for a minute after the rejudge, and no longer.
+  await rows.nth(1).check()
+  await rows.nth(2).check()
+  page.once('dialog', dialog => void dialog.accept())
+  await list.getByRole('button', { name: '選択した2件の提出をリジャッジ', exact: true }).click()
+  await expect(rows).toHaveCount(8)
+  for (let i = 0; i < 19; i++) expect(await contestStep(page, requests)).toBeGreaterThanOrEqual(1)
+  await contestStep(page, requests)
+  await contestStep(page, requests)
+  later = 0
+  for (let i = 0; i < 3; i++) later += await contestStep(page, requests)
+  expect(later).toBeLessThanOrEqual(1)
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(page).toHaveURL(second)
+})
+
+for (const [mode, nextTask] of quickModes) {
+  test(`two changes on the contest page ${mode} both take effect`, async ({ page }) => {
+    const { requests } = await mockContest(page, contestRuns())
+    await openContest(page, 'view=submissions')
+    const list = contestList(page)
+    await expect(sizes(list)).toHaveCount(8)
+    const toggle = conditionsButton(page)
+    await toggle.click()
+    const problemField = page.getByRole('combobox', { name: '問題', exact: true })
+    const verdict = page.getByRole('combobox', { name: '結果' })
+    requests.length = 0
+    await quickly(page, [{ target: problemField, pick: 'B' }, { target: verdict, pick: 'WA' }], { nextTask })
+    await expect(page).toHaveURL(`${contestPath}?view=submissions&verdict=WA&problem=B`)
+    await expect(problemField).toHaveValue('B')
+    await expect(verdict).toHaveValue('WA')
+    // The list on screen is the one in the URL: B's wrong answers.
+    await expect(sizes(list)).toHaveText(['60 bytes', '150 bytes', '90 bytes'])
+    await expect.poll(() => requests.at(-1)).toEqual({ offset: '0', limit: '50', problem: problemB, verdict: 'WA' })
+    expect(requests.length).toBeLessThanOrEqual(2)
+    await toggle.click()
+    await expect(conditionChips(page).getByRole('listitem')).toHaveText(['結果: WA', '問題: B'])
+  })
+
+  test(`a condition and a page number taken ${mode} leave the URL and the list in step`, async ({ page }) => {
+    // Every other run is WA: 60 of them take two pages, and all 120 three.
+    const runs: ContestRun[] = Array.from({ length: 120 }, (_, i) => ({ ...run(i, 'alice', 'cpp17', 100 + i, i, i % 2 ? 'WA' : 'AC'), problemId: problem, onsite: false }))
+    const { requests } = await mockContest(page, runs)
+    const narrowed = `${contestPath}?view=submissions&verdict=WA`
+    await openContest(page, 'view=submissions&verdict=WA')
+    const list = contestList(page)
+    await expect(listCount(list)).toHaveText('全 60 件中 1〜50 件目')
+    const chip = conditionChips(page).getByRole('button', { name: '結果: WAを外す' })
+    // The chip, then the page: the page's link came with the condition, and its move is the later one. In the next task
+    // the chip's move may have ended first, and the link without the condition is followed instead.
+    await quickly(page, [{ target: chip }, { target: pageLink(list, 2) }], { nextTask })
+    await expect(page).toHaveURL(/[?&]page=2$/)
+    const kept = new URL(page.url()).searchParams.has('verdict')
+    if (!nextTask) expect(kept).toBe(true)
+    await expect(page).toHaveURL(kept ? `${narrowed}&page=2` : `${contestPath}?view=submissions&page=2`)
+    await expect(listCount(list)).toHaveText(kept ? '全 60 件中 51〜60 件目' : '全 120 件中 51〜100 件目')
+    expect(requests.at(-1)).toEqual({ offset: '50', limit: '50', ...kept ? { verdict: 'WA' } : {} })
+    await expect(conditionChips(page).getByRole('listitem')).toHaveText(kept ? ['結果: WA'] : [])
+    await expect(list.getByRole('navigation', { name: 'ページ' }).last().locator('[aria-current="page"]')).toHaveText('2')
+    // The page, then the chip: the list starts over without the condition.
+    await visit(page, narrowed)
+    await expect(listCount(list)).toHaveText('全 60 件中 1〜50 件目')
+    await quickly(page, [{ target: pageLink(list, 2) }, { target: chip }], { nextTask })
+    await expect(page).toHaveURL(`${contestPath}?view=submissions`)
+    await expect(listCount(list)).toHaveText('全 120 件中 1〜50 件目')
+    expect(requests.at(-1)).toEqual({ offset: '0', limit: '50' })
+    await expect(conditionChips(page)).toHaveCount(0)
+    await expect(list.getByRole('navigation', { name: 'ページ' }).last().locator('[aria-current="page"]')).toHaveText('1')
+  })
+}
+
+test('the conditions fit a phone', async ({ page }) => {
+  await mockContest(page, contestRuns())
+  await page.setViewportSize({ width: 375, height: 812 })
+  await openContest(page, 'view=submissions&scope=onsite&sort=shortest&verdict=AC&runtime=rust2024&problem=A')
+  await expect(conditionChips(page).getByRole('listitem')).toHaveText(['コード長が短い順', '結果: AC', '言語: Rust (Edition 2024)', '問題: A'])
+  await expect(page.getByRole('switch', { name: 'オンサイトのみ表示' })).toBeChecked()
+  await expect(sizes(contestList(page))).toHaveText(['400 bytes'])
+  expect(await noOverflow(page)).toBe(true)
+  await conditionsButton(page).click()
+  await expect(page.getByRole('combobox', { name: '問題', exact: true })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: '提出者' })).toBeVisible()
+  expect(await noOverflow(page)).toBe(true)
 })

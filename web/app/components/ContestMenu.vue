@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { canViewAllSubmissions, contestView, contestViews, ownSubmissionsLabel, type ContestView } from '~~/shared/types/contest'
+import { canViewAllSubmissions, contestView, contestViews, labelIndex, ownSubmissionsLabel, type ContestView } from '~~/shared/types/contest'
 import { shortId } from '~~/shared/utils/short-id'
+import { parseSubmissionConditions, submissionConditionQuery } from '~/utils/submission-conditions'
 // The contest's menu in the site header. Both submission lists share one place, as on AtCoder: 「提出」 opens them once
 // the whole list may be read, and until then the own list stands there alone (ADR 0030).
 const props = defineProps<{ id: string }>()
@@ -23,7 +24,20 @@ const section = computed<ContestView>(() => {
 const inSubmissions = computed(() => section.value === 'submissions' || section.value === 'my-submissions')
 const canViewAll = computed(() => !!contest.value && canViewAllSubmissions(contest.value))
 const own = computed(() => contest.value ? ownSubmissionsLabel(contest.value) : contestViews['my-submissions'])
-const link = (view: ContestView) => ({ path: `/contests/${shortId(props.id)}`, query: view === 'overview' ? {} : { view } })
+// On a submission list, the two lists keep its conditions, the problem among them when the contest names it; the
+// viewer's own list has no submitter. The other views start without them.
+const listConditions = computed(() => {
+  if (route.name !== 'contests-id' || !inSubmissions.value) return {}
+  const conditions = parseSubmissionConditions(route.query)
+  const named = !!contest.value?.problems[labelIndex(conditions.problem)]?.id
+  return submissionConditionQuery({ ...conditions, user: section.value === 'submissions' ? conditions.user : '', problem: named ? conditions.problem : '' })
+})
+const ownConditions = computed(() => {
+  const { user: _user, ...query } = listConditions.value
+  return query
+})
+const kept = (view: ContestView) => view === 'submissions' ? listConditions.value : view === 'my-submissions' ? ownConditions.value : {}
+const link = (view: ContestView) => ({ path: `/contests/${shortId(props.id)}`, query: view === 'overview' ? {} : { view, ...kept(view) } })
 // 'page' marks the view itself, and 'true' a page under it, such as a submission.
 const current = (view: ContestView) => section.value === view ? route.name === 'contests-id' ? 'page' : 'true' : undefined
 const submissionsMenu = ref<HTMLDetailsElement>()

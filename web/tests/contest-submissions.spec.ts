@@ -64,7 +64,9 @@ for (const allowed of [true, false]) {
     }
     await openProblemList(page)
     if (allowed) {
-      await expect(page.getByLabel('問題', { exact: true })).toHaveValue('0')
+      // The panel's 問題 holds the problem the link named.
+      await page.getByRole('button', { name: /^絞り込み・並び替え/ }).click()
+      await expect(page.getByLabel('問題', { exact: true })).toHaveValue('A')
       await expect(page.getByRole('cell', { name: 'participant', exact: true })).toBeVisible()
       await expect(page.getByRole('cell', { name: '42 ms・ 2.50 MB', exact: true })).toBeVisible()
       await expect(page.getByRole('cell', { name: '24 bytes', exact: true })).toBeVisible()
@@ -184,6 +186,8 @@ test('the submission list pages by number and size', async ({ page }) => {
   // Choosing a problem also starts over, and asks for the problem's ID by its letter in the URL (ADR 0034).
   await page.getByRole('navigation', { name: 'ページ' }).last().getByRole('link', { name: '2', exact: true }).click()
   await expect(page).toHaveURL(/page=2/)
+  // The problem is chosen in the panel of the list's conditions.
+  await page.getByRole('button', { name: /^絞り込み・並び替え/ }).click()
   await page.getByLabel('問題', { exact: true }).selectOption({ label: 'A - A + B' })
   await expect(page).toHaveURL(/[?&]problem=A(&|$)/)
   await expect(page).not.toHaveURL(/page=/)
