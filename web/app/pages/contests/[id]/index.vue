@@ -126,27 +126,21 @@ const showSubmissionPages = computed(() => !!submissions.value?.items.length || 
 const resizeSubmissions = (size: PageSize) => resizePage(submissionsSize, submissionsPage.value, size)
 // The table is busy while the list is read again, alone or with the rest of the page.
 const { loading: submissionsLoading, run: requestSubmissions, invalidate: invalidateSubmissions } = useLatestRequest()
-// Requests are numbered as they go out, and the rows on screen are known by the request that read them.
-let asked = 0
-let shown = 0
+// A rejudge needs a chosen problem, which is itself a condition, so the list follows every rejudge asked for here.
+const follow = useRejudgeFollow({ items: () => submissions.value?.items, narrowed: () => narrowed.value })
 function loadSubmissions() {
   const list = submissionList.value
   if (!list) { invalidateSubmissions(); submissions.value = null; return Promise.resolve() }
   const query = { offset: submissionsOffset.value, limit: submissionsSize.value, ...list === 'all' ? {} : { mine: list === 'team' ? 'team' : '1' }, ...filterSubmissions.value ? { scope: 'onsite' } : {}, ...chosenProblem.value ? { problem: chosenProblem.value.id } : {}, ...listConditions.value }
-  return requestSubmissions(JSON.stringify([query, user.value?.id]),
-    () => {
-      const number = ++asked
-      return $fetch<{ items: Submission[], hasMore: boolean, total: number }>(`${base}/submissions`, { query }).then(result => ({ number, result }))
-    },
-    ({ number, result }) => {
-      submissions.value = result
-      shown = number
-      submissionsError.value = ''
-      submissionsClosed.value = false
-      // Rows dropped since the page was opened, so it is past the end: the last page shows instead.
-      const last = lastPage(result.total, submissionsSize.value)
-      if (requestedPage.value > last) void goToPage(last)
-    },
+  const read = follow.read(() => $fetch<{ items: Submission[], hasMore: boolean, total: number }>(`${base}/submissions`, { query }), result => {
+    submissions.value = result
+    submissionsError.value = ''
+    submissionsClosed.value = false
+    // Rows dropped since the page was opened, so it is past the end: the last page shows instead.
+    const last = lastPage(result.total, submissionsSize.value)
+    if (requestedPage.value > last) void goToPage(last)
+  })
+  return requestSubmissions(JSON.stringify([query, user.value?.id]), read.fetch, read.apply,
     error => {
       const failure = error as { data?: { code?: string, data?: { code?: string } } }
       submissionsClosed.value = failure.data?.data?.code === streamingCode || failure.data?.code === streamingCode
@@ -239,25 +233,10 @@ const showSubmissionScore = computed(() => contest.value?.partialScoring === tru
 // page's list did before ADR 0034. Only finished judgements can be rejudged, and the selection belongs to the visible page.
 const { allowed: rejudgeAllowed, busy: rejudging, message: rejudgeMessage, rejudge } = useRejudge(() => chosenProblem.value?.id ?? '')
 const canRejudge = computed(() => rejudgeAllowed.value && !!chosenProblem.value)
-// A list narrowed by conditions loses rejudged rows while they are judged, and may not get them back, so after a rejudge
-// asked for here it follows them for up to a minute, until rows read after the rejudge show each of them judged, as the
-// problem page's list does.
-let followed: { ids: string[], after: number, until: number } | undefined
-async function rejudgeFollowed(submissionIds: string[]) {
-  const queued = await rejudge(submissionIds)
-  if (queued && narrowed.value) followed = { ids: submissionIds, after: asked, until: Date.now() + 60_000 }
-  return queued
-}
-function following() {
-  const items = submissions.value?.items ?? []
-  const judged = (id: string) => items.some(item => item.id === id && item.status === 'DONE')
-  if (followed && (Date.now() >= followed.until || (shown > followed.after && followed.ids.every(judged)))) followed = undefined
-  return !!followed
-}
 // Without the rejudge no row can be chosen, so leaving the problem drops the selection.
-const { selected, selectable, rejudgeSelected } = useRejudgeSelection(() => canRejudge.value ? submissions.value?.items : undefined, rejudgeFollowed, loadSubmissions)
+const { selected, selectable, rejudgeSelected } = useRejudgeSelection(() => canRejudge.value ? submissions.value?.items : undefined, follow.follows(rejudge), loadSubmissions)
 // Follow rejudged rows more closely than the regular refresh.
-usePolling(loadSubmissions, 3000, { enabled: () => canRejudge.value && (!!submissions.value?.items.some(item => item.status !== 'DONE') || following()) })
+usePolling(loadSubmissions, 3000, { enabled: () => canRejudge.value && follow.active() })
 function elapsed(acceptedAt: string) { return duration(new Date(acceptedAt).getTime() - new Date(contest.value!.startsAt).getTime()) }
 const problemStats = computed(() => contest.value!.problems.map(problem => {
   let submitted = 0

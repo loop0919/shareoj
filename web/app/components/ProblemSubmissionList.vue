@@ -26,20 +26,14 @@ const narrowed = computed(() => Object.keys(listQuery.value).length > 0)
 // The panel stays as the viewer left it through refreshes and changes of conditions, and starts closed on each visit.
 const conditionsOpen = ref(false)
 const conditionsPanel = ref<{ focus: () => void }>()
-// Requests are numbered as they go out, and the rows on screen are known by the request that read them.
-let asked = 0
-let shown = 0
+const follow = useRejudgeFollow({ items: () => data.value?.items, narrowed: () => narrowed.value })
 function load() {
   if (props.mine && !user.value) { invalidate(); data.value = null; return Promise.resolve() }
   const base = `/api/problems/${props.problemId}`
   const query = { mine: props.mine ? '1' : '0', offset: offset.value, ...listQuery.value }
   message.value = ''
-  return run(JSON.stringify([base, query, user.value?.id]),
-    () => {
-      const number = ++asked
-      return $fetch<{ items: Submission[], hasMore: boolean }>(`${base}/submissions`, { query }).then(result => ({ number, result }))
-    },
-    ({ number, result }) => { data.value = result; shown = number },
+  const read = follow.read(() => $fetch<{ items: Submission[], hasMore: boolean }>(`${base}/submissions`, { query }), result => { data.value = result })
+  return run(JSON.stringify([base, query, user.value?.id]), read.fetch, read.apply,
     () => { message.value = '提出一覧を取得できませんでした。閲覧権限を確認し、再取得してください。' })
 }
 function detail(item: Submission) {
@@ -62,24 +56,9 @@ function clearEmpty() {
 // Results judged before the problem became partially scored carry no score and show 「—」.
 const showScore = computed(() => props.scored || !!data.value?.items.some(item => item.result?.scoring))
 const { allowed: canRejudge, busy: rejudging, message: rejudgeMessage, rejudge } = useRejudge(() => props.problemId)
-// A list narrowed by conditions loses rejudged rows while they are judged, and may not get them back, so after a rejudge
-// asked for here it follows them for up to a minute, until rows read after the rejudge show each of them judged.
-// Without conditions the rows stay in view, and the judging rows alone keep the pace.
-let followed: { ids: string[], after: number, until: number } | undefined
-async function rejudgeFollowed(submissionIds: string[]) {
-  const queued = await rejudge(submissionIds)
-  if (queued && narrowed.value) followed = { ids: submissionIds, after: asked, until: Date.now() + 60_000 }
-  return queued
-}
-function following() {
-  const items = data.value?.items ?? []
-  const judged = (id: string) => items.some(item => item.id === id && item.status === 'DONE')
-  if (followed && (Date.now() >= followed.until || (shown > followed.after && followed.ids.every(judged)))) followed = undefined
-  return !!followed
-}
-const { selected, selectable, rejudgeSelected } = useRejudgeSelection(() => data.value?.items, rejudgeFollowed, load)
+const { selected, selectable, rejudgeSelected } = useRejudgeSelection(() => data.value?.items, follow.follows(rejudge), load)
 // Follow rejudged rows more closely than the regular refresh.
-usePolling(load, 3000, { enabled: () => canRejudge.value && (!!data.value?.items.some(item => item.status !== 'DONE') || following()) })
+usePolling(load, 3000, { enabled: () => canRejudge.value && follow.active() })
 </script>
 <template>
   <section class="problem-submissions" :aria-label="title">
