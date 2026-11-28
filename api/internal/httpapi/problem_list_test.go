@@ -289,24 +289,41 @@ func TestProblemListSpeedPostgres(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-	// 200 users, 1000 published problems (difficulty 1-10, every 11th unset), 30000 accepted runs, 5000 favorites.
+	// 200 users, 1000 published problems (difficulty 1-10, every 11th unset), 30000 accepted runs and about 5000
+	// favorites. Owners and problems are drawn from independent hashes so that counts differ between problems.
 	exec(`INSERT INTO user_profiles(owner_id,handle) SELECT 'u'||i,'user'||i FROM generate_series(1,200) i`)
 	exec(`INSERT INTO problem_drafts(id,owner_id,draft,version,published_draft,published_version,published_at)
 		SELECT gen_random_uuid(),'u1',d,1,d,1,now()-make_interval(mins=>i)
 		FROM generate_series(1,1000) i,
 		LATERAL (SELECT jsonb_build_object('title','Problem '||i,'timeLimitMs','1000','memoryLimitMb','256')||CASE WHEN i%11=0 THEN '{}'::jsonb ELSE jsonb_build_object('difficulty',i%10+1) END AS d) x`)
-	exec(`CREATE TEMP TABLE speed_problems AS SELECT id,row_number() OVER (ORDER BY id) AS n FROM problem_drafts`)
+	exec(`CREATE TABLE speed_problems AS SELECT id,row_number() OVER (ORDER BY id) AS n FROM problem_drafts`)
 	exec(`INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,result)
-		SELECT gen_random_uuid(),'u'||(i%200+1),p.id,1,'t','cpp17','','{"privateDraft":false}','DONE','{"verdict":"AC"}'
-		FROM generate_series(1,30000) i JOIN speed_problems p ON p.n=(i*7)%1000+1`)
+		SELECT gen_random_uuid(),'u'||((hashtext('o'||i)&2147483647)%200+1),p.id,1,'t','cpp17','','{"privateDraft":false}','DONE','{"verdict":"AC"}'
+		FROM generate_series(1,30000) i JOIN speed_problems p ON p.n=(hashtext('p'||i)&2147483647)%1000+1`)
+	// The viewer u1 has solved 300 problems, so the unsolved filter removes a real share of the list.
+	exec(`INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,result)
+		SELECT gen_random_uuid(),'u1',p.id,1,'t','cpp17','','{"privateDraft":false}','DONE','{"verdict":"AC"}'
+		FROM speed_problems p WHERE p.n<=300`)
 	exec(`INSERT INTO problem_favorites(problem_id,owner_id)
-		SELECT DISTINCT p.id,'u'||(i%200+1) FROM generate_series(1,5000) i JOIN speed_problems p ON p.n=(i*13)%1000+1`)
+		SELECT p.id,'u'||k FROM speed_problems p, generate_series(1,200) k WHERE (hashtext(p.id::text||'f'||k)&2147483647)%40=0`)
 	exec(`ANALYZE`)
+	// Guard against a seed that degenerates into tied sort keys.
+	var solverKinds, favoriteKinds, favoriteRows int
+	if err = store.Pool().QueryRow(ctx, `SELECT
+		(SELECT count(DISTINCT c) FROM (SELECT count(DISTINCT owner_id) c FROM submissions GROUP BY problem_id) x),
+		(SELECT count(DISTINCT c) FROM (SELECT count(*) c FROM problem_favorites GROUP BY problem_id) y),
+		(SELECT count(*) FROM problem_favorites)`).Scan(&solverKinds, &favoriteKinds, &favoriteRows); err != nil {
+		t.Fatal(err)
+	}
+	if solverKinds < 10 || favoriteKinds < 5 || favoriteRows < 4000 || favoriteRows > 6000 {
+		t.Fatalf("seed too uniform: %d distinct solver counts, %d distinct favorite counts, %d favorites", solverKinds, favoriteKinds, favoriteRows)
+	}
+	t.Logf("seed: %d distinct solver counts, %d distinct favorite counts, %d favorites", solverKinds, favoriteKinds, favoriteRows)
 
 	sorts := []string{problems.SortNewest, problems.SortOldest, problems.SortSolversDesc, problems.SortSolversAsc, problems.SortFavoritesDesc, problems.SortDifficultyDesc, problems.SortDifficultyAsc}
 	for _, solved := range []string{"", problems.UnsolvedOnly} {
-		for _, sort := range sorts {
-			filter := problems.ListFilter{Sort: sort, Solved: solved}
+		for _, order := range sorts {
+			filter := problems.ListFilter{Sort: order, Solved: solved}
 			if solved != "" {
 				filter.Viewer = "u1"
 			}
@@ -325,12 +342,12 @@ func TestProblemListSpeedPostgres(t *testing.T) {
 					best = elapsed
 				}
 				if len(items) < 50 || total == 0 {
-					t.Fatalf("sort %s solved %q: got %d items, total %d", sort, solved, len(items), total)
+					t.Fatalf("sort %s solved %q: got %d items, total %d", order, solved, len(items), total)
 				}
 			}
-			t.Logf("sort=%s solved=%q best=%dms", sort, solved, best.Milliseconds())
+			t.Logf("sort=%s solved=%q best=%dms", order, solved, best.Milliseconds())
 			if best > 200*time.Millisecond {
-				t.Errorf("sort=%s solved=%q took %v, want at most 200ms", sort, solved, best)
+				t.Errorf("sort=%s solved=%q took %v, want at most 200ms", order, solved, best)
 			}
 		}
 	}
