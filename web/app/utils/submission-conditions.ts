@@ -76,8 +76,15 @@ export function languageValue(conditions: SubmissionConditions): string {
 }
 
 export function languagePatch(value: string): Pick<SubmissionConditions, 'language' | 'runtime'> {
-  if (value.startsWith('language:')) return { language: value.slice('language:'.length), runtime: '' }
-  if (value.startsWith('runtime:')) return { language: '', runtime: value.slice('runtime:'.length) }
+  // A value of the wrong shape reads as すべて, as parseSubmissionConditions would on reload.
+  if (value.startsWith('language:')) {
+    const language = value.slice('language:'.length)
+    if (isLanguageKey(language)) return { language, runtime: '' }
+  }
+  else if (value.startsWith('runtime:')) {
+    const runtime = value.slice('runtime:'.length)
+    if (isRuntimeId(runtime)) return { language: '', runtime }
+  }
   return { language: '', runtime: '' }
 }
 

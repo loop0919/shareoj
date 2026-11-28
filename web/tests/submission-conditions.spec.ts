@@ -38,6 +38,9 @@ test('the language select groups runtimes and offers the whole language', () => 
   expect(languagePatch('language:cpp')).toEqual({ language: 'cpp', runtime: '' })
   expect(languagePatch('runtime:cpp17')).toEqual({ language: '', runtime: 'cpp17' })
   expect(languagePatch('')).toEqual({ language: '', runtime: '' })
+  // A value that does not have the shape of a key reads as すべて, as parseSubmissionConditions would on reload.
+  for (const bad of ['language:C++', 'runtime:cpp17-isolate', 'runtime:cpp17-local', 'runtime:a b&x=1', 'language:', 'runtime:', 'cpp', 'other:cpp', ' language:cpp'])
+    expect(languagePatch(bad)).toEqual({ language: '', runtime: '' })
 })
 
 test('chips name the conditions in force', () => {
