@@ -48,7 +48,22 @@ func TestAssessListsEveryReason(t *testing.T) {
 		{
 			"only samples warns without blocking", with(func(d *Draft) { d.TestCases[0].IsSample = true }),
 			ProblemState{},
-			Readiness{Publish: []Issue{}, Contest: []Issue{}, Featured: []Issue{}, Warnings: []Issue{IssueOnlySampleTestCases}},
+			Readiness{Publish: []Issue{}, Contest: []Issue{}, Featured: []Issue{}, Warnings: []Issue{IssueOnlySampleTestCases, IssueSampleNotInStatement}},
+		},
+		{
+			"a sample the statement does not show warns without blocking", with(func(d *Draft) {
+				d.TestCases = append(d.TestCases, TestCase{Name: "sample1", IsSample: true, Input: "1 2\n", Output: "3\n"})
+			}),
+			ProblemState{},
+			Readiness{Publish: []Issue{}, Contest: []Issue{}, Featured: []Issue{}, Warnings: []Issue{IssueSampleNotInStatement}},
+		},
+		{
+			"a sample the statement shows is fine", with(func(d *Draft) {
+				d.Markdown = "本文\n\n```text\n1 2\n```\n\n```text\n3\n```\n"
+				d.TestCases = append(d.TestCases, TestCase{Name: "sample1", IsSample: true, Input: "1 2\n", Output: "3\n"})
+			}),
+			ProblemState{},
+			Readiness{Publish: []Issue{}, Contest: []Issue{}, Featured: []Issue{}},
 		},
 		{
 			"blank statement and title", with(func(d *Draft) { d.Title, d.Markdown = " ", "" }),
@@ -138,5 +153,54 @@ func TestBooleanChecksFollowTheIssueLists(t *testing.T) {
 	d.Checker = &Generator{Runtime: "cpp17", Source: "int main(){}"}
 	if Publishable(d, []string{"cpp17"}, nil) || featuredEligible(d, []string{"cpp17"}, nil) {
 		t.Fatal("judge code waits while its runtime is disabled")
+	}
+}
+
+func TestSampleInStatement(t *testing.T) {
+	sample := TestCase{Name: "sample1", IsSample: true, Input: "1 2\n", Output: "3\n"}
+	stored := sample
+	stored.Input, stored.InputFile = "", &TestFile{ID: "f", Size: 100_000}
+	for _, tc := range []struct {
+		name, markdown string
+		c              TestCase
+		want           bool
+	}{
+		{"nothing", "## 問題文\n1 2 を足すと 3 です。", sample, false},
+		{"between the markers", "<!-- sample-begin: sample1 -->\n古い内容\n<!-- sample-end: sample1 -->\n", sample, true},
+		{"the markers of another sample", "<!-- sample-begin: sample2 -->\n<!-- sample-end: sample2 -->\n", sample, false},
+		{"a start marker alone", "<!-- sample-begin: sample1 -->\n", sample, false},
+		{"written by hand", "### 入力\n```\n1 2\n```\n### 出力\n```text\n3\n```\n", sample, true},
+		{"tilde fences and CRLF", "~~~\r\n1 2\r\n~~~\r\n\r\n~~~~text\r\n3\r\n~~~~\r\n", sample, true},
+		{"the input alone", "```\n1 2\n```\n", sample, false},
+		{"another output", "```\n1 2\n```\n```\n4\n```\n", sample, false},
+		{"outside a code block", "入力は\n1 2\nで、出力は\n3\nです。", sample, false},
+		{"a longer fence holds a shorter one", "````\n```\n1 2\n```\n````\n```\n3\n```\n", sample, false},
+		{"an empty input needs no block", "```\n3\n```\n", TestCase{Name: "s", IsSample: true, Output: "3\n"}, true},
+		{"a stored file cannot be compared", "```\n1 2\n```\n```\n3\n```\n", stored, false},
+		{"a stored file between the markers", "<!-- sample-begin: sample1 -->\n<!-- sample-end: sample1 -->", stored, true},
+	} {
+		if got := sampleInStatement(tc.markdown, tc.c); got != tc.want {
+			t.Errorf("%s: got %v", tc.name, got)
+		}
+	}
+}
+
+func TestSampleWarningSkipsDialogueProblems(t *testing.T) {
+	code := &Generator{Runtime: "cpp17", Source: "int main(){}"}
+	cases := []TestCase{{Name: "sample1", IsSample: true, Input: "42\n"}, {Name: "1", Input: "7\n"}}
+	for _, tc := range []struct {
+		name  string
+		draft Draft
+		want  []Issue
+	}{
+		{"an ordinary problem", Draft{Markdown: "本文", TestCases: cases}, []Issue{IssueSampleNotInStatement}},
+		{"a checker problem", Draft{Markdown: "本文", TestCases: cases, Checker: code}, []Issue{IssueSampleNotInStatement}},
+		// The input goes to the judge code, not to the submission, so the statement has no reason to show it.
+		{"an interactive problem", Draft{Markdown: "本文", TestCases: cases, Interactor: code}, nil},
+		{"a run-twice problem", Draft{Markdown: "本文", TestCases: cases, RunTwice: code}, nil},
+	} {
+		if got := ContentWarnings(tc.draft); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: got %v", tc.name, got)
+		}
 	}
 }

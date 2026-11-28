@@ -645,7 +645,9 @@ func TestInitUsesProblemTemplate(t *testing.T) {
 		t.Fatalf("template: %+v %v", want, err)
 	}
 	dir := example(t)
-	for name, text := range map[string]string{"statement.md": want.Statement, "editorial.md": want.Editorial} {
+	// The statement also shows the sample case that init writes, so that a new problem passes check without a warning.
+	sample := "\n<!-- sample-begin: sample1 -->\n## サンプル 1\n### 入力\n```text\n3 5\n```\n### 出力\n```text\n8\n```\n<!-- sample-end: sample1 -->\n"
+	for name, text := range map[string]string{"statement.md": want.Statement + sample, "editorial.md": want.Editorial} {
 		if got, err := os.ReadFile(filepath.Join(dir, name)); err != nil || string(got) != text {
 			t.Errorf("%s: %q %v", name, got, err)
 		}

@@ -285,10 +285,12 @@ func initProblem(directory string) error {
 	if err := os.Mkdir(directory, 0755); err != nil {
 		return err
 	}
+	// The statement starts with the sample case in it, as check asks of every sample (issue #29).
+	statement, _, _ := syncSamples(strings.TrimRight(text.Statement, "\n"), []sampleText{{"sample1", "3 5\n", "8\n"}})
 	files := map[string]string{
 		"problem.toml":     template,
 		".gitignore":       ".shareoj.json\n.shareoj.lock\n",
-		"statement.md":     text.Statement,
+		"statement.md":     statement,
 		"editorial.md":     text.Editorial,
 		"input.cpp":        "#include <iostream>\nint main() { long long n; std::cin >> n; n = (n % 1000000000 + 1000000000) % 1000000000; std::cout << n << \" \" << n + 1 << \"\\n\"; }\n",
 		"output.cpp":       "#include <iostream>\nint main() { long long a, b; std::cin >> a >> b; std::cout << a + b << \"\\n\"; }\n",

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -117,6 +118,41 @@ func syncSamples(text string, samples []sampleText) (out string, updated, added 
 		out += strings.Join(blocks, "\n")
 	}
 	return out, updated, len(blocks)
+}
+
+var sampleFence = regexp.MustCompile("^ {0,3}(`{3,}|~{3,})")
+
+// sampleInStatement tells whether a statement shows a sample: between its markers, or, written by hand, with its
+// input and its output each as a fenced code block. api/internal/problems/readiness.go follows the same rules for
+// the warning of the saved problem.
+func sampleInStatement(statement string, c testCase) bool {
+	if c.Name != "" {
+		if _, rest, found := strings.Cut(statement, "<!-- sample-begin: "+c.Name+" -->"); found && strings.Contains(rest, sampleEnd(c.Name)) {
+			return true
+		}
+	}
+	var blocks []string
+	lines := strings.Split(strings.ReplaceAll(statement, "\r\n", "\n"), "\n")
+	for i := 0; i < len(lines); i++ {
+		fence := sampleFence.FindStringSubmatch(lines[i])
+		if fence == nil {
+			continue
+		}
+		start := i + 1
+		// The closing fence is at least as long, of the same character, and alone on its line.
+		for i++; i < len(lines); i++ {
+			if line := strings.TrimSpace(lines[i]); strings.HasPrefix(line, fence[1]) && strings.Trim(line, fence[1][:1]) == "" {
+				break
+			}
+		}
+		blocks = append(blocks, strings.TrimSpace(strings.Join(lines[start:min(i, len(lines))], "\n")))
+	}
+	shown := func(text string) bool {
+		text = strings.TrimSpace(strings.ReplaceAll(text, "\r\n", "\n"))
+		// Nothing to show is shown.
+		return text == "" || slices.Contains(blocks, text)
+	}
+	return shown(c.Input) && shown(c.Output)
 }
 
 // markedSamples returns the samples of the cases that a marker can name, and the names of the others.

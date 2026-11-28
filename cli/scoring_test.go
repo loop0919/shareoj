@@ -159,8 +159,9 @@ cases = ["[ab]*", "sample[^2]"]
 `
 	config := strings.Replace(template, `samples = ["sample1"]`+"\n", tests, 1)
 	write(t, filepath.Join(dir, "problem.toml"), config)
+	// The pattern makes sample2 a sample, and the statement of the example shows sample1 alone.
 	d, notes, err := readProblem(dir)
-	if err != nil || len(notes) != 0 {
+	if err != nil || !reflect.DeepEqual(notes, []string{`statement.md: the statement does not show the sample(s) "sample2"; write them in or run shareoj samples <directory>`}) {
 		t.Fatal(err, notes)
 	}
 	// A case that two patterns of one group match belongs to it once; sample2 is a sample in no group.
