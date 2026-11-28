@@ -214,8 +214,8 @@ func TestContestListMatchesReferencePostgres(t *testing.T) {
 			plainOnly++
 		}
 	}
-	// Each contest, viewer and scope gets the first page with no condition and one of the pages above in turn, so
-	// that every page meets every contest and kind of viewer.
+	// Each contest, viewer and scope gets the first page with no condition and the next of the pages above in turn, so
+	// that every page above is read in some contest by some viewer, and each contest and viewer read several of them.
 	turn := 0
 	for k := 1; k <= 4; k++ {
 		for _, viewer := range append(users, "") {
