@@ -241,3 +241,97 @@ func TestProblemListConditionsPostgres(t *testing.T) {
 	}
 	getAs("/my/public-problems", "", 401)
 }
+
+// TestProblemListSpeedPostgres times every sort of the public list far above production size. It only runs with
+// OPENOJ_LIST_SPEED=1 so that the ordinary go test and CI stay fast.
+func TestProblemListSpeedPostgres(t *testing.T) {
+	if os.Getenv("OPENOJ_LIST_SPEED") != "1" {
+		t.Skip("OPENOJ_LIST_SPEED=1 required")
+	}
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL required")
+	}
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := conn.Close(ctx); err != nil {
+			t.Error(err)
+		}
+	}()
+	schema := fmt.Sprintf("test_problem_speed_%d", time.Now().UnixNano())
+	if _, err = conn.Exec(ctx, `CREATE SCHEMA `+schema); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if _, err := conn.Exec(ctx, `DROP SCHEMA `+schema+` CASCADE`); err != nil {
+			t.Error(err)
+		}
+	}()
+	u, _ := url.Parse(dsn)
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+	store, err := problems.Open(ctx, u.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err = store.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	exec := func(query string) {
+		t.Helper()
+		if _, e := store.Pool().Exec(ctx, query); e != nil {
+			t.Fatal(e)
+		}
+	}
+	// 200 users, 1000 published problems (difficulty 1-10, every 11th unset), 30000 accepted runs, 5000 favorites.
+	exec(`INSERT INTO user_profiles(owner_id,handle) SELECT 'u'||i,'user'||i FROM generate_series(1,200) i`)
+	exec(`INSERT INTO problem_drafts(id,owner_id,draft,version,published_draft,published_version,published_at)
+		SELECT gen_random_uuid(),'u1',d,1,d,1,now()-make_interval(mins=>i)
+		FROM generate_series(1,1000) i,
+		LATERAL (SELECT jsonb_build_object('title','Problem '||i,'timeLimitMs','1000','memoryLimitMb','256')||CASE WHEN i%11=0 THEN '{}'::jsonb ELSE jsonb_build_object('difficulty',i%10+1) END AS d) x`)
+	exec(`CREATE TEMP TABLE speed_problems AS SELECT id,row_number() OVER (ORDER BY id) AS n FROM problem_drafts`)
+	exec(`INSERT INTO submissions(id,owner_id,problem_id,problem_version,problem_title,runtime,source,job,status,result)
+		SELECT gen_random_uuid(),'u'||(i%200+1),p.id,1,'t','cpp17','','{"privateDraft":false}','DONE','{"verdict":"AC"}'
+		FROM generate_series(1,30000) i JOIN speed_problems p ON p.n=(i*7)%1000+1`)
+	exec(`INSERT INTO problem_favorites(problem_id,owner_id)
+		SELECT DISTINCT p.id,'u'||(i%200+1) FROM generate_series(1,5000) i JOIN speed_problems p ON p.n=(i*13)%1000+1`)
+	exec(`ANALYZE`)
+
+	sorts := []string{problems.SortNewest, problems.SortOldest, problems.SortSolversDesc, problems.SortSolversAsc, problems.SortFavoritesDesc, problems.SortDifficultyDesc, problems.SortDifficultyAsc}
+	for _, solved := range []string{"", problems.UnsolvedOnly} {
+		for _, sort := range sorts {
+			filter := problems.ListFilter{Sort: sort, Solved: solved}
+			if solved != "" {
+				filter.Viewer = "u1"
+			}
+			best := time.Duration(1<<62 - 1)
+			for range 3 {
+				start := time.Now()
+				items, e := store.PublicList(ctx, nil, 0, 50, filter)
+				if e != nil {
+					t.Fatal(e)
+				}
+				total, e := store.PublicCount(ctx, filter)
+				if e != nil {
+					t.Fatal(e)
+				}
+				if elapsed := time.Since(start); elapsed < best {
+					best = elapsed
+				}
+				if len(items) < 50 || total == 0 {
+					t.Fatalf("sort %s solved %q: got %d items, total %d", sort, solved, len(items), total)
+				}
+			}
+			t.Logf("sort=%s solved=%q best=%dms", sort, solved, best.Milliseconds())
+			if best > 200*time.Millisecond {
+				t.Errorf("sort=%s solved=%q took %v, want at most 200ms", sort, solved, best)
+			}
+		}
+	}
+}
