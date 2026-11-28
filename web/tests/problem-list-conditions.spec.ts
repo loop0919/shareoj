@@ -257,6 +257,36 @@ test('an empty result offers to clear the conditions, and rows keep them on a ta
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://judge.example/problems?tag=DP')
 })
 
+// The API refuses such a tag, so the list would only fail; the box says why instead, as the tag editor does.
+test('a tag the API would refuse is not searched for', async ({ page }) => {
+  const requests = listRequests(page)
+  await page.goto('/problems?sort=oldest')
+  await page.getByRole('switch', { name: 'タグを表示' }).check()
+  await conditionsButton(page).click()
+  const search = page.getByRole('combobox', { name: 'タグで絞り込む' })
+  requests.length = 0
+  for (const [text, reason] of [['a,b', 'タグにカンマや改行は使えません。'], ['x'.repeat(31), 'タグは30文字以内にしてください。']]) {
+    await search.fill(text)
+    await search.press('Enter')
+    await expect(page.getByRole('alert')).toHaveText(reason)
+    await expect(search).toHaveAccessibleDescription(reason)
+    await expect(page).toHaveURL('/problems?sort=oldest')
+  }
+  expect(requests).toEqual([])
+  // Typing again takes the reason away, and a tag that may be used is searched for.
+  await search.fill('DP')
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await search.press('Enter')
+  await expect(page).toHaveURL('/problems?sort=oldest&tag=DP')
+  // The post list has the same box.
+  await page.goto('/blog')
+  const posts = page.getByRole('search', { name: '記事をタグで絞り込む' }).getByRole('combobox', { name: 'タグで絞り込む' })
+  await posts.fill('a,b')
+  await posts.press('Enter')
+  await expect(page.getByRole('alert')).toHaveText('タグにカンマや改行は使えません。')
+  await expect(page).toHaveURL('/blog')
+})
+
 test('the conditions fit a phone and work without JavaScript', async ({ page, browser }) => {
   await page.setViewportSize({ width: 375, height: 812 })
   await page.goto('/problems?sort=solvers-desc&contest=exclude&difficulty=3-6')
