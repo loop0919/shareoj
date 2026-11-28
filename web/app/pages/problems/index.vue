@@ -27,10 +27,17 @@ const route = useRoute()
 // Older links opened the posting modal here; posting now has its own page.
 if (route.query.post === '1') await navigateTo({ path: '/problems/post', query: typeof route.query.problem === 'string' ? { problem: route.query.problem } : {} }, { replace: true, redirectCode: 301 })
 const config = useRuntimeConfig()
-// Rendering depends on the page size cookie.
+// Rendering depends on the page size cookie, and a bare /problems on the remembered conditions.
 useResponseHeader('Vary').value = 'Cookie'
 // The sort and the filters are in the URL too. The page stays mounted when they change, so the panel stays as it is.
-const { conditions, change, clear } = useProblemConditions()
+const { conditions, change, clear, restore } = useProblemConditions()
+// A bare /problems opens the remembered conditions before the list loads. The server answers it with a redirect and
+// renders the page only to throw it away, so it fetches no list for it. A move that keeps the page mounted comes back to
+// a bare /problems too, such as taking the last condition off or 「絞り込みを解除」 of the tag.
+const restoring = restore()
+await restoring
+const redirected = import.meta.server && restoring !== undefined
+watch(() => route.fullPath, () => { void restore() })
 const conditionsOpen = ref(false)
 const tag = computed(() => conditions.value.tag)
 const contest = computed(() => conditions.value.contest)
@@ -46,9 +53,9 @@ const offset = computed(() => pageOffset(requested.value, size.value))
 // synchronously and would load the old page at the new size in between. The route catching up with a page already
 // requested leaves the offset, and so the list, as it is. New conditions come with the first page in one route, so they
 // load once too. The server applies solved only for a session.
-const { data, error, status, refresh } = await useFetch('/api/problems', { key: 'problem-list', query: computed(() => ({ ...conditionQuery(conditions.value), offset: offset.value, limit: size.value })) })
+const { data, error, status, refresh } = await useFetch('/api/problems', { key: 'problem-list', immediate: !redirected, query: computed(() => ({ ...conditionQuery(conditions.value), offset: offset.value, limit: size.value })) })
 if (error.value?.statusCode === 400) throw createError({ statusCode: 404, statusMessage: 'Tag not found', fatal: true })
-if (error.value || !data.value) throw createError({ statusCode: 502, statusMessage: 'Problem service unavailable', fatal: true })
+if (!redirected && (error.value || !data.value)) throw createError({ statusCode: 502, statusMessage: 'Problem service unavailable', fatal: true })
 // The chips and the panel show the solved filter the list really applied, never one a signed-out viewer has in the URL.
 const solvedApplied = computed(() => Boolean(data.value?.solved))
 const chips = computed(() => conditionChips(conditions.value, solvedApplied.value))

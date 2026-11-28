@@ -14,6 +14,10 @@ function listRequests(page: Page) {
   return requests
 }
 const conditionsButton = (page: Page) => page.getByRole('button', { name: /^絞り込み・並び替え/ })
+// The remembered conditions are an object in a cookie, which Nuxt's useCookie writes as URL-encoded JSON.
+const encoded = (value: unknown) => encodeURIComponent(JSON.stringify(value))
+const remembered = async (page: Page) => JSON.parse(decodeURIComponent((await page.context().cookies()).find(c => c.name === 'openoj-problem-conditions')?.value ?? 'null'))
+const remember = (page: Page, value: string) => page.context().addCookies([{ name: 'openoj-problem-conditions', value, url: 'http://127.0.0.1:13000' }])
 
 test('the list route passes the order and the difficulty range on', async ({ request }) => {
   const oldest = await (await request.get('/api/problems?tag=pagination&sort=oldest&limit=20')).json()
@@ -167,4 +171,83 @@ test('the conditions fit a phone and work without JavaScript', async ({ page, br
   await expect(plain.getByRole('table').locator('tbody tr').first()).toContainText('問題 120')
   await expect(plain.getByRole('list', { name: '効いている条件' })).toContainText('公開日が古い順')
   await context.close()
+})
+
+test('the list remembers the conditions the viewer chose', async ({ page }) => {
+  await signIn(page)
+  await page.goto('/problems')
+  await conditionsButton(page).click()
+  await page.getByRole('combobox', { name: '並び順' }).selectOption({ label: '正解者数が多い順' })
+  await expect(page).toHaveURL('/problems?sort=solvers-desc')
+  await page.getByRole('group', { name: '解答状況' }).getByRole('button', { name: '未ACのみ' }).click()
+  await expect(page).toHaveURL('/problems?sort=solvers-desc&solved=unsolved')
+  await expect.poll(() => remembered(page)).toEqual({ sort: 'solvers-desc', solved: 'unsolved' })
+  // The server applies them to a bare /problems with a redirect, which adds nothing to the history.
+  const response = await page.request.get('/problems', { maxRedirects: 0 })
+  expect([response.status(), response.headers().location]).toEqual([302, '/problems?sort=solvers-desc&solved=unsolved'])
+  // So does a move inside the app: the bare /problems is replaced before the list loads, and the list loads once.
+  await page.goto('/contests')
+  const requests = listRequests(page)
+  await page.getByRole('navigation', { name: 'メインナビゲーション' }).getByRole('link', { name: '問題', exact: true }).click()
+  await expect(page).toHaveURL('/problems?sort=solvers-desc&solved=unsolved')
+  await expect(page.getByRole('list', { name: '効いている条件' }).getByRole('listitem')).toHaveText([/正解者数が多い順/, /未ACのみ/])
+  expect(requests).toEqual([{ sort: 'solvers-desc', solved: 'unsolved', offset: '0', limit: '50' }])
+  await page.goBack()
+  await expect(page).toHaveURL('/contests')
+})
+
+test('a URL with a query opens as it is', async ({ page }) => {
+  await remember(page, encoded({ sort: 'oldest', contest: 'only' }))
+  // A page number alone is a query too. The fixture's list has one page, and a page past the end is replaced by the last
+  // one, so the test asks for page 1.
+  for (const path of ['/problems?tag=DP', '/problems?contest=exclude', '/problems?page=1']) {
+    await page.goto(path)
+    await expect(page).toHaveURL(path)
+  }
+  // Opening them did not rewrite what is remembered.
+  expect(await remembered(page)).toEqual({ sort: 'oldest', contest: 'only' })
+  // Taking the tag away leaves no query, so the remembered conditions come back, and the list loads once.
+  await page.goto('/problems?tag=DP')
+  const requests = listRequests(page)
+  await page.getByRole('list', { name: '効いている条件' }).getByRole('button', { name: 'タグ: DPを外す' }).click()
+  await expect(page).toHaveURL('/problems?sort=oldest&contest=only')
+  // The fixture problem is no contest's.
+  await expect(page.getByText('条件に合う問題はありません。')).toBeVisible()
+  expect(requests).toEqual([{ sort: 'oldest', contest: 'only', offset: '0', limit: '50' }])
+  // A condition chosen on a tag's list replaces what was remembered.
+  await page.goto('/problems?tag=DP')
+  await conditionsButton(page).click()
+  await page.getByRole('combobox', { name: '並び順' }).selectOption({ label: '難易度が低い順' })
+  await expect(page).toHaveURL('/problems?sort=difficulty-asc&tag=DP')
+  await expect.poll(() => remembered(page)).toEqual({ sort: 'difficulty-asc' })
+})
+
+test('clearing forgets, and a broken cookie reads as nothing', async ({ page }) => {
+  await remember(page, encoded({ sort: 'oldest' }))
+  await page.goto('/problems')
+  await expect(page).toHaveURL('/problems?sort=oldest')
+  await conditionsButton(page).click()
+  await page.getByRole('button', { name: '条件をすべて外す' }).click()
+  await expect(page).toHaveURL('/problems')
+  await expect.poll(() => remembered(page)).toBeNull()
+  await expect(page.getByRole('combobox', { name: '並び順' })).toHaveValue('newest')
+  // The last two are broken percent escapes, which Nuxt's own cookie decoding throws on.
+  for (const value of ['%7Bbroken', encoded('oldest'), encoded({ sort: 'popular', difficulty: '9-2' }), '%', '%E0%A4%A']) {
+    await remember(page, value)
+    const response = await page.request.get('/problems', { maxRedirects: 0 })
+    expect(response.status()).toBe(200)
+  }
+})
+
+test('a signed-out viewer keeps a remembered solved filter without it taking effect', async ({ page }) => {
+  await page.route('**/api/auth/me', route => route.fulfill({ json: { user: null } }))
+  await remember(page, encoded({ solved: 'unsolved', sort: 'oldest' }))
+  await page.goto('/problems')
+  // The URL keeps solved; the list does not apply it.
+  await expect(page).toHaveURL('/problems?sort=oldest&solved=unsolved')
+  await expect(page.getByRole('list', { name: '効いている条件' }).getByRole('listitem')).toHaveText([/公開日が古い順/])
+  await conditionsButton(page).click()
+  await page.getByRole('combobox', { name: 'コンテスト' }).selectOption({ label: 'コンテストの問題のみ' })
+  await expect(page).toHaveURL('/problems?sort=oldest&solved=unsolved&contest=only')
+  await expect.poll(() => remembered(page)).toEqual({ sort: 'oldest', solved: 'unsolved', contest: 'only' })
 })
