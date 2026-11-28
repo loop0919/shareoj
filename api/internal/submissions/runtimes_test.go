@@ -3,6 +3,7 @@ package submissions
 import (
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -62,18 +63,35 @@ func TestLanguagesGroupRuntimes(t *testing.T) {
 			seen[runtime.ID] = language.Key
 		}
 	}
-	if len(seen) != len(Runtimes) {
-		t.Fatalf("languages cover %d of %d runtimes", len(seen), len(Runtimes))
+	// The list leaves the retired runtimes out: C++17 and Java (OpenJDK 24) are not choices of a list's 言語 select.
+	retired := []string{"cpp17", "java24"}
+	if len(seen) != len(Runtimes)-len(retired) {
+		t.Fatalf("languages list %d of %d runtimes", len(seen), len(Runtimes))
 	}
 	for _, runtime := range Runtimes {
-		if seen[runtime.ID] != runtime.Language {
+		if slices.Contains(retired, runtime.ID) {
+			if _, listed := seen[runtime.ID]; listed {
+				t.Fatalf("retired %s is listed", runtime.ID)
+			}
+		} else if seen[runtime.ID] != runtime.Language {
 			t.Fatalf("%s missing from its language", runtime.ID)
 		}
 	}
-	want := []string{"c", "cpp", "java", "javascript", "python", "ruby", "typescript"}
+	// Java lists one runtime now, so it has no 「（すべて）」 choice.
+	want := []string{"c", "cpp", "javascript", "python", "ruby", "typescript"}
 	sort.Strings(multi)
 	if !reflect.DeepEqual(multi, want) {
-		t.Fatalf("multi-runtime languages: %v", multi)
+		t.Fatalf("languages listing more than one runtime: %v", multi)
+	}
+	// A whole language still keeps the submissions of its retired runtimes, and the retired IDs stay known, so an
+	// old link and the rows' labels keep working.
+	if java, _ := LanguageRuntimeIDs("java"); !reflect.DeepEqual(java, []string{"java24", "java25"}) {
+		t.Fatalf("java: %v", java)
+	}
+	for _, id := range retired {
+		if !KnownRuntime(id) {
+			t.Fatalf("%s is no longer a known runtime", id)
+		}
 	}
 
 	cpp, ok := LanguageRuntimeIDs("cpp")

@@ -62,8 +62,13 @@ Webは、URLの知らない値を初期値として読み、`language`と`runtim
 
 - どの処理系がどの言語に入るかは、APIの処理系の一覧（`api/internal/submissions/runtimes.go`）だけに書く。
 - `GET /runtimes`が`languages`を返し、Webはそれを読んで言語の欄を組む。Webに対応表は持たない。
-- 処理系が2つ以上ある言語（C、C++、Python、Java、JavaScript、TypeScript、Ruby）は、先頭に「（言語名）（すべて）」を置き、その下に処理系を並べる。CとC++、JavaScriptとTypeScriptは別の言語である。
-- `language`は、今は提出に選べない処理系の提出も含む。処理系が増えても、リンクの意味は変わらず、新しい処理系の提出も含む。
+- 選択肢に処理系が2つ以上並ぶ言語（C、C++、Python、JavaScript、TypeScript、Ruby）は、先頭に「（言語名）（すべて）」を置き、その下に処理系を並べる。CとC++、JavaScriptとTypeScriptは別の言語として扱う。
+- 廃止した処理系（C++17、Java (OpenJDK 24)）は、選択肢に並べない。公開したあと、利用者がそう決めた（2026-11-28）。
+  決めた時点で、公開の問題173問のどの提出一覧にも、この2つの処理系の提出は出ていなかった。
+  廃止した処理系は、APIの処理系の一覧に印を付けて持つ（`retiredRuntimes`）。`GET /runtimes`の`languages`には入れない。
+  そのため、Javaの選択肢は「Java (Temurin 25)」の1つになり、「Java（すべて）」は出ない。
+- `language`は、廃止した処理系の提出も含む。「C++（すべて）」には、C++17の提出があれば出る。処理系が増えても、リンクの意味は変わらず、新しい処理系の提出も含む。
+- APIは`runtime`に廃止した処理系のIDも受ける。Webは、選択肢にない処理系がURLにあれば、言語の条件なしとして開く。
 - 保存されている処理系のIDには、実行環境の接尾辞（`-isolate`、`-local`）が付く。接尾辞の有無にかかわらず、同じ処理系として絞り込む。
 
 ### 結果と実行時間と並びの決まり

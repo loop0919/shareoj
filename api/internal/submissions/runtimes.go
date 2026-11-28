@@ -11,7 +11,7 @@ type Runtime struct {
 type Language struct {
 	Key      string    `json:"key"`
 	Label    string    `json:"label"`
-	Runtimes []Runtime `json:"runtimes"` // every runtime of the language, retired ones included, in catalogue order
+	Runtimes []Runtime `json:"runtimes"` // the language's runtimes in catalogue order, without the retired ones
 }
 
 // languageLabels is the only place that names the languages. Each label is the
@@ -57,11 +57,20 @@ var Runtimes = []Runtime{
 	{"text", "Text (cat 9.4)", "text"},
 }
 
-// Languages lists every language in catalogue order.
+// retiredRuntimes are no longer offered for a submission in production. They stay in the catalogue, so that their old
+// submissions keep a label and a whole language (LanguageRuntimeIDs) still keeps them, but a list's 言語 select does
+// not offer them one by one.
+var retiredRuntimes = map[string]bool{"cpp17": true, "java24": true}
+
+// Languages lists the languages a submission list can be narrowed to, in catalogue order, each with its runtimes
+// that are not retired. A language whose runtimes are all retired is left out.
 func Languages() []Language {
 	languages := make([]Language, 0, len(languageLabels))
 	index := map[string]int{}
 	for _, runtime := range Runtimes {
+		if retiredRuntimes[runtime.ID] {
+			continue
+		}
 		i, ok := index[runtime.Language]
 		if !ok {
 			i = len(languages)
@@ -73,7 +82,8 @@ func Languages() []Language {
 	return languages
 }
 
-// LanguageRuntimeIDs gives the catalogue IDs of a language's runtimes; ok is false for an unknown key.
+// LanguageRuntimeIDs gives the catalogue IDs of a language's runtimes, retired ones included; ok is false for an
+// unknown key.
 func LanguageRuntimeIDs(key string) (ids []string, ok bool) {
 	for _, runtime := range Runtimes {
 		if runtime.Language == key {

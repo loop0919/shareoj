@@ -54,7 +54,7 @@ func TestRuntimeCatalogFollowsAdmissionConfiguration(t *testing.T) {
 		if err := json.Unmarshal(r.Body.Bytes(), &response); err != nil || response.Maintenance != (enabled == "none") || (enabled == "none" && len(response.Items) != 0) {
 			t.Fatal(r.Body.String())
 		}
-		// languages lists the whole catalogue, retired runtimes included, even in maintenance.
+		// languages lists the catalogue without the retired runtimes, the same in every configuration, even in maintenance.
 		var cppRuntimes []string
 		for _, language := range response.Languages {
 			if language.Key == "cpp" {
@@ -63,10 +63,10 @@ func TestRuntimeCatalogFollowsAdmissionConfiguration(t *testing.T) {
 				}
 			}
 		}
-		if strings.Join(cppRuntimes, ",") != "cpp17,cpp23-gcc,cpp23-clang" {
+		if strings.Join(cppRuntimes, ",") != "cpp23-gcc,cpp23-clang" {
 			t.Fatalf("%q: cpp runtimes %v", enabled, cppRuntimes)
 		}
-		// Only items follow the admission configuration; languages is the whole catalogue.
+		// Only items follow the admission configuration; languages does not.
 		items := map[string]bool{}
 		for _, runtime := range response.Items {
 			items[runtime.ID] = true

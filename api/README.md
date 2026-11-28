@@ -441,7 +441,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 個別に適用する場合は `DATABASE_URL=... go run ./cmd/migrate` を実行してください。
 
 - `GET /problems`、`GET /problems/{id}`: 公開された問題の一覧と詳細（認証不要）。
-- `GET /runtimes`: 今選べる処理系を`items`に、メンテナンス中かを`maintenance`に返す。`languages`には、今は選べない処理系も含むカタログの全言語を、`{key, label, runtimes}`の形でカタログ順に返す（メンテナンス中も空にしない）。各処理系は`language`に言語のキーを持つ。
+- `GET /runtimes`: 今選べる処理系を`items`に、メンテナンス中かを`maintenance`に返す。`languages`には、提出一覧を絞り込める言語を、`{key, label, runtimes}`の形でカタログ順に返す（メンテナンス中も空にしない）。今の設定で選べない処理系も入れるが、廃止した処理系（`cpp17`、`java24`）は入れない。各処理系は`language`に言語のキーを持つ。
 - `GET /posts`、`GET /posts/{id}`: 公開された記事の一覧と詳細（認証不要）。
 - `GET /my/posts`、`GET|PUT|DELETE /my/posts/{id}`: 自分の記事の保存・取得・削除。一覧には作成日時を`createdAt`に付ける。
 - `PUT /my/problems/{id}/publication`、`PUT /my/posts/{id}/publication`: `{ "version": 1, "publish": true }` で現在の保存内容を公開。`false` で非公開に戻す。
@@ -697,7 +697,7 @@ DB マイグレーション 003 で問題の公開スナップショットと `b
 
 - `sort`: `newest`（初期値）、`oldest`、`shortest`、`fastest`。`shortest`はコードのバイト数、`fastest`は一覧の「実行時間」の値（ケースごとの`cpuTimeMs`の最大）が小さい順で、値のない提出は最後に置く。どの並びも、同じ値は提出日時が新しい順、次にIDの降順で並べる。`oldest`だけは提出日時が古い順、次にIDの昇順。
 - `verdict`: `AC`、`WA`、`TLE`、`MLE`、`OLE`、`RE`、`CE`、`JE`。採点が終わった提出（`status='DONE'`）の`result.verdict`で絞る。採点中の提出は、`verdict`を付けた一覧には出ない。部分点の問題でも得点ではなく`result.verdict`で絞る。
-- `language`: 言語のキー（`cpp`、`python`など）。その言語のどの処理系の提出も含み、今は提出に選べない処理系も含む。`runtime`: 処理系のID（`cpp23-gcc`など）。`-isolate`と`-local`は付けない。保存されているIDに接尾辞が付いていても同じ処理系として数える。`language`と`runtime`は同時に指定できない。
+- `language`: 言語のキー（`cpp`、`python`など）。その言語のどの処理系の提出も含み、廃止した処理系（`cpp17`、`java24`）の提出も含む。`runtime`: 処理系のID（`cpp23-gcc`など）。`-isolate`と`-local`は付けない。保存されているIDに接尾辞が付いていても同じ処理系として数える。`language`と`runtime`は同時に指定できない。
 - `user`: 提出した人のユーザーID。完全一致で、存在しないIDなら0件。
 - 空の値（`sort=`など）は指定なしと同じ。知らない値や形の合わない値、`language`と`runtime`の同時指定は400 `invalid_request`とする。
 - 条件は、見える提出の中だけで効く。凍結中の提出や開始前のスタッフ限定の提出は、提出者や結果を名指ししても出ず、コンテストの一覧の`total`にも数えない。`total`は条件を当てたあとの件数で、1ページの件数に左右されない。
