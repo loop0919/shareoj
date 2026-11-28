@@ -1,6 +1,7 @@
 import type { APIResponse, Page } from '@playwright/test'
 import { expect, test } from './fixtures/account'
 import { quickModes, quickly } from './fixtures/quickly'
+import { outsidePanel } from './fixtures/panel'
 
 const session = { cookie: 'openoj_access=valid-access' }
 // The browser is signed in through the fixture; the cookie lets the server see the session too.
@@ -292,6 +293,7 @@ test('the conditions fit a phone and work without JavaScript', async ({ page, br
   await conditionsButton(page).click()
   await expect(page.getByRole('combobox', { name: '並び順' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  expect(await outsidePanel(page)).toEqual([])
   const context = await browser.newContext({ javaScriptEnabled: false })
   const plain = await context.newPage()
   await plain.goto('/problems?tag=pagination&sort=oldest')

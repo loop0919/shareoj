@@ -25,7 +25,8 @@ const total = computed(() => Object.values(props.counts ?? {}).reduce((sum, coun
 <style scoped>
 .filter-select { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .filter-select label { color: var(--color-muted); font-size: .8125rem; white-space: nowrap; }
-.filter-select select { min-width: 0; min-height: 36px; padding: 2px 8px; border: 1px solid var(--color-line); border-radius: 4px; font: inherit; font-size: .875rem; font-variant-numeric: tabular-nums; cursor: pointer; }
+/* A long option, such as a problem's title, must not make the select wider than the place it is given. */
+.filter-select select { min-width: 0; max-width: 100%; min-height: 36px; padding: 2px 8px; border: 1px solid var(--color-line); border-radius: 4px; font: inherit; font-size: .875rem; font-variant-numeric: tabular-nums; cursor: pointer; }
 .filter-select select:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
 /* A filter that hides rows stands out, since the closed list shows no other sign of it. */
 .filter-select select.filter-select-on { border-color: var(--color-accent); background-color: var(--color-accent-soft); font-weight: 600; }

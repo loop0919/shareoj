@@ -1,6 +1,7 @@
 import type { APIRequestContext, Locator, Page } from '@playwright/test'
 import { expect, test } from './fixtures/account'
 import { quickModes, quickly } from './fixtures/quickly'
+import { outsidePanel } from './fixtures/panel'
 import { visit } from './fixtures/visit'
 import { shortId } from '../shared/utils/short-id'
 
@@ -398,6 +399,7 @@ test('the panel fits a phone', async ({ page }) => {
   await conditionsButton(page).click()
   await expect(page.getByRole('textbox', { name: '提出者' })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  expect(await outsidePanel(page)).toEqual([])
 })
 
 // The URL may name a language or a runtime the catalogue does not list: a hand-edited link, a runtime's ID given as a
@@ -902,6 +904,27 @@ for (const [mode, nextTask] of quickModes) {
   })
 }
 
+for (const width of [320, 375, 1280]) {
+  test(`a long problem title stays inside the panel at ${width}px`, async ({ page }) => {
+    const title = 'Massive Excessive Impressive Cat Food and Other Very Long Words in One Problem Title 長い問題タイトル'
+    const state = await mockContest(page, contestRuns())
+    state.contest = { ...staffContest, title: '長い問題名の絞り込みテスト', problems: [{ id: problem, title, points: 100 }, { id: problemB, title: 'A × B', points: 200 }] }
+    await page.setViewportSize({ width, height: 812 })
+    await openContest(page, 'view=submissions&problem=A', '長い問題名の絞り込みテスト')
+    await conditionsButton(page).click()
+    const select = page.getByRole('combobox', { name: '問題', exact: true })
+    await expect(select).toHaveValue('A')
+    await expect(select.locator('option:checked')).toHaveText(`A - ${title}`)
+    expect(await outsidePanel(page)).toEqual([])
+    // The fields keep to their own columns as well: no control reaches over the next one.
+    const boxes = await page.locator('.conditions-panel').locator('select, input').evaluateAll(controls => controls.map(control => { const box = control.getBoundingClientRect(); return { left: box.left, right: box.right, top: box.top, bottom: box.bottom } }))
+    for (const [index, one] of boxes.entries()) for (const other of boxes.slice(index + 1)) {
+      const apart = one.right <= other.left + 0.5 || other.right <= one.left + 0.5 || one.bottom <= other.top + 0.5 || other.bottom <= one.top + 0.5
+      expect(apart, JSON.stringify([one, other])).toBe(true)
+    }
+  })
+}
+
 test('the conditions fit a phone', async ({ page }) => {
   await mockContest(page, contestRuns())
   await page.setViewportSize({ width: 375, height: 812 })
@@ -913,6 +936,7 @@ test('the conditions fit a phone', async ({ page }) => {
   await conditionsButton(page).click()
   await expect(page.getByRole('combobox', { name: '問題', exact: true })).toBeVisible()
   await expect(page.getByRole('textbox', { name: '提出者' })).toBeVisible()
+  expect(await outsidePanel(page)).toEqual([])
   expect(await noOverflow(page)).toBe(true)
 })
 
