@@ -154,6 +154,7 @@ const acceptedRun = `s.status='DONE' AND submission_full_score(s.result)
 // count. The queries below keep the two apart instead of joining them with OR, so that each is read from its partial
 // index in 050_solver_indexes.sql without the job and the result. Those predicates repeat these conditions word for
 // word: change both together, or the planner silently goes back to reading every run.
+// TestSolverQueriesUseTheirIndexesPostgres fails when a query here stops being served by those indexes.
 const (
 	plainAcceptedRun = acceptedRun + `
  AND s.contest_id IS NULL AND NOT COALESCE((s.job->>'privateDraft')::boolean,true)`
@@ -174,14 +175,17 @@ func ownSolved(owner string) string {
   AND EXISTS(SELECT 1 FROM contests c WHERE c.id=s.contest_id AND s.created_at>=c.starts_at AND c.ends_at<=statement_timestamp())))`
 }
 
+// publicGetQuery reads the problem $1 for PublicGet as the viewer $2 sees it. A problem belongs to at most one contest,
+// and is public only once that contest has ended.
+const publicGetQuery = `SELECT d.id,CASE WHEN can_manage_problem(d.id,$2) THEN d.published_draft WHEN statement_timestamp()<featured_reveal_at(d.id) THEN d.published_draft-ARRAY['editorial','tags'] WHEN problem_tags_hidden(d.id) THEN d.published_draft-'tags' ELSE d.published_draft END,u.handle,d.published_at,featured_reveal_at(d.id),COALESCE(statement_timestamp()<featured_reveal_at(d.id),false),(SELECT count(*) FROM problem_favorites f WHERE f.problem_id=d.id),` + publicSolverCount + `,(SELECT avg(difficulty)::float8 FROM problem_difficulty_votes WHERE problem_id=d.id),(SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id),ARRAY(SELECT (SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id AND difficulty=level) FROM generate_series(1,10) level ORDER BY level),c.id,c.title FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id LEFT JOIN contest_problems cp ON cp.problem_id=d.id LEFT JOIN contests c ON c.id=cp.contest_id WHERE d.id=$1 AND d.published_draft IS NOT NULL`
+
 // PublicGet keeps editorialHidden as the public embargo, but the author and testers still receive the editorial.
 // Tags hint at the solution, so they are also hidden while a 定期便 round features the problem.
 func (s *Store) PublicGet(ctx context.Context, id, viewer string) (PublicProblem, error) {
 	var p PublicProblem
 	var data []byte
-	// A problem belongs to at most one contest, and is public only once that contest has ended.
 	var contestID, contestTitle *string
-	err := s.pool.QueryRow(ctx, `SELECT d.id,CASE WHEN can_manage_problem(d.id,$2) THEN d.published_draft WHEN statement_timestamp()<featured_reveal_at(d.id) THEN d.published_draft-ARRAY['editorial','tags'] WHEN problem_tags_hidden(d.id) THEN d.published_draft-'tags' ELSE d.published_draft END,u.handle,d.published_at,featured_reveal_at(d.id),COALESCE(statement_timestamp()<featured_reveal_at(d.id),false),(SELECT count(*) FROM problem_favorites f WHERE f.problem_id=d.id),`+publicSolverCount+`,(SELECT avg(difficulty)::float8 FROM problem_difficulty_votes WHERE problem_id=d.id),(SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id),ARRAY(SELECT (SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id AND difficulty=level) FROM generate_series(1,10) level ORDER BY level),c.id,c.title FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id LEFT JOIN contest_problems cp ON cp.problem_id=d.id LEFT JOIN contests c ON c.id=cp.contest_id WHERE d.id=$1 AND d.published_draft IS NOT NULL`, id, viewer).Scan(&p.ID, &data, &p.Author, &p.PublishedAt, &p.EditorialRevealAt, &p.EditorialHidden, &p.FavoriteCount, &p.SolverCount, &p.DifficultyAverage, &p.DifficultyVoteCount, &p.DifficultyDistribution, &contestID, &contestTitle)
+	err := s.pool.QueryRow(ctx, publicGetQuery, id, viewer).Scan(&p.ID, &data, &p.Author, &p.PublishedAt, &p.EditorialRevealAt, &p.EditorialHidden, &p.FavoriteCount, &p.SolverCount, &p.DifficultyAverage, &p.DifficultyVoteCount, &p.DifficultyDistribution, &contestID, &contestTitle)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return p, ErrNotFound
@@ -255,16 +259,22 @@ func publicFilter(filter ListFilter) (string, []any) {
 	return where, args
 }
 
+// publicCountQuery is the statement of PublicCount and its arguments.
+func publicCountQuery(filter ListFilter) (string, []any) {
+	where, args := publicFilter(filter)
+	return `SELECT count(*) FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id` + where, args
+}
+
 // PublicCount counts every public problem that PublicList can return for the filter.
 func (s *Store) PublicCount(ctx context.Context, filter ListFilter) (int, error) {
-	where, args := publicFilter(filter)
+	query, args := publicCountQuery(filter)
 	var n int
-	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id`+where, args...).Scan(&n)
+	err := s.pool.QueryRow(ctx, query, args...).Scan(&n)
 	return n, err
 }
 
-// PublicList returns at most limit+1 problems, newest first unless the filter sorts otherwise, after the cursor or the first offset problems.
-func (s *Store) PublicList(ctx context.Context, cursor *Cursor, offset, limit int, filter ListFilter) ([]PublicProblem, error) {
+// publicListQuery is the statement of PublicList and its arguments.
+func publicListQuery(cursor *Cursor, offset, limit int, filter ListFilter) (string, []any) {
 	where, args := publicFilter(filter)
 	query := `SELECT d.id,d.published_draft->>'title',(d.published_draft->>'difficulty')::integer,d.published_draft->>'timeLimitMs',d.published_draft->>'memoryLimitMb',u.handle,d.published_at,(SELECT count(*) FROM problem_favorites f WHERE f.problem_id=d.id),` + publicSolverCount + `,(SELECT avg(difficulty)::float8 FROM problem_difficulty_votes WHERE problem_id=d.id),(SELECT count(*) FROM problem_difficulty_votes WHERE problem_id=d.id),CASE WHEN problem_tags_hidden(d.id) THEN '[]' ELSE COALESCE(d.published_draft->'tags','[]') END FROM problem_drafts d JOIN user_profiles u ON u.owner_id=d.owner_id` + where
 	if cursor != nil {
@@ -276,7 +286,13 @@ func (s *Store) PublicList(ctx context.Context, cursor *Cursor, offset, limit in
 		order = listOrders[SortNewest]
 	}
 	args = append(args, limit+1, offset)
-	rows, err := s.pool.Query(ctx, query+fmt.Sprintf(` ORDER BY %s LIMIT $%d OFFSET $%d`, order, len(args)-1, len(args)), args...)
+	return query + fmt.Sprintf(` ORDER BY %s LIMIT $%d OFFSET $%d`, order, len(args)-1, len(args)), args
+}
+
+// PublicList returns at most limit+1 problems, newest first unless the filter sorts otherwise, after the cursor or the first offset problems.
+func (s *Store) PublicList(ctx context.Context, cursor *Cursor, offset, limit int, filter ListFilter) ([]PublicProblem, error) {
+	query, args := publicListQuery(cursor, offset, limit, filter)
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -287,9 +303,12 @@ func (s *Store) PublicList(ctx context.Context, cursor *Cursor, offset, limit in
 	})
 }
 
+// solvedProblemsQuery is the statement of SolvedProblems for the owner $1.
+var solvedProblemsQuery = `SELECT d.id::text FROM problem_drafts d WHERE d.published_draft IS NOT NULL AND ` + ownSolved(`$1`)
+
 // SolvedProblems returns all publicly solved problem IDs, beyond the recent submission history.
 func (s *Store) SolvedProblems(ctx context.Context, owner string) ([]string, error) {
-	rows, err := s.pool.Query(ctx, `SELECT d.id::text FROM problem_drafts d WHERE d.published_draft IS NOT NULL AND `+ownSolved(`$1`), owner)
+	rows, err := s.pool.Query(ctx, solvedProblemsQuery, owner)
 	if err != nil {
 		return nil, err
 	}
