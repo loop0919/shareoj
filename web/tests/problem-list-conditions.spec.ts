@@ -367,6 +367,13 @@ test('clearing forgets, and a broken cookie reads as nothing', async ({ page }) 
   }
 })
 
+// A tag, a page number or anything else the cookie holds stays out of the redirect.
+test('a bare /problems takes only the remembered conditions from the cookie', async ({ request }) => {
+  const cookie = `openoj-problem-conditions=${encoded({ sort: 'oldest', tag: 'DP', evil: 'https://example.com', page: '3' })}`
+  const response = await request.get('/problems', { headers: { cookie }, maxRedirects: 0 })
+  expect([response.status(), response.headers().location]).toEqual([302, '/problems?sort=oldest'])
+})
+
 test('a signed-out viewer keeps a remembered solved filter without it taking effect', async ({ page }) => {
   await page.route('**/api/auth/me', route => route.fulfill({ json: { user: null } }))
   await remember(page, encoded({ solved: 'unsolved', sort: 'oldest' }))
