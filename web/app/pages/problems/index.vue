@@ -59,9 +59,8 @@ const { data, error, status, refresh } = await useFetch('/api/problems', { key: 
 if (error.value?.statusCode === 400) throw createError({ statusCode: 404, statusMessage: 'Tag not found', fatal: true })
 if (!redirected && (error.value || !data.value)) throw createError({ statusCode: 502, statusMessage: 'Problem service unavailable', fatal: true })
 // The chips and the panel show the solved filter the list really applied, never one a signed-out viewer has in the URL.
-const solvedApplied = computed(() => Boolean(data.value?.solved))
-const chips = computed(() => conditionChips(conditions.value, solvedApplied.value))
-// Row tags keep the other conditions.
+const chips = computed(() => conditionChips(conditions.value, Boolean(data.value?.solved)))
+// Row tags and the panel's tag search keep the other conditions.
 const tagKeep = computed(() => conditionQuery({ ...conditions.value, tag: '' }))
 // A tag alone, or nothing, keeps its own message; anything else may be what emptied the list, so it offers a way out.
 const narrowed = computed(() => chips.value.some(chip => chip.key !== 'tag'))
@@ -91,7 +90,7 @@ useSharePreview({ type: 'website', title: heading, path, description })
   <div class="catalogue">
     <header class="catalogue-heading"><h1>問題</h1><NuxtLink class="editor-button primary" to="/problems/post">問題投稿</NuxtLink></header>
     <!-- The tag switch stays outside the panel, at the end of the button's row. -->
-    <ProblemConditions v-model:open="conditionsOpen" class="catalogue-conditions" :conditions="conditions" :solved-applied="solvedApplied" :signed-in="Boolean(user)" :show-tags="showTags" @change="change" @clear="clear">
+    <ProblemConditions v-model:open="conditionsOpen" class="catalogue-conditions" :conditions="conditions" :chips="chips" :tag-keep="tagKeep" :signed-in="Boolean(user)" :show-tags="showTags" @change="change" @clear="clear">
       <span class="catalogue-tags">
         <InlineSwitch v-model="showTags" class="tags-switch" :describedby="showTags ? undefined : 'problem-tags-hint'">タグを表示</InlineSwitch>
         <span v-if="!showTags" id="problem-tags-hint" class="tags-hint">解法のヒントになることがあります。</span>

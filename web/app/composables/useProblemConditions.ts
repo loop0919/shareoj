@@ -26,10 +26,9 @@ export function useProblemConditions() {
   // the next write and hand the older value back until the next report. A bare /problems reading it then would bring back
   // conditions just cleared. Another tab's choice applies when the list is opened again.
   const chosen = shallowRef(rememberedQuery(parseConditions(saved.value)))
-  const remembered = () => chosen.value
   // The conditions a list with this query shows. A bare /problems is on its way to the remembered conditions (restore),
   // so it lists them already: the list loads once.
-  const listed = (query: Record<string, unknown>) => parseConditions(Object.keys(query).length ? query : remembered())
+  const listed = (query: Record<string, unknown>) => parseConditions(Object.keys(query).length ? query : chosen.value)
   // The route also changes with the page alone. The conditions keep their object while they stay the same, so what is
   // built on them, such as the list's query, changes only with them and a new page loads once.
   const conditions = computed<ProblemConditions>(previous => {
@@ -79,7 +78,7 @@ export function useProblemConditions() {
   // none. The server answers with a redirect; the browser replaces the history entry, so the back button skips it.
   function restore() {
     if (Object.keys(route.query).length) return
-    const query = remembered()
+    const query = chosen.value
     if (Object.keys(query).length) return navigateTo({ path: '/problems', query }, { replace: true, redirectCode: 302 })
   }
   return { conditions, change, clear, restore }

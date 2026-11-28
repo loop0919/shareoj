@@ -1,24 +1,21 @@
 <script setup lang="ts">
-import { conditionChips, conditionQuery, conditionReset, problemSorts, type ConditionKey, type ProblemConditions, type ProblemContest, type ProblemSolved, type ProblemSort } from '~/utils/problem-conditions'
+import { conditionReset, problemContestFilters, problemSolvedFilters, problemSorts, type ConditionChip, type ConditionKey, type ProblemConditions, type ProblemContest, type ProblemSolved, type ProblemSort } from '~/utils/problem-conditions'
 
 // The sort and the filters of the problem list, folded into one panel under a button. While it is closed, the conditions
 // in force line up beside the button as chips, each with a way to take it off, so a list cut short never reads as
 // problems gone missing. Each change goes up at once; there is no apply button.
-// solvedApplied says whether the list really applied conditions.solved, which it does not for a signed-out viewer.
+// The page works out the chips (conditionChips) and what a new tag keeps, since it shows them too. The chips list solved
+// only when the list really applied it, which it does not for a signed-out viewer, and the panel follows them.
 // The default slot ends the button's row, for the page's own controls.
-const props = defineProps<{ conditions: ProblemConditions, solvedApplied: boolean, signedIn: boolean, showTags: boolean }>()
+const props = defineProps<{ conditions: ProblemConditions, chips: ConditionChip[], tagKeep: Record<string, string>, signedIn: boolean, showTags: boolean }>()
 const emit = defineEmits<{ change: [patch: Partial<ProblemConditions>], clear: [] }>()
 const open = defineModel<boolean>('open', { required: true })
 const route = useRoute()
 const id = useId()
-const chips = computed(() => conditionChips(props.conditions, props.solvedApplied))
-const solvedOptions = [{ key: 'unsolved', label: '未ACのみ' }, { key: 'solved', label: 'AC済みのみ' }] as const
-// Contest problems aim at ranking, the others at the solve itself; a viewer may want only one kind (issue #21).
-const contestOptions = [{ key: '', label: 'すべての問題' }, { key: 'only', label: 'コンテストの問題のみ' }, { key: 'exclude', label: 'コンテストの問題を除く' }] as const
 const levels = Array.from({ length: 10 }, (_, index) => index + 1)
-// The fields show the conditions and send each pick up; the options above are the only values they can send.
+// The fields show the conditions and send each pick up; the options are the only values they can send.
 const sort = computed({ get: () => props.conditions.sort, set: (value: string) => emit('change', { sort: value as ProblemSort }) })
-const solved = computed({ get: () => props.solvedApplied ? props.conditions.solved : '', set: (value: string) => emit('change', { solved: value as ProblemSolved }) })
+const solved = computed({ get: () => props.chips.some(chip => chip.key === 'solved') ? props.conditions.solved : '', set: (value: string) => emit('change', { solved: value as ProblemSolved }) })
 const contest = computed({ get: () => props.conditions.contest, set: (value: string) => emit('change', { contest: value as ProblemContest }) })
 function pickLevel(bound: 'min' | 'max', event: Event) {
   const level = Number((event.target as HTMLSelectElement).value)
@@ -26,8 +23,6 @@ function pickLevel(bound: 'min' | 'max', event: Event) {
 }
 // Only the condition taken off goes up: a second chip taken off before the list catches up then keeps the first one off.
 const remove = (key: ConditionKey) => emit('change', conditionReset(key))
-// A new tag keeps the other conditions.
-const tagKeep = computed(() => conditionQuery({ ...props.conditions, tag: '' }))
 </script>
 <template>
   <div class="problem-conditions">
@@ -46,10 +41,10 @@ const tagKeep = computed(() => conditionQuery({ ...props.conditions, tag: '' }))
         <FilterSelect v-model="sort" label="並び順" :options="problemSorts" />
         <div class="conditions-field">
           <span class="conditions-label" aria-hidden="true">解答状況</span>
-          <StatusFilter v-model="solved" label="解答状況" :options="solvedOptions" :disabled="!signedIn" />
+          <StatusFilter v-model="solved" label="解答状況" :options="problemSolvedFilters" :disabled="!signedIn" />
           <p v-if="!signedIn" class="conditions-note"><NuxtLink :to="{ path: '/login', query: { next: route.fullPath } }">ログイン</NuxtLink>すると使えます</p>
         </div>
-        <FilterSelect v-model="contest" label="コンテスト" :options="contestOptions" />
+        <FilterSelect v-model="contest" label="コンテスト" :options="problemContestFilters" />
         <div class="conditions-field" role="group" :aria-labelledby="`${id}-difficulty`">
           <span :id="`${id}-difficulty`" class="conditions-label">難易度</span>
           <span class="conditions-range">

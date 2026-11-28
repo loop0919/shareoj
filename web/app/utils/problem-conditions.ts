@@ -3,6 +3,7 @@ export type ProblemSolved = '' | 'unsolved' | 'solved'
 export type ProblemContest = '' | 'only' | 'exclude'
 export type ProblemConditions = { sort: ProblemSort, solved: ProblemSolved, contest: ProblemContest, min: number, max: number, tag: string }
 export type ConditionKey = 'sort' | 'solved' | 'contest' | 'difficulty' | 'tag'
+export type ConditionChip = { key: ConditionKey, label: string }
 
 export const problemSorts: readonly { key: ProblemSort, label: string }[] = [
   { key: 'newest', label: '公開日が新しい順' },
@@ -13,11 +14,21 @@ export const problemSorts: readonly { key: ProblemSort, label: string }[] = [
   { key: 'difficulty-desc', label: '難易度が高い順' },
   { key: 'difficulty-asc', label: '難易度が低い順' },
 ]
+// Without すべて, which the buttons of a status filter have of their own.
+export const problemSolvedFilters: readonly { key: Exclude<ProblemSolved, ''>, label: string }[] = [
+  { key: 'unsolved', label: '未ACのみ' },
+  { key: 'solved', label: 'AC済みのみ' },
+]
+// Contest problems aim at ranking, the others at the solve itself; a viewer may want only one kind (issue #21).
+export const problemContestFilters: readonly { key: ProblemContest, label: string }[] = [
+  { key: '', label: 'すべての問題' },
+  { key: 'only', label: 'コンテストの問題のみ' },
+  { key: 'exclude', label: 'コンテストの問題を除く' },
+]
 
 export const defaultConditions: ProblemConditions = { sort: 'newest', solved: '', contest: '', min: 1, max: 10, tag: '' }
 
-const solvedLabels = { unsolved: '未ACのみ', solved: 'AC済みのみ' } as const
-const contestLabels = { only: 'コンテストの問題のみ', exclude: 'コンテストの問題を除く' } as const
+const labelOf = <K extends string>(options: readonly { key: K, label: string }[], key: K) => options.find(item => item.key === key)!.label
 
 // A query value counts only when it is a single string; arrays and anything else read as missing.
 function single(source: unknown, name: string) {
@@ -28,17 +39,14 @@ function single(source: unknown, name: string) {
 
 // Reads a route query or a remembered cookie. Anything unknown reads as the initial value.
 export function parseConditions(query: unknown): ProblemConditions {
-  const sort = problemSorts.find(item => item.key === single(query, 'sort'))?.key ?? defaultConditions.sort
-  const solved = single(query, 'solved')
-  const contest = single(query, 'contest')
   const range = /^([1-9]|10)-([1-9]|10)$/.exec(single(query, 'difficulty'))
   const min = range ? Number(range[1]) : defaultConditions.min
   const max = range ? Number(range[2]) : defaultConditions.max
   const valid = min <= max
   return {
-    sort,
-    solved: solved === 'unsolved' || solved === 'solved' ? solved : '',
-    contest: contest === 'only' || contest === 'exclude' ? contest : '',
+    sort: problemSorts.find(item => item.key === single(query, 'sort'))?.key ?? defaultConditions.sort,
+    solved: problemSolvedFilters.find(item => item.key === single(query, 'solved'))?.key ?? defaultConditions.solved,
+    contest: problemContestFilters.find(item => item.key === single(query, 'contest'))?.key ?? defaultConditions.contest,
     min: valid ? min : defaultConditions.min,
     max: valid ? max : defaultConditions.max,
     tag: single(query, 'tag'),
@@ -63,11 +71,11 @@ export function rememberedQuery(conditions: ProblemConditions): Record<string, s
 }
 
 // The conditions in force, in the order sort, solved, contest, difficulty, tag. solved is listed only when applied.
-export function conditionChips(conditions: ProblemConditions, solvedApplied: boolean): { key: ConditionKey, label: string }[] {
-  const chips: { key: ConditionKey, label: string }[] = []
-  if (conditions.sort !== defaultConditions.sort) chips.push({ key: 'sort', label: problemSorts.find(item => item.key === conditions.sort)!.label })
-  if (conditions.solved && solvedApplied) chips.push({ key: 'solved', label: solvedLabels[conditions.solved] })
-  if (conditions.contest) chips.push({ key: 'contest', label: contestLabels[conditions.contest] })
+export function conditionChips(conditions: ProblemConditions, solvedApplied: boolean): ConditionChip[] {
+  const chips: ConditionChip[] = []
+  if (conditions.sort !== defaultConditions.sort) chips.push({ key: 'sort', label: labelOf(problemSorts, conditions.sort) })
+  if (conditions.solved && solvedApplied) chips.push({ key: 'solved', label: labelOf(problemSolvedFilters, conditions.solved) })
+  if (conditions.contest) chips.push({ key: 'contest', label: labelOf(problemContestFilters, conditions.contest) })
   if (conditions.min !== defaultConditions.min || conditions.max !== defaultConditions.max) chips.push({ key: 'difficulty', label: `難易度 Lv.${conditions.min}〜${conditions.max}` })
   if (conditions.tag) chips.push({ key: 'tag', label: `タグ: ${conditions.tag}` })
   return chips
@@ -76,9 +84,4 @@ export function conditionChips(conditions: ProblemConditions, solvedApplied: boo
 // The change that puts one condition back at its initial value, and nothing else.
 export function conditionReset(key: ConditionKey): Partial<ProblemConditions> {
   return key === 'difficulty' ? { min: defaultConditions.min, max: defaultConditions.max } : { [key]: defaultConditions[key] }
-}
-
-// The conditions with one of them back at its initial value.
-export function withoutCondition(conditions: ProblemConditions, key: ConditionKey): ProblemConditions {
-  return { ...conditions, ...conditionReset(key) }
 }
